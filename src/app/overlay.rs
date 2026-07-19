@@ -240,6 +240,10 @@ impl Overlay {
 
         let mut builder = ViewportBuilder::default()
             .with_title("CLA Overlay")
+            // Stable app id / window class so a compositor rule can target the
+            // overlay (e.g. a KWin "Keep above" rule on Wayland, where the
+            // always-on-top hint below is only honored on X11).
+            .with_app_id("sto-cla-overlay")
             .with_decorations(inner.move_around)
             .with_minimize_button(false)
             .with_maximize_button(false)
@@ -318,7 +322,10 @@ impl OverlayInner {
                 + ui.spacing().window_margin.left_top()
                 + ui.spacing().window_margin.right_bottom()
                 + ui.spacing().item_spacing;
-            let required_size = required_size.ceil();
+            // Never request below the viewport's min size: otherwise the
+            // requested size and the compositor-clamped actual size disagree,
+            // which keeps re-issuing resize commands (fragile on Wayland).
+            let required_size = required_size.ceil().max(vec2(240.0, 80.0));
             if self.current_size != required_size {
                 ui.ctx().send_viewport_cmd_to(
                     Overlay::viewport_id(),
