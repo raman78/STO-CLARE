@@ -49,6 +49,10 @@ flate2 = "1"
 [profile.release]
 lto = "thin"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Wayland layer-shell — only used by the overlay always-on-top PoC/support.
+smithay-client-toolkit = "0.19"
+
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
 
