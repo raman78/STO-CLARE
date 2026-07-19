@@ -7,8 +7,35 @@ It displays the result of this analysis in convenient tables and also provides m
 | ![Summary Tab](images/summary_tab.png) | ![Summary Tab](images/damage_tab.png) |
 
 ---
+## Install
+
+### Linux — one command (nothing to download by hand)
+Paste this into a terminal. It fetches the latest release, puts `sto-cla` on
+your PATH and adds an applications-menu entry:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/raman78/STO_CombatLogAnalyzer/main/install.sh | sh
+```
+
+Later, upgrade to the newest release with either:
+
+```sh
+sto-cla --upgrade      # updates the app in place
+```
+
+(or just run the one-liner above again). Check the installed version with
+`sto-cla --version`.
+
+### Windows
+Download and run the installer (`…-setup.exe`) from the Releases page. Upgrade
+with `sto-cla --upgrade` or by running a newer installer.
+
+### From source
+See “Building the tool from Source” below.
+
+---
 ## Getting started
-1. Download the application from the Releases page.
+1. Install using one of the methods above (or download it from the Releases page).
 
 2. Make sure you turned off log rotation (see https://www.sto-league.com/how-to-disable-automatically-rotated-log-files/).
 
