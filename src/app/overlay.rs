@@ -184,7 +184,10 @@ impl Overlay {
         Self(Arc::new(Mutex::new(OverlayInner {
             move_around: true,
             columns: COLUMNS.iter().cloned().collect(),
-            current_size: Vec2::ZERO,
+            // Must start non-zero: Wayland rejects a 0x0 xdg_surface geometry,
+            // which crashes wgpu ("Surface is not configured for presentation").
+            // Matches the min_inner_size used when building the viewport below.
+            current_size: vec2(240.0, 80.0),
             data: Default::default(),
             position: None,
             show: false,
