@@ -15,6 +15,8 @@ use self::{
 
 mod analysis_handling;
 pub mod desktop_install;
+#[cfg(target_os = "linux")]
+pub mod layer_overlay;
 pub mod logging;
 pub mod self_upgrade;
 mod main_tabs;

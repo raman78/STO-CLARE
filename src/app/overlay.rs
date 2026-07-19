@@ -14,7 +14,11 @@ use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
 pub struct Overlay(Arc<Mutex<OverlayInner>>);
 
 struct OverlayInner {
+    // Used by the eframe-viewport path (non-Linux); on Linux the layer-shell
+    // surface owns its own geometry.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     position: Option<Pos2>,
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     current_size: Vec2,
     data: DisplayData,
     show: bool,
@@ -23,6 +27,10 @@ struct OverlayInner {
     analysis_handler: AnalysisHandler,
     state: State,
     settings: Settings,
+    // On Linux the overlay is a wlr-layer-shell surface (always-on-top over
+    // full-screen games) instead of an eframe viewport; see layer_overlay.
+    #[cfg(target_os = "linux")]
+    layer: Option<super::layer_overlay::LayerOverlay>,
 }
 
 #[derive(Default)]
@@ -194,6 +202,8 @@ impl Overlay {
             analysis_handler: root_handler.get_handler(true, Self::viewport_id()),
             state: State::Empty,
             settings: settings.clone(),
+            #[cfg(target_os = "linux")]
+            layer: None,
         })))
     }
 
@@ -238,29 +248,49 @@ impl Overlay {
             return;
         }
 
-        let mut builder = ViewportBuilder::default()
-            .with_title("CLA Overlay")
-            // Stable app id / window class so a compositor rule can target the
-            // overlay (e.g. a KWin "Keep above" rule on Wayland, where the
-            // always-on-top hint below is only honored on X11).
-            .with_app_id("sto-cla-overlay")
-            .with_decorations(inner.move_around)
-            .with_minimize_button(false)
-            .with_maximize_button(false)
-            .with_close_button(true)
-            .with_resizable(false)
-            .with_min_inner_size(vec2(240.0, 80.0))
-            .with_inner_size(inner.current_size)
-            .with_always_on_top()
-            .with_taskbar(false)
-            .with_mouse_passthrough(!inner.move_around);
-        builder.position = inner.position;
-        drop(inner);
-        let inner = self.0.clone();
-        ui.ctx()
-            .show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
-                inner.lock().show_overlay(ui);
-            });
+        // Linux/Wayland: render the overlay on a wlr-layer-shell surface so it
+        // stays above full-screen games (the winit always-on-top hint is
+        // ignored on Wayland). We push the freshly computed rows to that
+        // surface's own thread; there is no eframe viewport here.
+        #[cfg(target_os = "linux")]
+        {
+            if inner.layer.is_none() {
+                inner.layer = Some(super::layer_overlay::LayerOverlay::spawn());
+            }
+            inner.check_update(ui.ctx());
+            let data = inner.to_overlay_data();
+            if let Some(layer) = &inner.layer {
+                layer.update(data);
+            }
+            // Keep the main app repainting so we keep feeding the overlay.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(500));
+            return;
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let mut builder = ViewportBuilder::default()
+                .with_title("CLA Overlay")
+                .with_app_id("sto-cla-overlay")
+                .with_decorations(inner.move_around)
+                .with_minimize_button(false)
+                .with_maximize_button(false)
+                .with_close_button(true)
+                .with_resizable(false)
+                .with_min_inner_size(vec2(240.0, 80.0))
+                .with_inner_size(inner.current_size)
+                .with_always_on_top()
+                .with_taskbar(false)
+                .with_mouse_passthrough(!inner.move_around);
+            builder.position = inner.position;
+            drop(inner);
+            let inner = self.0.clone();
+            ui.ctx()
+                .show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
+                    inner.lock().show_overlay(ui);
+                });
+        }
     }
 
     pub fn viewport_id() -> ViewportId {
@@ -277,6 +307,9 @@ impl Overlay {
 }
 
 impl OverlayInner {
+    // The eframe-viewport render path (non-Linux). On Linux the overlay is a
+    // layer-shell surface rendered on its own thread (see layer_overlay).
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn show_overlay(&mut self, ui: &mut Ui) {
         self.check_update(ui.ctx());
         CentralPanel::default().show_inside(ui, |ui| {
@@ -339,6 +372,26 @@ impl OverlayInner {
     fn toggle_show(&mut self) {
         self.show = !self.show;
         self.analysis_handler.enable_auto_refresh(self.show);
+        #[cfg(target_os = "linux")]
+        if !self.show {
+            self.layer = None; // dropping stops the layer-shell overlay thread
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn to_overlay_data(&self) -> super::layer_overlay::OverlayData {
+        super::layer_overlay::OverlayData {
+            columns: self.data.columns.iter().map(|c| c.name.to_string()).collect(),
+            rows: self
+                .data
+                .players
+                .iter()
+                .map(|p| super::layer_overlay::OverlayRow {
+                    name: p.name.clone(),
+                    values: p.columns.iter().map(|c| c.value_string.clone()).collect(),
+                })
+                .collect(),
+        }
     }
 
     fn check_update(&mut self, ctx: &Context) {

@@ -50,11 +50,9 @@ flate2 = "1"
 lto = "thin"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# Wayland layer-shell — only used by the overlay always-on-top PoC/support.
+# Wayland layer-shell overlay: always-on-top over full-screen games, which the
+# winit/eframe path cannot do on Wayland. Versions matched to eframe 0.34.
 smithay-client-toolkit = "0.19"
-
-[dev-dependencies]
-# Used by the layer-shell egui PoC example (versions matched to eframe 0.34).
 egui = "0.34"
 egui-wgpu = "0.34"
 raw-window-handle = "0.6"
