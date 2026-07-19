@@ -61,7 +61,23 @@ Triggered on `release: published` (tag `vX.Y.Z`) and `workflow_dispatch`.
   `STO_CombatLogAnalyzer-<ver>-linux-x86_64.tar.gz`, attach to the release.
 - **windows** job: `cargo build --release`, `choco install innosetup`, compile
   `packaging/windows/STO_CombatLogAnalyzer.iss` with `/DAppVersion=<ver>`,
-  attach `STO_CombatLogAnalyzer-<ver>-setup.exe`.
+  attach `STO_CombatLogAnalyzer-<ver>-setup.exe` **and** a bare
+  `STO_CombatLogAnalyzer-<ver>-windows-x86_64.zip` (used by `--upgrade`).
+
+Asset names must contain the platform tag (`linux-x86_64`, `windows-x86_64`)
+and hold the binary at the archive root — that is what `--upgrade` matches on.
+
+## Upgrading — `--upgrade` (`src/app/self_upgrade.rs`)
+
+The analogue of `pipx upgrade`. `sto-cla --upgrade` uses the `self_update` crate
+to query the latest GitHub Release, download this platform's asset, and replace
+the running executable in place (atomic swap). `sto-cla --version` prints the
+current version. Both are headless and exit without opening the GUI.
+
+Requires write access to the installed binary — fine for the `install.sh` /
+`dev-install.sh` locations under `~/.local`; a system-wide install would need
+elevation. `cargo install` users upgrade with `cargo install --git … --force`
+instead.
 
 The Inno installer creates **no** `[Icons]` of its own — it runs the exe with
 `--install-desktop` (and `--uninstall-desktop` on removal), reusing the app's

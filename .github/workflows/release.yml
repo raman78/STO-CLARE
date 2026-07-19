@@ -40,13 +40,15 @@ jobs:
       - name: Package tarball
         run: |
           VER="${{ steps.ver.outputs.version }}"
-          STAGE="STO_CombatLogAnalyzer-$VER-linux-x86_64"
-          mkdir -p "$STAGE"
+          ASSET="STO_CombatLogAnalyzer-$VER-linux-x86_64.tar.gz"
+          # Files at the archive root (no wrapping dir) so `self_update` can
+          # find the binary directly during `--upgrade`.
+          STAGE="$(mktemp -d)"
           cp target/release/STO_CombatLogAnalyzer "$STAGE/"
           cp icon/icon.png "$STAGE/"
           cp install.sh "$STAGE/" 2>/dev/null || true
-          tar -czf "$STAGE.tar.gz" "$STAGE"
-          echo "asset=$STAGE.tar.gz" >> "$GITHUB_ENV"
+          tar -czf "$ASSET" -C "$STAGE" .
+          echo "asset=$ASSET" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -88,13 +90,24 @@ jobs:
             "/DAppVersion=${{ steps.ver.outputs.version }}" `
             "packaging\windows\STO_CombatLogAnalyzer.iss"
 
+      - name: Package portable zip
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          # Bare exe in a zip so `self_update` can replace the binary on --upgrade.
+          Compress-Archive -Path target\release\STO_CombatLogAnalyzer.exe `
+            -DestinationPath "STO_CombatLogAnalyzer-$ver-windows-x86_64.zip"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: dist/installer/*.exe
+          name: windows
+          path: |
+            dist/installer/*.exe
+            STO_CombatLogAnalyzer-*-windows-x86_64.zip
 
       - name: Attach to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/installer/*.exe
+          files: |
+            dist/installer/*.exe
+            STO_CombatLogAnalyzer-*-windows-x86_64.zip

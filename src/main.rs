@@ -25,7 +25,21 @@ fn main() {
         println!("{}", backtrace);
     }));
 
+    if std::env::args().any(|a| a == "--version") {
+        println!("STO_CombatLogAnalyzer {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     logging::initialize();
+
+    // Self-update from GitHub Releases (like `pipx upgrade`). Headless, exits.
+    if std::env::args().any(|a| a == "--upgrade") {
+        if let Err(e) = app::self_upgrade::run() {
+            eprintln!("Upgrade failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     // Desktop integration (Linux .desktop / Windows .lnk / macOS .app). The
     // `--install-desktop` / `--uninstall-desktop` flags run it explicitly and

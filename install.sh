@@ -42,10 +42,10 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 echo "Downloading $ASSET_URL"
 curl -fsSL "$ASSET_URL" -o "$TMP/sto-cla.tar.gz"
-tar -xzf "$TMP/sto-cla.tar.gz" -C "$TMP"
+mkdir -p "$TMP/extract"
+tar -xzf "$TMP/sto-cla.tar.gz" -C "$TMP/extract"
 
-SRC_DIR=$(find "$TMP" -maxdepth 1 -type d -name '*linux-x86_64' | head -1)
-if [ -z "$SRC_DIR" ] || [ ! -f "$SRC_DIR/$BIN_NAME" ]; then
+if [ ! -f "$TMP/extract/$BIN_NAME" ]; then
     echo "Error: unexpected archive layout." >&2
     exit 1
 fi
@@ -55,8 +55,8 @@ if [ -d "$OPT_DIR" ]; then
     rm -rf "$OPT_DIR"
 fi
 mkdir -p "$OPT_DIR"
-cp "$SRC_DIR/$BIN_NAME" "$OPT_DIR/"
-[ -f "$SRC_DIR/icon.png" ] && cp "$SRC_DIR/icon.png" "$OPT_DIR/"
+cp "$TMP/extract/$BIN_NAME" "$OPT_DIR/"
+[ -f "$TMP/extract/icon.png" ] && cp "$TMP/extract/icon.png" "$OPT_DIR/"
 chmod +x "$OPT_DIR/$BIN_NAME"
 
 mkdir -p "$BIN_DIR"

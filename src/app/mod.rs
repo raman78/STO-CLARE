@@ -16,6 +16,7 @@ use self::{
 mod analysis_handling;
 pub mod desktop_install;
 pub mod logging;
+pub mod self_upgrade;
 mod main_tabs;
 mod overlay;
 mod settings;
