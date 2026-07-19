@@ -54,19 +54,37 @@ pub struct UploadSettings {
 
 static DEFAULT_SETTINGS: &str = include_str!("STO_CombatLogAnalyzer_Settings.json");
 
+const SETTINGS_FILE_NAME: &str = "STO_CombatLogAnalyzer_Settings.json";
+
 impl Settings {
+    /// Per-user config directory for this app: `~/.config/STO_CombatLogAnalyzer`
+    /// on Linux, `%APPDATA%\STO_CombatLogAnalyzer` on Windows. Using the OS
+    /// config dir means settings and logs survive when the program lives in a
+    /// read-only location (e.g. /usr/bin, C:\Program Files, an AppImage mount).
+    pub fn config_dir() -> Option<PathBuf> {
+        let mut path = dirs::config_dir()?;
+        path.push("STO_CombatLogAnalyzer");
+        Some(path)
+    }
+
     fn file_path() -> Option<PathBuf> {
+        Some(Self::config_dir()?.join(SETTINGS_FILE_NAME))
+    }
+
+    /// Location used by older versions: next to the executable. Read as a
+    /// fallback so existing settings are not lost on upgrade; never written to.
+    fn legacy_file_path() -> Option<PathBuf> {
         let mut path = std::env::current_exe().ok()?;
         path.pop();
-        path.push("STO_CombatLogAnalyzer_Settings.json");
+        path.push(SETTINGS_FILE_NAME);
         Some(path)
     }
 
     pub fn load_or_default() -> Self {
         Self::file_path()
             .and_then(|f| std::fs::read_to_string(&f).ok())
-            .map(|d| serde_json::from_str(&d).ok())
-            .flatten()
+            .or_else(|| Self::legacy_file_path().and_then(|f| std::fs::read_to_string(&f).ok()))
+            .and_then(|d| serde_json::from_str(&d).ok())
             .unwrap_or_else(|| Self::default())
     }
 
@@ -77,6 +95,9 @@ impl Settings {
                 return;
             }
         };
+        if let Some(dir) = file_path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
         let data = match serde_json::to_string_pretty(self) {
             Ok(d) => d,
             Err(_) => {

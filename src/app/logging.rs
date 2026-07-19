@@ -29,8 +29,7 @@ pub fn initialize() {
 }
 
 fn file_path() -> Option<PathBuf> {
-    let mut path = std::env::current_exe().ok()?;
-    path.pop();
-    path.push("STO_CombatLogAnalyzer.log");
-    Some(path)
+    let dir = Settings::config_dir()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("STO_CombatLogAnalyzer.log"))
 }
