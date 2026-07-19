@@ -26,7 +26,10 @@ for tool in curl tar; do
 done
 
 echo "Looking up the latest release..."
-API="https://api.github.com/repos/$REPO/releases/latest"
+# Use /releases (not /releases/latest): the latter excludes pre-releases and
+# 404s when only pre-releases exist. The list is newest-first, so the first
+# matching asset belongs to the newest release.
+API="https://api.github.com/repos/$REPO/releases"
 ASSET_URL=$(curl -fsSL "$API" \
     | grep -o '"browser_download_url": *"[^"]*linux-x86_64\.tar\.gz"' \
     | head -1 \

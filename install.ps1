@@ -12,8 +12,11 @@ Write-Host '  STO Combat Log Analyzer installer (Windows)'
 Write-Host '==========================================='
 
 Write-Host 'Looking up the latest release...'
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
+# Use /releases (not /releases/latest): the latter excludes pre-releases. The
+# list is newest-first, so the first entry is the newest release.
+$releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases" `
     -Headers @{ 'User-Agent' = 'sto-cla-installer' }
+$release = $releases | Select-Object -First 1
 
 $asset = $release.assets | Where-Object { $_.name -like '*-setup.exe' } | Select-Object -First 1
 if (-not $asset) {
