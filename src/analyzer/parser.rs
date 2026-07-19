@@ -73,11 +73,7 @@ impl Parser {
 
         Some(Self {
             line_parser: LineParser {
-                char_parser: CharParser {
-                    file,
-                    buffer: Default::default(),
-                    buffer_len: Default::default(),
-                },
+                char_parser: CharParser { file },
                 escaped: Default::default(),
                 line: Default::default(),
                 line_start_in_file: Default::default(),
@@ -417,36 +413,40 @@ fn parse_csv_line<'a>(line: &'a str) -> impl Iterator<Item = Cow<'a, str>> {
 
 struct CharParser {
     file: BufReader<File>,
-    buffer: u32,
-    buffer_len: u32,
+}
+
+/// Number of bytes in the UTF-8 sequence started by `lead`. A stray
+/// continuation byte (0x80..=0xBF) reports 1 so `str::from_utf8` rejects it.
+fn utf8_char_len(lead: u8) -> usize {
+    match lead {
+        0x00..=0x7F => 1,
+        0xF0..=0xF7 => 4,
+        0xE0..=0xEF => 3,
+        0xC0..=0xDF => 2,
+        _ => 1,
+    }
 }
 
 impl CharParser {
     fn next(&mut self) -> Option<char> {
-        loop {
-            let mut byte = 0u8;
-            let count = self.file.read(std::slice::from_mut(&mut byte)).ok()?;
-            if count == 0 {
-                return None;
-            }
-            self.buffer |= (byte as u32) << self.buffer_len;
-            self.buffer_len += 1;
-            if let Some(c) = char::from_u32(self.buffer) {
-                self.reset_for_next_char();
-                return Some(c);
-            }
-
-            if self.buffer_len == 4 {
-                error!("Failed to successfully parse char: {}", self.buffer);
-                self.reset_for_next_char();
+        let mut bytes = [0u8; 4];
+        if self.file.read(std::slice::from_mut(&mut bytes[0])).ok()? == 0 {
+            return None;
+        }
+        let len = utf8_char_len(bytes[0]);
+        for byte in bytes.iter_mut().take(len).skip(1) {
+            if self.file.read(std::slice::from_mut(byte)).ok()? == 0 {
+                error!("truncated UTF-8 sequence at end of log");
                 return None;
             }
         }
-    }
-
-    fn reset_for_next_char(&mut self) {
-        self.buffer = 0;
-        self.buffer_len = 0;
+        match std::str::from_utf8(&bytes[..len]) {
+            Ok(s) => s.chars().next(),
+            Err(_) => {
+                error!("invalid UTF-8 sequence in log: {:x?}", &bytes[..len]);
+                None
+            }
+        }
     }
 
     fn pos(&mut self) -> Option<u64> {
@@ -490,5 +490,24 @@ mod tests {
             .unwrap();
 
         println!("{:?}", record)
+    }
+
+    #[test]
+    fn decodes_utf8_multibyte() {
+        // Covers 1-, 2-, 3- and 4-byte UTF-8 sequences: 'a', 'é', '—', '🚀'.
+        let text = "aé—🚀";
+        let path = std::env::temp_dir().join("cla_utf8_decode_test.log");
+        std::fs::write(&path, text.as_bytes()).unwrap();
+
+        let mut parser = CharParser {
+            file: BufReader::new(File::open(&path).unwrap()),
+        };
+        let mut decoded = String::new();
+        while let Some(c) = parser.next() {
+            decoded.push(c);
+        }
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(decoded, text);
     }
 }
