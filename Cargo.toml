@@ -53,6 +53,13 @@ lto = "thin"
 # Wayland layer-shell — only used by the overlay always-on-top PoC/support.
 smithay-client-toolkit = "0.19"
 
+[dev-dependencies]
+# Used by the layer-shell egui PoC example (versions matched to eframe 0.34).
+egui = "0.34"
+egui-wgpu = "0.34"
+raw-window-handle = "0.6"
+pollster = "0.4"
+
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
 
