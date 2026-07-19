@@ -12,3 +12,18 @@ target/
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code local config (skills, local settings) — kept per-machine, not committed
+.claude/
+
+# Editor / OS
+*.bak
+*.orig
+.DS_Store
+
+# Runtime
+*.log
