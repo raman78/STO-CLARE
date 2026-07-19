@@ -26,8 +26,27 @@ fn main() {
     }));
 
     logging::initialize();
+
+    // Desktop integration (Linux .desktop / Windows .lnk / macOS .app). The
+    // `--install-desktop` / `--uninstall-desktop` flags run it explicitly and
+    // exit; a normal launch registers the entry best-effort.
+    if std::env::args().any(|a| a == "--install-desktop") {
+        match app::desktop_install::install_desktop_entry(true) {
+            Some(path) => println!("Installed desktop entry: {}", path.display()),
+            None => println!("Desktop entry not installed (see log)."),
+        }
+        return;
+    }
+    if std::env::args().any(|a| a == "--uninstall-desktop") {
+        app::desktop_install::uninstall_desktop_entry();
+        println!("Removed desktop entry (if present).");
+        return;
+    }
+    app::desktop_install::install_desktop_entry(false);
+
     let native_options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
+            .with_app_id(app::desktop_install::APP_ID)
             .with_inner_size(vec2(1280.0, 720.0))
             .with_min_inner_size(vec2(480.0, 270.0))
             .with_icon(icon_data()),

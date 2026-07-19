@@ -1,0 +1,289 @@
+//! First-run desktop / Start Menu / Launchpad integrator.
+//!
+//! Ported from sto-warp's `warp/gui/desktop_install.py`. On a normal launch we
+//! register the app with the host OS so it shows up alongside other GUI
+//! applications, and expose it explicitly via the `--install-desktop` flag.
+//!
+//!   - Linux   → `~/.local/share/applications/sto-cla-<id>.desktop` + icon
+//!   - Windows → Start Menu `.lnk` shortcut
+//!   - macOS   → `~/Applications/STO Combat Log Analyzer.app` bundle (UNTESTED)
+//!
+//! Idempotent: re-runs are a no-op once the entry exists (unless `force`).
+//! The Linux entry is keyed by an 8-char hash of the executable path, so
+//! installs in *different* locations get their own menu entry while updating
+//! in place overwrites rather than piling up duplicates. Stale entries left
+//! by an old location that points at the *same* binary are swept on launch.
+//!
+//! Every failure is best-effort and non-fatal — desktop integration must never
+//! stop the app from starting.
+
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+
+/// Human-facing application name (menu label, .app / .lnk basename).
+const APP_NAME: &str = "STO Combat Log Analyzer";
+/// Short id used for the desktop-entry / icon basename and the WM class.
+pub const APP_ID: &str = "sto-cla";
+/// Icon shipped with the binary (same asset as the window icon).
+const ICON_PNG: &[u8] = include_bytes!("../../icon/icon.png");
+
+/// 8-char stable hash of the current executable's path. Stable across runs of
+/// the same binary; differs when the binary lives in a different location.
+fn install_id() -> String {
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    exe.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())[..8].to_string()
+}
+
+/// Register the app with the host OS. Returns the path written (or the existing
+/// entry). Best-effort: logs and returns `None` on any failure.
+pub fn install_desktop_entry(force: bool) -> Option<PathBuf> {
+    match install_impl(force) {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!("desktop installer: {e}");
+            None
+        }
+    }
+}
+
+/// Remove the entry created for the current install location. Best-effort.
+pub fn uninstall_desktop_entry() {
+    if let Err(e) = uninstall_impl() {
+        log::warn!("desktop uninstaller: {e}");
+    }
+}
+
+// ---------------------------------------------------------------- Linux
+
+#[cfg(target_os = "linux")]
+fn data_home() -> Option<PathBuf> {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
+}
+
+#[cfg(target_os = "linux")]
+fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
+    use std::io::{Error, ErrorKind};
+
+    let exec_path = std::env::current_exe()?;
+    let exec = exec_path.to_string_lossy();
+
+    let data_home =
+        data_home().ok_or_else(|| Error::new(ErrorKind::NotFound, "no XDG data home"))?;
+    let apps_dir = data_home.join("applications");
+    let icons_dir = data_home.join("icons");
+
+    let entry_name = format!("{APP_ID}-{}.desktop", install_id());
+    let entry_path = apps_dir.join(&entry_name);
+
+    // Tidy up entries left behind after moving/upgrading the binary.
+    sweep_stale_entries(&apps_dir, &exec, &entry_name);
+
+    if entry_path.is_file() && !force {
+        return Ok(Some(entry_path));
+    }
+
+    // Write the icon next to other user icons so the entry has a stable
+    // absolute path regardless of where the binary lives.
+    std::fs::create_dir_all(&icons_dir)?;
+    let icon_path = icons_dir.join(format!("{APP_ID}.png"));
+    std::fs::write(&icon_path, ICON_PNG)?;
+
+    std::fs::create_dir_all(&apps_dir)?;
+    let contents = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name={APP_NAME}\n\
+         Comment=Analyze Star Trek Online combat logs\n\
+         Exec=\"{exec}\"\n\
+         Icon={icon}\n\
+         Terminal=false\n\
+         Categories=Game;\n\
+         StartupNotify=true\n\
+         StartupWMClass={APP_ID}\n",
+        icon = icon_path.display(),
+    );
+    std::fs::write(&entry_path, contents)?;
+    log::info!("desktop installer: wrote {}", entry_path.display());
+
+    // Best-effort menu-cache refresh; harmless if the tool is missing.
+    let _ = std::process::Command::new("update-desktop-database")
+        .arg(&apps_dir)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    Ok(Some(entry_path))
+}
+
+/// Remove sibling `sto-cla-*.desktop` entries that point at the same binary as
+/// the current install (a different `install_id` from an old location). Entries
+/// targeting a *different* Exec (a genuinely parallel install) are left alone.
+#[cfg(target_os = "linux")]
+fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &str) {
+    let our_exec = our_exec.trim().trim_matches('"');
+    let prefix = format!("{APP_ID}-");
+    let Ok(entries) = std::fs::read_dir(apps_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name == our_name || !name.starts_with(&prefix) || !name.ends_with(".desktop") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("Exec=") {
+                if rest.trim().trim_matches('"') == our_exec {
+                    if std::fs::remove_file(entry.path()).is_ok() {
+                        log::info!("desktop installer: removed stale entry {name}");
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn uninstall_impl() -> std::io::Result<()> {
+    let Some(data_home) = data_home() else {
+        return Ok(());
+    };
+    let apps_dir = data_home.join("applications");
+    let entry_path = apps_dir.join(format!("{APP_ID}-{}.desktop", install_id()));
+    if entry_path.is_file() {
+        std::fs::remove_file(&entry_path)?;
+        log::info!("desktop uninstaller: removed {}", entry_path.display());
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- Windows
+
+#[cfg(target_os = "windows")]
+fn start_menu_link() -> std::io::Result<PathBuf> {
+    use std::io::{Error, ErrorKind};
+    let appdata = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .ok_or_else(|| Error::new(ErrorKind::NotFound, "no APPDATA"))?;
+    Ok(appdata
+        .join(r"Microsoft\Windows\Start Menu\Programs")
+        .join(format!("{APP_NAME}.lnk")))
+}
+
+#[cfg(target_os = "windows")]
+fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
+    use std::io::{Error, ErrorKind};
+
+    let exec_path = std::env::current_exe()?;
+    let link_path = start_menu_link()?;
+    if link_path.is_file() && !force {
+        return Ok(Some(link_path));
+    }
+    if let Some(dir) = link_path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let shortcut = mslnk::ShellLink::new(&exec_path)
+        .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+    shortcut
+        .create_lnk(&link_path)
+        .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+    log::info!("desktop installer: wrote {}", link_path.display());
+    Ok(Some(link_path))
+}
+
+#[cfg(target_os = "windows")]
+fn uninstall_impl() -> std::io::Result<()> {
+    let link_path = start_menu_link()?;
+    if link_path.is_file() {
+        std::fs::remove_file(&link_path)?;
+        log::info!("desktop uninstaller: removed {}", link_path.display());
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- macOS
+// UNTESTED — written by analogy to sto-warp's macos_app_bundle. Verify on real
+// hardware: icon should ideally be an .icns, and the bundle may need signing.
+
+#[cfg(target_os = "macos")]
+fn app_bundle_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join("Applications").join(format!("{APP_NAME}.app")))
+}
+
+#[cfg(target_os = "macos")]
+fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
+    use std::io::{Error, ErrorKind};
+    use std::os::unix::fs::PermissionsExt;
+
+    let exec_path = std::env::current_exe()?;
+    let app_dir =
+        app_bundle_path().ok_or_else(|| Error::new(ErrorKind::NotFound, "no home dir"))?;
+    if app_dir.is_dir() && !force {
+        return Ok(Some(app_dir));
+    }
+
+    let macos_dir = app_dir.join("Contents/MacOS");
+    let resources_dir = app_dir.join("Contents/Resources");
+    std::fs::create_dir_all(&macos_dir)?;
+    std::fs::create_dir_all(&resources_dir)?;
+
+    // Launcher shim that execs the real binary wherever it lives.
+    let launcher = macos_dir.join(APP_ID);
+    std::fs::write(
+        &launcher,
+        format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", exec_path.display()),
+    )?;
+    std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
+
+    std::fs::write(resources_dir.join("icon.png"), ICON_PNG)?;
+
+    let plist = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
+         \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+         <plist version=\"1.0\">\n<dict>\n\
+         \t<key>CFBundleName</key><string>{APP_NAME}</string>\n\
+         \t<key>CFBundleIdentifier</key><string>com.github.stocla</string>\n\
+         \t<key>CFBundleExecutable</key><string>{APP_ID}</string>\n\
+         \t<key>CFBundleIconFile</key><string>icon.png</string>\n\
+         \t<key>CFBundlePackageType</key><string>APPL</string>\n\
+         </dict>\n</plist>\n"
+    );
+    std::fs::write(app_dir.join("Contents/Info.plist"), plist)?;
+    log::info!("desktop installer: wrote {}", app_dir.display());
+    Ok(Some(app_dir))
+}
+
+#[cfg(target_os = "macos")]
+fn uninstall_impl() -> std::io::Result<()> {
+    if let Some(app_dir) = app_bundle_path() {
+        if app_dir.is_dir() {
+            std::fs::remove_dir_all(&app_dir)?;
+            log::info!("desktop uninstaller: removed {}", app_dir.display());
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- other
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+fn install_impl(_force: bool) -> std::io::Result<Option<PathBuf>> {
+    Ok(None)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+fn uninstall_impl() -> std::io::Result<()> {
+    Ok(())
+}

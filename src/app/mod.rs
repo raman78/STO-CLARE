@@ -14,6 +14,7 @@ use self::{
 };
 
 mod analysis_handling;
+pub mod desktop_install;
 pub mod logging;
 mod main_tabs;
 mod overlay;
