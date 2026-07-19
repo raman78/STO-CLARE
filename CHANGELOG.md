@@ -6,6 +6,7 @@
 
 ### Fixes
 - fixed auto refresh stopping to work when changing the logs path
+- fixed the program crashing on Linux/Wayland when the overlay is switched on
 
 ## v1.4.0
 ### Major Changes
