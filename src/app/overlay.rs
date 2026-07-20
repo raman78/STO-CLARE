@@ -262,11 +262,17 @@ impl Overlay {
         #[cfg(target_os = "linux")]
         {
             if inner.layer.is_none() {
+                let position = inner
+                    .settings
+                    .general
+                    .overlay_position
+                    .map_or((0, 0), |[top, left]| (top, left));
                 let instance = inner
                     .overlay_instance
                     .get_or_insert_with(eframe::wgpu::Instance::default)
                     .clone();
-                inner.layer = Some(super::layer_overlay::LayerOverlay::spawn(instance));
+                inner.layer =
+                    Some(super::layer_overlay::LayerOverlay::spawn(instance, position));
             }
             inner.check_update(ui.ctx());
             let data = inner.to_overlay_data();
@@ -318,6 +324,17 @@ impl Overlay {
 
     pub fn settings_changed(&self, settings: &Settings) {
         self.0.lock().settings = settings.clone();
+    }
+
+    /// Current overlay position as the (top, left) anchor margin, for
+    /// persisting it; `None` when the layer overlay isn't running.
+    #[cfg(target_os = "linux")]
+    pub fn position(&self) -> Option<[i32; 2]> {
+        let inner = self.0.lock();
+        inner.layer.as_ref().map(|layer| {
+            let (top, left) = layer.position();
+            [top, left]
+        })
     }
 }
 

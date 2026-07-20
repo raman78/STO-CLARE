@@ -25,6 +25,10 @@ pub struct General {
     pub window_size: Option<[f32; 2]>,
     #[serde(default)]
     pub window_maximized: bool,
+    // Last overlay position as the (top, left) layer-shell anchor margin
+    // (Linux). Restored when the overlay is next shown. See app::overlay.
+    #[serde(default)]
+    pub overlay_position: Option<[i32; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -75,6 +75,11 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
         self.handle_analysis_infos();
         self.track_window_geometry(ui.ctx());
+        // Remember where the overlay was dragged (persisted on exit).
+        #[cfg(target_os = "linux")]
+        if let Some(position) = self.state.overlay.position() {
+            self.state.settings.general.overlay_position = Some(position);
+        }
         CentralPanel::default().show_inside(ui, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {

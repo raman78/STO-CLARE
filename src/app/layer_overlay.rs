@@ -10,6 +10,7 @@
 //! [`LayerOverlay::stop`]. The struct stops the thread on drop.
 
 use std::ptr::NonNull;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use egui_wgpu::wgpu;
@@ -73,6 +74,9 @@ enum Msg {
 pub struct LayerOverlay {
     tx: Sender<Msg>,
     join: Option<JoinHandle<()>>,
+    /// Current (top, left) anchor margin, updated by the thread as the user
+    /// drags, so the app can persist the position. See [`LayerOverlay::spawn`].
+    position: Arc<Mutex<(i32, i32)>>,
 }
 
 impl LayerOverlay {
@@ -82,17 +86,24 @@ impl LayerOverlay {
     /// eframe's main-window renderer calling into unloaded functions (segfault
     /// in `wait_for_fence`). The app keeps a clone alive, so the Vulkan library
     /// stays loaded even after this thread drops its own clone.
-    pub fn spawn(instance: wgpu::Instance) -> Self {
+    pub fn spawn(instance: wgpu::Instance, initial_position: (i32, i32)) -> Self {
         let (tx, rx) = channel::<Msg>();
+        let position = Arc::new(Mutex::new(initial_position));
+        let thread_position = Arc::clone(&position);
         let join = std::thread::Builder::new()
             .name("cla-layer-overlay".into())
             .spawn(move || {
-                if let Err(e) = run(rx, instance) {
+                if let Err(e) = run(rx, instance, thread_position) {
                     log::error!("layer overlay: {e}");
                 }
             })
             .ok();
-        Self { tx, join }
+        Self { tx, join, position }
+    }
+
+    /// Current (top, left) anchor margin, for persisting the overlay position.
+    pub fn position(&self) -> (i32, i32) {
+        *self.position.lock().unwrap()
     }
 
     pub fn update(&self, data: OverlayData) {
@@ -130,7 +141,11 @@ const MIN_H: u32 = 80;
 /// Linux input event code for the left mouse button (`BTN_LEFT`).
 const BTN_LEFT: u32 = 0x110;
 
-fn run(rx: Channel<Msg>, instance: wgpu::Instance) -> Result<(), Box<dyn std::error::Error>> {
+fn run(
+    rx: Channel<Msg>,
+    instance: wgpu::Instance,
+    position: Arc<Mutex<(i32, i32)>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
     let (globals, event_queue) = registry_queue_init(&conn)?;
     let qh = event_queue.handle();
@@ -139,10 +154,13 @@ fn run(rx: Channel<Msg>, instance: wgpu::Instance) -> Result<(), Box<dyn std::er
     let layer_shell = LayerShell::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
 
+    // Restore the saved (top, left) offset from the TOP|LEFT anchor.
+    let margin = *position.lock().unwrap();
     let surface = compositor.create_surface(&qh);
     let layer =
         layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("sto-cla-overlay"), None);
     layer.set_anchor(Anchor::TOP | Anchor::LEFT);
+    layer.set_margin(margin.0, 0, 0, margin.1);
     layer.set_size(MIN_W * 2, MIN_H * 2);
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
     layer.commit();
@@ -167,7 +185,8 @@ fn run(rx: Channel<Msg>, instance: wgpu::Instance) -> Result<(), Box<dyn std::er
         dragging: false,
         pointer_pos: (0.0, 0.0),
         grab: (0.0, 0.0),
-        margin: (0, 0),
+        margin,
+        position,
         visuals: None,
         style_dirty: false,
     };
@@ -255,6 +274,8 @@ struct State {
     pointer_pos: (f64, f64),
     grab: (f64, f64),
     margin: (i32, i32),
+    // Shared with the app handle so it can persist the dragged position.
+    position: Arc<Mutex<(i32, i32)>>,
     // Theme pushed from the main app to match the main window; applied to the
     // egui context on the next render when `style_dirty`.
     visuals: Option<egui::Visuals>,
@@ -284,6 +305,7 @@ impl State {
         self.margin.0 = (self.margin.0 + dt).max(0);
         self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
         self.layer.commit();
+        *self.position.lock().unwrap() = self.margin;
     }
 
     fn init_gpu(&mut self) {
@@ -625,7 +647,9 @@ mod tests {
     #[test]
     #[ignore = "requires a Wayland session"]
     fn spawn_render_stop() {
-        let mut overlay = LayerOverlay::spawn(wgpu::Instance::default());
+        let mut overlay = LayerOverlay::spawn(wgpu::Instance::default(), (100, 50));
+        // The saved position is exposed back for persistence.
+        assert_eq!(overlay.position(), (100, 50));
         overlay.update(OverlayData {
             columns: vec!["DPS".into()],
             rows: vec![OverlayRow {
@@ -650,7 +674,7 @@ mod tests {
         // how the app shares it (see LayerOverlay::spawn).
         let instance = wgpu::Instance::default();
         for _ in 0..3 {
-            let mut overlay = LayerOverlay::spawn(instance.clone());
+            let mut overlay = LayerOverlay::spawn(instance.clone(), (0, 0));
             overlay.update(OverlayData {
                 columns: vec!["DPS".into()],
                 rows: vec![OverlayRow {
