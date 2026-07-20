@@ -153,6 +153,9 @@ fn run(rx: Channel<Msg>) -> Result<(), Box<dyn std::error::Error>> {
             app.needs_redraw = false;
         }
     }
+    // Tear down the wgpu surface (and device) before the wl_surface /
+    // connection it was built from are dropped, to avoid a use-after-free.
+    app.gpu = None;
     Ok(())
 }
 
@@ -166,6 +169,11 @@ struct Gpu {
 }
 
 struct State {
+    // `gpu` holds a wgpu surface built from the raw `conn`/`layer` handles, so
+    // it MUST be dropped before them — struct fields drop in declaration order,
+    // so keep it first. Dropping the wl_surface first would leave wgpu tearing
+    // down a surface backed by a destroyed object (segfault on teardown).
+    gpu: Option<Gpu>,
     registry_state: RegistryState,
     output_state: OutputState,
     shm: Shm,
@@ -173,7 +181,6 @@ struct State {
     conn: Connection,
     width: u32,
     height: u32,
-    gpu: Option<Gpu>,
     data: OverlayData,
     needs_redraw: bool,
     stop: bool,
@@ -411,3 +418,26 @@ delegate_output!(State);
 delegate_shm!(State);
 delegate_layer!(State);
 delegate_registry!(State);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Exercises spawn -> render -> stop (the teardown path that segfaulted on
+    /// overlay close). Manual: needs a Wayland session and briefly shows the
+    /// overlay. Run with: `cargo test spawn_render_stop -- --ignored`.
+    #[test]
+    #[ignore = "requires a Wayland session"]
+    fn spawn_render_stop() {
+        let mut overlay = LayerOverlay::spawn();
+        overlay.update(OverlayData {
+            columns: vec!["DPS".into()],
+            rows: vec![OverlayRow {
+                name: "Test".into(),
+                values: vec!["123.4k".into()],
+            }],
+        });
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        overlay.stop(); // must return without crashing the process
+    }
+}
