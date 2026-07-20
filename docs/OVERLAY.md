@@ -1,0 +1,254 @@
+# Combat overlay
+
+## Purpose
+
+The overlay is the always-on-top DPS/metrics panel a player keeps in front of
+the game while fighting. It mirrors the newest combat and must float above a
+full-screen game window. This document covers how it is rendered, why there are
+two rendering back ends, and the invariants that keep the Wayland back end from
+crashing.
+
+Owned by `src/app/overlay.rs` (`Overlay`, the app-side controller) and
+`src/app/layer_overlay.rs` (`LayerOverlay`, the Linux/Wayland surface). Driven
+from the main tab UI via `Overlay::show()`.
+
+## Context
+
+The app is a single `eframe`/`egui` process (`src/app/mod.rs`). The main window
+runs on the main thread. The overlay needs to be a *separate* top-level surface
+that stays above the game.
+
+```
+                          main eframe/egui process
+   ┌───────────────────────────────────────────────────────────┐
+   │  App (main window)                                         │
+   │    └─ Overlay  ── Arc<Mutex<OverlayInner>>                 │
+   │          │                                                 │
+   │   platform split in Overlay::show()                        │
+   │          │                                                 │
+   │   ┌──────┴───────────────┐                                 │
+   │   │                      │                                 │
+   │  non-Linux            Linux                                │
+   │  eframe deferred      LayerOverlay ── calloop channel ───► │
+   │  viewport             (handle)                             │ 
+   └───────────────────────────────────────────────────────────┘
+                                                    │
+                              cla-layer-overlay thread (Linux only)
+                              wlr-layer-shell surface + wgpu + egui
+```
+
+## Why two back ends
+
+`Overlay::show()` (`src/app/overlay.rs:210`) branches on
+`#[cfg(target_os = "linux")]`.
+
+| Target | Back end | Mechanism |
+|---|---|---|
+| Windows / other | eframe **deferred viewport** | `show_viewport_deferred` (`overlay.rs:292`) with `.with_always_on_top()` |
+| Linux | **wlr-layer-shell** surface on its own thread | `src/app/layer_overlay.rs` |
+
+The split exists because on **Wayland** a normal top-level window (what an
+eframe viewport is, via `winit`) cannot force itself above a full-screen game:
+the always-on-top hint is advisory and compositors (KWin included) ignore it.
+The `wlr-layer-shell` protocol's `overlay` layer *is* honored, so on Linux the
+overlay is a layer surface instead of a viewport. The two back ends render the
+same content (see [Unified styling](#unified-styling)) but share no windowing
+code.
+
+The non-Linux path is unchanged legacy behavior and is not described further
+here; read `OverlayInner::show_overlay()` (`overlay.rs:315`) for it.
+
+## Invariants
+
+- **I1 — Drop order (Linux).** In `run()` the wgpu surface (`State.gpu`) is
+  built from raw handles of the `wl_surface`/`Connection`. It MUST be dropped
+  before them, or wgpu tears down a surface backed by a destroyed object and
+  the process segfaults. Enforced two ways: `gpu` is the first field of `State`
+  (fields drop in declaration order, `layer_overlay.rs:205`) and `run()`
+  explicitly sets `app.gpu = None` before returning (`layer_overlay.rs:192`).
+- **I2 — Non-zero surface size.** Wayland rejects a 0×0 geometry. The surface
+  never requests below `MIN_W`×`MIN_H` (240×80); the auto-size clamps to it.
+- **I3 — Passthrough by default.** Out of move mode the surface carries an
+  empty input region, so clicks reach the game underneath. See
+  [Move mode](#move-mode-and-input-passthrough).
+- **I4 — All overlay-thread data is `Send` + plain.** Only `OverlayData`
+  (`Vec<String>` columns + rows) crosses the channel; no `egui`/`Combat` types.
+
+## Data flow
+
+Combat data originates in the analyzer and reaches the overlay through an
+`AnalysisHandler` (a per-consumer subscription to refreshed combats). On Linux
+the formatted snapshot is then handed to the layer thread over a calloop
+channel.
+
+```
+ analyzer ─► AnalysisHandler ─► OverlayInner.poll_update()   (overlay.rs:409)
+                                     │  AnalysisInfo::Refreshed
+                                     ▼
+                                OverlayInner.perform_update() (overlay.rs:431)
+                                     │  build DisplayData (sorted rows,
+                                     │  formatted strings, enabled columns)
+                                     ▼
+   Linux only:  OverlayInner.to_overlay_data()  (overlay.rs:384)
+                                     │  OverlayData { columns, rows } (plain)
+                                     ▼
+                LayerOverlay.update(data)  ── Msg::Data ──► calloop channel
+                LayerOverlay.set_move(f)   ── Msg::Move ──►      │
+                                                                 ▼
+                                            cla-layer-overlay thread: State
+```
+
+`Overlay::show()` pumps this every frame while the overlay is visible and asks
+the main context to repaint every 500 ms (`overlay.rs:269`) so fresh data keeps
+flowing to the thread. `set_move` is sent every frame too; the thread ignores
+it unless the flag actually changed (`layer_overlay.rs`, `Msg::Move` handler).
+
+### Message contract
+
+`enum Msg` (`layer_overlay.rs`) is the only thing crossing the thread boundary:
+
+| Variant | Payload | Effect on the layer thread |
+|---|---|---|
+| `Data` | `OverlayData` | replace displayed rows, request redraw |
+| `Move` | `bool` | toggle move mode → swap input region |
+| `Stop` | — | leave the event loop, tear down (I1) |
+
+A closed channel (`ChannelEvent::Closed`) is treated as `Stop`.
+
+## Components
+
+| File / symbol | Responsibility | Called by |
+|---|---|---|
+| `overlay.rs` `Overlay` | app-side controller, platform split, UI buttons | main tab UI |
+| `overlay.rs` `OverlayInner` | polls analyzer, builds `DisplayData`, owns the `LayerOverlay` handle | `Overlay` |
+| `layer_overlay.rs` `LayerOverlay` | thread handle: `spawn`/`update`/`set_move`/`stop`; stops thread on `Drop` | `OverlayInner` |
+| `layer_overlay.rs` `run()` | thread body: Wayland globals, event loop, redraw loop | `spawn` |
+| `layer_overlay.rs` `State` | per-surface state: wgpu, egui, geometry, pointer/drag | delegated handlers |
+| `custom_widgets/table.rs` `Table` | shared table widget used by both back ends | both render paths |
+
+The `LayerOverlay` handle lives in `OverlayInner.layer`
+(`Option<LayerOverlay>`). It is created lazily on first visible frame
+(`overlay.rs:258`) and dropped when the overlay is hidden
+(`toggle_show()`, `overlay.rs:374`), which stops the thread.
+
+## Layer thread internals (Linux)
+
+`run()` (`layer_overlay.rs:121`) sets up a self-contained Wayland client using
+`smithay-client-toolkit` (SCTK):
+
+1. Connect, bind globals: `CompositorState`, `LayerShell`, `Shm`, `SeatState`.
+2. Create a surface, wrap it as an `overlay`-layer `LayerSurface` anchored
+   `TOP | LEFT`, keyboard interactivity `None`.
+3. Set the initial (empty) input region via `apply_input_region()` (I3).
+4. Build a calloop `EventLoop`, feed it the Wayland source and the `Msg`
+   channel receiver.
+5. Loop: `dispatch(16 ms)` then `render()` when `needs_redraw`; exit on `stop`.
+6. On exit, drop `gpu` explicitly (I1).
+
+### wgpu surface from raw handles
+
+egui needs a wgpu surface, but SCTK owns the `wl_surface`. `State::init_gpu()`
+(`layer_overlay.rs:260`) bridges them: it reads the `wl_display` pointer from
+the connection backend and the `wl_surface` pointer from the layer, wraps them
+as `raw-window-handle` `Wayland*Handle`s, and calls
+`Instance::create_surface_unsafe`. This is the coupling that makes I1 mandatory.
+
+```rust
+// src/app/layer_overlay.rs  (init_gpu, elided)
+let display_ptr = NonNull::new(self.conn.backend().display_ptr() as *mut _)...;
+let surface_ptr = NonNull::new(self.layer.wl_surface().id().as_ptr() as *mut _)...;
+let raw_display = RawDisplayHandle::Wayland(WaylandDisplayHandle::new(display_ptr));
+let raw_window  = RawWindowHandle::Wayland(WaylandWindowHandle::new(surface_ptr));
+// instance.create_surface_unsafe(RawHandle { raw_display, raw_window })
+```
+
+### Render loop and auto-size
+
+`State::render()` (`layer_overlay.rs:323`) runs egui headless
+(`egui::Context::run` with a manual `RawInput` screen rect), tessellates, and
+submits via `egui_wgpu::Renderer`. `pixels_per_point` is fixed at `1.0`.
+
+The surface sizes itself to its content: the `Table` returns its rect, and the
+required size (plus margins) is clamped to `MIN_W`×`MIN_H` (I2). When it differs
+from the current size, `render()` calls `layer.set_size()` + `commit()` and
+requests another redraw. Because the `Table` measures column widths over a few
+frames, `render()` also forces a redraw while
+`egui_ctx.has_requested_repaint()` is true, so the size settles.
+
+### Failure modes
+
+| Symptom | Cause | Where to look |
+|---|---|---|
+| Segfault when hiding/closing the overlay | I1 violated (surface dropped before wgpu) | field order in `State`, `app.gpu = None` in `run()` |
+| `layer overlay: ...` logged, no overlay | Wayland connect/bind failed (not a Wayland session, no layer-shell) | `run()` return path, `spawn()` error log |
+| Overlay eats clicks meant for the game | input region left non-empty (I3) | `apply_input_region()`, move-mode plumbing |
+| Overlay stuck at 240×80 or oversized | auto-size not converging | `render()` size block, `Table::size()` |
+
+## Move mode and input passthrough
+
+`LayerSurface` cannot be dragged like an xdg-toplevel, so movement is
+implemented with the input region + surface margins.
+
+- **Input region** (`apply_input_region()`, `layer_overlay.rs:239`): in move
+  mode the whole surface takes pointer input (`set_input_region(None)`); out of
+  move mode an empty `Region` is attached so clicks fall through (I3).
+- **Pointer** is obtained through `SeatHandler` when a seat advertises the
+  pointer capability; `PointerHandler::pointer_frame`
+  (`layer_overlay.rs:539`) tracks position and left-button drag.
+- **Drag** (`drag_to()`, `layer_overlay.rs:251`): on left-button press the
+  surface-local pointer position becomes the `grab` point. Each motion adjusts
+  the `(top, left)` margin by `pointer - grab`, then `set_margin` + `commit`.
+
+Why margins from a fixed anchor rather than absolute placement: layer surfaces
+have no client-set absolute position; the offset from an anchor is the only
+positioning lever. The grab point stays valid across the move because after the
+commit the surface origin has shifted by the same delta, so the next
+surface-local pointer coordinate re-references to the original `grab` — the
+margins self-correct rather than drift.
+
+`move_mode` is driven entirely by the app: the ✋ button toggles
+`OverlayInner.move_around`, which is pushed via `set_move()` each frame. It
+starts `true` so a freshly shown overlay can be positioned before being locked
+down.
+
+## Unified styling
+
+Both back ends render with the same `Table` widget
+(`src/custom_widgets/table.rs`) rather than duplicating layout. The layer
+thread uses it inside its headless egui context exactly as the viewport path
+does (`Table::new(ui).header(...).body(...)`), which is possible because
+`eframe` re-exports the same `egui` crate the layer thread depends on directly
+(a single `egui 0.34` in the lockfile). The header/body row heights (15/25) and
+right-aligned value cells match the viewport overlay, so the two look
+identical.
+
+## Testing
+
+`layer_overlay.rs` has one `#[ignore]` integration test, `spawn_render_stop`,
+that spawns the overlay, pushes a row, toggles move mode both ways, and stops —
+exercising the I1 teardown path and the input-region swap. It needs a real
+Wayland session and briefly shows the overlay:
+
+```
+cargo test spawn_render_stop -- --ignored
+```
+
+## Decisions and trade-offs
+
+- **Separate thread for the layer surface.** The layer surface runs its own
+  Wayland connection and calloop loop instead of sharing the main `winit`
+  event loop. Reason: eframe/winit does not expose layer-shell, and driving a
+  second Wayland client on the main loop would entangle it with eframe's. Cost:
+  a thread and the `Msg` channel; benefit: the two back ends stay fully
+  decoupled and the main loop is untouched.
+- **Plain `OverlayData` over the channel (I4).** Formatting and sorting happen
+  on the main side (`perform_update`), so the layer thread only lays out
+  strings. Keeps `egui`/`Combat`/`Settings` off the thread boundary.
+- **Margins for movement, not absolute coordinates.** Forced by the protocol;
+  see [Move mode](#move-mode-and-input-passthrough).
+
+## Open questions
+
+1. Multi-output placement — the surface is not pinned to a chosen monitor; the
+   compositor picks the output. Needs an output-selection story if users run
+   multiple monitors. Not blocking current single-overlay use.
