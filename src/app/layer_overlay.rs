@@ -65,6 +65,7 @@ pub struct OverlayRow {
 enum Msg {
     Data(OverlayData),
     Move(bool),
+    Style(egui::Visuals),
     Stop,
 }
 
@@ -102,6 +103,11 @@ impl LayerOverlay {
     /// dragged. When disabled, clicks pass through to the game underneath.
     pub fn set_move(&self, move_mode: bool) {
         let _ = self.tx.send(Msg::Move(move_mode));
+    }
+
+    /// Match the overlay's colors to the main window by pushing its egui theme.
+    pub fn set_style(&self, visuals: egui::Visuals) {
+        let _ = self.tx.send(Msg::Style(visuals));
     }
 
     pub fn stop(&mut self) {
@@ -162,6 +168,8 @@ fn run(rx: Channel<Msg>, instance: wgpu::Instance) -> Result<(), Box<dyn std::er
         pointer_pos: (0.0, 0.0),
         grab: (0.0, 0.0),
         margin: (0, 0),
+        visuals: None,
+        style_dirty: false,
     };
     // Start passive: clicks pass through to the game until "move" mode is on.
     app.apply_input_region();
@@ -181,6 +189,13 @@ fn run(rx: Channel<Msg>, instance: wgpu::Instance) -> Result<(), Box<dyn std::er
                     app.dragging = false;
                     app.apply_input_region();
                 }
+            }
+            ChannelEvent::Msg(Msg::Style(visuals)) => {
+                if app.visuals.is_none() {
+                    app.needs_redraw = true; // first theme: draw with it right away
+                }
+                app.visuals = Some(visuals);
+                app.style_dirty = true;
             }
             ChannelEvent::Msg(Msg::Stop) => app.stop = true,
             ChannelEvent::Closed => app.stop = true,
@@ -240,6 +255,10 @@ struct State {
     pointer_pos: (f64, f64),
     grab: (f64, f64),
     margin: (i32, i32),
+    // Theme pushed from the main app to match the main window; applied to the
+    // egui context on the next render when `style_dirty`.
+    visuals: Option<egui::Visuals>,
+    style_dirty: bool,
 }
 
 impl State {
@@ -336,7 +355,13 @@ impl State {
         }
         let (w, h) = (self.width.max(1), self.height.max(1));
         let data = self.data.clone();
+        // Adopt the main window's theme (colors, fills) pushed via set_style.
+        let new_visuals = self.style_dirty.then(|| self.visuals.clone()).flatten();
+        self.style_dirty = false;
         let gpu = self.gpu.as_mut().unwrap();
+        if let Some(visuals) = new_visuals {
+            gpu.egui_ctx.set_visuals(visuals);
+        }
         if gpu.config.width != w || gpu.config.height != h {
             gpu.config.width = w;
             gpu.config.height = h;

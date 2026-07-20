@@ -271,9 +271,11 @@ impl Overlay {
             inner.check_update(ui.ctx());
             let data = inner.to_overlay_data();
             let move_around = inner.move_around;
+            let visuals = ui.style().visuals.clone();
             if let Some(layer) = &inner.layer {
                 layer.update(data);
                 layer.set_move(move_around);
+                layer.set_style(visuals);
             }
             // Keep the main app repainting so we keep feeding the overlay.
             ui.ctx()
