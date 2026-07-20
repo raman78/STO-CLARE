@@ -17,11 +17,16 @@ use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
+    compositor::{CompositorHandler, CompositorState, Region},
+    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
+    delegate_seat, delegate_shm,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
+    seat::{
+        pointer::{PointerEvent, PointerEventKind, PointerHandler},
+        Capability, SeatHandler, SeatState,
+    },
     shell::{
         wlr_layer::{
             Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
@@ -38,9 +43,11 @@ use smithay_client_toolkit::reexports::calloop::{
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::{
     globals::registry_queue_init,
-    protocol::{wl_output, wl_surface},
+    protocol::{wl_output, wl_pointer, wl_seat, wl_surface},
     Connection, Proxy, QueueHandle,
 };
+
+use crate::custom_widgets::table::Table;
 
 /// Snapshot of what the overlay should display. Plain, `Send` data.
 #[derive(Clone, Default)]
@@ -57,6 +64,7 @@ pub struct OverlayRow {
 
 enum Msg {
     Data(OverlayData),
+    Move(bool),
     Stop,
 }
 
@@ -84,6 +92,12 @@ impl LayerOverlay {
         let _ = self.tx.send(Msg::Data(data));
     }
 
+    /// Enable "move" mode: the surface catches pointer input so it can be
+    /// dragged. When disabled, clicks pass through to the game underneath.
+    pub fn set_move(&self, move_mode: bool) {
+        let _ = self.tx.send(Msg::Move(move_mode));
+    }
+
     pub fn stop(&mut self) {
         let _ = self.tx.send(Msg::Stop);
         if let Some(join) = self.join.take() {
@@ -100,6 +114,9 @@ impl Drop for LayerOverlay {
 
 const MIN_W: u32 = 240;
 const MIN_H: u32 = 80;
+
+/// Linux input event code for the left mouse button (`BTN_LEFT`).
+const BTN_LEFT: u32 = 0x110;
 
 fn run(rx: Channel<Msg>) -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
@@ -121,7 +138,9 @@ fn run(rx: Channel<Msg>) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = State {
         registry_state: RegistryState::new(&globals),
         output_state: OutputState::new(&globals, &qh),
+        seat_state: SeatState::new(&globals, &qh),
         shm,
+        compositor,
         layer,
         conn: conn.clone(),
         width: MIN_W * 2,
@@ -130,7 +149,15 @@ fn run(rx: Channel<Msg>) -> Result<(), Box<dyn std::error::Error>> {
         data: OverlayData::default(),
         needs_redraw: true,
         stop: false,
+        pointer: None,
+        move_mode: false,
+        dragging: false,
+        pointer_pos: (0.0, 0.0),
+        grab: (0.0, 0.0),
+        margin: (0, 0),
     };
+    // Start passive: clicks pass through to the game until "move" mode is on.
+    app.apply_input_region();
 
     let mut event_loop: EventLoop<State> = EventLoop::try_new()?;
     let handle = event_loop.handle();
@@ -140,6 +167,13 @@ fn run(rx: Channel<Msg>) -> Result<(), Box<dyn std::error::Error>> {
             ChannelEvent::Msg(Msg::Data(data)) => {
                 app.data = data;
                 app.needs_redraw = true;
+            }
+            ChannelEvent::Msg(Msg::Move(move_mode)) => {
+                if move_mode != app.move_mode {
+                    app.move_mode = move_mode;
+                    app.dragging = false;
+                    app.apply_input_region();
+                }
             }
             ChannelEvent::Msg(Msg::Stop) => app.stop = true,
             ChannelEvent::Closed => app.stop = true,
@@ -176,7 +210,9 @@ struct State {
     gpu: Option<Gpu>,
     registry_state: RegistryState,
     output_state: OutputState,
+    seat_state: SeatState,
     shm: Shm,
+    compositor: CompositorState,
     layer: LayerSurface,
     conn: Connection,
     width: u32,
@@ -184,9 +220,43 @@ struct State {
     data: OverlayData,
     needs_redraw: bool,
     stop: bool,
+    // "Move" mode: when on, the surface catches pointer input and a left-button
+    // drag repositions it; when off, an empty input region lets clicks fall
+    // through to the game. `margin` is the (top, left) offset from the TOP|LEFT
+    // anchor; `grab` is the surface-local point grabbed at drag start.
+    pointer: Option<wl_pointer::WlPointer>,
+    move_mode: bool,
+    dragging: bool,
+    pointer_pos: (f64, f64),
+    grab: (f64, f64),
+    margin: (i32, i32),
 }
 
 impl State {
+    /// Match the surface's input region to `move_mode`: the whole surface while
+    /// moving (so it receives the drag), an empty region otherwise (clicks fall
+    /// through to the game underneath).
+    fn apply_input_region(&self) {
+        let surface = self.layer.wl_surface();
+        if self.move_mode {
+            surface.set_input_region(None);
+        } else if let Ok(region) = Region::new(&self.compositor) {
+            surface.set_input_region(Some(region.wl_region()));
+        }
+        surface.commit();
+    }
+
+    /// Reposition the surface so the grabbed point follows the pointer. The
+    /// margins re-reference against the moved surface, so `grab` stays constant.
+    fn drag_to(&mut self, pos: (f64, f64)) {
+        let dl = (pos.0 - self.grab.0).round() as i32;
+        let dt = (pos.1 - self.grab.1).round() as i32;
+        self.margin.1 = (self.margin.1 + dl).max(0);
+        self.margin.0 = (self.margin.0 + dt).max(0);
+        self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
+        self.layer.commit();
+    }
+
     fn init_gpu(&mut self) {
         let instance = wgpu::Instance::default();
 
@@ -271,30 +341,57 @@ impl State {
             )),
             ..Default::default()
         };
+        // Rendered with the same custom `Table` as the desktop overlay so both
+        // paths look identical; the table's own size drives the surface size.
+        let mut required = egui::Vec2::ZERO;
         let full = gpu.egui_ctx.run(raw_input, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                egui::Grid::new("overlay").striped(true).show(ui, |ui| {
-                    ui.label("Player");
-                    for c in &data.columns {
-                        ui.label(c);
-                    }
-                    ui.end_row();
-                    for row in &data.rows {
-                        ui.label(&row.name);
-                        for v in &row.values {
-                            ui.label(v);
+                let table_rect = Table::new(ui)
+                    .min_scroll_height(f32::MAX)
+                    .header(15.0, |h| {
+                        h.cell(|ui| {
+                            ui.label("Player");
+                        });
+                        for c in &data.columns {
+                            h.cell(|ui| {
+                                ui.label(c);
+                            });
                         }
-                        ui.end_row();
-                    }
-                });
+                    })
+                    .body(25.0, |t| {
+                        for row in &data.rows {
+                            t.row(|r| {
+                                r.cell(|ui| {
+                                    ui.label(&row.name);
+                                });
+                                for v in &row.values {
+                                    r.cell_with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            ui.label(v);
+                                        },
+                                    );
+                                }
+                            });
+                        }
+                    });
+                required = table_rect.size()
+                    + ui.spacing().window_margin.left_top()
+                    + ui.spacing().window_margin.right_bottom()
+                    + ui.spacing().item_spacing;
             });
         });
 
+        // The table measures column widths over a couple of frames; keep
+        // redrawing until they settle.
+        if gpu.egui_ctx.has_requested_repaint() {
+            self.needs_redraw = true;
+        }
+
         // Auto-size the layer surface to the content on the next commit.
-        let used = gpu.egui_ctx.used_size();
         let desired = (
-            (used.x.ceil() as u32).max(MIN_W),
-            (used.y.ceil() as u32).max(MIN_H),
+            (required.x.ceil() as u32).max(MIN_W),
+            (required.y.ceil() as u32).max(MIN_H),
         );
         if desired != (self.width, self.height) {
             self.width = desired.0;
@@ -406,15 +503,79 @@ impl ShmHandler for State {
     }
 }
 
+impl SeatHandler for State {
+    fn seat_state(&mut self) -> &mut SeatState {
+        &mut self.seat_state
+    }
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+    fn new_capability(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: wl_seat::WlSeat,
+        capability: Capability,
+    ) {
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            self.pointer = self.seat_state.get_pointer(qh, &seat).ok();
+        }
+    }
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: wl_seat::WlSeat,
+        capability: Capability,
+    ) {
+        if capability == Capability::Pointer {
+            if let Some(pointer) = self.pointer.take() {
+                pointer.release();
+            }
+        }
+    }
+    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+}
+
+impl PointerHandler for State {
+    fn pointer_frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
+        for event in events {
+            match event.kind {
+                PointerEventKind::Enter { .. } => self.pointer_pos = event.position,
+                PointerEventKind::Motion { .. } => {
+                    self.pointer_pos = event.position;
+                    if self.dragging {
+                        self.drag_to(event.position);
+                    }
+                }
+                PointerEventKind::Press { button, .. } if self.move_mode && button == BTN_LEFT => {
+                    self.dragging = true;
+                    self.grab = self.pointer_pos;
+                }
+                PointerEventKind::Release { button, .. } if button == BTN_LEFT => {
+                    self.dragging = false;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 impl ProvidesRegistryState for State {
     fn registry(&mut self) -> &mut RegistryState {
         &mut self.registry_state
     }
-    registry_handlers![OutputState];
+    registry_handlers![OutputState, SeatState];
 }
 
 delegate_compositor!(State);
 delegate_output!(State);
+delegate_seat!(State);
+delegate_pointer!(State);
 delegate_shm!(State);
 delegate_layer!(State);
 delegate_registry!(State);
@@ -437,7 +598,11 @@ mod tests {
                 values: vec!["123.4k".into()],
             }],
         });
-        std::thread::sleep(std::time::Duration::from_millis(800));
+        // Toggle "move" mode both ways to exercise the input-region path.
+        overlay.set_move(true);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        overlay.set_move(false);
+        std::thread::sleep(std::time::Duration::from_millis(400));
         overlay.stop(); // must return without crashing the process
     }
 }
