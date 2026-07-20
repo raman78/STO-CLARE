@@ -39,10 +39,10 @@ pub struct App {
     upload: Upload,
     records: Records,
     state: AppState,
-    // Throttled persistence of the window size while resizing (see
-    // track_window_geometry).
+    // Deferred persistence of the window size: written once resizing settles
+    // (see track_window_geometry).
     window_geometry_dirty: bool,
-    last_geometry_save: f64,
+    last_geometry_change: f64,
 }
 
 /// Window geometry to restore at startup: last size (points) and whether the
@@ -72,7 +72,7 @@ impl App {
             records: Default::default(),
             state,
             window_geometry_dirty: false,
-            last_geometry_save: f64::NEG_INFINITY,
+            last_geometry_change: 0.0,
         }
     }
 }
@@ -195,12 +195,12 @@ impl eframe::App for App {
 
 impl App {
     /// Remembers the main window's size and maximized state so the next launch
-    /// restores them (see main.rs). The size comes from `screen_rect` because
-    /// on Wayland the OS-reported `inner_rect` is `None`. To avoid rewriting the
-    /// settings file every frame while dragging the edge, saves are throttled to
-    /// ~2/s; a follow-up repaint is scheduled so the settled value is flushed
-    /// even though the app doesn't repaint continuously.
+    /// restores them (see main.rs). The size comes from the egui viewport rect
+    /// because on Wayland the OS-reported `inner_rect` is `None`. The settings
+    /// file is written only once the size has settled (no change for a moment),
+    /// never while the edge is being dragged, so resizing stays smooth.
     fn track_window_geometry(&mut self, ctx: &eframe::egui::Context) {
+        let now = ctx.input(|i| i.time);
         let maximized = ctx.input(|i| i.viewport().maximized);
         let size = ctx.viewport_rect().size();
 
@@ -211,23 +211,25 @@ impl App {
             if self.state.settings.general.window_size != Some(size) {
                 self.state.settings.general.window_size = Some(size);
                 self.window_geometry_dirty = true;
+                self.last_geometry_change = now;
             }
         }
         if let Some(maximized) = maximized {
             if self.state.settings.general.window_maximized != maximized {
                 self.state.settings.general.window_maximized = maximized;
                 self.window_geometry_dirty = true;
+                self.last_geometry_change = now;
             }
         }
 
         if self.window_geometry_dirty {
-            let now = ctx.input(|i| i.time);
-            if now - self.last_geometry_save >= 0.5 {
+            if now - self.last_geometry_change >= 0.4 {
+                // Settled: one write, off the resize hot path.
                 self.state.settings.save();
-                self.last_geometry_save = now;
                 self.window_geometry_dirty = false;
             } else {
-                ctx.request_repaint_after(std::time::Duration::from_millis(500));
+                // Re-check once it has had time to settle.
+                ctx.request_repaint_after(std::time::Duration::from_millis(200));
             }
         }
     }
