@@ -223,13 +223,18 @@ impl App {
         }
 
         if self.window_geometry_dirty {
-            if now - self.last_geometry_change >= 0.4 {
-                // Settled: one write, off the resize hot path.
+            let idle = now - self.last_geometry_change;
+            if idle >= 2.0 {
+                // Settled for 2 s: write once, off the resize hot path.
                 self.state.settings.save();
                 self.window_geometry_dirty = false;
+            } else if idle < 0.5 {
+                // Actively resizing: keep redrawing every frame so the content
+                // tracks the window instead of lagging behind the drag.
+                ctx.request_repaint();
             } else {
-                // Re-check once it has had time to settle.
-                ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                // Idle but not yet settled: check again to flush the size.
+                ctx.request_repaint_after(std::time::Duration::from_millis(300));
             }
         }
     }

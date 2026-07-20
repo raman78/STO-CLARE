@@ -64,7 +64,7 @@ fn main() {
         viewport: ViewportBuilder::default()
             .with_app_id(app::desktop_install::APP_ID)
             .with_inner_size(saved_size.unwrap_or(vec2(1280.0, 720.0)))
-            .with_min_inner_size(vec2(480.0, 270.0))
+            .with_min_inner_size(vec2(800.0, 600.0))
             .with_maximized(maximized)
             .with_icon(icon_data()),
         ..Default::default()
