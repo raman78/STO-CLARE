@@ -31,6 +31,11 @@ struct OverlayInner {
     // full-screen games) instead of an eframe viewport; see layer_overlay.
     #[cfg(target_os = "linux")]
     layer: Option<super::layer_overlay::LayerOverlay>,
+    // App-lifetime wgpu instance for the layer overlay. Created once and reused
+    // across show/hide: destroying it would unload Vulkan under eframe's own
+    // renderer and crash the app (see layer_overlay::LayerOverlay::spawn).
+    #[cfg(target_os = "linux")]
+    overlay_instance: Option<eframe::wgpu::Instance>,
 }
 
 #[derive(Default)]
@@ -204,6 +209,8 @@ impl Overlay {
             settings: settings.clone(),
             #[cfg(target_os = "linux")]
             layer: None,
+            #[cfg(target_os = "linux")]
+            overlay_instance: None,
         })))
     }
 
@@ -255,7 +262,11 @@ impl Overlay {
         #[cfg(target_os = "linux")]
         {
             if inner.layer.is_none() {
-                inner.layer = Some(super::layer_overlay::LayerOverlay::spawn());
+                let instance = inner
+                    .overlay_instance
+                    .get_or_insert_with(eframe::wgpu::Instance::default)
+                    .clone();
+                inner.layer = Some(super::layer_overlay::LayerOverlay::spawn(instance));
             }
             inner.check_update(ui.ctx());
             let data = inner.to_overlay_data();

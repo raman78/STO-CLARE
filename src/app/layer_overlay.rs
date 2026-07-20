@@ -75,12 +75,18 @@ pub struct LayerOverlay {
 }
 
 impl LayerOverlay {
-    pub fn spawn() -> Self {
+    /// The `wgpu::Instance` is created and owned by the app (not by this
+    /// thread): it must outlive every overlay show/hide cycle. A per-thread
+    /// instance would tear down the Vulkan library on overlay close and leave
+    /// eframe's main-window renderer calling into unloaded functions (segfault
+    /// in `wait_for_fence`). The app keeps a clone alive, so the Vulkan library
+    /// stays loaded even after this thread drops its own clone.
+    pub fn spawn(instance: wgpu::Instance) -> Self {
         let (tx, rx) = channel::<Msg>();
         let join = std::thread::Builder::new()
             .name("cla-layer-overlay".into())
             .spawn(move || {
-                if let Err(e) = run(rx) {
+                if let Err(e) = run(rx, instance) {
                     log::error!("layer overlay: {e}");
                 }
             })
@@ -118,7 +124,7 @@ const MIN_H: u32 = 80;
 /// Linux input event code for the left mouse button (`BTN_LEFT`).
 const BTN_LEFT: u32 = 0x110;
 
-fn run(rx: Channel<Msg>) -> Result<(), Box<dyn std::error::Error>> {
+fn run(rx: Channel<Msg>, instance: wgpu::Instance) -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
     let (globals, event_queue) = registry_queue_init(&conn)?;
     let qh = event_queue.handle();
@@ -143,6 +149,7 @@ fn run(rx: Channel<Msg>) -> Result<(), Box<dyn std::error::Error>> {
         compositor,
         layer,
         conn: conn.clone(),
+        instance,
         width: MIN_W * 2,
         height: MIN_H * 2,
         gpu: None,
@@ -215,6 +222,9 @@ struct State {
     compositor: CompositorState,
     layer: LayerSurface,
     conn: Connection,
+    // App-owned wgpu instance shared across overlay show/hide cycles; see
+    // LayerOverlay::spawn for why it must not be created per-thread.
+    instance: wgpu::Instance,
     width: u32,
     height: u32,
     data: OverlayData,
@@ -258,7 +268,7 @@ impl State {
     }
 
     fn init_gpu(&mut self) {
-        let instance = wgpu::Instance::default();
+        let instance = &self.instance;
 
         let display_ptr =
             NonNull::new(self.conn.backend().display_ptr() as *mut _).expect("null wl_display");
@@ -590,7 +600,7 @@ mod tests {
     #[test]
     #[ignore = "requires a Wayland session"]
     fn spawn_render_stop() {
-        let mut overlay = LayerOverlay::spawn();
+        let mut overlay = LayerOverlay::spawn(wgpu::Instance::default());
         overlay.update(OverlayData {
             columns: vec!["DPS".into()],
             rows: vec![OverlayRow {
@@ -604,5 +614,27 @@ mod tests {
         overlay.set_move(false);
         std::thread::sleep(std::time::Duration::from_millis(400));
         overlay.stop(); // must return without crashing the process
+    }
+
+    /// Reproduces toggling the overlay off and on again (drop -> re-spawn),
+    /// which crashed the app when it had been shown during a game.
+    #[test]
+    #[ignore = "requires a Wayland session"]
+    fn spawn_stop_respawn() {
+        // A single app-owned instance kept alive across every cycle, matching
+        // how the app shares it (see LayerOverlay::spawn).
+        let instance = wgpu::Instance::default();
+        for _ in 0..3 {
+            let mut overlay = LayerOverlay::spawn(instance.clone());
+            overlay.update(OverlayData {
+                columns: vec!["DPS".into()],
+                rows: vec![OverlayRow {
+                    name: "Test".into(),
+                    values: vec!["123.4k".into()],
+                }],
+            });
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            overlay.stop();
+        }
     }
 }
