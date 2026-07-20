@@ -29,12 +29,19 @@ impl GeneralTab {
         ui.horizontal(|ui| {
             ui.label("Combatlog File");
             if ui.button("Browse").clicked() {
-                if let Some(new_combatlog_file) = FileDialog::new()
+                let mut dialog = FileDialog::new()
                     .set_title("Choose combatlog File")
                     .add_filter("combatlog", &["log"])
-                    .set_parent(frame)
-                    .pick_file()
+                    .set_parent(frame);
+                // Open at the folder of the currently configured log, so Browse
+                // starts where it last left off instead of the default dir.
+                if let Some(dir) = std::path::Path::new(&modified_settings.analysis.combatlog_file)
+                    .parent()
+                    .filter(|dir| dir.is_dir())
                 {
+                    dialog = dialog.set_directory(dir);
+                }
+                if let Some(new_combatlog_file) = dialog.pick_file() {
                     modified_settings.analysis.combatlog_file =
                         new_combatlog_file.display().to_string();
                 }
