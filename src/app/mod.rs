@@ -41,6 +41,14 @@ pub struct App {
     state: AppState,
 }
 
+/// Window geometry to restore at startup: last size (points) and whether the
+/// window was maximized. Read before the viewport is built (see main.rs).
+pub fn saved_window_geometry() -> (Option<Vec2>, bool) {
+    let settings = Settings::load_or_default();
+    let size = settings.general.window_size.map(|[w, h]| vec2(w, h));
+    (size, settings.general.window_maximized)
+}
+
 impl App {
     pub fn new(cc: &eframe::CreationContext) -> Self {
         cc.egui_ctx
@@ -66,6 +74,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
         self.handle_analysis_infos();
+        self.track_window_geometry(ui.ctx());
         CentralPanel::default().show_inside(ui, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
@@ -166,9 +175,44 @@ impl eframe::App for App {
     fn clear_color(&self, _visuals: &eframe::egui::Visuals) -> [f32; 4] {
         _visuals.window_fill().to_normalized_gamma_f32()
     }
+
+    fn on_exit(&mut self) {
+        // Persist the final window size on close (see track_window_geometry).
+        self.state.settings.save();
+    }
 }
 
 impl App {
+    /// Remembers the main window's size and maximized state so the next launch
+    /// restores them (see main.rs). The maximized flag is saved immediately (a
+    /// rare, discrete event); the size is only recorded in memory here and
+    /// flushed in on_exit, to avoid rewriting the settings file every frame
+    /// while the user drags the window edge.
+    fn track_window_geometry(&mut self, ctx: &eframe::egui::Context) {
+        let (size, maximized) = ctx.input(|i| {
+            let viewport = i.viewport();
+            (
+                viewport.inner_rect.map(|r| [r.width(), r.height()]),
+                viewport.maximized,
+            )
+        });
+
+        // Only remember the windowed size, so un-maximizing restores something
+        // sane rather than the full-screen size.
+        if maximized != Some(true) {
+            if let Some(size) = size {
+                self.state.settings.general.window_size = Some(size);
+            }
+        }
+
+        if let Some(maximized) = maximized {
+            if self.state.settings.general.window_maximized != maximized {
+                self.state.settings.general.window_maximized = maximized;
+                self.state.settings.save();
+            }
+        }
+    }
+
     fn handle_analysis_infos(&mut self) {
         let combatlog_file = &self.state.settings.analysis.combatlog_file;
         for info in self.state.analysis_handler.check_for_info() {

@@ -19,6 +19,12 @@ pub struct Settings {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct General {
     pub more_decimals: bool,
+    // Last main-window size (points, while not maximized) and maximized state,
+    // restored on the next launch. See App::ui / App::on_exit and main.rs.
+    #[serde(default)]
+    pub window_size: Option<[f32; 2]>,
+    #[serde(default)]
+    pub window_maximized: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
