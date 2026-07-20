@@ -21,6 +21,9 @@ use crate::{
     unwrap_or_return,
 };
 
+#[cfg(target_os = "linux")]
+use super::log_consolidation::Consolidator;
+
 pub struct AnalysisHandler {
     tx: Sender<Instruction>,
     rx: Receiver<AnalysisInfo>,
@@ -38,6 +41,10 @@ struct AnalysisContext {
     is_busy: Arc<AtomicBool>,
     auto_refresh_interval: Duration,
     auto_refresh: Option<AutoRefreshContext>,
+    // Merges STO's rotating logs into one file the analyzer reads (see
+    // set_analyzer); None when disabled or nothing to merge.
+    #[cfg(target_os = "linux")]
+    consolidator: Option<Consolidator>,
 }
 
 #[derive(Debug)]
@@ -210,14 +217,40 @@ impl AnalysisContext {
             instruction_rx,
             instruction_tx,
             handlers: vec![handler_ctx],
-            analyzer: Analyzer::new(settings),
+            analyzer: None,
             ctx,
             is_busy,
             auto_refresh_interval: AutoRefreshContext::interval(auto_refresh_interval_seconds),
             auto_refresh: None,
+            #[cfg(target_os = "linux")]
+            consolidator: None,
         };
+        _self.set_analyzer(settings);
         _self.update_auto_refresh();
         _self
+    }
+
+    /// Builds the analyzer for `settings`. On Linux with consolidation enabled,
+    /// merges the rotating logs into one combatlog.log and points the analyzer
+    /// at it; otherwise reads the configured file directly.
+    fn set_analyzer(&mut self, settings: AnalysisSettings) {
+        #[cfg(target_os = "linux")]
+        {
+            let dir = std::path::Path::new(&settings.combatlog_file)
+                .parent()
+                .filter(|dir| dir.is_dir());
+            if let (true, Some(dir)) = (settings.consolidate_combatlog, dir) {
+                let mut consolidator = Consolidator::new(dir);
+                consolidator.tick();
+                let mut effective = settings.clone();
+                effective.combatlog_file = consolidator.target().to_string_lossy().into_owned();
+                self.analyzer = Analyzer::new(effective);
+                self.consolidator = Some(consolidator);
+                return;
+            }
+            self.consolidator = None;
+        }
+        self.analyzer = Analyzer::new(settings);
     }
 
     fn run(&mut self) {
@@ -256,7 +289,7 @@ impl AnalysisContext {
                     }
                 }
                 Instruction::SetSettings(settings) => {
-                    self.analyzer = Analyzer::new(Arc::into_inner(settings).unwrap());
+                    self.set_analyzer(Arc::into_inner(settings).unwrap());
                     self.update_auto_refresh();
                 }
             }
@@ -282,6 +315,11 @@ impl AnalysisContext {
     }
 
     fn try_refresh(&mut self) -> AnalysisInfo {
+        // Pull any newly rotated logs into combatlog.log before reading it.
+        #[cfg(target_os = "linux")]
+        if let Some(consolidator) = self.consolidator.as_mut() {
+            consolidator.tick();
+        }
         let analyzer = match self.analyzer.as_mut() {
             Some(a) => a,
             None => return AnalysisInfo::RefreshError,
@@ -351,6 +389,25 @@ impl AnalysisContext {
         };
         let settings = analyzer.settings().clone();
 
+        // Under consolidation, clearing empties the consolidated combatlog.log
+        // and lets it rebuild from the active file (the recent combats); the
+        // per-combat "keep last" trick below would fight the re-mirroring.
+        #[cfg(target_os = "linux")]
+        if self.consolidator.is_some() {
+            self.analyzer = None;
+            if let Some(consolidator) = self.consolidator.as_mut() {
+                consolidator.reset();
+            }
+            let _ = File::options()
+                .write(true)
+                .truncate(true)
+                .create(false)
+                .open(settings.combatlog_file());
+            self.set_analyzer(settings);
+            self.refresh(false);
+            return;
+        }
+
         let last_combat = analyzer.result().last();
         let last_combat_data = last_combat
             .map(|c| c.read_log_combat_data(settings.combatlog_file()))
@@ -373,7 +430,7 @@ impl AnalysisContext {
         }
 
         drop(file);
-        self.analyzer = Analyzer::new(settings);
+        self.set_analyzer(settings);
         self.refresh(false);
     }
 

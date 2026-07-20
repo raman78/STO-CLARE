@@ -53,6 +53,17 @@ impl GeneralTab {
             .desired_width(f32::MAX)
             .show(ui);
 
+        #[cfg(target_os = "linux")]
+        ui.checkbox(
+            &mut modified_settings.analysis.consolidate_combatlog,
+            "Merge rotating combat logs into one file",
+        )
+        .on_hover_text(
+            "STO under Proton creates a new combat log file every so often. When enabled, CLA \
+             merges the completed logs into a single combatlog.log in the same folder (deleting \
+             the merged originals to save space) and reads that, so all combats stay in one place.",
+        );
+
         ui.separator();
 
         ui.label("Combat Separation Time in seconds");

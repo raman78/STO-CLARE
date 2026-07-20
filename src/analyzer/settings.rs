@@ -16,6 +16,14 @@ pub struct AnalysisSettings {
     #[serde(default)]
     pub damage_out_exclusion_rules: Vec<MatchRule>,
     pub combat_name_rules: Vec<CombatNameRule>,
+    // Linux: merge STO's rotating combatlog_<timestamp>.log files into one
+    // combatlog.log and read that (no-op elsewhere). See app::log_consolidation.
+    #[serde(default = "consolidate_combatlog_default")]
+    pub consolidate_combatlog: bool,
+}
+
+fn consolidate_combatlog_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -263,6 +271,7 @@ impl Default for AnalysisSettings {
             custom_group_rules: Default::default(),
             damage_out_exclusion_rules: Default::default(),
             combat_name_rules: Default::default(),
+            consolidate_combatlog: true,
         }
     }
 }
