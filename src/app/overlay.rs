@@ -5,9 +5,13 @@ use eframe::{egui::*, epaint::mutex::Mutex};
 use crate::{
     analyzer::{Combat, Player},
     app::settings::Settings,
-    custom_widgets::{popup_button::PopupButton, table::Table},
+    custom_widgets::table::Table,
     helpers::number_formatting::NumberFormatter,
 };
+// The column-config popup only lives in the main window on non-Linux; on Linux
+// it moved onto the layer-shell overlay's own toolbar.
+#[cfg(not(target_os = "linux"))]
+use crate::custom_widgets::popup_button::PopupButton;
 
 use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
 
@@ -22,6 +26,9 @@ struct OverlayInner {
     current_size: Vec2,
     data: DisplayData,
     show: bool,
+    // Only the non-Linux viewport path toggles this; on Linux the overlay owns
+    // its own move state.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     move_around: bool,
     columns: Vec<ColumnDescriptor>,
     analysis_handler: AnalysisHandler,
@@ -226,29 +233,35 @@ impl Overlay {
             inner.toggle_show();
         }
 
-        PopupButton::new("⛭").show(ui, |ui| {
-            ui.label("Configure what columns are displayed in the Overlay");
-            let mut config_changed = false;
-            for column in inner.columns.iter_mut() {
-                if ui.checkbox(&mut column.enabled, column.name).clicked() {
-                    config_changed = true;
+        // On non-Linux the overlay is a plain window, so its column config (⛭)
+        // and move toggle (✋) live in the main window. On Linux both live on
+        // the layer-shell overlay's own toolbar (see layer_overlay).
+        #[cfg(not(target_os = "linux"))]
+        {
+            PopupButton::new("⛭").show(ui, |ui| {
+                ui.label("Configure what columns are displayed in the Overlay");
+                let mut config_changed = false;
+                for column in inner.columns.iter_mut() {
+                    if ui.checkbox(&mut column.enabled, column.name).clicked() {
+                        config_changed = true;
+                    }
                 }
-            }
-            if config_changed {
-                inner.force_update(ui.ctx());
-            }
-        });
+                if config_changed {
+                    inner.force_update(ui.ctx());
+                }
+            });
 
-        ui.add_enabled_ui(inner.show, |ui: &mut Ui| {
-            if Button::new("✋")
-                .selected(inner.move_around)
-                .ui(ui)
-                .on_hover_text("Move the Overlay")
-                .clicked()
-            {
-                inner.move_around = !inner.move_around;
-            }
-        });
+            ui.add_enabled_ui(inner.show, |ui: &mut Ui| {
+                if Button::new("✋")
+                    .selected(inner.move_around)
+                    .ui(ui)
+                    .on_hover_text("Move the Overlay")
+                    .clicked()
+                {
+                    inner.move_around = !inner.move_around;
+                }
+            });
+        }
 
         inner.poll_update(ui.ctx());
         if !inner.show {
@@ -261,6 +274,27 @@ impl Overlay {
         // surface's own thread; there is no eframe viewport here.
         #[cfg(target_os = "linux")]
         {
+            // Apply column toggles raised by the overlay's own ⛭ popup.
+            let events = inner
+                .layer
+                .as_ref()
+                .map(|layer| layer.poll_events())
+                .unwrap_or_default();
+            let mut config_changed = false;
+            for event in events {
+                match event {
+                    super::layer_overlay::OverlayEvent::ToggleColumn(index) => {
+                        if let Some(column) = inner.columns.get_mut(index) {
+                            column.enabled = !column.enabled;
+                            config_changed = true;
+                        }
+                    }
+                }
+            }
+            if config_changed {
+                inner.force_update(ui.ctx());
+            }
+
             if inner.layer.is_none() {
                 let position = inner
                     .settings
@@ -276,16 +310,15 @@ impl Overlay {
             }
             inner.check_update(ui.ctx());
             let data = inner.to_overlay_data();
-            let move_around = inner.move_around;
             let visuals = ui.style().visuals.clone();
             if let Some(layer) = &inner.layer {
                 layer.update(data);
-                layer.set_move(move_around);
                 layer.set_style(visuals);
             }
-            // Keep the main app repainting so we keep feeding the overlay.
+            // Keep the main app repainting so we keep feeding the overlay and
+            // polling its toolbar events (column toggles) promptly.
             ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(500));
+                .request_repaint_after(std::time::Duration::from_millis(200));
             return;
         }
 
@@ -422,6 +455,13 @@ impl OverlayInner {
                     name: p.name.clone(),
                     values: p.columns.iter().map(|c| c.value_string.clone()).collect(),
                 })
+                .collect(),
+            // Full column list with enabled flags drives the overlay's ⛭ popup;
+            // its ToggleColumn(index) maps straight back into `self.columns`.
+            all_columns: self
+                .columns
+                .iter()
+                .map(|c| (c.name.to_string(), c.enabled))
                 .collect(),
         }
     }

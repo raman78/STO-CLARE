@@ -37,6 +37,10 @@ use smithay_client_toolkit::{
     },
     shm::{Shm, ShmHandler},
 };
+use smithay_client_toolkit::reexports::protocols::wp::relative_pointer::zv1::client::{
+    zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+    zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
+};
 use smithay_client_toolkit::reexports::calloop::{
     channel::{channel, Channel, Event as ChannelEvent, Sender},
     EventLoop,
@@ -45,8 +49,10 @@ use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::{
     globals::registry_queue_init,
     protocol::{wl_output, wl_pointer, wl_seat, wl_surface},
-    Connection, Proxy, QueueHandle,
+    Connection, Dispatch, Proxy, QueueHandle,
 };
+
+use crossbeam_channel::{unbounded, Receiver as EventRx, Sender as EventTx};
 
 use crate::custom_widgets::table::Table;
 
@@ -55,6 +61,10 @@ use crate::custom_widgets::table::Table;
 pub struct OverlayData {
     pub columns: Vec<String>,
     pub rows: Vec<OverlayRow>,
+    /// Every configurable column with its enabled flag, for the ⛭ popup on the
+    /// overlay. Order matches the app's column list so `ToggleColumn(i)` maps
+    /// straight back. See [`OverlayEvent`].
+    pub all_columns: Vec<(String, bool)>,
 }
 
 #[derive(Clone)]
@@ -63,9 +73,14 @@ pub struct OverlayRow {
     pub values: Vec<String>,
 }
 
+/// Sent from the overlay thread back to the app (the overlay owns its own
+/// toolbar now). The app applies these and recomputes the displayed data.
+pub enum OverlayEvent {
+    ToggleColumn(usize),
+}
+
 enum Msg {
     Data(OverlayData),
-    Move(bool),
     Style(egui::Visuals),
     Stop,
 }
@@ -77,6 +92,8 @@ pub struct LayerOverlay {
     /// Current (top, left) anchor margin, updated by the thread as the user
     /// drags, so the app can persist the position. See [`LayerOverlay::spawn`].
     position: Arc<Mutex<(i32, i32)>>,
+    /// Events raised by the overlay's own toolbar (e.g. column toggles).
+    events: EventRx<OverlayEvent>,
 }
 
 impl LayerOverlay {
@@ -88,17 +105,23 @@ impl LayerOverlay {
     /// stays loaded even after this thread drops its own clone.
     pub fn spawn(instance: wgpu::Instance, initial_position: (i32, i32)) -> Self {
         let (tx, rx) = channel::<Msg>();
+        let (events_tx, events) = unbounded::<OverlayEvent>();
         let position = Arc::new(Mutex::new(initial_position));
         let thread_position = Arc::clone(&position);
         let join = std::thread::Builder::new()
             .name("cla-layer-overlay".into())
             .spawn(move || {
-                if let Err(e) = run(rx, instance, thread_position) {
+                if let Err(e) = run(rx, instance, thread_position, events_tx) {
                     log::error!("layer overlay: {e}");
                 }
             })
             .ok();
-        Self { tx, join, position }
+        Self {
+            tx,
+            join,
+            position,
+            events,
+        }
     }
 
     /// Current (top, left) anchor margin, for persisting the overlay position.
@@ -106,14 +129,13 @@ impl LayerOverlay {
         *self.position.lock().unwrap()
     }
 
-    pub fn update(&self, data: OverlayData) {
-        let _ = self.tx.send(Msg::Data(data));
+    /// Drains events raised by the overlay's toolbar since the last call.
+    pub fn poll_events(&self) -> Vec<OverlayEvent> {
+        self.events.try_iter().collect()
     }
 
-    /// Enable "move" mode: the surface catches pointer input so it can be
-    /// dragged. When disabled, clicks pass through to the game underneath.
-    pub fn set_move(&self, move_mode: bool) {
-        let _ = self.tx.send(Msg::Move(move_mode));
+    pub fn update(&self, data: OverlayData) {
+        let _ = self.tx.send(Msg::Data(data));
     }
 
     /// Match the overlay's colors to the main window by pushing its egui theme.
@@ -145,6 +167,7 @@ fn run(
     rx: Channel<Msg>,
     instance: wgpu::Instance,
     position: Arc<Mutex<(i32, i32)>>,
+    events_tx: EventTx<OverlayEvent>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
     let (globals, event_queue) = registry_queue_init(&conn)?;
@@ -163,6 +186,10 @@ fn run(
     layer.set_margin(margin.0, 0, 0, margin.1);
     layer.set_size(MIN_W * 2, MIN_H * 2);
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+    // Ignore other surfaces' exclusive zones and reserve none of our own, so
+    // dragging only moves us (the exclusive zone includes the margin, and an
+    // auto/default zone makes the compositor reflow on every move -> jitter).
+    layer.set_exclusive_zone(-1);
     layer.commit();
 
     let mut app = State {
@@ -181,16 +208,27 @@ fn run(
         needs_redraw: true,
         stop: false,
         pointer: None,
+        rel_manager: globals
+            .bind::<ZwpRelativePointerManagerV1, _, _>(&qh, 1..=1, ())
+            .ok(),
+        rel_pointer: None,
         move_mode: false,
         dragging: false,
         pointer_pos: (0.0, 0.0),
-        grab: (0.0, 0.0),
+        drag_delta: (0.0, 0.0),
         margin,
+        output_size: None,
         position,
         visuals: None,
         style_dirty: false,
+        events_tx,
+        settings_open: false,
+        egui_events: Vec::new(),
+        pointer_on_toolbar: false,
+        toolbar_rect: (0, 0, 0, 0),
     };
-    // Start passive: clicks pass through to the game until "move" mode is on.
+    // Start passive: only the toolbar strip catches clicks; the rest passes
+    // through to the game until "move" mode or the settings popup is on.
     app.apply_input_region();
 
     let mut event_loop: EventLoop<State> = EventLoop::try_new()?;
@@ -201,13 +239,6 @@ fn run(
             ChannelEvent::Msg(Msg::Data(data)) => {
                 app.data = data;
                 app.needs_redraw = true;
-            }
-            ChannelEvent::Msg(Msg::Move(move_mode)) => {
-                if move_mode != app.move_mode {
-                    app.move_mode = move_mode;
-                    app.dragging = false;
-                    app.apply_input_region();
-                }
             }
             ChannelEvent::Msg(Msg::Style(visuals)) => {
                 if app.visuals.is_none() {
@@ -224,8 +255,11 @@ fn run(
     while !app.stop {
         event_loop.dispatch(Some(std::time::Duration::from_millis(16)), &mut app)?;
         if app.needs_redraw {
-            app.render();
+            // Reset before rendering: render() may set it again (toolbar toggle,
+            // table settling) to request another frame right away. Resetting
+            // after would clobber that and defer the redraw to the next event.
             app.needs_redraw = false;
+            app.render();
         }
     }
     // Tear down the wgpu surface (and device) before the wl_surface /
@@ -269,40 +303,109 @@ struct State {
     // through to the game. `margin` is the (top, left) offset from the TOP|LEFT
     // anchor; `grab` is the surface-local point grabbed at drag start.
     pointer: Option<wl_pointer::WlPointer>,
+    // Relative-pointer motion (independent of the surface position) drives the
+    // drag, so moving the surface can't feed back into the reported coordinates
+    // and make it jitter. `drag_delta` accumulates sub-pixel motion between
+    // frames; the whole-pixel part is applied to the margin each render.
+    rel_manager: Option<ZwpRelativePointerManagerV1>,
+    rel_pointer: Option<ZwpRelativePointerV1>,
     move_mode: bool,
     dragging: bool,
     pointer_pos: (f64, f64),
-    grab: (f64, f64),
+    drag_delta: (f64, f64),
     margin: (i32, i32),
+    // Logical size of the output the overlay is on, to keep it on-screen.
+    output_size: Option<(i32, i32)>,
     // Shared with the app handle so it can persist the dragged position.
     position: Arc<Mutex<(i32, i32)>>,
     // Theme pushed from the main app to match the main window; applied to the
     // egui context on the next render when `style_dirty`.
     visuals: Option<egui::Visuals>,
     style_dirty: bool,
+    // Toolbar (⛭/✋) lives on the overlay itself. `events_tx` reports column
+    // toggles back to the app; `settings_open` is the ⛭ popup state (also
+    // widens the input region); `egui_events` are pointer events fed into egui
+    // so its buttons work; `pointer_on_toolbar` gates dragging vs clicking.
+    events_tx: EventTx<OverlayEvent>,
+    settings_open: bool,
+    egui_events: Vec<egui::Event>,
+    pointer_on_toolbar: bool,
+    // The icon toolbar's rect in surface pixels, measured each render, so the
+    // input region and the drag/click hit-test match the icons exactly.
+    toolbar_rect: (i32, i32, i32, i32),
 }
 
+/// Height (points, = pixels at scale 1) of the always-clickable toolbar strip
+/// at the bottom of the overlay.
+const TOOLBAR_H: u32 = 26;
+
 impl State {
-    /// Match the surface's input region to `move_mode`: the whole surface while
-    /// moving (so it receives the drag), an empty region otherwise (clicks fall
-    /// through to the game underneath).
+    /// Set the surface's input region for the current mode: the whole surface
+    /// while moving or with the settings popup open (so drags and popup clicks
+    /// land), otherwise just the top toolbar strip (its ⛭/✋ buttons stay
+    /// clickable while the rest passes clicks through to the game).
     fn apply_input_region(&self) {
         let surface = self.layer.wl_surface();
-        if self.move_mode {
+        if self.move_mode || self.settings_open {
             surface.set_input_region(None);
         } else if let Ok(region) = Region::new(&self.compositor) {
+            let (x, y, w, h) = self.toolbar_rect;
+            if w > 0 && h > 0 {
+                region.add(x, y, w, h);
+            } else {
+                // Before the first render: a bottom strip as a fallback.
+                let top = self.height.saturating_sub(TOOLBAR_H) as i32;
+                region.add(0, top, self.width.max(1) as i32, TOOLBAR_H as i32);
+            }
             surface.set_input_region(Some(region.wl_region()));
         }
         surface.commit();
     }
 
-    /// Reposition the surface so the grabbed point follows the pointer. The
-    /// margins re-reference against the moved surface, so `grab` stays constant.
-    fn drag_to(&mut self, pos: (f64, f64)) {
-        let dl = (pos.0 - self.grab.0).round() as i32;
-        let dt = (pos.1 - self.grab.1).round() as i32;
-        self.margin.1 = (self.margin.1 + dl).max(0);
-        self.margin.0 = (self.margin.0 + dt).max(0);
+    /// Applies the accumulated relative-pointer motion to the margin (once per
+    /// frame). Uses raw pointer deltas, so moving the surface never changes the
+    /// input and the drag stays jitter-free. The margin is only set pending; the
+    /// frame's wgpu present commits it together with the buffer (atomic move).
+    fn apply_drag(&mut self) {
+        let (max_left, max_top) = self.max_margin();
+        let ix = self.drag_delta.0.trunc() as i32;
+        let iy = self.drag_delta.1.trunc() as i32;
+        if ix == 0 && iy == 0 {
+            return;
+        }
+        self.drag_delta.0 -= ix as f64;
+        self.drag_delta.1 -= iy as f64;
+        self.margin.1 = (self.margin.1 + ix).clamp(0, max_left);
+        self.margin.0 = (self.margin.0 + iy).clamp(0, max_top);
+        self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
+        *self.position.lock().unwrap() = self.margin;
+    }
+
+    /// Largest (left, top) margin that keeps the overlay on its output; falls
+    /// back to unrestricted when the output size isn't known yet.
+    fn max_margin(&self) -> (i32, i32) {
+        match self.output_size {
+            Some((ow, oh)) => (
+                (ow - self.width as i32).max(0),
+                (oh - self.height as i32).max(0),
+            ),
+            None => (i32::MAX, i32::MAX),
+        }
+    }
+
+    /// Clamps the margin onto the output; returns whether it changed.
+    fn clamp_margin(&mut self) -> bool {
+        let (max_left, max_top) = self.max_margin();
+        let clamped = (self.margin.0.clamp(0, max_top), self.margin.1.clamp(0, max_left));
+        if clamped != self.margin {
+            self.margin = clamped;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn commit_margin(&mut self) {
         self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
         self.layer.commit();
         *self.position.lock().unwrap() = self.margin;
@@ -375,8 +478,15 @@ impl State {
         if self.gpu.is_none() {
             self.init_gpu();
         }
+        // Apply the frame's accumulated relative-pointer motion to the position.
+        if self.dragging {
+            self.apply_drag();
+        }
         let (w, h) = (self.width.max(1), self.height.max(1));
         let data = self.data.clone();
+        let move_mode = self.move_mode;
+        let settings_open = self.settings_open;
+        let input_events = std::mem::take(&mut self.egui_events);
         // Adopt the main window's theme (colors, fills) pushed via set_style.
         let new_visuals = self.style_dirty.then(|| self.visuals.clone()).flatten();
         self.style_dirty = false;
@@ -396,13 +506,28 @@ impl State {
                 egui::pos2(0.0, 0.0),
                 egui::vec2(w as f32, h as f32) / ppp,
             )),
+            events: input_events,
             ..Default::default()
         };
         // Rendered with the same custom `Table` as the desktop overlay so both
-        // paths look identical; the table's own size drives the surface size.
+        // paths look identical. The overlay owns its toolbar (⛭ column config,
+        // ✋ move); clicks are collected here and applied after the frame.
         let mut required = egui::Vec2::ZERO;
+        let mut toggle_move = false;
+        let mut toggle_settings = false;
+        let mut toggled_columns: Vec<usize> = Vec::new();
+        let mut toolbar_rect = egui::Rect::NOTHING;
+        // apply_input_region borrows all of `self`; `gpu` is borrowed until the
+        // end of render, so defer it behind this flag.
+        let mut region_dirty = false;
         let full = gpu.egui_ctx.run(raw_input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+            let frame = egui::Frame::central_panel(&ctx.style())
+                .stroke(ctx.style().visuals.window_stroke)
+                .inner_margin(4.0);
+            egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+                // The refreshing part: the DPS table. Its measured rect drives
+                // the surface size (content-sized, unlike ui.min_rect() which
+                // includes fill-width widgets and makes the surface oscillate).
                 let table_rect = Table::new(ui)
                     .min_scroll_height(f32::MAX)
                     .header(15.0, |h| {
@@ -432,12 +557,84 @@ impl State {
                             });
                         }
                     });
-                required = table_rect.size()
+
+                // Column popup (when open) and the icon toolbar at the bottom,
+                // like the live parser. Measure their height via the cursor so
+                // the surface can size to table + toolbar without fill-width
+                // widgets feeding back into the width.
+                let bottom_start = ui.cursor().top();
+                if settings_open {
+                    for (index, (name, enabled)) in data.all_columns.iter().enumerate() {
+                        let mut enabled = *enabled;
+                        if ui.checkbox(&mut enabled, name).clicked() {
+                            toggled_columns.push(index);
+                        }
+                    }
+                }
+                toolbar_rect = ui
+                    .horizontal(|ui| {
+                        // Square, fully-clickable icon buttons (the plain label
+                        // only reacts on the glyph itself).
+                        let icon = egui::vec2(TOOLBAR_H as f32 - 6.0, TOOLBAR_H as f32 - 6.0);
+                        if ui
+                            .add_sized(icon, egui::SelectableLabel::new(settings_open, "⛭"))
+                            .clicked()
+                        {
+                            toggle_settings = true;
+                        }
+                        if ui
+                            .add_sized(icon, egui::SelectableLabel::new(move_mode, "✋"))
+                            .clicked()
+                        {
+                            toggle_move = true;
+                        }
+                    })
+                    .response
+                    .rect;
+                let bottom_height = ui.cursor().top() - bottom_start;
+
+                required = egui::vec2(table_rect.width(), table_rect.height() + bottom_height)
                     + ui.spacing().window_margin.left_top()
-                    + ui.spacing().window_margin.right_bottom()
-                    + ui.spacing().item_spacing;
+                    + ui.spacing().window_margin.right_bottom();
             });
         });
+
+        // Remember the toolbar's rect (points == pixels at scale 1), padded a
+        // little, so the input region and hit-test cover the icons exactly.
+        if toolbar_rect.is_finite() && toolbar_rect.area() > 0.0 {
+            let pad = 2.0;
+            self.toolbar_rect = (
+                (toolbar_rect.min.x - pad).floor().max(0.0) as i32,
+                (toolbar_rect.min.y - pad).floor().max(0.0) as i32,
+                (toolbar_rect.width() + 2.0 * pad).ceil() as i32,
+                (toolbar_rect.height() + 2.0 * pad).ceil() as i32,
+            );
+        }
+
+        // Apply the toolbar interactions collected during the frame.
+        for index in toggled_columns {
+            let _ = self.events_tx.send(OverlayEvent::ToggleColumn(index));
+            // Flip the checkbox locally so it reacts instantly; the app's
+            // authoritative update (which also refreshes the table columns)
+            // arrives within a refresh and matches.
+            if let Some(column) = self.data.all_columns.get_mut(index) {
+                column.1 = !column.1;
+            }
+            self.needs_redraw = true;
+        }
+        if toggle_settings {
+            self.settings_open = !self.settings_open;
+        }
+        if toggle_move {
+            self.move_mode = !self.move_mode;
+            self.dragging = false;
+        }
+        if toggle_settings || toggle_move {
+            region_dirty = true;
+            // Redraw now so the new state shows immediately instead of waiting
+            // for the next ~500 ms data update (perceived as a click lag).
+            self.needs_redraw = true;
+        }
 
         // The table measures column widths over a couple of frames; keep
         // redrawing until they settle.
@@ -453,8 +650,19 @@ impl State {
         if desired != (self.width, self.height) {
             self.width = desired.0;
             self.height = desired.1;
+            // Growing (e.g. opening the settings popup) near an edge would push
+            // the overlay off-screen; pull it back so it stays fully visible.
+            // Inlined (clamp_margin borrows all of self while gpu is borrowed).
+            if let Some((ow, oh)) = self.output_size {
+                self.margin.1 = self.margin.1.clamp(0, (ow - self.width as i32).max(0));
+                self.margin.0 = self.margin.0.clamp(0, (oh - self.height as i32).max(0));
+            }
+            self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
             self.layer.set_size(self.width, self.height);
             self.layer.commit();
+            *self.position.lock().unwrap() = self.margin;
+            // The toolbar input strip spans the surface width; refresh it.
+            region_dirty = true;
             self.needs_redraw = true;
         }
 
@@ -512,6 +720,12 @@ impl State {
         for id in &full.textures_delta.free {
             gpu.egui_renderer.free_texture(id);
         }
+
+        // gpu is no longer borrowed here, so the whole-`self` input-region
+        // update (mode/size changed) can run.
+        if region_dirty {
+            self.apply_input_region();
+        }
     }
 }
 
@@ -549,9 +763,26 @@ impl OutputHandler for State {
     fn output_state(&mut self) -> &mut OutputState {
         &mut self.output_state
     }
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+        self.learn_output(&output);
+    }
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+        self.learn_output(&output);
+    }
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+}
+
+impl State {
+    /// Records the output's size and pulls the overlay back on-screen if a
+    /// stale (e.g. restored) margin left it off the edge.
+    fn learn_output(&mut self, output: &wl_output::WlOutput) {
+        if let Some(size) = self.output_state.info(output).and_then(|i| i.logical_size) {
+            self.output_size = Some(size);
+            if self.clamp_margin() {
+                self.commit_margin();
+            }
+        }
+    }
 }
 
 impl ShmHandler for State {
@@ -573,7 +804,13 @@ impl SeatHandler for State {
         capability: Capability,
     ) {
         if capability == Capability::Pointer && self.pointer.is_none() {
-            self.pointer = self.seat_state.get_pointer(qh, &seat).ok();
+            let pointer = self.seat_state.get_pointer(qh, &seat).ok();
+            // Attach a relative pointer to the same wl_pointer for jitter-free
+            // dragging (raw motion deltas, independent of the surface position).
+            if let (Some(pointer), Some(manager)) = (&pointer, &self.rel_manager) {
+                self.rel_pointer = Some(manager.get_relative_pointer(pointer, qh, ()));
+            }
+            self.pointer = pointer;
         }
     }
     fn remove_capability(
@@ -601,24 +838,61 @@ impl PointerHandler for State {
         events: &[PointerEvent],
     ) {
         for event in events {
+            let pos = event.position;
+            let (tx, ty, tw, th) = self.toolbar_rect;
+            let on_toolbar = tw > 0
+                && th > 0
+                && pos.0 >= tx as f64
+                && pos.0 < (tx + tw) as f64
+                && pos.1 >= ty as f64
+                && pos.1 < (ty + th) as f64;
             match event.kind {
-                PointerEventKind::Enter { .. } => self.pointer_pos = event.position,
-                PointerEventKind::Motion { .. } => {
-                    self.pointer_pos = event.position;
-                    if self.dragging {
-                        self.drag_to(event.position);
+                PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
+                    self.pointer_pos = pos;
+                    self.pointer_on_toolbar = on_toolbar;
+                    self.egui_events.push(egui::Event::PointerMoved(egui_pos(pos)));
+                    // Actual dragging happens once per rendered frame (see
+                    // render); doing it per motion event double-counts the
+                    // async coordinate shift and flings the surface around.
+                }
+                PointerEventKind::Leave { .. } => {
+                    self.egui_events.push(egui::Event::PointerGone);
+                }
+                PointerEventKind::Press { button, .. } if button == BTN_LEFT => {
+                    // In move mode a press on empty space starts a drag; presses
+                    // on the toolbar, or anywhere while the settings popup is
+                    // open, go to egui so its buttons/checkboxes work.
+                    if self.move_mode && !on_toolbar && !self.settings_open {
+                        self.dragging = true;
+                        self.drag_delta = (0.0, 0.0);
+                    } else {
+                        self.egui_events.push(pointer_button(pos, true));
                     }
                 }
-                PointerEventKind::Press { button, .. } if self.move_mode && button == BTN_LEFT => {
-                    self.dragging = true;
-                    self.grab = self.pointer_pos;
-                }
                 PointerEventKind::Release { button, .. } if button == BTN_LEFT => {
-                    self.dragging = false;
+                    if self.dragging {
+                        self.dragging = false;
+                    } else {
+                        self.egui_events.push(pointer_button(pos, false));
+                    }
                 }
                 _ => {}
             }
         }
+        self.needs_redraw = true;
+    }
+}
+
+fn egui_pos(pos: (f64, f64)) -> egui::Pos2 {
+    egui::pos2(pos.0 as f32, pos.1 as f32)
+}
+
+fn pointer_button(pos: (f64, f64), pressed: bool) -> egui::Event {
+    egui::Event::PointerButton {
+        pos: egui_pos(pos),
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::default(),
     }
 }
 
@@ -627,6 +901,39 @@ impl ProvidesRegistryState for State {
         &mut self.registry_state
     }
     registry_handlers![OutputState, SeatState];
+}
+
+// The relative-pointer protocol isn't covered by an SCTK delegate, so dispatch
+// it by hand. The manager has no events; the pointer reports raw motion.
+impl Dispatch<ZwpRelativePointerManagerV1, ()> for State {
+    fn event(
+        _: &mut Self,
+        _: &ZwpRelativePointerManagerV1,
+        _: <ZwpRelativePointerManagerV1 as Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<ZwpRelativePointerV1, ()> for State {
+    fn event(
+        state: &mut Self,
+        _: &ZwpRelativePointerV1,
+        event: zwp_relative_pointer_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zwp_relative_pointer_v1::Event::RelativeMotion { dx, dy, .. } = event {
+            if state.dragging {
+                state.drag_delta.0 += dx;
+                state.drag_delta.1 += dy;
+                state.needs_redraw = true;
+            }
+        }
+    }
 }
 
 delegate_compositor!(State);
@@ -656,12 +963,9 @@ mod tests {
                 name: "Test".into(),
                 values: vec!["123.4k".into()],
             }],
+            all_columns: vec![("DPS".into(), true), ("Deaths".into(), false)],
         });
-        // Toggle "move" mode both ways to exercise the input-region path.
-        overlay.set_move(true);
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        overlay.set_move(false);
-        std::thread::sleep(std::time::Duration::from_millis(400));
+        std::thread::sleep(std::time::Duration::from_millis(800));
         overlay.stop(); // must return without crashing the process
     }
 
@@ -681,6 +985,7 @@ mod tests {
                     name: "Test".into(),
                     values: vec!["123.4k".into()],
                 }],
+                ..Default::default()
             });
             std::thread::sleep(std::time::Duration::from_millis(400));
             overlay.stop();
