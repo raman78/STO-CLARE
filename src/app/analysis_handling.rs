@@ -230,9 +230,11 @@ impl AnalysisContext {
         _self
     }
 
-    /// Builds the analyzer for `settings`. On Linux with consolidation enabled,
-    /// merges the rotating logs into one combatlog.log and points the analyzer
-    /// at it; otherwise reads the configured file directly.
+    /// Builds the analyzer for `settings`, always reading the configured file
+    /// directly (so opening a specific log shows exactly that file). On Linux
+    /// with consolidation enabled, a background merge keeps a single
+    /// combatlog.log up to date so the user can point at it for the live
+    /// overlay / all-combats view; the file being read is left untouched.
     fn set_analyzer(&mut self, settings: AnalysisSettings) {
         #[cfg(target_os = "linux")]
         {
@@ -241,14 +243,11 @@ impl AnalysisContext {
                 .filter(|dir| dir.is_dir());
             if let (true, Some(dir)) = (settings.consolidate_combatlog, dir) {
                 let mut consolidator = Consolidator::new(dir);
-                consolidator.tick();
-                let mut effective = settings.clone();
-                effective.combatlog_file = consolidator.target().to_string_lossy().into_owned();
-                self.analyzer = Analyzer::new(effective);
+                consolidator.tick(Some(std::path::Path::new(&settings.combatlog_file)));
                 self.consolidator = Some(consolidator);
-                return;
+            } else {
+                self.consolidator = None;
             }
-            self.consolidator = None;
         }
         self.analyzer = Analyzer::new(settings);
     }
@@ -315,10 +314,17 @@ impl AnalysisContext {
     }
 
     fn try_refresh(&mut self) -> AnalysisInfo {
-        // Pull any newly rotated logs into combatlog.log before reading it.
+        // Keep combatlog.log current in the background, but never touch the file
+        // currently being read (the user may have opened a specific old log).
         #[cfg(target_os = "linux")]
-        if let Some(consolidator) = self.consolidator.as_mut() {
-            consolidator.tick();
+        {
+            let protected = self
+                .analyzer
+                .as_ref()
+                .map(|a| a.settings().combatlog_file().to_path_buf());
+            if let Some(consolidator) = self.consolidator.as_mut() {
+                consolidator.tick(protected.as_deref());
+            }
         }
         let analyzer = match self.analyzer.as_mut() {
             Some(a) => a,
@@ -389,11 +395,16 @@ impl AnalysisContext {
         };
         let settings = analyzer.settings().clone();
 
-        // Under consolidation, clearing empties the consolidated combatlog.log
-        // and lets it rebuild from the active file (the recent combats); the
-        // per-combat "keep last" trick below would fight the re-mirroring.
+        // When clearing the consolidated combatlog.log itself, empty it and let
+        // consolidation rebuild it from the active file; the per-combat "keep
+        // last" trick below would fight the re-mirroring. A specific log the
+        // user opened is cleared normally (falls through).
         #[cfg(target_os = "linux")]
-        if self.consolidator.is_some() {
+        if self
+            .consolidator
+            .as_ref()
+            .is_some_and(|c| c.target() == settings.combatlog_file())
+        {
             self.analyzer = None;
             if let Some(consolidator) = self.consolidator.as_mut() {
                 consolidator.reset();

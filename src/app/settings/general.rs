@@ -60,8 +60,9 @@ impl GeneralTab {
         )
         .on_hover_text(
             "STO under Proton creates a new combat log file every so often. When enabled, CLA \
-             merges the completed logs into a single combatlog.log in the same folder (deleting \
-             the merged originals to save space) and reads that, so all combats stay in one place.",
+             keeps a single combatlog.log up to date in the same folder (merging completed logs, \
+             deleting the merged originals to save space). Open combatlog.log for the live overlay \
+             and all combats in one place; open a specific log to review just that file.",
         );
 
         ui.separator();

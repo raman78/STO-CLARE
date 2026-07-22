@@ -9,8 +9,11 @@
 //! [`Consolidator`] rebuilds the Windows-like single `combatlog.log` in the
 //! same folder: it appends every *complete* rotated file into it (then deletes
 //! the original to avoid duplicating disk space) and mirrors the currently
-//! *active* file's new bytes so the overlay stays live. The analyzer then reads
-//! only `combatlog.log`.
+//! *active* file's new bytes so it stays live. It runs in the background; the
+//! analyzer reads whatever file the user configured (which may be
+//! `combatlog.log` for the live / all-combats view, or a specific log to
+//! review). A `protected` file passed to [`Consolidator::tick`] — the one being
+//! read — is left untouched so opening a specific old log keeps working.
 //!
 //! Safety: the active file (still written by STO) is never deleted, a source is
 //! deleted only after its bytes are fully appended and flushed to disk, and the
@@ -56,9 +59,11 @@ impl Consolidator {
     }
 
     /// Runs one consolidation pass; logs and swallows I/O errors so a transient
-    /// failure never takes down analysis.
-    pub fn tick(&mut self) {
-        if let Err(e) = self.run() {
+    /// failure never takes down analysis. `protected` is a file currently being
+    /// analyzed directly (e.g. an old log the user opened): it is left entirely
+    /// untouched — neither merged nor deleted — so it stays available to read.
+    pub fn tick(&mut self, protected: Option<&Path>) {
+        if let Err(e) = self.run(protected) {
             log::warn!("combatlog consolidation: {e}");
         }
     }
@@ -71,7 +76,7 @@ impl Consolidator {
         let _ = fs::remove_file(self.state_path());
     }
 
-    fn run(&mut self) -> io::Result<()> {
+    fn run(&mut self, protected: Option<&Path>) -> io::Result<()> {
         let rotated = self.rotated_files()?;
         if rotated.is_empty() {
             // Nothing to consolidate — e.g. on Windows, or before STO ran.
@@ -85,12 +90,12 @@ impl Consolidator {
             .map(|(path, _)| path.clone())
             .expect("rotated is non-empty");
 
-        // Complete files: everything except the active one, oldest first so the
-        // consolidated log stays in chronological order.
+        // Complete files: everything except the active one (and the protected
+        // one being read), oldest first so the merged log stays in order.
         let mut complete: Vec<PathBuf> = rotated
             .into_iter()
             .map(|(path, _)| path)
-            .filter(|path| path != &active)
+            .filter(|path| path != &active && Some(path.as_path()) != protected)
             .collect();
         complete.sort_by_cached_key(|path| first_record_key(path));
 
@@ -249,7 +254,7 @@ mod tests {
         write(&dir, "combatlog_2026-07-19_12-00-00.log", "26:07:19:12:00:00.0::c\n");
 
         let mut consolidator = Consolidator::new(&dir);
-        consolidator.tick();
+        consolidator.tick(None);
 
         // Complete files are merged and deleted; the active one is kept.
         assert!(!dir.join("combatlog_2026-07-19_10-00-00.log").exists());
@@ -269,7 +274,7 @@ mod tests {
             .unwrap()
             .write_all(b"26:07:19:12:00:01.0::d\n")
             .unwrap();
-        consolidator.tick();
+        consolidator.tick(None);
         let merged = std::fs::read_to_string(consolidator.target()).unwrap();
         assert_eq!(merged.matches("::c").count(), 1, "active must not be duplicated");
         assert!(merged.ends_with("26:07:19:12:00:01.0::d\n"));
@@ -302,7 +307,7 @@ mod tests {
         }
 
         let mut consolidator = Consolidator::new(&dir);
-        consolidator.tick();
+        consolidator.tick(None);
 
         let merged = std::fs::read(consolidator.target()).unwrap();
         let merged_lines = merged.iter().filter(|&&b| b == b'\n').count();
@@ -329,10 +334,10 @@ mod tests {
         write(&dir, "combatlog_2026-07-19_12-00-00.log", "26:07:19:12:00:00.0::c\n");
 
         let mut consolidator = Consolidator::new(&dir);
-        consolidator.tick();
+        consolidator.tick(None);
         // Simulate a restart: a fresh Consolidator loads the persisted offset.
         let mut restarted = Consolidator::new(&dir);
-        restarted.tick();
+        restarted.tick(None);
 
         let merged = std::fs::read_to_string(restarted.target()).unwrap();
         assert_eq!(merged.matches("::c").count(), 1, "restart re-appended active");
