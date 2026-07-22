@@ -1,8 +1,18 @@
 # Change Log
 
 # unreleased
+
+## v1.5.0
 ### Major Changes
-- decreased the decimal count of most number to reduce used space (can be changed to be like before in the settings)
+- the overlay now stays on top of the game on Linux, even during full-screen play
+- on Linux, combat logs that get split into many files are now automatically merged into a single combat log, so all of your combats show up together (originals are only removed after the merged log is verified byte-for-byte, so nothing is lost)
+- decreased the decimal count of most numbers to reduce used space (can be changed to be like before in the settings)
+
+### Other Changes
+- the overlay's move and column-picker controls now live on the overlay itself
+- the overlay remembers where you left it and matches the look of the main window
+- the main window now remembers its size and whether it was maximized, resizes more smoothly, and has a larger minimum size
+- the "Browse" button now opens in the folder you last picked a combat log from
 
 ### Fixes
 - fixed auto refresh stopping to work when changing the logs path
