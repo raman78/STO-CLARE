@@ -15,9 +15,12 @@
 //! review). A `protected` file passed to [`Consolidator::tick`] — the one being
 //! read — is left untouched so opening a specific old log keeps working.
 //!
-//! Safety: the active file (still written by STO) is never deleted, a source is
-//! deleted only after its bytes are fully appended and flushed to disk, and the
-//! mirror offset is persisted so a restart never appends the same bytes twice.
+//! Safety: the active file (still written by STO) is never deleted; a source is
+//! deleted only after its bytes are appended, flushed and synced to disk, and
+//! then read back from the merged file and compared byte-for-byte to the
+//! source. Any failure rolls the merged file back to its previous length, so a
+//! partial append is never left behind and a retry cannot duplicate data. The
+//! mirror offset is persisted so a restart never re-appends the same bytes.
 //! Verified that STO's rotated files do not duplicate each other's records, so
 //! appending them cannot double-count damage.
 
@@ -30,6 +33,8 @@ use std::time::SystemTime;
 const TARGET_NAME: &str = "combatlog.log";
 /// Sidecar remembering which active file we mirror and how far.
 const STATE_NAME: &str = ".cla-consolidation";
+/// Read-back chunk size when verifying appended bytes against the source.
+const VERIFY_CHUNK: usize = 64 * 1024;
 
 pub struct Consolidator {
     dir: PathBuf,
@@ -112,7 +117,7 @@ impl Consolidator {
             } else {
                 0
             };
-            append_from(file, from, &mut target)?;
+            append_verified(file, from, &mut target, &self.target)?;
             fs::remove_file(file)?;
         }
 
@@ -133,7 +138,7 @@ impl Consolidator {
         } else {
             0
         };
-        let new_offset = append_from(&active, from, &mut target)?;
+        let new_offset = append_verified(&active, from, &mut target, &self.target)?;
         self.active = Some(active);
         self.active_offset = new_offset;
         self.save_state();
@@ -192,10 +197,42 @@ impl Consolidator {
     }
 }
 
-/// Appends `src[from..]` to `target`, flushing to disk. Returns `src`'s length
-/// so the caller can record the new mirror offset. Errors before any partial
-/// state is trusted, so the caller must not delete `src` on error.
-fn append_from(src: &Path, from: u64, target: &mut File) -> io::Result<u64> {
+/// Appends `src[from..]` to the consolidated `target`, then proves the bytes
+/// landed before the caller trusts (and may delete) the source. Returns `src`'s
+/// length so the caller can record the new mirror offset.
+///
+/// Safety: on ANY failure the target is rolled back to its pre-append length, so
+/// a partial write is never left behind and a retry re-appends cleanly without
+/// duplicating. On success the freshly appended range is read back from the
+/// merged file and compared byte-for-byte to the source, so a source is only
+/// ever deleted once its data is provably present in the merged file.
+fn append_verified(
+    src: &Path,
+    from: u64,
+    target: &mut File,
+    target_path: &Path,
+) -> io::Result<u64> {
+    let base = target.metadata()?.len();
+    match append_and_verify(src, from, target, target_path, base) {
+        Ok(len) => Ok(len),
+        Err(e) => {
+            // Undo any partially written bytes so the next pass starts clean.
+            let _ = target.flush();
+            if let Err(rollback) = target.set_len(base).and_then(|()| target.sync_data()) {
+                log::error!("combatlog consolidation: rollback after '{e}' failed: {rollback}");
+            }
+            Err(e)
+        }
+    }
+}
+
+fn append_and_verify(
+    src: &Path,
+    from: u64,
+    target: &mut File,
+    target_path: &Path,
+    base: u64,
+) -> io::Result<u64> {
     let mut source = File::open(src)?;
     let len = source.metadata()?.len();
     if from >= len {
@@ -206,9 +243,44 @@ fn append_from(src: &Path, from: u64, target: &mut File) -> io::Result<u64> {
     target.flush()?;
     target.sync_data()?;
     if from + copied != len {
-        return Err(io::Error::other("short copy while consolidating combat log"));
+        return Err(io::Error::other("short read while consolidating combat log"));
     }
+    if base + copied != target.metadata()?.len() {
+        return Err(io::Error::other("short write while consolidating combat log"));
+    }
+    verify_range(src, from, target_path, base, copied)?;
     Ok(len)
+}
+
+/// Streams `target[base..base + count]` and `src[from..from + count]` and errors
+/// unless every byte matches, so a mismatch stops the source from being deleted.
+fn verify_range(
+    src: &Path,
+    from: u64,
+    target_path: &Path,
+    base: u64,
+    count: u64,
+) -> io::Result<()> {
+    let mut source = File::open(src)?;
+    source.seek(SeekFrom::Start(from))?;
+    let mut merged = File::open(target_path)?;
+    merged.seek(SeekFrom::Start(base))?;
+
+    let mut source_buf = vec![0u8; VERIFY_CHUNK];
+    let mut merged_buf = vec![0u8; VERIFY_CHUNK];
+    let mut remaining = count;
+    while remaining > 0 {
+        let chunk = remaining.min(VERIFY_CHUNK as u64) as usize;
+        source.read_exact(&mut source_buf[..chunk])?;
+        merged.read_exact(&mut merged_buf[..chunk])?;
+        if source_buf[..chunk] != merged_buf[..chunk] {
+            return Err(io::Error::other(
+                "merged combat log does not match source; keeping the original",
+            ));
+        }
+        remaining -= chunk as u64;
+    }
+    Ok(())
 }
 
 /// Sort key for chronological ordering. STO records start with a fixed-width
@@ -322,6 +394,64 @@ mod tests {
             .collect();
         println!("remaining rotated files: {remaining:?}");
         assert_eq!(remaining.len(), 1, "exactly the active file should remain");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_range_detects_mismatch_and_accepts_match() {
+        let dir = std::env::temp_dir()
+            .join(format!("cla-consolidation-verify-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let src = dir.join("src");
+        std::fs::write(&src, b"hello world").unwrap();
+
+        // A merged file whose tail matches the source: verification passes.
+        let good = dir.join("good");
+        std::fs::write(&good, b"XXXXhello world").unwrap();
+        assert!(verify_range(&src, 0, &good, 4, 11).is_ok());
+
+        // A merged file whose tail differs: verification must reject it, so the
+        // caller never deletes the original.
+        let bad = dir.join("bad");
+        std::fs::write(&bad, b"XXXXhello WORLD").unwrap();
+        assert!(verify_range(&src, 0, &bad, 4, 11).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preserves_every_byte_including_large_files() {
+        let dir = std::env::temp_dir()
+            .join(format!("cla-consolidation-large-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // One complete file larger than the verification chunk, to exercise the
+        // multi-chunk read-back path, plus a small one; newest is active.
+        let big: String = (0..5000)
+            .map(|i| format!("26:07:19:10:{:02}:{:02}.0::line-{i}\n", i / 60 % 60, i % 60))
+            .collect();
+        assert!(big.len() > VERIFY_CHUNK, "big file must span multiple chunks");
+        write(&dir, "combatlog_2026-07-19_10-00-00.log", &big);
+        write(&dir, "combatlog_2026-07-19_11-00-00.log", "26:07:19:11:00:00.0::mid\n");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write(&dir, "combatlog_2026-07-19_12-00-00.log", "26:07:19:12:00:00.0::active\n");
+
+        let expected =
+            format!("{big}26:07:19:11:00:00.0::mid\n26:07:19:12:00:00.0::active\n");
+
+        let mut consolidator = Consolidator::new(&dir);
+        consolidator.tick(None);
+
+        let merged = std::fs::read_to_string(consolidator.target()).unwrap();
+        assert_eq!(merged, expected, "every byte must survive exactly once");
+        // Only the active (newest) rotated file remains.
+        assert!(dir.join("combatlog_2026-07-19_12-00-00.log").exists());
+        assert!(!dir.join("combatlog_2026-07-19_10-00-00.log").exists());
+        assert!(!dir.join("combatlog_2026-07-19_11-00-00.log").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
