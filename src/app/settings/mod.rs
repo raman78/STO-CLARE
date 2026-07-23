@@ -61,6 +61,7 @@ impl SettingsWindow {
         &mut self,
         state: &mut AppState,
         selected_combat: Option<&Combat>,
+        combats: &[String],
         ui: &mut Ui,
         frame: &Frame,
     ) {
@@ -92,6 +93,7 @@ impl SettingsWindow {
                     SettingsTab::General => self.general_tab.show(
                         &state.analysis_handler,
                         &mut self.modified_settings,
+                        combats,
                         ui,
                         frame,
                     ),
@@ -118,8 +120,14 @@ impl SettingsWindow {
             });
     }
 
-    pub fn show_clear_log_dialog(&mut self, analysis_handler: &AnalysisHandler, ui: &mut Ui) {
-        self.general_tab.show_clear_log_dialog(analysis_handler, ui);
+    pub fn show_clear_log_dialog(
+        &mut self,
+        analysis_handler: &AnalysisHandler,
+        combats: &[String],
+        ui: &mut Ui,
+    ) {
+        self.general_tab
+            .show_clear_log_dialog(analysis_handler, combats, ui);
     }
 
     fn handle_dropped_file(&mut self, ui: &mut Ui, state: &mut AppState) {

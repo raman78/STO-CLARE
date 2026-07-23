@@ -16,6 +16,9 @@ pub struct GeneralTab {
 #[derive(Default)]
 pub struct ClearLogDialog {
     is_open: bool,
+    // Per-combat "delete" flags, indexed like the combats list; rebuilt when the
+    // dialog opens (default: every combat except the newest).
+    to_delete: Vec<bool>,
 }
 
 impl GeneralTab {
@@ -23,6 +26,7 @@ impl GeneralTab {
         &mut self,
         analysis_handler: &AnalysisHandler,
         modified_settings: &mut Settings,
+        combats: &[String],
         ui: &mut Ui,
         frame: &Frame,
     ) {
@@ -47,7 +51,7 @@ impl GeneralTab {
                 }
             }
 
-            self.clear_log_dialog.show(analysis_handler, ui);
+            self.clear_log_dialog.show(analysis_handler, combats, ui);
         });
         TextEdit::singleline(&mut modified_settings.analysis.combatlog_file)
             .desired_width(f32::MAX)
@@ -109,8 +113,13 @@ impl GeneralTab {
         );
     }
 
-    pub fn show_clear_log_dialog(&mut self, analysis_handler: &AnalysisHandler, ui: &mut Ui) {
-        self.clear_log_dialog.show(analysis_handler, ui);
+    pub fn show_clear_log_dialog(
+        &mut self,
+        analysis_handler: &AnalysisHandler,
+        combats: &[String],
+        ui: &mut Ui,
+    ) {
+        self.clear_log_dialog.show(analysis_handler, combats, ui);
     }
 
     pub fn initialize(&mut self) {
@@ -119,45 +128,98 @@ impl GeneralTab {
 }
 
 impl ClearLogDialog {
-    fn show(&mut self, analysis_handler: &AnalysisHandler, ui: &mut Ui) {
-        let clear_response = ui.button("Clear Log File");
+    fn show(&mut self, analysis_handler: &AnalysisHandler, combats: &[String], ui: &mut Ui) {
+        let open_response = ui.button("Clear Log File");
 
         let mut newly_opened = false;
-        if clear_response.clicked() {
+        if open_response.clicked() {
             self.is_open = true;
             newly_opened = true;
+            self.reset_selection(combats.len());
         }
 
         if !self.is_open {
             return;
         }
 
-        let mut window = Window::new("Clear Log File")
+        // Keep the flags aligned with the combats list if it changed while the
+        // dialog was open (e.g. an auto refresh appended a new combat).
+        if self.to_delete.len() != combats.len() {
+            self.reset_selection(combats.len());
+        }
+
+        let mut window = Window::new("Delete Combats")
             .collapsible(false)
-            .default_size([400.0, 400.0])
-            .resizable(false);
+            .default_size([460.0, 480.0])
+            .resizable(true);
         if newly_opened {
-            window = window.current_pos(clear_response.rect.min);
+            window = window.current_pos(open_response.rect.min);
         }
 
         window.show(ui.ctx(), |ui| {
-                ui.label("Clearing the log will delete all combats from log file except for the newest one.");
-                ui.label("Note that for this to work properly all data from the log must have been analyzed.");
-                ui.label("Make sure you refreshed before proceeding.");
-                ui.add_space(20.0);
-                ui.label("Do you wish to proceed?");
+            ui.label("Select the combats to delete. Everything left unchecked is kept in the log.");
+            ui.label("Make sure you refreshed first, so the list is up to date.");
+            ui.add_space(6.0);
 
-                ui.horizontal(|ui| {
-                    if ui.button("Clear Log").clicked() {
-                        self.is_open = false;
-                        analysis_handler.clear_log()
-                    }
-
-                    if ui.button("Cancel").clicked() {
-                        self.is_open = false;
-                    }
-                });
+            ui.horizontal(|ui| {
+                if ui.button("Select all").clicked() {
+                    self.to_delete.iter_mut().for_each(|d| *d = true);
+                }
+                if ui.button("Unselect all").clicked() {
+                    self.to_delete.iter_mut().for_each(|d| *d = false);
+                }
             });
+
+            ui.separator();
+            ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                // Newest first, matching the combats dropdown.
+                let newest = combats.len().wrapping_sub(1);
+                for i in (0..combats.len()).rev() {
+                    if let Some(flag) = self.to_delete.get_mut(i) {
+                        let label = if i == newest {
+                            format!("{}  (newest)", combats[i])
+                        } else {
+                            combats[i].clone()
+                        };
+                        ui.checkbox(flag, label);
+                    }
+                }
+            });
+            ui.separator();
+
+            let delete_count = self.to_delete.iter().filter(|&&d| d).count();
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        delete_count > 0,
+                        Button::new(format!("Delete {delete_count} selected")),
+                    )
+                    .clicked()
+                {
+                    let keep: Vec<usize> = self
+                        .to_delete
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, &delete)| !delete)
+                        .map(|(i, _)| i)
+                        .collect();
+                    analysis_handler.keep_combats(keep);
+                    self.is_open = false;
+                }
+
+                if ui.button("Cancel").clicked() {
+                    self.is_open = false;
+                }
+            });
+        });
+    }
+
+    /// Default selection: delete every combat except the newest.
+    fn reset_selection(&mut self, count: usize) {
+        self.to_delete = vec![true; count];
+        if let Some(newest) = self.to_delete.last_mut() {
+            *newest = false;
+        }
     }
 
     fn initialize(&mut self) {
