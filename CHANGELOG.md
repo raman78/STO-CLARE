@@ -2,6 +2,20 @@
 
 # unreleased
 
+## v1.5.1
+### Major Changes
+- the "Clear Log File" button now opens a list of every combat with checkboxes, so you can pick exactly which combats to delete (with select all / none, and everything but the newest selected by default)
+
+### Other Changes
+- the combats list now shows about 15 combats at once and scrolls when there are more
+- the combats list loads automatically when the app starts, without pressing "Refresh Now"
+- the overlay shows the latest combat immediately when you open it
+- on Linux, the live view keeps updating during play even when reading the merged combat log
+
+### Fixes
+- with auto refresh on, the view no longer refreshes when nothing changed, so an expanded damage breakdown stays open while you browse
+- the oldest combat in a log can now be saved and deleted (previously it could not be read back)
+
 ## v1.5.0
 ### Major Changes
 - the overlay now stays on top of the game on Linux, even during full-screen play
