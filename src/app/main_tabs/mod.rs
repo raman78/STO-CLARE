@@ -6,7 +6,8 @@ use self::{damage_tab::DamageTab, heal_tab::HealTab, summary_tab::SummaryTab};
 
 mod common;
 mod damage_tab;
-mod diagrams;
+// Exposed so the compare view can reuse the same charts.
+pub(crate) mod diagrams;
 mod heal_tab;
 mod summary_tab;
 mod tables;

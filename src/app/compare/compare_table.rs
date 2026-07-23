@@ -1,5 +1,6 @@
 //! Builds and renders the side-by-side comparison of the outgoing damage ability
-//! tree of a chosen player across up to a few combats.
+//! tree of a chosen player across up to a few combats, plus a chart (reusing the
+//! main window's diagrams) of the selected ability branch across those combats.
 //!
 //! The trees are aligned by ability name (name handles differ per combat, so we
 //! key on the resolved name string). Rows are sorted by the first (reference)
@@ -12,9 +13,10 @@ use eframe::egui::*;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    analyzer::{AnalysisGroup, Combat, DamageGroup, NameHandle, NameManager},
+    analyzer::{AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager},
+    app::main_tabs::diagrams::{DamageDiagrams, DiagramType, PreparedDamageDataSet},
     app::settings::Settings,
-    custom_widgets::table::*,
+    custom_widgets::{slider_text_edit::SliderTextEdit, splitter::Splitter, table::*},
     helpers::number_formatting::NumberFormatter,
 };
 
@@ -41,16 +43,30 @@ pub struct Comparison {
     slots: Vec<Slot>,
     nodes: Vec<CompareNode>,
     columns: Vec<CompareMetric>,
+    /// The ability node whose chart is shown (by node id).
+    selected: Option<u32>,
+    diagrams: Option<DamageDiagrams>,
+    active_diagram: DiagramType,
+    filter: f64,
+    time_slice: f64,
 }
 
 struct CompareNode {
     name: String,
+    id: u32,
     /// One entry per slot; `None` when that combat's player has no such node.
     cells: Vec<Option<SlotCell>>,
+    /// Per-slot hit series for charting (`None` when the slot lacks this node).
+    series: Vec<Option<SeriesData>>,
     /// Reference (first slot) DPS, used to sort rows; `-inf` when absent.
     sort_key: f64,
     sub_nodes: Vec<CompareNode>,
     open: bool,
+}
+
+struct SeriesData {
+    hits: Vec<Hit>,
+    total: f64,
 }
 
 struct SlotCell {
@@ -86,6 +102,11 @@ impl Comparison {
             slots,
             nodes: Vec::new(),
             columns: columns.to_vec(),
+            selected: None,
+            diagrams: None,
+            active_diagram: DiagramType::Dps,
+            filter: 0.4,
+            time_slice: 1.0,
         };
         comparison.rebuild();
         comparison
@@ -99,11 +120,24 @@ impl Comparison {
             .collect();
         let name_managers: Vec<&NameManager> =
             self.slots.iter().map(|s| &s.combat.name_manager).collect();
+        let hits_managers: Vec<&HitsManager> =
+            self.slots.iter().map(|s| &s.combat.hits_manger).collect();
+
+        let mut id_source = 0u32;
+        let root_id = id_source;
+        id_source += 1;
 
         // Top row is the player's overall total (root of the damage tree); the
         // ability groups hang under it, expanded by default.
         let cells = build_cells(&parents, &self.columns);
-        let sub_nodes = build_level(&parents, &name_managers, &self.columns);
+        let series = build_series(&parents, &hits_managers);
+        let sub_nodes = build_level(
+            &parents,
+            &name_managers,
+            &hits_managers,
+            &self.columns,
+            &mut id_source,
+        );
         let sort_key = parents
             .first()
             .and_then(|p| *p)
@@ -111,11 +145,43 @@ impl Comparison {
             .unwrap_or(f64::NEG_INFINITY);
         self.nodes = vec![CompareNode {
             name: "Total".to_string(),
+            id: root_id,
             cells,
+            series,
             sort_key,
             sub_nodes,
             open: true,
         }];
+
+        // Chart the overall total by default so a chart shows immediately.
+        self.selected = Some(root_id);
+        self.rebuild_diagram();
+    }
+
+    /// (Re)build the chart for the currently selected ability node: one line per
+    /// combat over that branch's hits.
+    fn rebuild_diagram(&mut self) {
+        let id = match self.selected {
+            Some(id) => id,
+            None => {
+                self.diagrams = None;
+                return;
+            }
+        };
+        let n_slots = self.slots.len();
+        let filter = self.filter;
+        let time_slice = self.time_slice;
+        self.diagrams = find_node(&self.nodes, id).map(|node| {
+            let data = (0..n_slots).filter_map(|slot_i| {
+                let series = node.series.get(slot_i)?.as_ref()?;
+                Some(PreparedDamageDataSet::new(
+                    &(slot_i + 1).to_string(),
+                    series.total,
+                    series.hits.iter(),
+                ))
+            });
+            DamageDiagrams::from_data(data, filter, time_slice)
+        });
     }
 
     pub fn show(&mut self, ui: &mut Ui, settings: &mut Settings) {
@@ -155,7 +221,14 @@ impl Comparison {
         }
 
         ui.separator();
-        self.show_table(ui);
+
+        Splitter::horizontal()
+            .initial_ratio(0.6)
+            .ratio_bounds(0.15..=0.9)
+            .show(ui, |top_ui, bottom_ui| {
+                self.show_table(top_ui);
+                self.show_diagram(bottom_ui, settings);
+            });
     }
 
     fn show_column_picker(&self, ui: &mut Ui, settings: &mut Settings) {
@@ -203,33 +276,92 @@ impl Comparison {
                 })
             })
             .collect();
-        let nodes = &mut self.nodes;
 
-        ScrollArea::horizontal().show(ui, |ui| {
-            Table::new(ui)
-                .cell_spacing(10.0)
-                .header(HEADER_HEIGHT, |r| {
-                    r.cell(|ui| {
-                        ui.label("Name");
-                    });
-                    for header in &headers {
+        let mut selected = self.selected;
+        let mut selection_changed = false;
+        {
+            let nodes = &mut self.nodes;
+            ScrollArea::horizontal().show(ui, |ui| {
+                Table::new(ui)
+                    .cell_spacing(10.0)
+                    .header(HEADER_HEIGHT, |r| {
                         r.cell(|ui| {
-                            ui.label(header);
+                            ui.label("Name");
                         });
-                    }
-                })
-                .body(ROW_HEIGHT, |mut t| {
-                    for node in nodes.iter_mut() {
-                        node.show(&mut t, 0.0, n_slots, n_metrics);
-                    }
-                });
+                        for header in &headers {
+                            r.cell(|ui| {
+                                ui.label(header);
+                            });
+                        }
+                    })
+                    .body(ROW_HEIGHT, |mut t| {
+                        for node in nodes.iter_mut() {
+                            node.show(
+                                &mut t,
+                                0.0,
+                                n_slots,
+                                n_metrics,
+                                &mut selected,
+                                &mut selection_changed,
+                            );
+                        }
+                    });
+            });
+        }
+
+        self.selected = selected;
+        if selection_changed {
+            self.rebuild_diagram();
+        }
+    }
+
+    fn show_diagram(&mut self, ui: &mut Ui, settings: &Settings) {
+        ui.horizontal(|ui| {
+            for diagram in [
+                DiagramType::Dps,
+                DiagramType::Damage,
+                DiagramType::DamageResistance,
+                DiagramType::HitsPerSecond,
+                DiagramType::HitsCount,
+            ] {
+                ui.selectable_value(&mut self.active_diagram, diagram, diagram.name())
+                    .on_hover_text(diagram.tooltip());
+            }
         });
+
+        let changed = match self.active_diagram {
+            DiagramType::Damage | DiagramType::DamageResistance | DiagramType::HitsCount => {
+                show_time_slice_setting(&mut self.time_slice, ui)
+            }
+            _ => show_time_filter_setting(&mut self.filter, ui),
+        };
+        if changed {
+            if let Some(diagrams) = &mut self.diagrams {
+                diagrams.update(self.filter, self.time_slice);
+            }
+        }
+
+        match &mut self.diagrams {
+            Some(diagrams) => diagrams.show(settings, ui, self.active_diagram),
+            None => {
+                ui.label("Select an ability row above to chart it across the combats.");
+            }
+        }
     }
 }
 
 impl CompareNode {
-    fn show(&mut self, t: &mut TableBody, indent: f32, n_slots: usize, n_metrics: usize) {
-        t.row(|r| {
+    fn show(
+        &mut self,
+        t: &mut TableBody,
+        indent: f32,
+        n_slots: usize,
+        n_metrics: usize,
+        selected: &mut Option<u32>,
+        selection_changed: &mut bool,
+    ) {
+        let is_selected = *selected == Some(self.id);
+        let response = t.selectable_row(is_selected, |r| {
             r.cell(|ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(indent * 20.0);
@@ -271,12 +403,36 @@ impl CompareNode {
             }
         });
 
+        if response.clicked() {
+            *selected = Some(self.id);
+            *selection_changed = true;
+        }
+
         if self.open {
             for sub in self.sub_nodes.iter_mut() {
-                sub.show(t, indent + 1.0, n_slots, n_metrics);
+                sub.show(
+                    t,
+                    indent + 1.0,
+                    n_slots,
+                    n_metrics,
+                    selected,
+                    selection_changed,
+                );
             }
         }
     }
+}
+
+fn find_node(nodes: &[CompareNode], id: u32) -> Option<&CompareNode> {
+    for node in nodes {
+        if node.id == id {
+            return Some(node);
+        }
+        if let Some(found) = find_node(&node.sub_nodes, id) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 fn top_dps_player(combat: &Combat) -> NameHandle {
@@ -311,7 +467,9 @@ fn players_by_dps(combat: &Combat) -> Vec<(NameHandle, String)> {
 fn build_level(
     parents: &[Option<&DamageGroup>],
     name_managers: &[&NameManager],
+    hits_managers: &[&HitsManager],
     columns: &[CompareMetric],
+    id_source: &mut u32,
 ) -> Vec<CompareNode> {
     let n = parents.len();
     let mut order: Vec<String> = Vec::new();
@@ -336,12 +494,17 @@ fn build_level(
         .enumerate()
         .map(|(idx, name)| {
             let per_slot = &children[idx];
+            let id = *id_source;
+            *id_source += 1;
             let sort_key = per_slot[0].map(|g| g.dps.all).unwrap_or(f64::NEG_INFINITY);
             let cells = build_cells(per_slot, columns);
-            let sub_nodes = build_level(per_slot, name_managers, columns);
+            let series = build_series(per_slot, hits_managers);
+            let sub_nodes = build_level(per_slot, name_managers, hits_managers, columns, id_source);
             CompareNode {
                 name,
+                id,
                 cells,
+                series,
                 sort_key,
                 sub_nodes,
                 open: false,
@@ -355,6 +518,22 @@ fn build_level(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     nodes
+}
+
+fn build_series(
+    per_slot: &[Option<&DamageGroup>],
+    hits_managers: &[&HitsManager],
+) -> Vec<Option<SeriesData>> {
+    per_slot
+        .iter()
+        .enumerate()
+        .map(|(slot_i, g)| {
+            g.map(|g| SeriesData {
+                hits: g.hits.get(hits_managers[slot_i]).to_vec(),
+                total: g.total_damage.all,
+            })
+        })
+        .collect()
 }
 
 fn build_cells(per_slot: &[Option<&DamageGroup>], columns: &[CompareMetric]) -> Vec<Option<SlotCell>> {
@@ -416,6 +595,38 @@ fn make_delta(
         text: format!("{}{}", sign, formatter.format(diff.abs(), metric.precision())),
         improvement,
     })
+}
+
+fn show_time_slice_setting(time_slice: &mut f64, ui: &mut Ui) -> bool {
+    ui.horizontal(|ui| {
+        let changed = SliderTextEdit::new(time_slice, 0.1..=6.0, "compare time slice slider")
+            .clamp_min(0.1)
+            .clamp_max(120.0)
+            .desired_text_edit_width(30.0)
+            .display_precision(4)
+            .step_by(0.1)
+            .show(ui)
+            .changed();
+        ui.label("Time Slice (s)");
+        changed
+    })
+    .inner
+}
+
+fn show_time_filter_setting(filter: &mut f64, ui: &mut Ui) -> bool {
+    ui.horizontal(|ui| {
+        let changed = SliderTextEdit::new(filter, 0.4..=6.0, "compare filter slider")
+            .clamp_min(0.1)
+            .clamp_max(120.0)
+            .desired_text_edit_width(30.0)
+            .display_precision(4)
+            .step_by(0.1)
+            .show(ui)
+            .changed();
+        ui.label("Gauss Filter Standard Deviation (how much to smooth the graph)");
+        changed
+    })
+    .inner
 }
 
 #[cfg(test)]
