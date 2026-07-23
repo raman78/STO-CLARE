@@ -1,6 +1,8 @@
 # Change Log
 
 # unreleased
+### Fixes
+- the combats list now shows the latest combat after pressing "Refresh Now" or reloading a log, even while the overlay is running (previously it could stay stuck on an earlier combat)
 
 ## v1.5.1
 ### Major Changes
