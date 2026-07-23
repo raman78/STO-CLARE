@@ -1,6 +1,8 @@
 # Change Log
 
 # unreleased
+
+## v1.5.2
 ### Other Changes
 - opening "Clear Log File" now refreshes the combats list automatically, so it always shows every combat currently in the log
 
