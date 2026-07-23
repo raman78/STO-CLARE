@@ -77,6 +77,7 @@ enum Instruction {
     Refresh(bool),
     AutoRefresh,
     GetCombat(usize, u32),
+    GetCombats(Vec<usize>, u32),
     KeepCombats(Vec<usize>),
     SaveCombat(usize, PathBuf),
     EnableAutoRefresh(bool, u32),
@@ -89,6 +90,9 @@ enum Instruction {
 #[derive(Clone)]
 pub enum AnalysisInfo {
     Combat(Arc<Combat>),
+    // Several combats fetched together for the compare view, each with its
+    // index in the combats list so the caller can tell them apart.
+    Combats(Vec<(usize, Arc<Combat>)>),
     Refreshed {
         latest_combat: Arc<Combat>,
         combats: Vec<String>,
@@ -150,6 +154,14 @@ impl AnalysisHandler {
     pub fn get_combat(&self, combat_index: usize) {
         self.tx
             .send(Instruction::GetCombat(combat_index, self.id))
+            .unwrap();
+    }
+
+    /// Fetch several combats at once (for the compare view). They come back as a
+    /// single `AnalysisInfo::Combats` on this handler.
+    pub fn get_combats(&self, combat_indices: Vec<usize>) {
+        self.tx
+            .send(Instruction::GetCombats(combat_indices, self.id))
             .unwrap();
     }
 
@@ -281,6 +293,9 @@ impl AnalysisContext {
                 Instruction::AutoRefresh => self.auto_refresh(),
                 Instruction::GetCombat(combat_index, handler) => {
                     self.get_combat(combat_index, handler);
+                }
+                Instruction::GetCombats(combat_indices, handler) => {
+                    self.get_combats(combat_indices, handler);
                 }
                 Instruction::KeepCombats(keep) => self.keep_combats(keep),
                 Instruction::SaveCombat(combat_index, file) => self.save_combat(combat_index, file),
@@ -443,6 +458,24 @@ impl AnalysisContext {
         };
 
         self.send_info(AnalysisInfo::Combat(combat.into()), handler);
+    }
+
+    fn get_combats(&self, combat_indices: Vec<usize>, handler: u32) {
+        let analyzer = match &self.analyzer {
+            Some(a) => a,
+            None => return,
+        };
+
+        let combats: Vec<(usize, Arc<Combat>)> = combat_indices
+            .into_iter()
+            .filter_map(|i| analyzer.result().get(i).map(|c| (i, Arc::new(c.clone()))))
+            .collect();
+
+        if combats.is_empty() {
+            return;
+        }
+
+        self.send_info(AnalysisInfo::Combats(combats), handler);
     }
 
     /// Rewrites the log so it keeps only the combats at `keep` (their byte
@@ -679,7 +712,7 @@ mod tests {
                         return;
                     }
                     AnalysisInfo::RefreshError => panic!("startup refresh errored"),
-                    AnalysisInfo::Combat(_) => {}
+                    AnalysisInfo::Combat(_) | AnalysisInfo::Combats(_) => {}
                 }
             }
             assert!(

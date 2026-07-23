@@ -9,11 +9,12 @@ use crate::{
 };
 
 use self::{
-    analysis_handling::AnalysisInfo, main_tabs::*, settings::*, state::AppState, status::*,
-    summary_copy::SummaryCopy,
+    analysis_handling::AnalysisInfo, compare::CompareView, main_tabs::*, settings::*,
+    state::AppState, status::*, summary_copy::SummaryCopy,
 };
 
 mod analysis_handling;
+mod compare;
 pub mod desktop_install;
 #[cfg(target_os = "linux")]
 pub mod layer_overlay;
@@ -35,6 +36,7 @@ pub struct App {
     selected_combat: Option<Arc<Combat>>,
     status_indicator: StatusIndicator,
     main_tabs: MainTabs,
+    compare: CompareView,
     summary_copy: SummaryCopy,
     upload: Upload,
     records: Records,
@@ -67,6 +69,7 @@ impl App {
             selected_combat: None,
             status_indicator: StatusIndicator::new(),
             main_tabs: MainTabs::empty(),
+            compare: Default::default(),
             summary_copy: Default::default(),
             upload: Default::default(),
             records: Default::default(),
@@ -98,94 +101,113 @@ impl eframe::App for App {
                     );
                     self.records
                         .show(ui, frame, &self.state.settings.upload.oscr_url);
+
+                    // Compare toggle (ON/OFF) as the last item on the top bar so it
+                    // stays put regardless of mode; highlighted blue while active.
+                    let compare_button = Button::new("Compare Combats 🆚");
+                    let compare_button = if self.compare.is_open() {
+                        compare_button.fill(Color32::from_rgb(0x2f, 0x6f, 0xd6))
+                    } else {
+                        compare_button
+                    };
+                    if ui.add(compare_button).clicked() {
+                        self.compare.toggle();
+                    }
                 });
 
-                ui.horizontal_wrapped(|ui| {
-                    self.status_indicator
-                        .show(self.state.analysis_handler.is_busy(), ui);
+                // The single-combat toolbar; hidden entirely while comparing.
+                if !self.compare.is_open() {
+                    ui.horizontal_wrapped(|ui| {
+                        self.status_indicator
+                            .show(self.state.analysis_handler.is_busy(), ui);
 
-                    ComboBox::new("combat list", "Combats")
-                        .width(400.0)
-                        // Show around 15 combats before the list starts to
-                        // scroll (the default only fits a few).
-                        .height(360.0)
-                        .selected_text(self.main_tabs.identifier.as_str())
-                        .show_ui(ui, |ui| {
-                            for (i, combat) in self.combats.iter().enumerate().rev() {
-                                if ui
-                                    .selectable_value(
-                                        &mut self.selected_combat_index,
-                                        Some(i),
-                                        combat.as_str(),
-                                    )
-                                    .changed()
-                                {
-                                    if let Some(combat_index) = self.selected_combat_index {
-                                        self.state.analysis_handler.get_combat(combat_index);
+                        ComboBox::new("combat list", "Combats")
+                            .width(400.0)
+                            // Show around 15 combats before the list starts to
+                            // scroll (the default only fits a few).
+                            .height(360.0)
+                            .selected_text(self.main_tabs.identifier.as_str())
+                            .show_ui(ui, |ui| {
+                                for (i, combat) in self.combats.iter().enumerate().rev() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.selected_combat_index,
+                                            Some(i),
+                                            combat.as_str(),
+                                        )
+                                        .changed()
+                                    {
+                                        if let Some(combat_index) = self.selected_combat_index {
+                                            self.state.analysis_handler.get_combat(combat_index);
+                                        }
                                     }
                                 }
-                            }
-                        });
+                            });
 
-                    if ui.button("Refresh Now ⟲").clicked() {
-                        self.state.analysis_handler.refresh();
-                    }
+                        if ui.button("Refresh Now ⟲").clicked() {
+                            self.state.analysis_handler.refresh();
+                        }
 
-                    self.settings_window.show_clear_log_dialog(
-                        &self.state.analysis_handler,
-                        &self.combats,
-                        ui,
-                    );
+                        self.settings_window.show_clear_log_dialog(
+                            &self.state.analysis_handler,
+                            &self.combats,
+                            ui,
+                        );
 
-                    if ui
-                        .checkbox(
-                            &mut self.state.settings.auto_refresh.enable,
-                            "Auto Refresh when log changes",
-                        )
-                        .clicked()
-                    {
-                        self.state
-                            .analysis_handler
-                            .enable_auto_refresh(self.state.settings.auto_refresh.enable);
-                        self.state.settings.save();
-                    }
-
-                    if ui
-                        .add_enabled(
-                            self.selected_combat.is_some(),
-                            Button::new("Save Combat 💾"),
-                        )
-                        .clicked()
-                    {
-                        if let Some(file) = FileDialog::new()
-                            .set_title("Save Combat")
-                            .add_filter("log", &["log"])
-                            .set_file_name(
-                                &self.selected_combat.as_ref().unwrap().file_identifier(),
+                        if ui
+                            .checkbox(
+                                &mut self.state.settings.auto_refresh.enable,
+                                "Auto Refresh when log changes",
                             )
-                            .set_parent(frame)
-                            .save_file()
+                            .clicked()
                         {
                             self.state
                                 .analysis_handler
-                                .save_combat(self.selected_combat_index.unwrap(), file);
+                                .enable_auto_refresh(self.state.settings.auto_refresh.enable);
+                            self.state.settings.save();
                         }
-                    }
 
-                    self.upload.show(
-                        ui,
-                        self.selected_combat.as_deref(),
-                        &self.state.settings.analysis,
-                        &self.state.settings.upload.oscr_url,
-                    );
+                        if ui
+                            .add_enabled(
+                                self.selected_combat.is_some(),
+                                Button::new("Save Combat 💾"),
+                            )
+                            .clicked()
+                        {
+                            if let Some(file) = FileDialog::new()
+                                .set_title("Save Combat")
+                                .add_filter("log", &["log"])
+                                .set_file_name(
+                                    &self.selected_combat.as_ref().unwrap().file_identifier(),
+                                )
+                                .set_parent(frame)
+                                .save_file()
+                            {
+                                self.state
+                                    .analysis_handler
+                                    .save_combat(self.selected_combat_index.unwrap(), file);
+                            }
+                        }
 
-                    ui.separator();
-                    self.summary_copy.show(self.selected_combat.as_deref(), ui);
-                    ui.separator();
-                    self.state.overlay.show(ui);
-                });
+                        self.upload.show(
+                            ui,
+                            self.selected_combat.as_deref(),
+                            &self.state.settings.analysis,
+                            &self.state.settings.upload.oscr_url,
+                        );
 
-                self.main_tabs.show(&self.state.settings, ui);
+                        ui.separator();
+                        self.summary_copy.show(self.selected_combat.as_deref(), ui);
+                        ui.separator();
+                        self.state.overlay.show(ui);
+                    });
+                }
+
+                if self.compare.is_open() {
+                    self.compare.show(&mut self.state, &self.combats, ui);
+                } else {
+                    self.main_tabs.show(&self.state.settings, ui);
+                }
             });
         });
     }
@@ -253,6 +275,9 @@ impl App {
                 AnalysisInfo::Combat(combat) => {
                     self.main_tabs.update(&self.state.settings, &combat);
                     self.selected_combat = Some(combat);
+                }
+                AnalysisInfo::Combats(combats) => {
+                    self.compare.set_combats(combats, &self.state.settings);
                 }
                 AnalysisInfo::Refreshed {
                     latest_combat,

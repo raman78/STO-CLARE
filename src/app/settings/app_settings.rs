@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::analyzer::settings::AnalysisSettings;
+use crate::{analyzer::settings::AnalysisSettings, app::compare::CompareSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
@@ -14,6 +14,8 @@ pub struct Settings {
     pub debug: DebugSettings,
     #[serde(default)]
     pub upload: UploadSettings,
+    #[serde(default)]
+    pub compare: CompareSettings,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
