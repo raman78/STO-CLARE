@@ -136,6 +136,8 @@ impl ClearLogDialog {
             self.is_open = true;
             newly_opened = true;
             self.reset_selection(combats.len());
+            // Rebuild the list from the log on open so it always shows every combat.
+            analysis_handler.refresh();
         }
 
         if !self.is_open {
@@ -158,7 +160,6 @@ impl ClearLogDialog {
 
         window.show(ui.ctx(), |ui| {
             ui.label("Select the combats to delete. Everything left unchecked is kept in the log.");
-            ui.label("Make sure you refreshed first, so the list is up to date.");
             ui.add_space(6.0);
 
             ui.horizontal(|ui| {

@@ -1,6 +1,9 @@
 # Change Log
 
 # unreleased
+### Other Changes
+- opening "Clear Log File" now refreshes the combats list automatically, so it always shows every combat currently in the log
+
 ### Fixes
 - the combats list now shows the latest combat after pressing "Refresh Now" or reloading a log, even while the overlay is running (previously it could stay stuck on an earlier combat)
 
