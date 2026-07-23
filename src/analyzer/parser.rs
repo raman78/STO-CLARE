@@ -76,7 +76,11 @@ impl Parser {
                 char_parser: CharParser { file },
                 escaped: Default::default(),
                 line: Default::default(),
-                line_start_in_file: Default::default(),
+                // The first line starts at byte 0; advance_line only records the
+                // start of later lines (after a newline), so seed it here.
+                // Otherwise the first combat has no log position and can't be
+                // read back (Save Combat, delete combats).
+                line_start_in_file: Some(0),
                 line_end_in_file: Default::default(),
                 line_finished: Default::default(),
             },
