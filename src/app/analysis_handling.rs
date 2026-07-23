@@ -324,7 +324,10 @@ impl AnalysisContext {
 
     fn refresh(&mut self, only_when_auto_refresh: bool) {
         Self::set_is_busy(&self.is_busy, true);
-        if let Some(info) = self.try_refresh() {
+        // An automatic (live) refresh may skip no-op events so it does not
+        // collapse an expanded breakdown; a manual refresh (Refresh Now /
+        // reload) always rebuilds the list so every combat shows up.
+        if let Some(info) = self.try_refresh(only_when_auto_refresh) {
             if only_when_auto_refresh {
                 for handler in self.handlers.iter().filter(|h| h.auto_refresh) {
                     handler.send(info.clone(), &self.ctx);
@@ -339,10 +342,12 @@ impl AnalysisContext {
         }
     }
 
-    /// Runs a consolidation pass and re-parses the log. Returns `None` when the
-    /// log has not changed since the last notified refresh, so callers do not
-    /// rebuild the view (which would collapse expanded damage trees) for nothing.
-    fn try_refresh(&mut self) -> Option<AnalysisInfo> {
+    /// Runs a consolidation pass and re-parses the log. When
+    /// `skip_when_unchanged` is set (automatic refreshes), returns `None` if the
+    /// log has not grown since the last notified refresh, so the view is not
+    /// rebuilt (which would collapse expanded damage trees) for nothing. A
+    /// manual refresh passes `false` so it always rebuilds the combats list.
+    fn try_refresh(&mut self, skip_when_unchanged: bool) -> Option<AnalysisInfo> {
         // Keep combatlog.log current in the background, but never touch the file
         // currently being read (the user may have opened a specific old log).
         #[cfg(target_os = "linux")]
@@ -367,9 +372,10 @@ impl AnalysisContext {
             .as_ref()
             .and_then(|a| std::fs::metadata(&a.settings().combatlog_file).ok())
             .map(|m| m.len());
-        // Nothing new since the last notified refresh: skip so the view is not
-        // rebuilt (which would collapse any expanded tree the user opened).
-        if size.is_some() && size == self.last_file_size {
+        // Nothing new since the last notified refresh: for an automatic refresh,
+        // skip so the view is not rebuilt (which would collapse any expanded tree
+        // the user opened). A manual refresh always rebuilds.
+        if skip_when_unchanged && size.is_some() && size == self.last_file_size {
             return None;
         }
         self.last_file_size = size;
@@ -682,6 +688,107 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
+    }
+
+    /// Regression: an automatic (live) refresh feeds only the overlay and
+    /// advances the "did the log grow" marker. A later manual refresh must still
+    /// rebuild the main window's combat list so every combat shows up —
+    /// otherwise the list gets stuck at the last combat it saw while the overlay
+    /// moves on to the current fight.
+    #[test]
+    fn manual_refresh_rebuilds_list_after_auto_refresh_consumed_change() {
+        let dir =
+            std::env::temp_dir().join(format!("cla-refresh-gate-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        // One record per combat, far enough apart to stay separate (default
+        // separation is 90s); the target is the player so the combat has data.
+        let combat = |hh: u32, mm: u32| {
+            format!(
+                "26:07:23:{hh:02}:{mm:02}:00.0::Attacker,C[1 Npc_Foo],,*,Kestrel,P[1@2 Kestrel@handle],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+            )
+        };
+        std::fs::write(&log, format!("{}{}", combat(20, 0), combat(20, 5))).unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+
+        // Build the analysis context by hand with two handlers, mirroring the
+        // app: the main window (no auto refresh) and the overlay (auto refresh).
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (main_tx, main_rx) = unbounded();
+        let main_handler = HandlerContext {
+            tx: main_tx,
+            auto_refresh: false,
+            id: 0,
+            viewport: ViewportId::ROOT,
+        };
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            main_handler,
+            instruction_tx,
+            settings,
+            Context::default(),
+            Arc::new(AtomicBool::new(false)),
+            1.0,
+        );
+        let (overlay_tx, overlay_rx) = unbounded();
+        context.handlers.push(HandlerContext {
+            tx: overlay_tx,
+            auto_refresh: true,
+            id: 1,
+            viewport: ViewportId::ROOT,
+        });
+
+        let latest_count = |rx: &Receiver<AnalysisInfo>| {
+            rx.try_iter()
+                .filter_map(|info| match info {
+                    AnalysisInfo::Refreshed { combats, .. } => Some(combats.len()),
+                    _ => None,
+                })
+                .last()
+        };
+
+        // Initial manual refresh: both windows see the two combats.
+        context.refresh(false);
+        assert_eq!(latest_count(&main_rx), Some(2));
+        assert_eq!(latest_count(&overlay_rx), Some(2));
+
+        // A new combat is logged live.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+            f.write_all(combat(20, 10).as_bytes()).unwrap();
+        }
+
+        // Automatic (live) refresh: only the overlay is notified, and the "did
+        // it grow" marker advances past the new combat.
+        context.refresh(true);
+        assert_eq!(
+            latest_count(&overlay_rx),
+            Some(3),
+            "overlay follows the live combat"
+        );
+        assert_eq!(
+            latest_count(&main_rx),
+            None,
+            "auto refresh leaves the main window alone"
+        );
+
+        // Manual refresh (Refresh Now): the main window must now show all three
+        // combats even though the log has not grown since the auto refresh.
+        context.refresh(false);
+        assert_eq!(
+            latest_count(&main_rx),
+            Some(3),
+            "manual refresh must rebuild the list after an auto refresh consumed the change"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
