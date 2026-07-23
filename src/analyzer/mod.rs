@@ -645,6 +645,64 @@ impl CombatName {
 mod tests {
     use super::*;
 
+    /// Real-data check for the "delete combats" flow: keep a subset of combats
+    /// by concatenating their byte ranges, then re-analyze and assert exactly
+    /// those combats survive, in order (removing a middle combat must not merge
+    /// its neighbours). Run with:
+    /// `cargo test keep_subset_of_combats -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "reads a real STO log"]
+    fn keep_subset_of_combats() {
+        let src = "/home/raman/Games/steamapps/common/Star Trek Online/Star Trek Online/Live/logs/GameClient/combatlog.log";
+        let dir = std::env::temp_dir().join("cla-keep-combats-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let work = dir.join("combatlog.log");
+        std::fs::copy(src, &work).unwrap();
+
+        let analyze = |file: &Path| {
+            let mut analyzer = Analyzer::new(AnalysisSettings {
+                combatlog_file: file.to_string_lossy().into_owned(),
+                ..Default::default()
+            })
+            .unwrap();
+            analyzer.update();
+            analyzer
+        };
+
+        let analyzer = analyze(&work);
+        let combats = analyzer.result();
+        let n = combats.len();
+        assert!(n >= 3, "need several combats to test with, got {n}");
+
+        // Keep the newest plus every other combat (drops several middle ones).
+        let keep: Vec<usize> = (0..n).filter(|i| *i == n - 1 || i % 2 == 0).collect();
+        let kept_ids: Vec<String> = keep.iter().map(|&i| combats[i].identifier()).collect();
+
+        let mut data = Vec::new();
+        for &i in &keep {
+            let bytes = combats[i]
+                .read_log_combat_data(&work)
+                .expect("combat byte range");
+            data.extend_from_slice(&bytes);
+        }
+        let rewritten = dir.join("kept.log");
+        std::fs::write(&rewritten, &data).unwrap();
+
+        let new_ids: Vec<String> = analyze(&rewritten)
+            .result()
+            .iter()
+            .map(|c| c.identifier())
+            .collect();
+        println!("kept {} of {} combats", keep.len(), n);
+        assert_eq!(
+            new_ids, kept_ids,
+            "rewritten log must contain exactly the kept combats, in order"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     #[ignore = "manual test"]
     fn analyze_log() {

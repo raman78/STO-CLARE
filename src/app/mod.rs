@@ -66,6 +66,7 @@ impl eframe::App for App {
                     self.settings_window.show(
                         &mut self.state,
                         self.selected_combat.as_deref(),
+                        &self.combats,
                         ui,
                         frame,
                     );
@@ -79,6 +80,9 @@ impl eframe::App for App {
 
                     ComboBox::new("combat list", "Combats")
                         .width(400.0)
+                        // Show around 15 combats before the list starts to
+                        // scroll (the default only fits a few).
+                        .height(360.0)
                         .selected_text(self.main_tabs.identifier.as_str())
                         .show_ui(ui, |ui| {
                             for (i, combat) in self.combats.iter().enumerate().rev() {
@@ -101,8 +105,11 @@ impl eframe::App for App {
                         self.state.analysis_handler.refresh();
                     }
 
-                    self.settings_window
-                        .show_clear_log_dialog(&self.state.analysis_handler, ui);
+                    self.settings_window.show_clear_log_dialog(
+                        &self.state.analysis_handler,
+                        &self.combats,
+                        ui,
+                    );
 
                     if ui
                         .checkbox(

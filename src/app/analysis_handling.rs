@@ -38,6 +38,10 @@ struct AnalysisContext {
     is_busy: Arc<AtomicBool>,
     auto_refresh_interval: Duration,
     auto_refresh: Option<AutoRefreshContext>,
+    // Size of the log at the last refresh we notified about; used to skip
+    // no-op refreshes so auto refresh doesn't rebuild the view when nothing
+    // changed. Reset whenever the analyzer is (re)built.
+    last_file_size: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -66,7 +70,7 @@ enum Instruction {
     Refresh(bool),
     AutoRefresh,
     GetCombat(usize, u32),
-    ClearLog,
+    KeepCombats(Vec<usize>),
     SaveCombat(usize, PathBuf),
     EnableAutoRefresh(bool, u32),
     SetAutoRefreshInterval(f64),
@@ -142,8 +146,9 @@ impl AnalysisHandler {
             .unwrap();
     }
 
-    pub fn clear_log(&self) {
-        self.tx.send(Instruction::ClearLog).unwrap();
+    /// Rewrites the log to keep only the combats at `keep` (dropping the rest).
+    pub fn keep_combats(&self, keep: Vec<usize>) {
+        self.tx.send(Instruction::KeepCombats(keep)).unwrap();
     }
 
     pub fn save_combat(&self, combat_index: usize, file: PathBuf) {
@@ -215,8 +220,15 @@ impl AnalysisContext {
             is_busy,
             auto_refresh_interval: AutoRefreshContext::interval(auto_refresh_interval_seconds),
             auto_refresh: None,
+            last_file_size: None,
         };
         _self.update_auto_refresh();
+        // Load the combats list on startup without waiting for the user to hit
+        // Refresh. It is queued so it runs on the analysis thread, keeping the
+        // window responsive while the initial parse happens.
+        if _self.analyzer.is_some() {
+            let _ = _self.instruction_tx.send(Instruction::Refresh(false));
+        }
         _self
     }
 
@@ -233,11 +245,19 @@ impl AnalysisContext {
                 Instruction::GetCombat(combat_index, handler) => {
                     self.get_combat(combat_index, handler);
                 }
-                Instruction::ClearLog => self.clear_log(),
+                Instruction::KeepCombats(keep) => self.keep_combats(keep),
                 Instruction::SaveCombat(combat_index, file) => self.save_combat(combat_index, file),
                 Instruction::EnableAutoRefresh(enable, handler) => {
                     self.handler_mut(handler, |h| h.auto_refresh = enable);
                     self.update_auto_refresh();
+                    if enable {
+                        // Show the latest combat right away on the just-enabled
+                        // handler (e.g. the overlay), instead of only after the
+                        // next refresh.
+                        if let info @ AnalysisInfo::Refreshed { .. } = self.latest_info() {
+                            self.send_info(info, handler);
+                        }
+                    }
                 }
                 Instruction::SetAutoRefreshInterval(refresh_interval) => {
                     self.set_auto_refresh_interval(refresh_interval)
@@ -267,13 +287,14 @@ impl AnalysisContext {
 
     fn refresh(&mut self, only_when_auto_refresh: bool) {
         Self::set_is_busy(&self.is_busy, true);
-        let info = self.try_refresh();
-        if only_when_auto_refresh {
-            for handler in self.handlers.iter().filter(|h| h.auto_refresh) {
-                handler.send(info.clone(), &self.ctx);
+        if let Some(info) = self.try_refresh() {
+            if only_when_auto_refresh {
+                for handler in self.handlers.iter().filter(|h| h.auto_refresh) {
+                    handler.send(info.clone(), &self.ctx);
+                }
+            } else {
+                self.send_info_all(info);
             }
-        } else {
-            self.send_info_all(info);
         }
         if let Some(ctx) = &mut self.auto_refresh {
             ctx.state = AutoRefreshState::Idle;
@@ -281,24 +302,49 @@ impl AnalysisContext {
         }
     }
 
-    fn try_refresh(&mut self) -> AnalysisInfo {
-        let analyzer = match self.analyzer.as_mut() {
+    /// Re-parses the log and returns `None` when it has not changed since the
+    /// last notified refresh, so callers do not rebuild the view (which would
+    /// collapse expanded damage trees) for nothing.
+    fn try_refresh(&mut self) -> Option<AnalysisInfo> {
+        match self.analyzer.as_mut() {
+            Some(a) => a.update(),
+            None => {
+                self.last_file_size = None;
+                return Some(AnalysisInfo::RefreshError);
+            }
+        }
+        let size = self
+            .analyzer
+            .as_ref()
+            .and_then(|a| std::fs::metadata(&a.settings().combatlog_file).ok())
+            .map(|m| m.len());
+        // Nothing new since the last notified refresh: skip so the view is not
+        // rebuilt (which would collapse any expanded tree the user opened).
+        if size.is_some() && size == self.last_file_size {
+            return None;
+        }
+        self.last_file_size = size;
+        Some(self.latest_info())
+    }
+
+    /// Builds a `Refreshed` from the analyzer's current results without
+    /// re-reading the log; `RefreshError` if nothing is loaded yet.
+    fn latest_info(&self) -> AnalysisInfo {
+        let analyzer = match self.analyzer.as_ref() {
             Some(a) => a,
             None => return AnalysisInfo::RefreshError,
         };
-        analyzer.update();
         let latest_combat = match analyzer.result().last() {
             Some(c) => c.clone(),
             None => return AnalysisInfo::RefreshError,
         };
-        let info = AnalysisInfo::Refreshed {
+        AnalysisInfo::Refreshed {
             latest_combat: latest_combat.into(),
             combats: analyzer.result().iter().map(|c| c.identifier()).collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
                 .map(|m| m.len()),
-        };
-        info
+        }
     }
 
     fn auto_refresh(&mut self) {
@@ -344,36 +390,45 @@ impl AnalysisContext {
         self.send_info(AnalysisInfo::Combat(combat.into()), handler);
     }
 
-    fn clear_log(&mut self) {
+    /// Rewrites the log so it keeps only the combats at `keep` (their byte
+    /// ranges), dropping the rest.
+    fn keep_combats(&mut self, mut keep: Vec<usize>) {
         let analyzer = match &self.analyzer {
             Some(a) => a,
             None => return,
         };
         let settings = analyzer.settings().clone();
 
-        let last_combat = analyzer.result().last();
-        let last_combat_data = last_combat
-            .map(|c| c.read_log_combat_data(settings.combatlog_file()))
-            .flatten();
-
-        self.analyzer = None;
-
-        let mut file = match File::options()
-            .write(true)
-            .truncate(true)
-            .create(false)
-            .open(settings.combatlog_file())
-        {
-            Ok(f) => f,
-            Err(_) => return,
-        };
-
-        if let Some(last_combat_data) = last_combat_data {
-            let _ = file.write_all(last_combat_data.as_slice());
+        keep.sort_unstable();
+        keep.dedup();
+        let mut data = Vec::new();
+        for &index in &keep {
+            match analyzer
+                .result()
+                .get(index)
+                .and_then(|combat| combat.read_log_combat_data(settings.combatlog_file()))
+            {
+                Some(bytes) => data.extend_from_slice(&bytes),
+                None => {
+                    // Abort rather than risk dropping a combat the user wanted
+                    // to keep; leave the log untouched.
+                    log::error!(
+                        "aborting combat deletion: could not read combat {index} from the log"
+                    );
+                    return;
+                }
+            }
         }
 
-        drop(file);
+        self.analyzer = None;
+        if let Err(e) = rewrite_file(settings.combatlog_file(), &data) {
+            log::error!("failed to rewrite combat log while deleting combats: {e}");
+        }
         self.analyzer = Analyzer::new(settings);
+        self.last_file_size = None;
+        // The rewrite replaces the file (new inode), so the auto-refresh watcher
+        // must be re-created or it would keep watching the old, deleted file.
+        self.update_auto_refresh();
         self.refresh(false);
     }
 
@@ -477,5 +532,88 @@ impl HandlerContext {
             Ok(_) => ctx.request_repaint_of(self.viewport),
             Err(_) => (),
         }
+    }
+}
+
+/// Atomically replaces `path`'s contents with `data` (write to a sibling temp
+/// file, flush and sync, then rename over the target) so a crash mid-write
+/// cannot leave a truncated log behind.
+fn rewrite_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp = dir.join(".cla-log-rewrite.tmp");
+    {
+        let mut file = File::create(&tmp)?;
+        file.write_all(data)?;
+        file.flush()?;
+        file.sync_data()?;
+    }
+    std::fs::rename(&tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The app should populate the combats list on startup on its own (no manual
+    /// Refresh). Creates a handler exactly like the app does and waits for the
+    /// automatic first refresh to deliver the combats.
+    #[test]
+    #[ignore = "reads a real STO log"]
+    fn loads_combats_on_startup() {
+        // Work on a copy in a scratch dir rather than pointing the handler at
+        // the real log.
+        let src = "/home/raman/Games/steamapps/common/Star Trek Online/Star Trek Online/Live/logs/GameClient/combatlog.log";
+        let dir = std::env::temp_dir().join(format!("cla-startup-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let work = dir.join("combatlog.log");
+        std::fs::copy(src, &work).unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: work.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let handler = AnalysisHandler::new(settings, Context::default(), 1.0, false);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            if let Some(info) = handler.check_for_info().last() {
+                match info {
+                    AnalysisInfo::Refreshed { combats, .. } => {
+                        assert!(!combats.is_empty(), "startup refresh produced no combats");
+                        println!("startup loaded {} combats", combats.len());
+                        let _ = std::fs::remove_dir_all(&dir);
+                        return;
+                    }
+                    AnalysisInfo::RefreshError => panic!("startup refresh errored"),
+                    AnalysisInfo::Combat(_) => {}
+                }
+            }
+            assert!(
+                std::time::Instant::now() <= deadline,
+                "no startup refresh within timeout"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
+    #[test]
+    fn rewrite_file_replaces_contents_atomically() {
+        let dir = std::env::temp_dir().join(format!("cla-rewrite-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("combatlog.log");
+
+        std::fs::write(&target, b"old contents that are longer").unwrap();
+        rewrite_file(&target, b"new").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        // No temp file is left behind.
+        assert!(!dir.join(".cla-log-rewrite.tmp").exists());
+
+        // Rewriting to empty truncates the file.
+        rewrite_file(&target, b"").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
