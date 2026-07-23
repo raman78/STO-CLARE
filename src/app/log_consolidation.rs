@@ -58,11 +58,6 @@ impl Consolidator {
         consolidator
     }
 
-    /// Path of the consolidated file the analyzer should read.
-    pub fn target(&self) -> &Path {
-        &self.target
-    }
-
     /// Runs one consolidation pass; logs and swallows I/O errors so a transient
     /// failure never takes down analysis. `protected` is a file currently being
     /// analyzed directly (e.g. an old log the user opened): it is left entirely
@@ -71,14 +66,6 @@ impl Consolidator {
         if let Err(e) = self.run(protected) {
             log::warn!("combatlog consolidation: {e}");
         }
-    }
-
-    /// Forgets mirror state and removes the sidecar (used when the target is
-    /// cleared/rebuilt, so the next tick re-mirrors from scratch).
-    pub fn reset(&mut self) {
-        self.active = None;
-        self.active_offset = 0;
-        let _ = fs::remove_file(self.state_path());
     }
 
     fn run(&mut self, protected: Option<&Path>) -> io::Result<()> {
@@ -333,7 +320,7 @@ mod tests {
         assert!(!dir.join("combatlog_2026-07-19_11-00-00.log").exists());
         assert!(dir.join("combatlog_2026-07-19_12-00-00.log").exists());
 
-        let merged = std::fs::read_to_string(consolidator.target()).unwrap();
+        let merged = std::fs::read_to_string(&consolidator.target).unwrap();
         assert_eq!(
             merged,
             "26:07:19:10:00:00.0::a\n26:07:19:11:00:00.0::b\n26:07:19:12:00:00.0::c\n"
@@ -347,7 +334,7 @@ mod tests {
             .write_all(b"26:07:19:12:00:01.0::d\n")
             .unwrap();
         consolidator.tick(None);
-        let merged = std::fs::read_to_string(consolidator.target()).unwrap();
+        let merged = std::fs::read_to_string(&consolidator.target).unwrap();
         assert_eq!(merged.matches("::c").count(), 1, "active must not be duplicated");
         assert!(merged.ends_with("26:07:19:12:00:01.0::d\n"));
 
@@ -381,7 +368,7 @@ mod tests {
         let mut consolidator = Consolidator::new(&dir);
         consolidator.tick(None);
 
-        let merged = std::fs::read(consolidator.target()).unwrap();
+        let merged = std::fs::read(&consolidator.target).unwrap();
         let merged_lines = merged.iter().filter(|&&b| b == b'\n').count();
         println!("source lines: {total_lines}, merged lines: {merged_lines}");
         assert_eq!(merged_lines, total_lines, "line count changed after consolidation");
@@ -446,7 +433,7 @@ mod tests {
         let mut consolidator = Consolidator::new(&dir);
         consolidator.tick(None);
 
-        let merged = std::fs::read_to_string(consolidator.target()).unwrap();
+        let merged = std::fs::read_to_string(&consolidator.target).unwrap();
         assert_eq!(merged, expected, "every byte must survive exactly once");
         // Only the active (newest) rotated file remains.
         assert!(dir.join("combatlog_2026-07-19_12-00-00.log").exists());
@@ -469,7 +456,7 @@ mod tests {
         let mut restarted = Consolidator::new(&dir);
         restarted.tick(None);
 
-        let merged = std::fs::read_to_string(restarted.target()).unwrap();
+        let merged = std::fs::read_to_string(&restarted.target).unwrap();
         assert_eq!(merged.matches("::c").count(), 1, "restart re-appended active");
         let _ = std::fs::remove_dir_all(&dir);
     }
