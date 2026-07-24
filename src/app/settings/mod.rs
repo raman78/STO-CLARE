@@ -73,18 +73,21 @@ impl SettingsWindow {
         if !self.is_open {
             return;
         }
-        // Restore the last size; the window is freely resizable (bounded only by
-        // the viewport via `constrain`), so it can be dragged taller.
+        // Restore the last size. The window is freely resizable, but capped to
+        // the viewport so that expanding a collapsed section (which grows the
+        // content) cannot push the window off-screen.
         let default_size = state
             .settings
             .general
             .settings_window_size
             .unwrap_or([760.0, 560.0]);
+        let max_size = ui.ctx().content_rect().size() - vec2(16.0, 16.0);
         let window_response = Window::new("Settings")
             .collapsible(false)
             .resizable(true)
             .default_size(default_size)
             .min_size([420.0, 300.0])
+            .max_size(max_size)
             .constrain(true)
             .show(ui.ctx(), |ui| {
                 ui.horizontal(|ui| {

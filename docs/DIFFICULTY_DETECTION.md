@@ -54,9 +54,10 @@ Combat::name() ─▶ user rules matched? ─▶ join their names   (they win)
 The Combat Name Rules editor (`app/settings/analysis::CombatNameRules`) lists the
 curated maps read-only below the user rules and flags overlaps two ways:
 
-- **Static** (`rule_map_overlaps`): each enabled user rule is tested against every
-  curated identifier's unique name (`curated_map_identifiers()`); a match means
-  the rule shadows that map, listed as "rule → map(s)".
+- **Per rule** (`overlapping_maps`): each enabled rule is tested against every
+  curated identifier's unique name (`curated_map_identifiers()`); a match shows a
+  ⚠ on that rule's row, whose tooltip names the shadowed map(s). Wired via
+  `GroupRulesTable::with_row_warning`.
 - **Per-combat**: when the selected combat is auto-detected but a rule renamed it.
 
 The curated rules are never copied into the user's settings — they are rendered

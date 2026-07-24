@@ -10,6 +10,8 @@ use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
 const HEADER_HEIGHT: f32 = 15.0;
 const ROW_HEIGHT: f32 = 25.0;
+/// Amber used for shadow/overlap warnings.
+const WARN_COLOR: Color32 = Color32::from_rgb(0xd9, 0x95, 0x00);
 
 #[derive(Default)]
 pub struct AnalysisTab {
@@ -51,6 +53,9 @@ struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default> {
     name_header: &'a str,
     selected_group: &'a mut Option<usize>,
     popup_extra_space: f32,
+    /// Optional per-row warning: returns a tooltip when the row's rule should be
+    /// flagged (e.g. it shadows an auto-detected map). Adds a ⚠ cell per row.
+    row_warning: Option<&'a dyn Fn(&RulesGroup) -> Option<String>>,
 }
 
 struct RulesTable<'a> {
@@ -269,6 +274,19 @@ impl CombatNameRules {
         selected_combat: Option<&Combat>,
         ui: &mut Ui,
     ) {
+        // Flag rules that shadow an auto-detected map, as a ⚠ on the rule's row.
+        let identifiers = curated_map_identifiers();
+        let row_warning = |group: &RulesGroup| {
+            let maps = Self::overlapping_maps(group, &identifiers);
+            (!maps.is_empty()).then(|| {
+                format!(
+                    "This rule shadows the auto-detected map(s): {}. \
+                     Your rule takes priority over the detected name.",
+                    maps.join(", ")
+                )
+            })
+        };
+
         CollapsingHeader::new("Combat Name Detection Rules").show_unindented(ui, |ui| {
             GroupRulesTable::new(
                 &mut modified_settings.combat_name_rules,
@@ -277,6 +295,7 @@ impl CombatNameRules {
                 &mut self.selected_group,
                 200.0,
             )
+            .with_row_warning(&row_warning)
             .show(ui, |r, ui| {
                 RulesTable::new(
                     &mut r.name_rule.rules,
@@ -318,50 +337,26 @@ impl CombatNameRules {
                 });
             });
 
-            Self::show_auto_detected(&modified_settings.combat_name_rules, selected_combat, ui);
+            Self::show_auto_detected(selected_combat, ui);
         });
     }
 
     /// Read-only view of the maps the analyzer auto-detects. These act as a
     /// lower-priority layer below the rules above: a combat that no rule names
-    /// falls back to its detected map (with difficulty). The rules above always
-    /// win, so a matching rule "shadows" the detected name — flagged here both
-    /// for the selected combat and, statically, for every rule that matches a
-    /// curated map's entities.
-    fn show_auto_detected(
-        rules: &[CombatNameRule],
-        selected_combat: Option<&Combat>,
-        ui: &mut Ui,
-    ) {
-        const WARN: Color32 = Color32::from_rgb(0xd9, 0x95, 0x00);
-
+    /// falls back to its detected map (with difficulty). Individual rules that
+    /// shadow a detected map are flagged with a ⚠ on their row (see
+    /// `overlapping_maps`); this section additionally notes it for the selected
+    /// combat and lists the detectable maps.
+    fn show_auto_detected(selected_combat: Option<&Combat>, ui: &mut Ui) {
         ui.add_space(10.0);
         ui.separator();
         ui.label(
             RichText::new(
-                "Auto-detected maps — used only when no rule above matches. \
-                 Your rules always take priority (they shadow the detected name).",
+                "Auto-detected maps — used only when no rule above matches. Your rules \
+                 always take priority; a ⚠ marks a rule that shadows a detected map.",
             )
             .weak(),
         );
-
-        // Static overlap report: which of your rules match the same entities a
-        // curated map is detected by, and would therefore shadow it.
-        let overlaps = Self::rule_map_overlaps(rules);
-        ui.add_space(6.0);
-        if overlaps.is_empty() {
-            ui.label(RichText::new("None of your rules overlap the auto-detected maps.").weak());
-        } else {
-            ui.label("Your rules that overlap an auto-detected map (they take priority over it):");
-            for (rule_name, maps) in &overlaps {
-                let rule_name = if rule_name.is_empty() {
-                    "(unnamed rule)"
-                } else {
-                    rule_name.as_str()
-                };
-                ui.colored_label(WARN, format!("⚠ \"{}\"  →  {}", rule_name, maps.join(", ")));
-            }
-        }
 
         // Collision note for the currently selected combat, if a rule renamed it.
         if let Some(combat) = selected_combat {
@@ -369,7 +364,7 @@ impl CombatNameRules {
                 if !combat.combat_names.is_empty() {
                     ui.add_space(6.0);
                     ui.colored_label(
-                        WARN,
+                        WARN_COLOR,
                         format!(
                             "⚠ Your rules name the selected combat \"{}\", shadowing the \
                              detected \"{}\".",
@@ -393,33 +388,25 @@ impl CombatNameRules {
             });
     }
 
-    /// For each enabled user rule, the curated maps it would shadow, i.e. whose
-    /// identifying entity (unique name) the rule matches. Empty when none.
-    fn rule_map_overlaps(rules: &[CombatNameRule]) -> Vec<(String, Vec<String>)> {
-        let identifiers = curated_map_identifiers();
-        rules
+    /// The curated maps a single rule shadows, i.e. whose identifying entity
+    /// (unique name) the rule matches. Sorted and deduped; empty when none or
+    /// when the rule is disabled.
+    fn overlapping_maps(group: &RulesGroup, identifiers: &[(String, String)]) -> Vec<String> {
+        if !group.enabled {
+            return Vec::new();
+        }
+        let mut maps: Vec<String> = identifiers
             .iter()
-            .filter_map(|rule| {
-                let group = &rule.name_rule;
-                if !group.enabled {
-                    return None;
-                }
-                let mut maps: Vec<String> = identifiers
-                    .iter()
-                    .filter(|(unique_name, _)| {
-                        group.matches_source_or_target_unique_names(std::iter::once(
-                            unique_name.as_str(),
-                        )) || group.matches_indirect_source_unique_names(std::iter::once(
-                            unique_name.as_str(),
-                        ))
-                    })
-                    .map(|(_, map)| map.clone())
-                    .collect();
-                maps.sort();
-                maps.dedup();
-                (!maps.is_empty()).then_some((group.name.clone(), maps))
+            .filter(|(unique_name, _)| {
+                group.matches_source_or_target_unique_names(std::iter::once(unique_name.as_str()))
+                    || group
+                        .matches_indirect_source_unique_names(std::iter::once(unique_name.as_str()))
             })
-            .collect()
+            .map(|(_, map)| map.clone())
+            .collect();
+        maps.sort();
+        maps.dedup();
+        maps
     }
 }
 
@@ -437,10 +424,18 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
             name_header,
             selected_group,
             popup_extra_space,
+            row_warning: None,
         }
     }
 
+    /// Show a ⚠ on the right of each row for which `warning` returns a tooltip.
+    fn with_row_warning(mut self, warning: &'a dyn Fn(&RulesGroup) -> Option<String>) -> Self {
+        self.row_warning = Some(warning);
+        self
+    }
+
     fn show(&mut self, ui: &mut Ui, mut edit: impl FnMut(&mut T, &mut Ui)) {
+        let row_warning = self.row_warning;
         ui.horizontal(|ui| {
             ui.label(self.title);
             if ui.button("Add ✚").clicked() {
@@ -485,6 +480,14 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                                 .clip_text(false)
                                 .show(ui);
                         });
+
+                        if let Some(row_warning) = row_warning {
+                            r.cell(|ui| {
+                                if let Some(tooltip) = row_warning(rule.borrow()) {
+                                    ui.colored_label(WARN_COLOR, "⚠").on_hover_text(tooltip);
+                                }
+                            });
+                        }
 
                         r.cell(|ui| {
                             if ui.selectable_label(false, "🗑").clicked() {
@@ -659,20 +662,22 @@ mod tests {
 
     #[test]
     fn overlap_flags_rule_matching_a_curated_entity() {
-        let rules = vec![
-            unique_name_rule("My Hive", "Space_Borg_Dreadnought_Hive_Intro"),
-            unique_name_rule("Unrelated", "Some_Random_Entity"),
-        ];
-        let overlaps = CombatNameRules::rule_map_overlaps(&rules);
-        assert_eq!(overlaps.len(), 1);
-        assert_eq!(overlaps[0].0, "My Hive");
-        assert_eq!(overlaps[0].1, vec!["Hive Space".to_string()]);
+        let identifiers = curated_map_identifiers();
+        let hive = unique_name_rule("My Hive", "Space_Borg_Dreadnought_Hive_Intro");
+        let unrelated = unique_name_rule("Unrelated", "Some_Random_Entity");
+
+        assert_eq!(
+            CombatNameRules::overlapping_maps(&hive.name_rule, &identifiers),
+            vec!["Hive Space".to_string()]
+        );
+        assert!(CombatNameRules::overlapping_maps(&unrelated.name_rule, &identifiers).is_empty());
     }
 
     #[test]
     fn disabled_rule_is_not_flagged() {
+        let identifiers = curated_map_identifiers();
         let mut rule = unique_name_rule("My Hive", "Space_Borg_Dreadnought_Hive_Intro");
         rule.name_rule.enabled = false;
-        assert!(CombatNameRules::rule_map_overlaps(&[rule]).is_empty());
+        assert!(CombatNameRules::overlapping_maps(&rule.name_rule, &identifiers).is_empty());
     }
 }
