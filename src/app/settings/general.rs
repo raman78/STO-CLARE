@@ -136,8 +136,10 @@ impl ClearLogDialog {
             self.is_open = true;
             newly_opened = true;
             self.reset_selection(combats.len());
-            // Rebuild the list from the log on open so it always shows every combat.
-            analysis_handler.refresh();
+            // Rebuild the list from the log on open so it always shows every
+            // combat, without switching the main view off the combat being
+            // viewed.
+            analysis_handler.refresh_combats_list();
         }
 
         if !self.is_open {

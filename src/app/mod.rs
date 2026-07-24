@@ -268,6 +268,16 @@ impl App {
                         file_size,
                     };
                 }
+                AnalysisInfo::CombatsListRefreshed { combats, file_size } => {
+                    // Only the combats list is refreshed here (e.g. the "Clear
+                    // Log File" dialog opening); the currently-viewed combat in
+                    // the main view is deliberately left untouched.
+                    self.combats = combats;
+                    self.status_indicator.status = Status::Loaded {
+                        combatlog_file: combatlog_file.clone(),
+                        file_size,
+                    };
+                }
                 AnalysisInfo::RefreshError => {
                     self.status_indicator.status = Status::LoadError {
                         combatlog_file: combatlog_file.clone(),

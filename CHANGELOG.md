@@ -1,6 +1,8 @@
 # Change Log
 
 # unreleased
+### Fixes
+- opening "Clear Log File" no longer jumps the main view to the newest combat — the combat you were looking at stays open while the delete list refreshes
 
 ## v1.5.2
 ### Other Changes
