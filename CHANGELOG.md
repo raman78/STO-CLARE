@@ -9,6 +9,9 @@
 - the Compare Combats difficulty filter (Advanced / Elite) now recognizes each combat's real difficulty from what happened in the fight instead of guessing from its name, so filtering by Elite or Advanced is accurate even when the combat name doesn't mention the difficulty
 - you can drop a detection_rules.json file next to your settings to update or tweak how maps and difficulties are recognized, without waiting for a new build
 
+### Fixes
+- the Settings window can now be made as tall as you like (it was capped before) and remembers its size between sessions
+
 ## v1.5.2
 ### Other Changes
 - opening "Clear Log File" now refreshes the combats list automatically, so it always shows every combat currently in the log
