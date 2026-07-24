@@ -203,6 +203,9 @@ impl Comparison {
         for (slot_i, slot) in self.slots.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(format!("{}: {}", slot_i + 1, slot.combat.identifier()));
+                if slot_i == 0 {
+                    ui.label(RichText::new("(reference — all deltas compare to this)").weak());
+                }
                 let current = slot.player.get(&slot.combat.name_manager).to_string();
                 ComboBox::new(("compare player", slot_i), "player")
                     .selected_text(current)
@@ -269,7 +272,7 @@ impl Comparison {
             .flat_map(|c| {
                 (0..n_slots).map(move |slot_i| {
                     if slot_i == 0 {
-                        format!("{}\n{}", c.label(), slot_i + 1)
+                        format!("{}\n{} (ref)", c.label(), slot_i + 1)
                     } else {
                         format!("\n{}", slot_i + 1)
                     }
@@ -573,14 +576,18 @@ fn build_cells(per_slot: &[Option<&DamageGroup>], columns: &[CompareMetric]) -> 
 }
 
 /// Formatted, colored delta of `current` versus `base` for one metric. `None`
-/// when either value is missing or the values are equal.
+/// when `current` is missing (the cell is empty) or the values are equal. When
+/// the reference combat has no value to compare against (the ability is absent
+/// there), the baseline is treated as zero, so the whole value still shows as a
+/// colored +/- delta.
 fn make_delta(
     base: Option<f64>,
     current: Option<f64>,
     metric: CompareMetric,
     formatter: &mut NumberFormatter,
 ) -> Option<DeltaCell> {
-    let (base, current) = (base?, current?);
+    let current = current?;
+    let base = base.unwrap_or(0.0);
     let diff = current - base;
     if diff.abs() < 1e-9 {
         return None;
@@ -656,10 +663,23 @@ mod tests {
     }
 
     #[test]
-    fn equal_or_missing_values_have_no_delta() {
+    fn equal_or_missing_current_has_no_delta() {
         let mut f = NumberFormatter::new();
         assert!(make_delta(Some(100.0), Some(100.0), CompareMetric::Dps, &mut f).is_none());
-        assert!(make_delta(None, Some(100.0), CompareMetric::Dps, &mut f).is_none());
         assert!(make_delta(Some(100.0), None, CompareMetric::Dps, &mut f).is_none());
+    }
+
+    #[test]
+    fn missing_base_treats_baseline_as_zero() {
+        // The ability is absent from the reference combat, so its whole value
+        // shows as a colored +/- delta against a zero baseline.
+        let mut f = NumberFormatter::new();
+        let new_dps = make_delta(None, Some(100.0), CompareMetric::Dps, &mut f).unwrap();
+        assert!(new_dps.improvement);
+        assert_eq!(new_dps.text, "+100");
+
+        // For resistance, lower is better, so a value appearing is worse (red).
+        let new_res = make_delta(None, Some(30.0), CompareMetric::Resistance, &mut f).unwrap();
+        assert!(!new_res.improvement);
     }
 }
