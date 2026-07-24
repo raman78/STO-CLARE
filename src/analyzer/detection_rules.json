@@ -28,7 +28,7 @@
     "Mission_Event_Tholian_Invasion_Ext_Boss": { "map": "Nukara Prime: Transdimensional Tactics", "difficulty": "Any" },
     "Space_Borg_Dreadnought_Wolf359": { "map": "Battle of Wolf 359", "difficulty": "Any" },
     "Snowman_Q_Boss_Msn_Snowglobe": { "map": "Winter Invasion", "difficulty": "Normal" },
-    "Space_Klingon_Cruiser_Dsc_Mokai": { "map": "Rescue and Search", "difficulty": "Any" }
+    "Space_Klingon_Cruiser_Dsc_Mokai": { "map": "[Patrol] Rescue and Search", "difficulty": "Any" }
   },
   "death_counts": {
     "Infected Space": {
@@ -163,7 +163,7 @@
         "Space_Borg_Cruiser_Wolf359": 0
       }
     },
-    "Rescue and Search": {
+    "[Patrol] Rescue and Search": {
       "Advanced": {
         "Space_Klingon_Cruiser_Dsc_Mokai": 300000,
         "Space_Klingon_Battleship_Dsc_Mokai": 300000

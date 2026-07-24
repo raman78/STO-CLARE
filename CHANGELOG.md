@@ -8,7 +8,7 @@
 ### Other Changes
 - the Compare Combats difficulty filter (Advanced / Elite) now recognizes each combat's real difficulty from what happened in the fight instead of guessing from its name, so filtering by Elite or Advanced is accurate even when the combat name doesn't mention the difficulty
 - you can drop a detection_rules.json file next to your settings to update or tweak how maps and difficulties are recognized, without waiting for a new build
-- the Rescue and Search patrol is now recognized, so its Advanced / Elite level shows automatically
+- the [Patrol] Rescue and Search patrol is now recognized, so its Advanced / Elite level shows automatically
 
 ### Fixes
 - the Settings window can now be made as tall as you like (it was capped before), stays within the screen even when you expand a section, and remembers its size between sessions

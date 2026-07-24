@@ -422,7 +422,7 @@ mod tests {
             hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 338_000.0),
         ];
         let result = detect(&bundled_rules(), &view(&advanced));
-        assert_eq!(result.map.as_deref(), Some("Rescue and Search"));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Rescue and Search"));
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
 
         let elite = vec![
