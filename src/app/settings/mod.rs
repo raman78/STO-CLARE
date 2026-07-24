@@ -73,11 +73,18 @@ impl SettingsWindow {
         if !self.is_open {
             return;
         }
-        Window::new("Settings")
+        // Restore the last size; the window is freely resizable (bounded only by
+        // the viewport via `constrain`), so it can be dragged taller.
+        let default_size = state
+            .settings
+            .general
+            .settings_window_size
+            .unwrap_or([760.0, 560.0]);
+        let window_response = Window::new("Settings")
             .collapsible(false)
             .resizable(true)
-            .default_size([760.0, 560.0])
-            .max_size([1080.0, 720.0])
+            .default_size(default_size)
+            .min_size([420.0, 300.0])
             .constrain(true)
             .show(ui.ctx(), |ui| {
                 ui.horizontal(|ui| {
@@ -118,6 +125,18 @@ impl SettingsWindow {
                     }
                 })
             });
+
+        // Remember the current size (persisted with the app settings on apply and
+        // on exit). Written to both the working copy and the live settings so it
+        // survives regardless of whether the dialog is closed with Ok or Cancel.
+        if let Some(window_response) = window_response {
+            let size = window_response.response.rect.size();
+            let size = [size.x, size.y];
+            if state.settings.general.settings_window_size != Some(size) {
+                self.modified_settings.general.settings_window_size = Some(size);
+                state.settings.general.settings_window_size = Some(size);
+            }
+        }
     }
 
     pub fn show_clear_log_dialog(

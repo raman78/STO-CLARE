@@ -2,6 +2,9 @@
 
 # unreleased
 
+### Fixes
+- the Settings window can now be made as tall as you like (it was capped before) and remembers its size between sessions
+
 ## v1.5.2
 ### Other Changes
 - opening "Clear Log File" now refreshes the combats list automatically, so it always shows every combat currently in the log

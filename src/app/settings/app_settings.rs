@@ -25,6 +25,9 @@ pub struct General {
     pub window_size: Option<[f32; 2]>,
     #[serde(default)]
     pub window_maximized: bool,
+    // Last size of the Settings dialog (points), restored on the next open.
+    #[serde(default)]
+    pub settings_window_size: Option<[f32; 2]>,
     // Last overlay position as the (top, left) layer-shell anchor margin
     // (Linux). Restored when the overlay is next shown. See app::overlay.
     #[serde(default)]
