@@ -25,7 +25,7 @@ pub mod settings;
 mod values_manager;
 pub use common::*;
 pub use damage::*;
-pub use detection::Difficulty;
+pub use detection::{Difficulty, curated_map_names};
 use detection::{CritterMeta, DETECTION_RULES};
 use groups::*;
 pub use groups::{AnalysisGroup, DamageGroup, HealGroup};
@@ -253,11 +253,23 @@ impl Combat {
     }
 
     pub fn name(&self) -> String {
-        if self.combat_names.len() == 0 {
-            return "Combat".to_string();
+        // User Combat Name Rules take priority (they "shadow" detection). Only
+        // when no rule matches do we fall back to the auto-detected map name.
+        if !self.combat_names.is_empty() {
+            return self.combat_names.values().map(|n| n.format()).join(", ");
         }
 
-        self.combat_names.values().map(|n| n.format()).join(", ")
+        self.detected_name().unwrap_or_else(|| "Combat".to_string())
+    }
+
+    /// The auto-detected map name, with the difficulty appended when it was
+    /// resolved (e.g. `"Hive Space (Elite)"`); `None` when no map was detected.
+    pub fn detected_name(&self) -> Option<String> {
+        let map = self.detected_map.as_ref()?;
+        Some(match self.detected_difficulty.and_then(|d| d.label()) {
+            Some(label) => format!("{map} ({label})"),
+            None => map.clone(),
+        })
     }
 
     pub fn file_identifier(&self) -> String {

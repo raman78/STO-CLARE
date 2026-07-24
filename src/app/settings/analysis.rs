@@ -3,7 +3,7 @@ use std::borrow::BorrowMut;
 use eframe::egui::*;
 
 use super::Settings;
-use crate::analyzer::Combat;
+use crate::analyzer::{Combat, curated_map_names};
 use crate::custom_widgets::table::Table;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
@@ -95,7 +95,7 @@ impl AnalysisTab {
 
         ui.separator();
         self.combat_names_rules
-            .show(&mut modified_settings.analysis, ui);
+            .show(&mut modified_settings.analysis, selected_combat, ui);
 
         self.show_occurred_names_window(selected_combat, ui);
     }
@@ -263,7 +263,12 @@ impl CustomGroupingRules {
 }
 
 impl CombatNameRules {
-    fn show(&mut self, modified_settings: &mut AnalysisSettings, ui: &mut Ui) {
+    fn show(
+        &mut self,
+        modified_settings: &mut AnalysisSettings,
+        selected_combat: Option<&Combat>,
+        ui: &mut Ui,
+    ) {
         CollapsingHeader::new("Combat Name Detection Rules").show_unindented(ui, |ui| {
             GroupRulesTable::new(
                 &mut modified_settings.combat_name_rules,
@@ -312,7 +317,52 @@ impl CombatNameRules {
                     });
                 });
             });
+
+            Self::show_auto_detected(selected_combat, ui);
         });
+    }
+
+    /// Read-only view of the maps the analyzer auto-detects. These act as a
+    /// lower-priority layer below the rules above: a combat that no rule names
+    /// falls back to its detected map (with difficulty). The rules above always
+    /// win, so a matching rule "shadows" the detected name — flagged here for the
+    /// selected combat.
+    fn show_auto_detected(selected_combat: Option<&Combat>, ui: &mut Ui) {
+        ui.add_space(10.0);
+        ui.separator();
+        ui.label(
+            RichText::new(
+                "Auto-detected maps — used only when no rule above matches. \
+                 Your rules always take priority (they shadow the detected name).",
+            )
+            .weak(),
+        );
+
+        // Collision note: the selected combat is auto-detected but a rule renamed it.
+        if let Some(combat) = selected_combat {
+            if let Some(detected) = combat.detected_name() {
+                if !combat.combat_names.is_empty() {
+                    ui.colored_label(
+                        Color32::from_rgb(0xd9, 0x95, 0x00),
+                        format!(
+                            "⚠ Your rules name the selected combat \"{}\", shadowing the \
+                             detected \"{}\".",
+                            combat.name(),
+                            detected
+                        ),
+                    );
+                }
+            }
+        }
+
+        ScrollArea::vertical()
+            .id_salt("auto detected maps")
+            .max_height(150.0)
+            .show(ui, |ui| {
+                for map in curated_map_names() {
+                    ui.label(RichText::new(map).weak());
+                }
+            });
     }
 }
 

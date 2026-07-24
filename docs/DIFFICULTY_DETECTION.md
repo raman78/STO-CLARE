@@ -19,9 +19,17 @@ mechanisms could tell them apart:
   actually happened*: which curated boss/NPC internal names appeared, how many
   times specific entities died, and (planned) how much hull damage they suffered.
 
-The two are complementary: naming stays user-owned and covers arbitrary
-encounters; detection is objective and drives the Compare view's difficulty
-filter. They do not replace each other.
+The two form a **priority (firewall) stack** for the display name:
+
+1. User Combat Name Rules win — a matching rule names the combat (and may append
+   its own `(Elite)` etc. via additional-info rules).
+2. Otherwise the **detected** map name is used, with the difficulty appended
+   (e.g. `Hive Space (Elite)`) — see `Combat::name` / `Combat::detected_name`.
+3. Otherwise `"Combat"`.
+
+So a user rule "shadows" the detected name (the editor flags this for the
+selected combat). The **difficulty** itself always comes from detection,
+regardless of naming, and drives the Compare filter.
 
 ## Data flow
 
@@ -37,7 +45,18 @@ Combat::update() ─▶ Combat::update_detection()
 
 AnalysisHandler::latest_info() ─▶ AnalysisInfo::Refreshed { difficulties, .. }
    ─▶ App.combat_difficulties ─▶ CompareView difficulty filter
+
+Combat::name() ─▶ user rules matched? ─▶ join their names   (they win)
+                  else detected_name() ─▶ "<map> (<difficulty>)"  (fallback)
+                  else "Combat"
 ```
+
+The Combat Name Rules editor (`app/settings/analysis::CombatNameRules`) lists the
+curated maps read-only below the user rules, and warns when a rule shadows the
+detected name of the currently selected combat. The curated rules themselves are
+never copied into the user's settings — they are rendered from
+`detection::curated_map_names()` — so refreshing them is a JSON swap that leaves
+user rules untouched.
 
 `critters` is accumulated live as records stream in (once each), so it is
 complete by the time `update()` runs, and it grows monotonically for live

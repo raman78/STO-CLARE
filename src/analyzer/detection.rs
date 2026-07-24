@@ -9,13 +9,14 @@
 //! rule tables in a JSON file (`detection_rules.json`) instead of hard-coding
 //! them, so they can be refreshed when OSCR updates.
 //!
-//! The detection is data-driven and completely separate from the user-editable
-//! Combat Name Rules: those produce a display label, this produces an
-//! authoritative `(map, difficulty)`.
+//! The detection is data-driven and independent of the user-editable Combat Name
+//! Rules: it produces an authoritative `(map, difficulty)`. The difficulty drives
+//! the Compare filter; the map name is used as a lower-priority naming fallback
+//! (a matching user rule always wins — see `Combat::name`).
 //!
-//! This module implements the existence + death-count phases. The hull-damage
-//! tie-break (needed only where death counts do not distinguish the tiers, e.g.
-//! Hive Space) is added on top of the same `CritterMeta`.
+//! Phases: existence (which curated entity is present), death counts (exact
+//! per-entity deaths, low tier to high), and a hull-damage tie-break for maps
+//! whose tiers share death counts (e.g. Hive Space).
 
 use std::{collections::HashMap, path::PathBuf};
 
@@ -37,6 +38,19 @@ pub enum Difficulty {
     Normal,
     Advanced,
     Elite,
+}
+
+impl Difficulty {
+    /// Human label for display, or `None` when the tier should not be shown
+    /// (`Any` — a known map whose tier was not resolved).
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            Difficulty::Any => None,
+            Difficulty::Normal => Some("Normal"),
+            Difficulty::Advanced => Some("Advanced"),
+            Difficulty::Elite => Some("Elite"),
+        }
+    }
 }
 
 /// Difficulties tried during the death-count phase, ordered low to high. A
@@ -144,6 +158,19 @@ fn load_rules() -> DetectionRules {
     }
     serde_json::from_str(include_str!("detection_rules.json"))
         .expect("bundled detection_rules.json must be valid")
+}
+
+/// The distinct map names the detection can produce, sorted, for showing the
+/// curated (auto-detected) maps in the Combat Name Rules editor.
+pub fn curated_map_names() -> Vec<String> {
+    let mut names: Vec<String> = DETECTION_RULES
+        .map_identifiers
+        .values()
+        .map(|m| m.map.clone())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 /// Detect `(map, difficulty)` from the combat's critters, given a view keyed by
