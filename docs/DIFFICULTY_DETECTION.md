@@ -28,7 +28,7 @@ filter. They do not replace each other.
 ```
 parse record ─▶ Combat::update_critters()      accumulate per-NPC facts
    (mod.rs)        └─ target is NonPlayer? ─▶ critters[unique_name].deaths += KILL
-                                              (+ hull damage per instance — planned)
+                                              + hull damage per instance (by id)
 
 Combat::update() ─▶ Combat::update_detection()
                        ├─ build view: unique_name &str ─▶ &CritterMeta
@@ -55,8 +55,10 @@ Bundled next to the module and embedded via `include_str!`, parsed once into the
   },
   "death_counts": {                    // resolve tier by exact death counts
     "<map>": { "Advanced": { "<unique_name>": <count> }, "Elite": { ... } }
+  },
+  "hull_counts": {                     // tie-break by median hull damage
+    "<map>": { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }
   }
-  // "hull_counts": { ... }            // planned tie-break (see below)
 }
 ```
 
@@ -81,11 +83,13 @@ Mirrors OSCR's `detect_map`:
    overrides a lower one. A tier matches when every listed entity is present and
    every entry with count `> 0` died *exactly* that many times. If the map has
    tables but none match, the tier is `Any`.
-3. **Hull tie-break** — *planned.* For maps where the two tiers have identical
-   death counts (e.g. Hive Space), compare the **median hull damage suffered**
-   per entity against a threshold (OSCR: `check_difficulty_damage`, median of
-   per-instance hull damage). Until this lands, such maps are intentionally left
-   out of `death_counts` so they report `Any` rather than a wrong tier.
+3. **Hull tie-break** — for maps where the two tiers have identical death counts
+   (e.g. Hive Space), compare each entity's **median hull damage suffered**
+   (across instances) against its threshold: a tier matches when
+   `threshold * (1 - HULL_VARIANCE) < median`, with `HULL_VARIANCE = 0.20`
+   (OSCR's `var`). Runs after the death phase and overrides it (higher tiers
+   still win); skipped when death tables existed but none matched (that stays
+   `Any`).
 
 ## What we already parse vs. what this adds
 
@@ -105,6 +109,7 @@ keyed by unique name.
 
 - `analyzer::detection::tests` — unit tests over synthetic critter tables:
   unknown map, Advanced by counts, Elite override, "known map but wrong counts ⇒
-  Any", and a fixed-difficulty map. `bundled_rules_parse` guards the JSON.
+  Any", a fixed-difficulty map, and the Hive Space hull tie-break (Advanced vs
+  Elite from median hull damage). `bundled_rules_parse` guards the JSON.
 - `analyzer::tests::detects_maps_in_real_log` (ignored) — smoke test that prints
   detected `(map, difficulty)` for each combat in the live log.

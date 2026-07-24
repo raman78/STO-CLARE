@@ -44,6 +44,28 @@ const DIFFICULTY_ORDER: [Difficulty; 2] = [Difficulty::Advanced, Difficulty::Eli
 pub struct CritterMeta {
     /// How many times an entity with this unique name died in the combat.
     pub deaths: u32,
+    /// Total hull damage suffered, per distinct entity instance (by id). The
+    /// median across instances approximates the entity's hull HP and is what
+    /// tells the tiers apart on maps where death counts do not.
+    pub hull_damage_per_instance: FxHashMap<u64, f64>,
+}
+
+impl CritterMeta {
+    /// Median (50th percentile, linearly interpolated to match OSCR's
+    /// `numpy.percentile`) of the per-instance hull damage suffered.
+    fn median_hull_damage(&self) -> f64 {
+        let mut values: Vec<f64> = self.hull_damage_per_instance.values().copied().collect();
+        if values.is_empty() {
+            return 0.0;
+        }
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let n = values.len();
+        if n % 2 == 1 {
+            values[n / 2]
+        } else {
+            (values[n / 2 - 1] + values[n / 2]) / 2.0
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,7 +84,15 @@ pub struct DetectionRules {
     /// required count of 0 means "must be present, any number of deaths"
     /// (used when only the entity's existence distinguishes the tier).
     death_counts: HashMap<String, HashMap<Difficulty, HashMap<String, u32>>>,
+    /// Map -> difficulty -> {entity unique name -> hull-damage threshold}. Used
+    /// to break ties where the tiers share death counts (e.g. Hive Space). An
+    /// entity matches when its median hull damage exceeds `threshold * (1 - VAR)`.
+    #[serde(default)]
+    hull_counts: HashMap<String, HashMap<Difficulty, HashMap<String, f64>>>,
 }
+
+/// Variance tolerance for the hull-damage check (matches OSCR's `var`).
+const HULL_VARIANCE: f64 = 0.20;
 
 /// The detection result for a combat.
 #[derive(Debug, Clone, Default)]
@@ -117,14 +147,48 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
             }
         }
     }
+    // Death tables exist but none matched: the tier cannot be resolved. Skip the
+    // hull tie-break (as OSCR does) and report `Any`.
     if had_tables && difficulty.is_none() {
-        difficulty = Some(Difficulty::Any);
+        return Detected {
+            map: Some(map.to_string()),
+            difficulty: Some(Difficulty::Any),
+        };
+    }
+
+    // Hull-damage tie-break: overrides the death-count result where the tiers
+    // share death counts (e.g. Hive Space). Higher tiers still override lower.
+    if let Some(tier_tables) = rules.hull_counts.get(map) {
+        for tier in DIFFICULTY_ORDER {
+            if let Some(table) = tier_tables.get(&tier) {
+                if hull_damage_match(table, critters) {
+                    difficulty = Some(tier);
+                }
+            }
+        }
     }
 
     Detected {
         map: Some(map.to_string()),
         difficulty,
     }
+}
+
+/// A tier matches when every listed entity is present and its median hull damage
+/// suffered exceeds `threshold * (1 - VAR)`.
+fn hull_damage_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
+    for (unique_name, threshold) in table.iter() {
+        match critters.get(unique_name.as_str()) {
+            None => return false,
+            Some(meta) => {
+                let low = threshold * (1.0 - HULL_VARIANCE);
+                if !(low < meta.median_hull_damage()) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// A tier matches when every listed entity is present and, for entries with a
@@ -156,8 +220,23 @@ mod tests {
     fn critters(entries: &[(&'static str, u32)]) -> Vec<(&'static str, CritterMeta)> {
         entries
             .iter()
-            .map(|(n, d)| (*n, CritterMeta { deaths: *d }))
+            .map(|(n, d)| {
+                (
+                    *n,
+                    CritterMeta {
+                        deaths: *d,
+                        ..Default::default()
+                    },
+                )
+            })
             .collect()
+    }
+
+    /// Build a critter with a single instance carrying the given hull damage.
+    fn hull_critter(name: &'static str, hull_damage: f64) -> (&'static str, CritterMeta) {
+        let mut meta = CritterMeta::default();
+        meta.hull_damage_per_instance.insert(0, hull_damage);
+        (name, meta)
     }
 
     fn view<'a>(owned: &'a [(&'static str, CritterMeta)]) -> FxHashMap<&'a str, &'a CritterMeta> {
@@ -212,6 +291,46 @@ mod tests {
         let result = detect(&DETECTION_RULES, &view(&owned));
         assert_eq!(result.map.as_deref(), Some("Infected Space"));
         assert_eq!(result.difficulty, Some(Difficulty::Any));
+    }
+
+    #[test]
+    fn hive_space_tier_resolved_by_hull_damage() {
+        // Hive Space shares death counts across tiers, so only the median hull
+        // damage of the dreadnought distinguishes Advanced (~1.7M) from Elite
+        // (~8M). Provide Advanced-level hull damage; expect Advanced.
+        let deaths = [
+            ("Mission_Space_Borg_Queen_Diamond", 1u32),
+            ("Mission_Space_Borg_Battleship_Queen_2_0f_2", 1),
+            ("Mission_Space_Borg_Battleship_Queen_1_0f_2", 1),
+        ];
+        let mut owned: Vec<(&str, CritterMeta)> = deaths
+            .iter()
+            .map(|(n, d)| {
+                (
+                    *n,
+                    CritterMeta {
+                        deaths: *d,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        owned.push(hull_critter("Space_Borg_Dreadnought_Hive_Intro", 1_707_034.0));
+        owned.push(hull_critter("Space_Borg_Cruiser_Hive_Intro1", 461_582.0));
+        owned.push(hull_critter("Space_Borg_Cruiser_Hive_Intro2", 461_582.0));
+        owned.push(hull_critter("Space_Borg_Battleship_Hive_Intro", 576_977.0));
+
+        let result = detect(&DETECTION_RULES, &view(&owned));
+        assert_eq!(result.map.as_deref(), Some("Hive Space"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        // Now Elite-level hull damage on the dreadnought: expect Elite.
+        owned[3] = hull_critter("Space_Borg_Dreadnought_Hive_Intro", 8_007_542.0);
+        owned[4] = hull_critter("Space_Borg_Cruiser_Hive_Intro1", 2_165_239.0);
+        owned[5] = hull_critter("Space_Borg_Cruiser_Hive_Intro2", 2_165_239.0);
+        owned[6] = hull_critter("Space_Borg_Battleship_Hive_Intro", 2_706_549.0);
+        let result = detect(&DETECTION_RULES, &view(&owned));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
     #[test]

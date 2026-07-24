@@ -365,16 +365,22 @@ impl Combat {
     /// dealt to a non-player entity contributes; a kill increments that entity's
     /// death count. Must run after `update_names`, which interns the unique name.
     fn update_critters(&mut self, record: &Record) {
-        if !matches!(record.value, RecordValue::Damage(_)) {
+        let RecordValue::Damage(hit) = &record.value else {
             return;
-        }
-        let Entity::NonPlayer { unique_name, .. } = &record.target else {
+        };
+        let Entity::NonPlayer {
+            unique_name, _id, ..
+        } = &record.target
+        else {
             return;
         };
         let handle = self.name_manager.handle(unique_name);
         let meta = self.critters.entry(handle).or_default();
         if record.value_flags.contains(ValueFlags::KILL) {
             meta.deaths += 1;
+        }
+        if let SpecificHit::Hull { .. } = hit.specific {
+            *meta.hull_damage_per_instance.entry(*_id).or_default() += hit.damage;
         }
     }
 
