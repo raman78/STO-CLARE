@@ -253,24 +253,28 @@ impl Combat {
     }
 
     pub fn name(&self) -> String {
-        // User Combat Name Rules take priority (they "shadow" detection). Only
-        // when no rule matches do we fall back to the auto-detected map name.
-        if !self.combat_names.is_empty() {
-            return self.combat_names.values().map(|n| n.format()).join(", ");
-        }
+        // The base name comes from the user's Combat Name Rules (they take
+        // priority), else the auto-detected map, else "Combat". The detected
+        // difficulty is always appended on top — it is computed from the log's
+        // entities, independent of naming, so the tier shows even when a rule
+        // provides the name.
+        let base = if !self.combat_names.is_empty() {
+            self.combat_names.values().map(|n| n.format()).join(", ")
+        } else {
+            self.detected_map
+                .clone()
+                .unwrap_or_else(|| "Combat".to_string())
+        };
 
-        self.detected_name().unwrap_or_else(|| "Combat".to_string())
+        append_detected_difficulty(base, self.detected_difficulty)
     }
 
-    /// The auto-detected map name, with the difficulty appended in square
-    /// brackets when it was resolved (e.g. `"Hive Space [Elite]"`); `None` when
-    /// no map was detected.
+    /// The auto-detected name: the map with the difficulty appended in square
+    /// brackets when resolved (e.g. `"Hive Space [Elite]"`); `None` when no map
+    /// was detected. Used to show what detection alone would name a combat.
     pub fn detected_name(&self) -> Option<String> {
-        let map = self.detected_map.as_ref()?;
-        Some(match self.detected_difficulty.and_then(|d| d.label()) {
-            Some(label) => format!("{map} [{label}]"),
-            None => map.clone(),
-        })
+        let map = self.detected_map.clone()?;
+        Some(append_detected_difficulty(map, self.detected_difficulty))
     }
 
     pub fn file_identifier(&self) -> String {
@@ -679,6 +683,18 @@ impl Combat {
     }
 }
 
+/// Append the auto-detected difficulty in square brackets (e.g. `[Elite]`),
+/// unless the base name already mentions that tier (so a rule that already says
+/// "(Elite)" is not doubled). `Any` / no difficulty leaves the name unchanged.
+fn append_detected_difficulty(base: String, difficulty: Option<Difficulty>) -> String {
+    match difficulty.and_then(|d| d.label()) {
+        Some(label) if !base.to_lowercase().contains(&label.to_lowercase()) => {
+            format!("{base} [{label}]")
+        }
+        _ => base,
+    }
+}
+
 impl CombatName {
     fn new(rule: &CombatNameRule, name_manager: &NameManager) -> Self {
         let additional_infos: Vec<_> = rule
@@ -710,6 +726,42 @@ impl CombatName {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn append_difficulty_adds_bracketed_level() {
+        assert_eq!(
+            append_detected_difficulty("Infected Space".to_string(), Some(Difficulty::Elite)),
+            "Infected Space [Elite]"
+        );
+        assert_eq!(
+            append_detected_difficulty("Khitomer".to_string(), Some(Difficulty::Advanced)),
+            "Khitomer [Advanced]"
+        );
+    }
+
+    #[test]
+    fn append_difficulty_skips_when_name_already_has_the_tier() {
+        // A user rule that already says "(Elite)" must not become "... [Elite]".
+        assert_eq!(
+            append_detected_difficulty(
+                "Infected Conduit (Elite)".to_string(),
+                Some(Difficulty::Elite)
+            ),
+            "Infected Conduit (Elite)"
+        );
+    }
+
+    #[test]
+    fn append_difficulty_unchanged_for_any_or_none() {
+        assert_eq!(
+            append_detected_difficulty("Azure Nebula".to_string(), None),
+            "Azure Nebula"
+        );
+        assert_eq!(
+            append_detected_difficulty("Azure Nebula".to_string(), Some(Difficulty::Any)),
+            "Azure Nebula"
+        );
+    }
 
     /// Real-data check for the "delete combats" flow: keep a subset of combats
     /// by concatenating their byte ranges, then re-analyze and assert exactly

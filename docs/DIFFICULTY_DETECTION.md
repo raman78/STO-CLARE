@@ -19,17 +19,17 @@ mechanisms could tell them apart:
   actually happened*: which curated boss/NPC internal names appeared, how many
   times specific entities died, and (planned) how much hull damage they suffered.
 
-The two form a **priority (firewall) stack** for the display name:
+The display name is **base name + detected difficulty**:
 
-1. User Combat Name Rules win — a matching rule names the combat (and may append
-   its own `(Elite)` etc. via additional-info rules).
-2. Otherwise the **detected** map name is used, with the difficulty appended
-   (e.g. `Hive Space (Elite)`) — see `Combat::name` / `Combat::detected_name`.
-3. Otherwise `"Combat"`.
+1. Base name: the user's Combat Name Rules if any match (they take priority),
+   else the detected map, else `"Combat"`.
+2. The detected difficulty is then appended in square brackets (e.g. `[Elite]`)
+   unless the base already mentions that tier — see `Combat::name` /
+   `append_detected_difficulty`.
 
-So a user rule "shadows" the detected name (the editor flags this for the
-selected combat). The **difficulty** itself always comes from detection,
-regardless of naming, and drives the Compare filter.
+The difficulty is computed from the log's entities, independent of naming, so the
+tier shows even on combats a user rule names (only the base name is "shadowed",
+never the difficulty). It also drives the Compare filter.
 
 ## Data flow
 
@@ -46,9 +46,8 @@ Combat::update() ─▶ Combat::update_detection()
 AnalysisHandler::latest_info() ─▶ AnalysisInfo::Refreshed { difficulties, .. }
    ─▶ App.combat_difficulties ─▶ CompareView difficulty filter
 
-Combat::name() ─▶ user rules matched? ─▶ join their names   (they win)
-                  else detected_name() ─▶ "<map> (<difficulty>)"  (fallback)
-                  else "Combat"
+Combat::name() ─▶ base = user rules ? join names : detected_map ?? "Combat"
+                  append_detected_difficulty(base, detected_difficulty) ─▶ "... [Elite]"
 ```
 
 The Combat Name Rules editor (`app/settings/analysis::CombatNameRules`) lists the
