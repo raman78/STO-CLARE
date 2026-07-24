@@ -280,7 +280,7 @@ impl CombatNameRules {
             let maps = Self::overlapping_maps(group, &identifiers);
             (!maps.is_empty()).then(|| {
                 format!(
-                    "This rule shadows the auto-detected map(s): {}. \
+                    "This rule overlaps the auto-detected map(s): {}. \
                      Your rule takes priority over the detected name.",
                     maps.join(", ")
                 )
@@ -348,14 +348,23 @@ impl CombatNameRules {
     /// `overlapping_maps`); this section additionally notes it for the selected
     /// combat and lists the detectable maps.
     fn show_auto_detected(selected_combat: Option<&Combat>, ui: &mut Ui) {
+        // Legend for the per-row ⚠, directly under the rules frame above.
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.colored_label(WARN_COLOR, "⚠");
+            ui.label(
+                RichText::new(
+                    "= this rule overlaps an auto-detected map (your rule takes priority \
+                     over the detected name).",
+                )
+                .weak(),
+            );
+        });
+
         ui.add_space(10.0);
         ui.separator();
         ui.label(
-            RichText::new(
-                "Auto-detected maps — used only when no rule above matches. Your rules \
-                 always take priority; a ⚠ marks a rule that shadows a detected map.",
-            )
-            .weak(),
+            RichText::new("Auto-detected maps — used only when no rule above matches.").weak(),
         );
 
         // Collision note for the currently selected combat, if a rule renamed it.
@@ -482,9 +491,14 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                         });
 
                         if let Some(row_warning) = row_warning {
-                            r.cell(|ui| {
-                                if let Some(tooltip) = row_warning(rule.borrow()) {
+                            r.cell(|ui| match row_warning(rule.borrow()) {
+                                Some(tooltip) => {
                                     ui.colored_label(WARN_COLOR, "⚠").on_hover_text(tooltip);
+                                }
+                                // Keep the column width constant whether or not a
+                                // warning shows, so toggling rules doesn't shift the row.
+                                None => {
+                                    ui.colored_label(Color32::TRANSPARENT, "⚠");
                                 }
                             });
                         }

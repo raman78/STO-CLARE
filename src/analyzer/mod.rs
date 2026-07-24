@@ -262,12 +262,13 @@ impl Combat {
         self.detected_name().unwrap_or_else(|| "Combat".to_string())
     }
 
-    /// The auto-detected map name, with the difficulty appended when it was
-    /// resolved (e.g. `"Hive Space (Elite)"`); `None` when no map was detected.
+    /// The auto-detected map name, with the difficulty appended in square
+    /// brackets when it was resolved (e.g. `"Hive Space [Elite]"`); `None` when
+    /// no map was detected.
     pub fn detected_name(&self) -> Option<String> {
         let map = self.detected_map.as_ref()?;
         Some(match self.detected_difficulty.and_then(|d| d.label()) {
-            Some(label) => format!("{map} ({label})"),
+            Some(label) => format!("{map} [{label}]"),
             None => map.clone(),
         })
     }

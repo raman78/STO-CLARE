@@ -3,7 +3,7 @@
 # unreleased
 
 ### Major Changes
-- combats you haven't named with your own rules now show the automatically detected map and difficulty (e.g. "Hive Space (Elite)") instead of just "Combat", recognized from what actually happened in the fight; your own naming rules always take priority, and the settings now list the auto-detected maps and put a warning icon next to any of your naming rules that shadows one (hover it to see which map)
+- combats you haven't named with your own rules now show the automatically detected map and difficulty (e.g. "Hive Space [Elite]") instead of just "Combat", recognized from what actually happened in the fight; your own naming rules always take priority, and the settings now list the auto-detected maps and put a warning icon next to any of your naming rules that shadows one (hover it to see which map)
 
 ### Other Changes
 - the Compare Combats difficulty filter (Advanced / Elite) now recognizes each combat's real difficulty from what happened in the fight instead of guessing from its name, so filtering by Elite or Advanced is accurate even when the combat name doesn't mention the difficulty
