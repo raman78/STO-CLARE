@@ -314,7 +314,7 @@ impl CombatNameRules {
                 ui.push_id("additional info rules", |ui| {
                     GroupRulesTable::new(
                         &mut r.additional_info_rules,
-                        "additional infos rules (e.g. difficulty)",
+                        "additional infos rules (difficulty is detected automatically — don't add it here)",
                         "Info",
                         &mut self.selected_additional_info_group,
                         200.0,

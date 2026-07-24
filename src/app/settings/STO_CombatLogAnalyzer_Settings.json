@@ -58,20 +58,7 @@
           ],
           "enabled": true
         },
-        "additional_info_rules": [
-          {
-            "name": "Elite",
-            "rules": [
-              {
-                "aspect": "SourceOrTargetUniqueName",
-                "expression": "Elite_Initial",
-                "method": "EndsWith",
-                "enabled": true
-              }
-            ],
-            "enabled": true
-          }
-        ]
+        "additional_info_rules": []
       },
       {
         "name_rule": {
@@ -167,20 +154,7 @@
           ],
           "enabled": true
         },
-        "additional_info_rules": [
-          {
-            "name": "Elite",
-            "rules": [
-              {
-                "aspect": "SourceOrTargetUniqueName",
-                "expression": "Elite",
-                "method": "EndsWith",
-                "enabled": true
-              }
-            ],
-            "enabled": true
-          }
-        ]
+        "additional_info_rules": []
       },
       {
         "name_rule": {
