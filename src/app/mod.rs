@@ -103,14 +103,12 @@ impl eframe::App for App {
                         .show(ui, frame, &self.state.settings.upload.oscr_url);
 
                     // Compare toggle (ON/OFF) as the last item on the top bar so it
-                    // stays put regardless of mode; highlighted blue while active.
-                    let compare_button = Button::new("Compare Combats 🆚");
-                    let compare_button = if self.compare.is_open() {
-                        compare_button.fill(Color32::from_rgb(0x2f, 0x6f, 0xd6))
-                    } else {
-                        compare_button
-                    };
-                    if ui.add(compare_button).clicked() {
+                    // stays put regardless of mode. Rendered as a frameless toggle to
+                    // match the Settings and Records buttons (highlighted while active).
+                    if ui
+                        .selectable_label(self.compare.is_open(), "Compare Combats 🆚")
+                        .clicked()
+                    {
                         self.compare.toggle();
                     }
                 });
