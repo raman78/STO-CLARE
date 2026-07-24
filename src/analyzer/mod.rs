@@ -16,6 +16,7 @@ use smallvec::SmallVec;
 
 mod common;
 mod damage;
+mod detection;
 mod groups;
 mod heal;
 mod name_manager;
@@ -24,6 +25,8 @@ pub mod settings;
 mod values_manager;
 pub use common::*;
 pub use damage::*;
+pub use detection::Difficulty;
+use detection::{CritterMeta, DETECTION_RULES};
 use groups::*;
 pub use groups::{AnalysisGroup, DamageGroup, HealGroup};
 pub use heal::*;
@@ -55,6 +58,13 @@ pub struct Combat {
     pub log_pos: Option<Range<u64>>,
     pub total_deaths: u32,
     pub total_kills: u32,
+    /// Per-NPC facts (keyed by internal unique name) used to detect the map and
+    /// difficulty. Accumulated as records are processed.
+    critters: FxHashMap<NameHandle, CritterMeta>,
+    /// Detected map name (`None` when unknown, shown as "Combat").
+    pub detected_map: Option<String>,
+    /// Detected difficulty (`None` when the map is unknown).
+    pub detected_difficulty: Option<Difficulty>,
     pub name_manager: NameManager,
     pub hits_manger: HitsManager,
     pub heal_ticks_manger: HealTicksManager,
@@ -128,6 +138,7 @@ impl Analyzer {
 
         combat.update_meta_data(&record);
         combat.update_names(&record);
+        combat.update_critters(&record);
 
         let combat_start_offset_millis = record
             .time
@@ -213,6 +224,9 @@ impl Combat {
             total_heal_out: Default::default(),
             total_kills: 0,
             total_deaths: 0,
+            critters: Default::default(),
+            detected_map: None,
+            detected_difficulty: None,
             name_manager: Default::default(),
             hits_manger: Default::default(),
             heal_ticks_manger: Default::default(),
@@ -302,6 +316,22 @@ impl Combat {
         self.recalculate_heal_group_percentage(self.total_heal_in, total_heal_ticks_in, |p| {
             &mut p.heal_in
         });
+
+        self.update_detection();
+    }
+
+    /// Resolve the map and difficulty from the accumulated critters.
+    fn update_detection(&mut self) {
+        let detected = {
+            let by_name: FxHashMap<&str, &CritterMeta> = self
+                .critters
+                .iter()
+                .map(|(handle, meta)| (handle.get(&self.name_manager), meta))
+                .collect();
+            detection::detect(&DETECTION_RULES, &by_name)
+        };
+        self.detected_map = detected.map;
+        self.detected_difficulty = detected.difficulty;
     }
 
     fn recalculate_damage_group_percentage(
@@ -329,6 +359,23 @@ impl Combat {
     fn update_meta_data(&mut self, record: &Record) {
         self.update_time(record);
         self.update_log_pos(record);
+    }
+
+    /// Accumulate per-NPC facts used for map/difficulty detection. Only damage
+    /// dealt to a non-player entity contributes; a kill increments that entity's
+    /// death count. Must run after `update_names`, which interns the unique name.
+    fn update_critters(&mut self, record: &Record) {
+        if !matches!(record.value, RecordValue::Damage(_)) {
+            return;
+        }
+        let Entity::NonPlayer { unique_name, .. } = &record.target else {
+            return;
+        };
+        let handle = self.name_manager.handle(unique_name);
+        let meta = self.critters.entry(handle).or_default();
+        if record.value_flags.contains(ValueFlags::KILL) {
+            meta.deaths += 1;
+        }
     }
 
     fn update_names(&mut self, record: &Record) {
@@ -701,6 +748,40 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Real-data smoke test for map/difficulty detection: analyze the live log
+    /// and print each combat's name alongside the detected map and difficulty.
+    /// Run with:
+    /// `cargo test detects_maps_in_real_log -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "reads a real STO log"]
+    fn detects_maps_in_real_log() {
+        let src = "/home/raman/Games/steamapps/common/Star Trek Online/Star Trek Online/Live/logs/GameClient/combatlog.log";
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: src.to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let mut detected = 0usize;
+        for combat in analyzer.result() {
+            if combat.detected_map.is_some() {
+                detected += 1;
+            }
+            println!(
+                "{:<45} map={:?} difficulty={:?}",
+                combat.name(),
+                combat.detected_map,
+                combat.detected_difficulty
+            );
+        }
+        println!(
+            "detected a map for {} of {} combats",
+            detected,
+            analyzer.result().len()
+        );
     }
 
     #[test]

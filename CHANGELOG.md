@@ -2,6 +2,9 @@
 
 # unreleased
 
+### Other Changes
+- the Compare Combats difficulty filter (Advanced / Elite) now recognizes each combat's real difficulty from what happened in the fight instead of guessing from its name, so filtering by Elite or Advanced is accurate even when the combat name doesn't mention the difficulty
+
 ## v1.5.2
 ### Other Changes
 - opening "Clear Log File" now refreshes the combats list automatically, so it always shows every combat currently in the log

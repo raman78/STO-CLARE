@@ -17,7 +17,7 @@ use notify::{RecommendedWatcher, Watcher, recommended_watcher};
 use timer::{Guard, Timer};
 
 use crate::{
-    analyzer::{Analyzer, Combat, settings::AnalysisSettings},
+    analyzer::{Analyzer, Combat, Difficulty, settings::AnalysisSettings},
     unwrap_or_return,
 };
 
@@ -96,6 +96,9 @@ pub enum AnalysisInfo {
     Refreshed {
         latest_combat: Arc<Combat>,
         combats: Vec<String>,
+        /// Detected difficulty per combat, aligned with `combats`, for the
+        /// compare view's difficulty filter.
+        difficulties: Vec<Option<Difficulty>>,
         file_size: Option<u64>,
     },
     RefreshError,
@@ -411,6 +414,11 @@ impl AnalysisContext {
         AnalysisInfo::Refreshed {
             latest_combat: latest_combat.into(),
             combats: analyzer.result().iter().map(|c| c.identifier()).collect(),
+            difficulties: analyzer
+                .result()
+                .iter()
+                .map(|c| c.detected_difficulty)
+                .collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
                 .map(|m| m.len()),

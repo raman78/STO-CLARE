@@ -11,7 +11,7 @@ use eframe::egui::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    analyzer::{Combat, DamageGroup},
+    analyzer::{Combat, DamageGroup, Difficulty},
     app::{settings::Settings, state::AppState},
 };
 
@@ -174,23 +174,35 @@ impl CompareView {
         self.comparison = Some(Comparison::new(combats, &settings.compare.columns));
     }
 
-    pub fn show(&mut self, state: &mut AppState, combats: &[String], ui: &mut Ui) {
+    pub fn show(
+        &mut self,
+        state: &mut AppState,
+        combats: &[String],
+        difficulties: &[Option<Difficulty>],
+        ui: &mut Ui,
+    ) {
         match &mut self.comparison {
             Some(comparison) => {
                 if ui.button("◀ Change selection").clicked() {
                     self.comparison = None;
                     ui.separator();
-                    self.show_selection(state, combats, ui);
+                    self.show_selection(state, combats, difficulties, ui);
                 } else {
                     ui.separator();
                     comparison.show(ui, &mut state.settings);
                 }
             }
-            None => self.show_selection(state, combats, ui),
+            None => self.show_selection(state, combats, difficulties, ui),
         }
     }
 
-    fn show_selection(&mut self, state: &mut AppState, combats: &[String], ui: &mut Ui) {
+    fn show_selection(
+        &mut self,
+        state: &mut AppState,
+        combats: &[String],
+        difficulties: &[Option<Difficulty>],
+        ui: &mut Ui,
+    ) {
         ui.horizontal_wrapped(|ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.name_filter);
@@ -238,7 +250,8 @@ impl CompareView {
 
         ScrollArea::vertical().show(ui, |ui| {
             for (i, identifier) in combats.iter().enumerate() {
-                if !self.matches_filters(identifier) {
+                let difficulty = difficulties.get(i).copied().flatten();
+                if !self.matches_filters(identifier, difficulty) {
                     continue;
                 }
                 let mut checked = self.selected.contains(&i);
@@ -259,7 +272,7 @@ impl CompareView {
         }
     }
 
-    fn matches_filters(&self, identifier: &str) -> bool {
+    fn matches_filters(&self, identifier: &str, difficulty: Option<Difficulty>) -> bool {
         if !self.name_filter.trim().is_empty()
             && !identifier
                 .to_lowercase()
@@ -276,8 +289,8 @@ impl CompareView {
 
         match self.difficulty_filter {
             DifficultyFilter::Any => true,
-            DifficultyFilter::Advanced => has_difficulty(identifier, "Advanced"),
-            DifficultyFilter::Elite => has_difficulty(identifier, "Elite"),
+            DifficultyFilter::Advanced => difficulty == Some(Difficulty::Advanced),
+            DifficultyFilter::Elite => difficulty == Some(Difficulty::Elite),
         }
     }
 }
@@ -290,11 +303,6 @@ fn combat_type_base(identifier: &str) -> String {
         Some(pos) => prefix[..pos].trim().to_string(),
         None => prefix.trim().to_string(),
     }
-}
-
-fn has_difficulty(identifier: &str, keyword: &str) -> bool {
-    let prefix = identifier.split(" | ").next().unwrap_or(identifier);
-    prefix.contains(keyword)
 }
 
 /// Distinct combat types across the list, sorted, for the type filter dropdown.
@@ -316,13 +324,6 @@ mod tests {
             "Trouble Over Terrh"
         );
         assert_eq!(combat_type_base("Combat | 2026-07-23 01:12:24 - 01:16:42"), "Combat");
-    }
-
-    #[test]
-    fn difficulty_detection() {
-        assert!(has_difficulty("Foo (Elite) | t", "Elite"));
-        assert!(has_difficulty("Foo (Advanced) | t", "Advanced"));
-        assert!(!has_difficulty("Foo (Elite) | t", "Advanced"));
     }
 
     #[test]

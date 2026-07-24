@@ -4,7 +4,7 @@ use eframe::egui::*;
 use rfd::FileDialog;
 
 use crate::{
-    analyzer::Combat,
+    analyzer::{Combat, Difficulty},
     upload::{Records, Upload},
 };
 
@@ -32,6 +32,8 @@ mod summary_copy;
 pub struct App {
     settings_window: SettingsWindow,
     combats: Vec<String>,
+    /// Detected difficulty per combat, aligned with `combats` (compare filter).
+    combat_difficulties: Vec<Option<Difficulty>>,
     selected_combat_index: Option<usize>,
     selected_combat: Option<Arc<Combat>>,
     status_indicator: StatusIndicator,
@@ -65,6 +67,7 @@ impl App {
         Self {
             settings_window,
             combats: Default::default(),
+            combat_difficulties: Default::default(),
             selected_combat_index: None,
             selected_combat: None,
             status_indicator: StatusIndicator::new(),
@@ -202,7 +205,12 @@ impl eframe::App for App {
                 }
 
                 if self.compare.is_open() {
-                    self.compare.show(&mut self.state, &self.combats, ui);
+                    self.compare.show(
+                        &mut self.state,
+                        &self.combats,
+                        &self.combat_difficulties,
+                        ui,
+                    );
                 } else {
                     self.main_tabs.show(&self.state.settings, ui);
                 }
@@ -280,10 +288,12 @@ impl App {
                 AnalysisInfo::Refreshed {
                     latest_combat,
                     combats,
+                    difficulties,
                     file_size,
                 } => {
                     self.main_tabs.update(&self.state.settings, &latest_combat);
                     self.combats = combats;
+                    self.combat_difficulties = difficulties;
                     self.selected_combat_index = Some(self.combats.len() - 1);
                     self.selected_combat = Some(latest_combat);
                     self.status_indicator.status = Status::Loaded {

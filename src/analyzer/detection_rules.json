@@ -1,0 +1,111 @@
+{
+  "map_identifiers": {
+    "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial": { "map": "Infected Space", "difficulty": "Any" },
+    "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": { "map": "Infected Space", "difficulty": "Any" },
+    "Mission_Space_Romulan_Colony_Flagship_Lleiset": { "map": "Azure Nebula Rescue", "difficulty": "Any" },
+    "Space_Klingon_Dreadnought_Dsc_Sarcophagus": { "map": "Battle At The Binary Stars", "difficulty": "Any" },
+    "Event_Procyon_5_Queue_Krenim_Dreadnaught_Annorax": { "map": "Battle At Procyon V", "difficulty": "Any" },
+    "Mission_Space_Borg_Queen_Diamond_Brg_Queue_Liberation": { "map": "Borg Disconnected", "difficulty": "Any" },
+    "Mission_Starbase_Mirror_Ds9_Mu_Queue": { "map": "Counterpoint", "difficulty": "Any" },
+    "Space_Crystalline_Entity_2018": { "map": "Crystalline Entity", "difficulty": "Any" },
+    "Event_Ico_Qonos_Space_Herald_Dreadnaught": { "map": "Gateway To Grethor", "difficulty": "Any" },
+    "Mission_Space_Federation_Science_Herald_Sphere": { "map": "Herald Sphere", "difficulty": "Any" },
+    "Msn_Dsc_Priors_System_Tfo_Orbital_Platform_1_Fed_Dsc": { "map": "Operation Riposte", "difficulty": "Any" },
+    "Space_Borg_Dreadnought_R02": { "map": "Cure Found", "difficulty": "Any" },
+    "Space_Klingon_Tos_X3_Battlecruiser": { "map": "Days Of Doom", "difficulty": "Any" },
+    "Msn_Luk_Colony_Dranuur_Queue_System_Upgradeable_Satellite": { "map": "Dranuur Gauntlet", "difficulty": "Any" },
+    "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": { "map": "Khitomer Space", "difficulty": "Any" },
+    "Mission_Spire_Space_Voth_Frigate": { "map": "Storming The Spire", "difficulty": "Any" },
+    "Space_Drantzuli_Alpha_Battleship": { "map": "Swarm", "difficulty": "Any" },
+    "Mission_Beta_Lankal_Destructible_Reactor": { "map": "To Hell With Honor", "difficulty": "Any" },
+    "Space_Federation_Dreadnought_Jupiter_Class_Carrier": { "map": "Gravity Kills", "difficulty": "Any" },
+    "Msn_Luk_Hypermass_Queue_System_Tzk_Protomatter_Facility": { "map": "Gravity Kills", "difficulty": "Any" },
+    "Space_Borg_Dreadnought_Hive_Intro": { "map": "Hive Space", "difficulty": "Any" },
+    "Ground_Federation_Capt_Mirror_Runabout_Tfo": { "map": "Operation Wolf", "difficulty": "Normal" },
+    "Bluegills_Ground_Boss": { "map": "Bug Hunt", "difficulty": "Any" },
+    "Msn_Edren_Queue_Ground_Gorn_Lt_Tos_Range_Rock": { "map": "Miner Instabilities", "difficulty": "Any" },
+    "Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable": { "map": "Jupiter Station Showdown", "difficulty": "Any" },
+    "Mission_Event_Tholian_Invasion_Ext_Boss": { "map": "Nukara Prime: Transdimensional Tactics", "difficulty": "Any" },
+    "Space_Borg_Dreadnought_Wolf359": { "map": "Battle of Wolf 359", "difficulty": "Any" },
+    "Snowman_Q_Boss_Msn_Snowglobe": { "map": "Winter Invasion", "difficulty": "Normal" }
+  },
+  "death_counts": {
+    "Infected Space": {
+      "Advanced": {
+        "Space_Borg_Battleship_Raidisode": 5,
+        "Space_Borg_Cruiser_Raidisode": 6,
+        "Mission_Borgraid1_Transwarp_02": 1,
+        "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": 1
+      },
+      "Elite": {
+        "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial": 2,
+        "Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss": 1,
+        "Space_Borg_Cruiser_Raidisode_Sibrian_Elite_Initial": 4,
+        "Space_Borg_Battleship_Raidisode": 2,
+        "Mission_Borgraid1_Transwarp_02": 1,
+        "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": 1
+      }
+    },
+    "Cure Found": {
+      "Advanced": {
+        "Space_Borg_Battleship_Raidisode_Cure": 3,
+        "Mission_Cure_Healer_Mini_Trans_02": 18,
+        "Space_Borg_Cruiser_Raidisode_Cure": 3,
+        "Space_Borg_Cruiser_Raidisode": 2,
+        "Space_Borg_Dreadnought_R02": 1,
+        "Space_Klingon_Raider_Pet_Borg_Carrier_Advanced": 0
+      },
+      "Elite": {
+        "Space_Borg_Battleship_Raidisode_Cure": 3,
+        "Mission_Cure_Healer_Mini_Trans_02": 18,
+        "Space_Borg_Cruiser_Raidisode_Cure": 3,
+        "Space_Borg_Cruiser_Raidisode": 2,
+        "Space_Borg_Dreadnought_R02": 1,
+        "Space_Klingon_Fighter_Pet_Borg_Elite": 0
+      }
+    },
+    "Khitomer Space": {
+      "Advanced": {
+        "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": 1,
+        "Mission_Raidisode03_Donatra_Borg_Scimitar": 1,
+        "Mission_Borgraid1_Transwarp_02": 2,
+        "Space_Borg_Battleship_Raidisode": 4,
+        "Mission_Borgraid1_Comm_Array": 4,
+        "Space_Borg_Dreadnought_Raidisode": 0
+      },
+      "Elite": {
+        "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": 1,
+        "Mission_Raidisode03_Donatra_Borg_Scimitar": 1,
+        "Mission_Borgraid1_Transwarp_02": 2,
+        "Space_Borg_Battleship_Raidisode": 4,
+        "Mission_Borgraid1_Comm_Array": 4,
+        "Space_Borg_Dreadnought_Raidisode": 4
+      }
+    },
+    "Bug Hunt": {
+      "Elite": {
+        "Msn_Dlt_Bluegill_Hunt_Queue_Ground_Ens": 3,
+        "Bluegills_Ground_Cdr": 26,
+        "Bluegills_Ground_Capt": 1,
+        "Bluegills_Ground_Boss": 1
+      }
+    },
+    "Jupiter Station Showdown": {
+      "Elite": {
+        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee": 27,
+        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Lt_Range": 17,
+        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Cdr_Melee": 2
+      }
+    },
+    "Miner Instabilities": {
+      "Elite": {
+        "Ground_Nakuhl_Capt_Range_Male": 1
+      }
+    },
+    "Battle of Wolf 359": {
+      "Elite": {
+        "Space_Borg_Cruiser_Wolf359": 3
+      }
+    }
+  }
+}

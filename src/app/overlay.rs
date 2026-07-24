@@ -481,6 +481,7 @@ impl OverlayInner {
             Some(AnalysisInfo::Refreshed {
                 latest_combat,
                 combats: _,
+                difficulties: _,
                 file_size: _,
             }) => latest_combat,
             _ => return,
