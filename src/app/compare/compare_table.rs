@@ -203,9 +203,6 @@ impl Comparison {
         for (slot_i, slot) in self.slots.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(format!("{}: {}", slot_i + 1, slot.combat.identifier()));
-                if slot_i == 0 {
-                    ui.label(RichText::new("(reference — all deltas compare to this)").weak());
-                }
                 let current = slot.player.get(&slot.combat.name_manager).to_string();
                 ComboBox::new(("compare player", slot_i), "player")
                     .selected_text(current)
@@ -216,6 +213,9 @@ impl Comparison {
                             }
                         }
                     });
+                if slot_i == 0 {
+                    ui.label(RichText::new("(reference — all deltas compare to this)").weak());
+                }
             });
         }
         if let Some((slot_i, handle)) = player_change {
