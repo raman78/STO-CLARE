@@ -173,6 +173,17 @@ pub fn curated_map_names() -> Vec<String> {
     names
 }
 
+/// The `(entity unique name, map name)` pairs the detection keys on, so the
+/// editor can flag user naming rules that match the same entities (and thus
+/// shadow an auto-detected map).
+pub fn curated_map_identifiers() -> Vec<(String, String)> {
+    DETECTION_RULES
+        .map_identifiers
+        .iter()
+        .map(|(unique_name, identifier)| (unique_name.clone(), identifier.map.clone()))
+        .collect()
+}
+
 /// Detect `(map, difficulty)` from the combat's critters, given a view keyed by
 /// each entity's internal unique name. Mirrors OSCR's `detect_map`: identify the
 /// map by a present curated entity, then resolve the tier from death counts.

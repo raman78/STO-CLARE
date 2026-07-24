@@ -52,11 +52,16 @@ Combat::name() ─▶ user rules matched? ─▶ join their names   (they win)
 ```
 
 The Combat Name Rules editor (`app/settings/analysis::CombatNameRules`) lists the
-curated maps read-only below the user rules, and warns when a rule shadows the
-detected name of the currently selected combat. The curated rules themselves are
-never copied into the user's settings — they are rendered from
-`detection::curated_map_names()` — so refreshing them is a JSON swap that leaves
-user rules untouched.
+curated maps read-only below the user rules and flags overlaps two ways:
+
+- **Static** (`rule_map_overlaps`): each enabled user rule is tested against every
+  curated identifier's unique name (`curated_map_identifiers()`); a match means
+  the rule shadows that map, listed as "rule → map(s)".
+- **Per-combat**: when the selected combat is auto-detected but a rule renamed it.
+
+The curated rules are never copied into the user's settings — they are rendered
+from `detection::curated_map_names()` / `curated_map_identifiers()` — so refreshing
+them is a JSON swap that leaves user rules untouched.
 
 `critters` is accumulated live as records stream in (once each), so it is
 complete by the time `update()` runs, and it grows monotonically for live

@@ -25,7 +25,7 @@ pub mod settings;
 mod values_manager;
 pub use common::*;
 pub use damage::*;
-pub use detection::{Difficulty, curated_map_names};
+pub use detection::{Difficulty, curated_map_identifiers, curated_map_names};
 use detection::{CritterMeta, DETECTION_RULES};
 use groups::*;
 pub use groups::{AnalysisGroup, DamageGroup, HealGroup};
