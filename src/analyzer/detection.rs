@@ -17,11 +17,17 @@
 //! tie-break (needed only where death counts do not distinguish the tiers, e.g.
 //! Hive Space) is added on top of the same `CritterMeta`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use lazy_static::lazy_static;
+use log::{info, warn};
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
+
+/// Config-dir subfolder shared with the app settings/log.
+const APP_CONFIG_DIR: &str = "STO_CombatLogAnalyzer";
+/// Optional user override file; when present it fully replaces the bundled rules.
+const OVERRIDE_FILE_NAME: &str = "detection_rules.json";
 
 /// A map difficulty. `Any` means "known map, tier not distinguished" (either the
 /// map has a single tier, or the tier could not be resolved).
@@ -104,11 +110,40 @@ pub struct Detected {
 }
 
 lazy_static! {
-    /// The bundled default rules, parsed once. Panics only if the shipped JSON
-    /// is malformed, which a test guards against.
-    pub static ref DETECTION_RULES: DetectionRules =
-        serde_json::from_str(include_str!("detection_rules.json"))
-            .expect("bundled detection_rules.json must be valid");
+    /// The active rules, parsed once: a user override from the config dir if
+    /// present and valid, otherwise the bundled default.
+    pub static ref DETECTION_RULES: DetectionRules = load_rules();
+}
+
+/// Path to the optional override, e.g.
+/// `~/.config/STO_CombatLogAnalyzer/detection_rules.json`.
+fn override_path() -> Option<PathBuf> {
+    Some(
+        dirs::config_dir()?
+            .join(APP_CONFIG_DIR)
+            .join(OVERRIDE_FILE_NAME),
+    )
+}
+
+/// Load the override file if it exists and parses; otherwise the embedded
+/// default. A malformed override is ignored (logged), never fatal.
+fn load_rules() -> DetectionRules {
+    if let Some(path) = override_path() {
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            match serde_json::from_str(&text) {
+                Ok(rules) => {
+                    info!("using detection rules override from {}", path.display());
+                    return rules;
+                }
+                Err(e) => warn!(
+                    "ignoring invalid detection rules override at {}: {e}",
+                    path.display()
+                ),
+            }
+        }
+    }
+    serde_json::from_str(include_str!("detection_rules.json"))
+        .expect("bundled detection_rules.json must be valid")
 }
 
 /// Detect `(map, difficulty)` from the combat's critters, given a view keyed by
@@ -211,10 +246,17 @@ fn death_counts_match(table: &HashMap<String, u32>, critters: &FxHashMap<&str, &
 mod tests {
     use super::*;
 
+    /// The bundled default rules, parsed directly so tests are independent of
+    /// any user override in the config dir.
+    fn bundled_rules() -> DetectionRules {
+        serde_json::from_str(include_str!("detection_rules.json"))
+            .expect("bundled detection_rules.json must be valid")
+    }
+
     /// Guards the bundled rules file: it must parse.
     #[test]
     fn bundled_rules_parse() {
-        let _ = &*DETECTION_RULES;
+        let _ = bundled_rules();
     }
 
     fn critters(entries: &[(&'static str, u32)]) -> Vec<(&'static str, CritterMeta)> {
@@ -246,7 +288,7 @@ mod tests {
     #[test]
     fn unknown_map_when_no_identifier_present() {
         let owned = critters(&[("Some_Random_Npc", 3)]);
-        let result = detect(&DETECTION_RULES, &view(&owned));
+        let result = detect(&bundled_rules(), &view(&owned));
         assert!(result.map.is_none());
         assert!(result.difficulty.is_none());
     }
@@ -260,7 +302,7 @@ mod tests {
             ("Space_Borg_Cruiser_Raidisode", 6),
             ("Mission_Borgraid1_Transwarp_02", 1),
         ]);
-        let result = detect(&DETECTION_RULES, &view(&owned));
+        let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("Infected Space"));
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
     }
@@ -276,7 +318,7 @@ mod tests {
             ("Mission_Borgraid1_Transwarp_02", 1),
             ("Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss", 1),
         ]);
-        let result = detect(&DETECTION_RULES, &view(&owned));
+        let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("Infected Space"));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
@@ -288,7 +330,7 @@ mod tests {
             "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss",
             1,
         )]);
-        let result = detect(&DETECTION_RULES, &view(&owned));
+        let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("Infected Space"));
         assert_eq!(result.difficulty, Some(Difficulty::Any));
     }
@@ -320,7 +362,7 @@ mod tests {
         owned.push(hull_critter("Space_Borg_Cruiser_Hive_Intro2", 461_582.0));
         owned.push(hull_critter("Space_Borg_Battleship_Hive_Intro", 576_977.0));
 
-        let result = detect(&DETECTION_RULES, &view(&owned));
+        let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("Hive Space"));
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
 
@@ -329,7 +371,7 @@ mod tests {
         owned[4] = hull_critter("Space_Borg_Cruiser_Hive_Intro1", 2_165_239.0);
         owned[5] = hull_critter("Space_Borg_Cruiser_Hive_Intro2", 2_165_239.0);
         owned[6] = hull_critter("Space_Borg_Battleship_Hive_Intro", 2_706_549.0);
-        let result = detect(&DETECTION_RULES, &view(&owned));
+        let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
@@ -337,7 +379,7 @@ mod tests {
     fn fixed_difficulty_map_reports_its_tier() {
         // Winter Invasion is pinned to Normal by its boss entity.
         let owned = critters(&[("Snowman_Q_Boss_Msn_Snowglobe", 1)]);
-        let result = detect(&DETECTION_RULES, &view(&owned));
+        let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("Winter Invasion"));
         assert_eq!(result.difficulty, Some(Difficulty::Normal));
     }

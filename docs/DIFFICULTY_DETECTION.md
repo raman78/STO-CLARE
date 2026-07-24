@@ -46,7 +46,10 @@ combats — it is never cleared/recomputed like `hits_manger`.
 ## The rules (`detection_rules.json`)
 
 Bundled next to the module and embedded via `include_str!`, parsed once into the
-`DETECTION_RULES` lazy static. Schema mirrors OSCR's three tables:
+`DETECTION_RULES` lazy static. A user override at
+`<config dir>/STO_CombatLogAnalyzer/detection_rules.json` (same dir as the app
+settings) **fully replaces** the bundled tables when present and valid; a
+malformed override is logged and ignored. Schema mirrors OSCR's three tables:
 
 ```jsonc
 {
