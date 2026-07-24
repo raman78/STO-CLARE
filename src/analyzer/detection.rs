@@ -414,6 +414,26 @@ mod tests {
     }
 
     #[test]
+    fn rescue_and_search_tier_by_hull_damage() {
+        // A patrol with no fixed death counts: only the median hull damage of
+        // the Mokai ships (~4x higher on Elite) tells the tiers apart.
+        let advanced = vec![
+            hull_critter("Space_Klingon_Cruiser_Dsc_Mokai", 363_000.0),
+            hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 338_000.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("Rescue and Search"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            hull_critter("Space_Klingon_Cruiser_Dsc_Mokai", 1_492_000.0),
+            hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 1_540_000.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&elite));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    #[test]
     fn fixed_difficulty_map_reports_its_tier() {
         // Winter Invasion is pinned to Normal by its boss entity.
         let owned = critters(&[("Snowman_Q_Boss_Msn_Snowglobe", 1)]);
