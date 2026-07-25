@@ -23,6 +23,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .metal_view() // needed on macOS; harmless elsewhere
         .build()?;
 
+    // SDL3 does not emit SDL_EVENT_TEXT_INPUT until text input is explicitly
+    // started for the window — without this, typing produces no characters.
+    video.text_input().start(&window);
+
     // --- wgpu init (wgpu 29 API), surface from the SDL3 window via raw-window-handle ---
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let surface = create_surface::create_surface(&instance, &window)?;
