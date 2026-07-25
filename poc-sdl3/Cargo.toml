@@ -1,0 +1,21 @@
+# Isolated PoC: egui on SDL3 + egui-wgpu, WITHOUT winit/eframe.
+# Standalone crate (own [workspace]) so it never touches the main app build.
+[package]
+name = "poc-sdl3"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[[bin]]
+name = "poc-sdl3"
+path = "main.rs"
+
+[dependencies]
+sdl3 = { version = "0.18", features = ["raw-window-handle"] }
+wgpu = "29"
+egui = "0.34"
+# no winit: default features off (drops the winit + macos-metal-jitter defaults)
+egui-wgpu = { version = "0.34", default-features = false }
+pollster = "0.4"
+env_logger = "0.11"

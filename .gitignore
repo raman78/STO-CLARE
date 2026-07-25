@@ -27,3 +27,6 @@ target/
 
 # Runtime
 *.log
+
+# SDL3 PoC build dir
+/poc-sdl3/target
