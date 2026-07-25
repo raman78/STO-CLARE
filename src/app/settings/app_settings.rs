@@ -19,6 +19,16 @@ pub struct Settings {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct General {
     pub more_decimals: bool,
+    // Last main-window size (points, while not maximized) and maximized state,
+    // restored on the next launch. See App::ui / App::on_exit and main.rs.
+    #[serde(default)]
+    pub window_size: Option<[f32; 2]>,
+    #[serde(default)]
+    pub window_maximized: bool,
+    // Last overlay position as the (top, left) layer-shell anchor margin
+    // (Linux). Restored when the overlay is next shown. See app::overlay.
+    #[serde(default)]
+    pub overlay_position: Option<[i32; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

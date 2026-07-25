@@ -74,7 +74,8 @@ impl SettingsWindow {
         }
         Window::new("Settings")
             .collapsible(false)
-            .auto_sized()
+            .resizable(true)
+            .default_size([760.0, 560.0])
             .max_size([1080.0, 720.0])
             .constrain(true)
             .show(ui.ctx(), |ui| {

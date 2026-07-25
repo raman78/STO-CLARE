@@ -42,5 +42,14 @@ flate2 = "1"
 [profile.release]
 lto = "thin"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Wayland layer-shell overlay: always-on-top over full-screen games, which the
+# winit/eframe path cannot do on Wayland. Versions matched to eframe 0.34.
+smithay-client-toolkit = "0.19"
+egui = "0.34"
+egui-wgpu = "0.34"
+raw-window-handle = "0.6"
+pollster = "0.4"
+
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

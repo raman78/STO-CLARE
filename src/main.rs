@@ -26,18 +26,43 @@ fn main() {
     }));
 
     logging::initialize();
-    let native_options = eframe::NativeOptions {
+
+    // Restore the last window size / maximized state (see app::App::on_exit).
+    let (saved_size, maximized) = app::saved_window_geometry();
+    #[allow(unused_mut)]
+    let mut native_options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
-            .with_inner_size(vec2(1280.0, 720.0))
-            .with_min_inner_size(vec2(480.0, 270.0))
+            .with_inner_size(saved_size.unwrap_or(vec2(1280.0, 720.0)))
+            .with_min_inner_size(vec2(800.0, 600.0))
+            .with_maximized(maximized)
             .with_icon(icon_data()),
         ..Default::default()
     };
 
+    // On Linux, create the single wgpu instance/adapter/device/queue up front and
+    // share it: eframe's main window renders through it (WgpuSetup::Existing) and
+    // so does the layer-shell overlay (handed the same handles via App::new). One
+    // Vulkan stack for the whole app, no teardown races when the overlay closes.
+    #[cfg(target_os = "linux")]
+    let overlay_instance = {
+        let gpu = app::create_shared_gpu();
+        let instance = gpu.instance.clone();
+        native_options.wgpu_options.wgpu_setup =
+            eframe::egui_wgpu::WgpuSetup::Existing(eframe::egui_wgpu::WgpuSetupExisting {
+                instance: gpu.instance,
+                adapter: gpu.adapter,
+                device: gpu.device,
+                queue: gpu.queue,
+            });
+        Some(instance)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let overlay_instance: Option<eframe::wgpu::Instance> = None;
+
     let res = eframe::run_native(
         &format!("STO_CombatLogAnalyzer V{}", env!("CARGO_PKG_VERSION")),
         native_options,
-        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(app::App::new(cc, overlay_instance)))),
     );
 
     if let Err(err) = res {

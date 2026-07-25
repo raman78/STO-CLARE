@@ -5,24 +5,48 @@ use eframe::{egui::*, epaint::mutex::Mutex};
 use crate::{
     analyzer::{Combat, Player},
     app::settings::Settings,
-    custom_widgets::{popup_button::PopupButton, table::Table},
+    custom_widgets::table::Table,
     helpers::number_formatting::NumberFormatter,
 };
+// The column-config popup only lives in the main window on non-Linux; on Linux
+// it moved onto the layer-shell overlay's own toolbar.
+#[cfg(not(target_os = "linux"))]
+use crate::custom_widgets::popup_button::PopupButton;
 
 use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
+
+// The Linux wlr-layer-shell backend (always-on-top surface + its own thread).
+#[cfg(target_os = "linux")]
+pub mod layer_shell;
 
 pub struct Overlay(Arc<Mutex<OverlayInner>>);
 
 struct OverlayInner {
+    // Used by the eframe-viewport path (non-Linux); on Linux the layer-shell
+    // surface owns its own geometry.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     position: Option<Pos2>,
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     current_size: Vec2,
     data: DisplayData,
     show: bool,
+    // Only the non-Linux viewport path toggles this; on Linux the overlay owns
+    // its own move state.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     move_around: bool,
     columns: Vec<ColumnDescriptor>,
     analysis_handler: AnalysisHandler,
     state: State,
     settings: Settings,
+    // On Linux the overlay is a wlr-layer-shell surface (always-on-top over
+    // full-screen games) instead of an eframe viewport; see layer_shell.
+    #[cfg(target_os = "linux")]
+    layer: Option<layer_shell::LayerOverlay>,
+    // wgpu handles shared with eframe's main-window renderer, used to spawn the
+    // layer-shell overlay. Injected once at startup by App::new (see set_gpu);
+    // there is no second wgpu instance/device.
+    #[cfg(target_os = "linux")]
+    overlay_gpu: Option<layer_shell::OverlayGpu>,
 }
 
 #[derive(Default)]
@@ -184,14 +208,29 @@ impl Overlay {
         Self(Arc::new(Mutex::new(OverlayInner {
             move_around: true,
             columns: COLUMNS.iter().cloned().collect(),
-            current_size: Vec2::ZERO,
+            // Must start non-zero: Wayland rejects a 0x0 xdg_surface geometry,
+            // which crashes wgpu ("Surface is not configured for presentation").
+            // Matches the min_inner_size used when building the viewport below.
+            current_size: vec2(240.0, 80.0),
             data: Default::default(),
             position: None,
             show: false,
             analysis_handler: root_handler.get_handler(true, Self::viewport_id()),
             state: State::Empty,
             settings: settings.clone(),
+            #[cfg(target_os = "linux")]
+            layer: None,
+            #[cfg(target_os = "linux")]
+            overlay_gpu: None,
         })))
+    }
+
+    /// Injects the shared wgpu handles the layer-shell overlay renders through.
+    /// Called once at startup by `App::new`; without them the overlay can't
+    /// start (it never creates its own wgpu instance/device).
+    #[cfg(target_os = "linux")]
+    pub fn set_gpu(&self, gpu: layer_shell::OverlayGpu) {
+        self.0.lock().overlay_gpu = Some(gpu);
     }
 
     pub fn show(self: &Self, ui: &mut Ui) {
@@ -206,54 +245,116 @@ impl Overlay {
             inner.toggle_show();
         }
 
-        PopupButton::new("⛭").show(ui, |ui| {
-            ui.label("Configure what columns are displayed in the Overlay");
-            let mut config_changed = false;
-            for column in inner.columns.iter_mut() {
-                if ui.checkbox(&mut column.enabled, column.name).clicked() {
-                    config_changed = true;
+        // On non-Linux the overlay is a plain window, so its column config (⛭)
+        // and move toggle (✋) live in the main window. On Linux both live on
+        // the layer-shell overlay's own toolbar (see layer_shell).
+        #[cfg(not(target_os = "linux"))]
+        {
+            PopupButton::new("⛭").show(ui, |ui| {
+                ui.label("Configure what columns are displayed in the Overlay");
+                let mut config_changed = false;
+                for column in inner.columns.iter_mut() {
+                    if ui.checkbox(&mut column.enabled, column.name).clicked() {
+                        config_changed = true;
+                    }
                 }
-            }
-            if config_changed {
-                inner.force_update(ui.ctx());
-            }
-        });
+                if config_changed {
+                    inner.force_update(ui.ctx());
+                }
+            });
 
-        ui.add_enabled_ui(inner.show, |ui: &mut Ui| {
-            if Button::new("✋")
-                .selected(inner.move_around)
-                .ui(ui)
-                .on_hover_text("Move the Overlay")
-                .clicked()
-            {
-                inner.move_around = !inner.move_around;
-            }
-        });
+            ui.add_enabled_ui(inner.show, |ui: &mut Ui| {
+                if Button::new("✋")
+                    .selected(inner.move_around)
+                    .ui(ui)
+                    .on_hover_text("Move the Overlay")
+                    .clicked()
+                {
+                    inner.move_around = !inner.move_around;
+                }
+            });
+        }
 
         inner.poll_update(ui.ctx());
         if !inner.show {
             return;
         }
 
-        let mut builder = ViewportBuilder::default()
-            .with_title("CLA Overlay")
-            .with_decorations(inner.move_around)
-            .with_minimize_button(false)
-            .with_maximize_button(false)
-            .with_close_button(true)
-            .with_resizable(false)
-            .with_min_inner_size(vec2(240.0, 80.0))
-            .with_inner_size(inner.current_size)
-            .with_always_on_top()
-            .with_taskbar(false)
-            .with_mouse_passthrough(!inner.move_around);
-        builder.position = inner.position;
-        drop(inner);
-        let inner = self.0.clone();
-        ui.ctx()
-            .show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
-                inner.lock().show_overlay(ui);
-            });
+        // Linux/Wayland: render the overlay on a wlr-layer-shell surface so it
+        // stays above full-screen games (the winit always-on-top hint is
+        // ignored on Wayland). We push the freshly computed rows to that
+        // surface's own thread; there is no eframe viewport here.
+        #[cfg(target_os = "linux")]
+        {
+            // Apply column toggles raised by the overlay's own ⛭ popup.
+            let events = inner
+                .layer
+                .as_ref()
+                .map(|layer| layer.poll_events())
+                .unwrap_or_default();
+            let mut config_changed = false;
+            for event in events {
+                match event {
+                    layer_shell::OverlayEvent::ToggleColumn(index) => {
+                        if let Some(column) = inner.columns.get_mut(index) {
+                            column.enabled = !column.enabled;
+                            config_changed = true;
+                        }
+                    }
+                }
+            }
+            if config_changed {
+                inner.force_update(ui.ctx());
+            }
+
+            if inner.layer.is_none() {
+                if let Some(gpu) = inner.overlay_gpu.clone() {
+                    let position = inner
+                        .settings
+                        .general
+                        .overlay_position
+                        .map_or((0, 0), |[top, left]| (top, left));
+                    inner.layer =
+                        Some(layer_shell::LayerOverlay::spawn(gpu, position));
+                }
+            }
+            inner.check_update(ui.ctx());
+            let data = inner.to_overlay_data();
+            let style = ui.style().clone();
+            if let Some(layer) = &inner.layer {
+                layer.update(data);
+                layer.set_style(style);
+            }
+            // Keep the main app repainting so we keep feeding the overlay and
+            // polling its toolbar events (column toggles) promptly.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(200));
+            return;
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let mut builder = ViewportBuilder::default()
+                .with_title("CLA Overlay")
+                .with_app_id("sto-cla-overlay")
+                .with_decorations(inner.move_around)
+                .with_minimize_button(false)
+                .with_maximize_button(false)
+                .with_close_button(true)
+                .with_resizable(false)
+                .with_min_inner_size(vec2(240.0, 80.0))
+                .with_inner_size(inner.current_size)
+                .with_always_on_top()
+                .with_taskbar(false)
+                .with_mouse_passthrough(!inner.move_around);
+            builder.position = inner.position;
+            drop(inner);
+            let inner = self.0.clone();
+            ui.ctx()
+                .show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
+                    inner.lock().show_overlay(ui);
+                });
+        }
     }
 
     pub fn viewport_id() -> ViewportId {
@@ -267,9 +368,23 @@ impl Overlay {
     pub fn settings_changed(&self, settings: &Settings) {
         self.0.lock().settings = settings.clone();
     }
+
+    /// Current overlay position as the (top, left) anchor margin, for
+    /// persisting it; `None` when the layer overlay isn't running.
+    #[cfg(target_os = "linux")]
+    pub fn position(&self) -> Option<[i32; 2]> {
+        let inner = self.0.lock();
+        inner.layer.as_ref().map(|layer| {
+            let (top, left) = layer.position();
+            [top, left]
+        })
+    }
 }
 
 impl OverlayInner {
+    // The eframe-viewport render path (non-Linux). On Linux the overlay is a
+    // layer-shell surface rendered on its own thread (see layer_shell).
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn show_overlay(&mut self, ui: &mut Ui) {
         self.check_update(ui.ctx());
         CentralPanel::default().show_inside(ui, |ui| {
@@ -315,7 +430,10 @@ impl OverlayInner {
                 + ui.spacing().window_margin.left_top()
                 + ui.spacing().window_margin.right_bottom()
                 + ui.spacing().item_spacing;
-            let required_size = required_size.ceil();
+            // Never request below the viewport's min size: otherwise the
+            // requested size and the compositor-clamped actual size disagree,
+            // which keeps re-issuing resize commands (fragile on Wayland).
+            let required_size = required_size.ceil().max(vec2(240.0, 80.0));
             if self.current_size != required_size {
                 ui.ctx().send_viewport_cmd_to(
                     Overlay::viewport_id(),
@@ -329,6 +447,33 @@ impl OverlayInner {
     fn toggle_show(&mut self) {
         self.show = !self.show;
         self.analysis_handler.enable_auto_refresh(self.show);
+        #[cfg(target_os = "linux")]
+        if !self.show {
+            self.layer = None; // dropping stops the layer-shell overlay thread
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn to_overlay_data(&self) -> layer_shell::OverlayData {
+        layer_shell::OverlayData {
+            columns: self.data.columns.iter().map(|c| c.name.to_string()).collect(),
+            rows: self
+                .data
+                .players
+                .iter()
+                .map(|p| layer_shell::OverlayRow {
+                    name: p.name.clone(),
+                    values: p.columns.iter().map(|c| c.value_string.clone()).collect(),
+                })
+                .collect(),
+            // Full column list with enabled flags drives the overlay's ⛭ popup;
+            // its ToggleColumn(index) maps straight back into `self.columns`.
+            all_columns: self
+                .columns
+                .iter()
+                .map(|c| (c.name.to_string(), c.enabled))
+                .collect(),
+        }
     }
 
     fn check_update(&mut self, ctx: &Context) {
