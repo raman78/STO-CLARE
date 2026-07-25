@@ -22,7 +22,7 @@
     "Msn_Luk_Hypermass_Queue_System_Tzk_Protomatter_Facility": { "map": "Gravity Kills", "difficulty": "Any" },
     "Space_Borg_Dreadnought_Hive_Intro": { "map": "Hive Space", "difficulty": "Any" },
     "Ground_Federation_Capt_Mirror_Runabout_Tfo": { "map": "Operation Wolf", "difficulty": "Normal" },
-    "Bluegills_Ground_Boss": { "map": "Bug Hunt", "difficulty": "Any" },
+    "Bluegills_Ground_Boss": { "map": "Bug Hunt", "difficulty": "Elite" },
     "Msn_Edren_Queue_Ground_Gorn_Lt_Tos_Range_Rock": { "map": "Miner Instabilities", "difficulty": "Any" },
     "Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable": { "map": "Jupiter Station Showdown", "difficulty": "Any" },
     "Mission_Event_Tholian_Invasion_Ext_Boss": { "map": "Nukara Prime: Transdimensional Tactics", "difficulty": "Any" },
@@ -83,19 +83,9 @@
         "Space_Borg_Dreadnought_Raidisode": 4
       }
     },
-    "Bug Hunt": {
-      "Elite": {
-        "Msn_Dlt_Bluegill_Hunt_Queue_Ground_Ens": 3,
-        "Bluegills_Ground_Cdr": 26,
-        "Bluegills_Ground_Capt": 1,
-        "Bluegills_Ground_Boss": 1
-      }
-    },
     "Jupiter Station Showdown": {
       "Elite": {
-        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee": 27,
-        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Lt_Range": 17,
-        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Cdr_Melee": 2
+        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee_Adapt_Elite_Only": 0
       }
     },
     "Miner Instabilities": {
@@ -134,17 +124,6 @@
         "Space_Borg_Cruiser_Hive_Intro2": 2165239,
         "Space_Borg_Battleship_Hive_Intro": 2706549,
         "Space_Borg_Dreadnought_Hive_Intro": 8007542
-      }
-    },
-    "Jupiter Station Showdown": {
-      "Elite": {
-        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee": 2605,
-        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Lt_Range": 3439
-      }
-    },
-    "Bug Hunt": {
-      "Elite": {
-        "Bluegills_Ground_Boss": 449432
       }
     },
     "Miner Instabilities": {

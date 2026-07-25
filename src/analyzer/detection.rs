@@ -434,6 +434,41 @@ mod tests {
     }
 
     #[test]
+    fn jupiter_elite_by_elite_only_entity() {
+        // Jupiter's death counts vary per run; the tier is told by the presence
+        // of the "..._Elite_Only" entity (required count 0 = must be present).
+        let owned = critters(&[
+            ("Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable", 0),
+            (
+                "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee_Adapt_Elite_Only",
+                25,
+            ),
+        ]);
+        let result = detect(&bundled_rules(), &view(&owned));
+        assert_eq!(result.map.as_deref(), Some("Jupiter Station Showdown"));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    #[test]
+    fn jupiter_without_elite_only_entity_stays_any() {
+        let owned = critters(&[
+            ("Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable", 0),
+            ("Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee", 20),
+        ]);
+        let result = detect(&bundled_rules(), &view(&owned));
+        assert_eq!(result.map.as_deref(), Some("Jupiter Station Showdown"));
+        assert_eq!(result.difficulty, Some(Difficulty::Any));
+    }
+
+    #[test]
+    fn bug_hunt_is_elite_by_identifier() {
+        let owned = critters(&[("Bluegills_Ground_Boss", 1)]);
+        let result = detect(&bundled_rules(), &view(&owned));
+        assert_eq!(result.map.as_deref(), Some("Bug Hunt"));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    #[test]
     fn fixed_difficulty_map_reports_its_tier() {
         // Winter Invasion is pinned to Normal by its boss entity.
         let owned = critters(&[("Snowman_Q_Boss_Msn_Snowglobe", 1)]);
