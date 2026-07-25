@@ -22,7 +22,7 @@
     "Msn_Luk_Hypermass_Queue_System_Tzk_Protomatter_Facility": { "map": "Gravity Kills", "difficulty": "Any" },
     "Space_Borg_Dreadnought_Hive_Intro": { "map": "Hive Space", "difficulty": "Any" },
     "Ground_Federation_Capt_Mirror_Runabout_Tfo": { "map": "Operation Wolf", "difficulty": "Normal" },
-    "Bluegills_Ground_Boss": { "map": "Bug Hunt", "difficulty": "Elite" },
+    "Bluegills_Ground_Boss": { "map": "Bug Hunt", "difficulty": "Any" },
     "Msn_Edren_Queue_Ground_Gorn_Lt_Tos_Range_Rock": { "map": "Miner Instabilities", "difficulty": "Any" },
     "Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable": { "map": "Jupiter Station Showdown", "difficulty": "Any" },
     "Mission_Event_Tholian_Invasion_Ext_Boss": { "map": "Nukara Prime: Transdimensional Tactics", "difficulty": "Any" },

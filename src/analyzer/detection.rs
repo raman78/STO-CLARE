@@ -461,11 +461,13 @@ mod tests {
     }
 
     #[test]
-    fn bug_hunt_is_elite_by_identifier() {
+    fn bug_hunt_map_detected_without_tier() {
+        // Bug Hunt has both Advanced and Elite, but the log has no stable tier
+        // discriminator we can key on yet, so the map is identified without a tier.
         let owned = critters(&[("Bluegills_Ground_Boss", 1)]);
         let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("Bug Hunt"));
-        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+        assert_eq!(result.difficulty, None);
     }
 
     #[test]
