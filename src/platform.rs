@@ -12,7 +12,7 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
     RawWindowHandle, WindowHandle,
 };
-use sdl3::event::{Event, WindowEvent};
+use sdl3::event::Event;
 use sdl3::keyboard::Keycode;
 use sdl3::mouse::MouseButton;
 
@@ -85,12 +85,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .find(|f| f.is_srgb())
         .unwrap_or(&caps.formats[0]);
-    let (mut width, mut height) = window.size();
+    // HiDPI: the wgpu surface is sized in framebuffer pixels, egui works in
+    // points, and pixels_per_point is the window's pixel density. SDL reports
+    // window size and mouse coords in logical points; we derive the framebuffer.
+    let mut ppp = window.pixel_density().max(1.0);
+    let (mut pw, mut ph) = framebuffer_size(&window, ppp);
     let mut config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format,
-        width,
-        height,
+        width: pw,
+        height: ph,
         present_mode: wgpu::PresentMode::Fifo,
         alpha_mode: wgpu::CompositeAlphaMode::Auto,
         desired_maximum_frame_latency: 2,
@@ -101,11 +105,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     // --- egui ---
     let egui_ctx = egui::Context::default();
     egui_ctx.memory_mut(|m| m.options.repaint_on_widget_change = false);
-    let pixels_per_point = 1.0_f32; // TODO(dpi): SDL_GetWindowDisplayScale
-    egui_ctx.set_pixels_per_point(pixels_per_point);
     let mut renderer = egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
-    let mut app = App::new(&egui_ctx, pixels_per_point);
+    let clipboard = video.clipboard();
+    let mut app = App::new(&egui_ctx, ppp);
 
     let mut events: Vec<egui::Event> = Vec::new();
     let mut modifiers = egui::Modifiers::default();
@@ -117,19 +120,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'running,
-                Event::Window {
-                    win_event: WindowEvent::PixelSizeChanged(w, h) | WindowEvent::Resized(w, h),
-                    window_id,
-                    ..
-                } if window_id == window.id() => {
-                    width = (w.max(1)) as u32;
-                    height = (h.max(1)) as u32;
-                    config.width = width;
-                    config.height = height;
-                    surface.configure(&device, &config);
-                }
+                // Surface resize is handled by the per-frame size poll below.
                 Event::MouseMotion { x, y, .. } => {
-                    pointer = egui::pos2(x / pixels_per_point, y / pixels_per_point);
+                    pointer = egui::pos2(x, y); // SDL mouse coords are logical points
                     events.push(egui::Event::PointerMoved(pointer));
                 }
                 Event::MouseButtonDown { mouse_btn, .. } | Event::MouseButtonUp { mouse_btn, .. } => {
@@ -161,6 +154,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                             repeat: false,
                             modifiers,
                         });
+                        // Paste must be delivered as text; SDL won't emit it.
+                        if pressed && modifiers.command && key == egui::Key::V {
+                            if let Ok(text) = clipboard.clipboard_text() {
+                                events.push(egui::Event::Paste(text));
+                            }
+                        }
                     }
                 }
                 Event::DropFile { filename, .. } => {
@@ -176,32 +175,38 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // Per-frame size/DPI poll: reconfigure the surface when the framebuffer
+        // changed (resize, or moving to a differently-scaled monitor).
+        ppp = window.pixel_density().max(1.0);
+        let (npw, nph) = framebuffer_size(&window, ppp);
+        if (npw, nph) != (pw, ph) {
+            pw = npw;
+            ph = nph;
+            config.width = pw;
+            config.height = ph;
+            surface.configure(&device, &config);
+        }
+        let (lw, lh) = window.size(); // logical points
+        let logical = [lw as f32, lh as f32];
+
         let raw_input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(width as f32 / pixels_per_point, height as f32 / pixels_per_point),
-            )),
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, logical.into())),
             time: Some(start.elapsed().as_secs_f64()),
             modifiers,
             events: std::mem::take(&mut events),
             ..Default::default()
         };
 
-        // Track window geometry (debounced save) using SDL's size.
-        app.track_window_geometry(
-            [width as f32 / pixels_per_point, height as f32 / pixels_per_point],
-            false, // TODO(maximized)
-            start.elapsed().as_secs_f64(),
-        );
+        app.track_window_geometry(logical, false, start.elapsed().as_secs_f64());
 
         let full_output = egui_ctx.run(raw_input, |ctx| app.update(ctx, &app_window));
 
-        handle_platform_output(&full_output.platform_output);
+        handle_platform_output(&full_output.platform_output, &clipboard);
 
-        let paint_jobs = egui_ctx.tessellate(full_output.shapes, pixels_per_point);
+        let paint_jobs = egui_ctx.tessellate(full_output.shapes, ppp);
         let screen = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [width, height],
-            pixels_per_point,
+            size_in_pixels: [pw, ph],
+            pixels_per_point: ppp,
         };
         for (id, delta) in &full_output.textures_delta.set {
             renderer.update_texture(&device, &queue, *id, delta);
@@ -258,10 +263,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_platform_output(out: &egui::PlatformOutput) {
+fn framebuffer_size(window: &sdl3::video::Window, ppp: f32) -> (u32, u32) {
+    let (lw, lh) = window.size();
+    (
+        ((lw as f32 * ppp).round() as u32).max(1),
+        ((lh as f32 * ppp).round() as u32).max(1),
+    )
+}
+
+fn handle_platform_output(out: &egui::PlatformOutput, clipboard: &sdl3::clipboard::ClipboardUtil) {
     for cmd in &out.commands {
         match cmd {
-            // TODO(clipboard): wire SDL clipboard for CopyText.
+            egui::OutputCommand::CopyText(text) => {
+                let _ = clipboard.set_clipboard_text(text);
+            }
             egui::OutputCommand::OpenUrl(open) => open_url(&open.url),
             _ => {}
         }
