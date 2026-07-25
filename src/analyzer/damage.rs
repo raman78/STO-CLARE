@@ -141,8 +141,13 @@ impl DamageMetrics {
                 SpecificHit::Hull { base_damage } => {
                     delta.total_damage.hull += hit.damage;
                     delta.total_base_damage += base_damage;
+                    // Criticals are counted per hull hit only, to stay consistent
+                    // with the crit metrics (crit %, average crit/non-crit hull
+                    // hit), which are all hull-based. Counting shield crits here
+                    // would let `crits` exceed `hits.hull` and underflow below.
                     if hit.flags.contains(ValueFlags::CRITICAL) {
                         delta.total_crit_damage += hit.damage;
+                        delta.crits += 1;
                     } else {
                         delta.total_non_crit_hull_damage += hit.damage;
                     }
@@ -151,10 +156,6 @@ impl DamageMetrics {
                     delta.total_damage.shield += hit.damage;
                     delta.total_shield_drain += hit.damage;
                 }
-            }
-
-            if hit.flags.contains(ValueFlags::CRITICAL) {
-                delta.crits += 1;
             }
 
             if hit.flags.contains(ValueFlags::FLANK) {
@@ -230,4 +231,30 @@ pub fn damage_resistance_percentage(
 
     let res = 1.0 - total_damage_without_drain / total_base_damage;
     Some(res * 100.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A critical hit on shields must not be counted as a hull crit: `crits`
+    /// stays hull-only, so `hits.hull - crits` cannot underflow (regression test
+    /// for a debug-mode panic / release-mode garbage metric).
+    #[test]
+    fn crits_are_counted_per_hull_hit_only() {
+        let hits = [
+            BaseHit::shield(100.0, ValueFlags::CRITICAL, 50.0).to_hit(0),
+            BaseHit::hull(200.0, ValueFlags::CRITICAL, 180.0).to_hit(0),
+            BaseHit::hull(150.0, ValueFlags::NONE, 140.0).to_hit(0),
+        ];
+        let mut metrics = DamageMetrics::default();
+        metrics.calc_and_apply_delta(&hits);
+
+        assert_eq!(metrics.hits.hull, 2);
+        assert_eq!(metrics.hits.shield, 1);
+        assert_eq!(metrics.crits, 1, "only the hull crit counts, not the shield crit");
+        // Previously `hits.hull - crits` (2 - 3 with the shield crit) underflowed.
+        metrics.recalculate_time_based_metrics(10.0);
+        assert_eq!(metrics.average_non_crit_hull_hit, Some(150.0));
+    }
 }
