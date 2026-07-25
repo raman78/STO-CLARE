@@ -1,6 +1,11 @@
 # Change Log
 
 # unreleased
+
+## v1.5.3
+### Other Changes
+- the overlay now shares the main window's graphics device instead of creating a second one, so it uses a little less memory
+
 ### Fixes
 - opening "Clear Log File" no longer jumps the main view to the newest combat — the combat you were looking at stays open while the delete list refreshes
 
