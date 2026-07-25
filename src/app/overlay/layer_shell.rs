@@ -81,7 +81,7 @@ pub enum OverlayEvent {
 
 enum Msg {
     Data(OverlayData),
-    Style(egui::Visuals),
+    Style(Arc<egui::Style>),
     Stop,
 }
 
@@ -96,14 +96,56 @@ pub struct LayerOverlay {
     events: EventRx<OverlayEvent>,
 }
 
+/// The wgpu handles shared by eframe's main window and the layer-shell overlay,
+/// so the app runs a single Vulkan stack instead of two. Created once at startup
+/// (see [`create_shared_gpu`]) and handed to eframe via `WgpuSetup::Existing`.
+/// All fields are cheap `Arc`-backed clones and are `Send + Sync`, so they cross
+/// into the overlay thread freely.
+#[derive(Clone)]
+pub struct OverlayGpu {
+    pub instance: wgpu::Instance,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+}
+
+/// Creates the one wgpu instance/adapter/device/queue the whole app uses. The
+/// handles go to eframe (`WgpuSetup::Existing`) for the main window and to the
+/// layer-shell overlay via [`OverlayGpu`], so both render through the same
+/// device — no second instance, and no Vulkan-teardown races on overlay close.
+pub fn create_shared_gpu() -> OverlayGpu {
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        ..Default::default()
+    }))
+    .expect("no wgpu adapter for the shared overlay/main-window device");
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("sto-cla-shared"),
+        // Mirror egui-wgpu's default device limits so eframe accepts the device
+        // we hand it (it wants a 4k+ capable max_texture_dimension_2d).
+        required_limits: wgpu::Limits {
+            max_texture_dimension_2d: 8192,
+            ..wgpu::Limits::default()
+        },
+        ..Default::default()
+    }))
+    .expect("no wgpu device for the shared overlay/main-window device");
+    OverlayGpu {
+        instance,
+        adapter,
+        device,
+        queue,
+    }
+}
+
 impl LayerOverlay {
-    /// The `wgpu::Instance` is created and owned by the app (not by this
-    /// thread): it must outlive every overlay show/hide cycle. A per-thread
-    /// instance would tear down the Vulkan library on overlay close and leave
-    /// eframe's main-window renderer calling into unloaded functions (segfault
-    /// in `wait_for_fence`). The app keeps a clone alive, so the Vulkan library
-    /// stays loaded even after this thread drops its own clone.
-    pub fn spawn(instance: wgpu::Instance, initial_position: (i32, i32)) -> Self {
+    /// The [`OverlayGpu`] handles are created once by the app and shared with
+    /// eframe's main-window renderer, so the overlay never spins up a second
+    /// Vulkan stack. They outlive every show/hide cycle; this thread only holds
+    /// clones, so closing the overlay tears down just its surface, never the
+    /// shared device.
+    pub fn spawn(gpu: OverlayGpu, initial_position: (i32, i32)) -> Self {
         let (tx, rx) = channel::<Msg>();
         let (events_tx, events) = unbounded::<OverlayEvent>();
         let position = Arc::new(Mutex::new(initial_position));
@@ -111,7 +153,7 @@ impl LayerOverlay {
         let join = std::thread::Builder::new()
             .name("cla-layer-overlay".into())
             .spawn(move || {
-                if let Err(e) = run(rx, instance, thread_position, events_tx) {
+                if let Err(e) = run(rx, gpu, thread_position, events_tx) {
                     log::error!("layer overlay: {e}");
                 }
             })
@@ -138,9 +180,10 @@ impl LayerOverlay {
         let _ = self.tx.send(Msg::Data(data));
     }
 
-    /// Match the overlay's colors to the main window by pushing its egui theme.
-    pub fn set_style(&self, visuals: egui::Visuals) {
-        let _ = self.tx.send(Msg::Style(visuals));
+    /// Match the overlay to the main window by pushing its full egui style
+    /// (colors, spacing, text styles), so both look identical.
+    pub fn set_style(&self, style: Arc<egui::Style>) {
+        let _ = self.tx.send(Msg::Style(style));
     }
 
     pub fn stop(&mut self) {
@@ -165,10 +208,16 @@ const BTN_LEFT: u32 = 0x110;
 
 fn run(
     rx: Channel<Msg>,
-    instance: wgpu::Instance,
+    gpu: OverlayGpu,
     position: Arc<Mutex<(i32, i32)>>,
     events_tx: EventTx<OverlayEvent>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let OverlayGpu {
+        instance,
+        adapter,
+        device,
+        queue,
+    } = gpu;
     let conn = Connection::connect_to_env()?;
     let (globals, event_queue) = registry_queue_init(&conn)?;
     let qh = event_queue.handle();
@@ -201,6 +250,9 @@ fn run(
         layer,
         conn: conn.clone(),
         instance,
+        adapter,
+        device,
+        queue,
         width: MIN_W * 2,
         height: MIN_H * 2,
         gpu: None,
@@ -219,7 +271,7 @@ fn run(
         margin,
         output_size: None,
         position,
-        visuals: None,
+        style: None,
         style_dirty: false,
         events_tx,
         settings_open: false,
@@ -240,11 +292,11 @@ fn run(
                 app.data = data;
                 app.needs_redraw = true;
             }
-            ChannelEvent::Msg(Msg::Style(visuals)) => {
-                if app.visuals.is_none() {
+            ChannelEvent::Msg(Msg::Style(style)) => {
+                if app.style.is_none() {
                     app.needs_redraw = true; // first theme: draw with it right away
                 }
-                app.visuals = Some(visuals);
+                app.style = Some(style);
                 app.style_dirty = true;
             }
             ChannelEvent::Msg(Msg::Stop) => app.stop = true,
@@ -262,8 +314,9 @@ fn run(
             app.render();
         }
     }
-    // Tear down the wgpu surface (and device) before the wl_surface /
-    // connection it was built from are dropped, to avoid a use-after-free.
+    // Drop the overlay's wgpu surface before the wl_surface / connection it was
+    // built from, to avoid a use-after-free. The device/queue are shared clones,
+    // so this tears down only the surface, never the shared device.
     app.gpu = None;
     Ok(())
 }
@@ -290,9 +343,15 @@ struct State {
     compositor: CompositorState,
     layer: LayerSurface,
     conn: Connection,
-    // App-owned wgpu instance shared across overlay show/hide cycles; see
-    // LayerOverlay::spawn for why it must not be created per-thread.
+    // wgpu handles shared with eframe's main-window renderer (see
+    // create_shared_gpu). `instance` builds the layer-shell surface; the
+    // adapter/device/queue are the very ones eframe uses, so there is a single
+    // Vulkan stack. These are clones, so closing the overlay drops only its
+    // surface, never the shared device.
     instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
     width: u32,
     height: u32,
     data: OverlayData,
@@ -318,9 +377,9 @@ struct State {
     output_size: Option<(i32, i32)>,
     // Shared with the app handle so it can persist the dragged position.
     position: Arc<Mutex<(i32, i32)>>,
-    // Theme pushed from the main app to match the main window; applied to the
-    // egui context on the next render when `style_dirty`.
-    visuals: Option<egui::Visuals>,
+    // Full egui style pushed from the main app to match the main window;
+    // applied to the overlay's egui context on the next render when `style_dirty`.
+    style: Option<Arc<egui::Style>>,
     style_dirty: bool,
     // Toolbar (⛭/✋) lives on the overlay itself. `events_tx` reports column
     // toggles back to the app; `settings_open` is the ⛭ popup state (also
@@ -412,8 +471,6 @@ impl State {
     }
 
     fn init_gpu(&mut self) {
-        let instance = &self.instance;
-
         let display_ptr =
             NonNull::new(self.conn.backend().display_ptr() as *mut _).expect("null wl_display");
         let surface_ptr =
@@ -421,28 +478,18 @@ impl State {
         let raw_display = RawDisplayHandle::Wayland(WaylandDisplayHandle::new(display_ptr));
         let raw_window = RawWindowHandle::Wayland(WaylandWindowHandle::new(surface_ptr));
 
+        // Build the surface from the shared instance and reuse the shared
+        // adapter/device/queue — no second adapter/device request here.
         let surface = unsafe {
-            instance
+            self.instance
                 .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
                     raw_display_handle: Some(raw_display),
                     raw_window_handle: raw_window,
                 })
                 .expect("create_surface")
         };
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            compatible_surface: Some(&surface),
-            ..Default::default()
-        }))
-        .expect("no adapter");
-        let (device, queue) = pollster::block_on(
-            adapter.request_device(&wgpu::DeviceDescriptor {
-                label: Some("cla-overlay"),
-                ..Default::default()
-            }),
-        )
-        .expect("no device");
 
-        let caps = surface.get_capabilities(&adapter);
+        let caps = surface.get_capabilities(&self.adapter);
         let format = caps
             .formats
             .iter()
@@ -459,13 +506,13 @@ impl State {
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
         };
-        surface.configure(&device, &config);
+        surface.configure(&self.device, &config);
         let egui_renderer =
-            egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
+            egui_wgpu::Renderer::new(&self.device, format, egui_wgpu::RendererOptions::default());
 
         self.gpu = Some(Gpu {
-            device,
-            queue,
+            device: self.device.clone(),
+            queue: self.queue.clone(),
             surface,
             config,
             egui_ctx: egui::Context::default(),
@@ -473,7 +520,6 @@ impl State {
         });
     }
 
-    #[allow(deprecated)]
     fn render(&mut self) {
         if self.gpu.is_none() {
             self.init_gpu();
@@ -487,12 +533,13 @@ impl State {
         let move_mode = self.move_mode;
         let settings_open = self.settings_open;
         let input_events = std::mem::take(&mut self.egui_events);
-        // Adopt the main window's theme (colors, fills) pushed via set_style.
-        let new_visuals = self.style_dirty.then(|| self.visuals.clone()).flatten();
+        // Adopt the main window's full style (colors, spacing, text) pushed via
+        // set_style, so the overlay matches the main window.
+        let new_style = self.style_dirty.then(|| self.style.clone()).flatten();
         self.style_dirty = false;
         let gpu = self.gpu.as_mut().unwrap();
-        if let Some(visuals) = new_visuals {
-            gpu.egui_ctx.set_visuals(visuals);
+        if let Some(style) = new_style {
+            gpu.egui_ctx.set_global_style(style);
         }
         if gpu.config.width != w || gpu.config.height != h {
             gpu.config.width = w;
@@ -520,11 +567,12 @@ impl State {
         // apply_input_region borrows all of `self`; `gpu` is borrowed until the
         // end of render, so defer it behind this flag.
         let mut region_dirty = false;
-        let full = gpu.egui_ctx.run(raw_input, |ctx| {
-            let frame = egui::Frame::central_panel(&ctx.style())
-                .stroke(ctx.style().visuals.window_stroke)
+        let full = gpu.egui_ctx.run_ui(raw_input, |ui| {
+            let style = ui.ctx().global_style();
+            let frame = egui::Frame::central_panel(&style)
+                .stroke(style.visuals.window_stroke)
                 .inner_margin(4.0);
-            egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+            egui::CentralPanel::default().frame(frame).show_inside(ui, |ui| {
                 // The refreshing part: the DPS table. Its measured rect drives
                 // the surface size (content-sized, unlike ui.min_rect() which
                 // includes fill-width widgets and makes the surface oscillate).
@@ -577,13 +625,13 @@ impl State {
                         // only reacts on the glyph itself).
                         let icon = egui::vec2(TOOLBAR_H as f32 - 6.0, TOOLBAR_H as f32 - 6.0);
                         if ui
-                            .add_sized(icon, egui::SelectableLabel::new(settings_open, "⛭"))
+                            .add_sized(icon, egui::Button::selectable(settings_open, "⛭"))
                             .clicked()
                         {
                             toggle_settings = true;
                         }
                         if ui
-                            .add_sized(icon, egui::SelectableLabel::new(move_mode, "✋"))
+                            .add_sized(icon, egui::Button::selectable(move_mode, "✋"))
                             .clicked()
                         {
                             toggle_move = true;
@@ -954,7 +1002,7 @@ mod tests {
     #[test]
     #[ignore = "requires a Wayland session"]
     fn spawn_render_stop() {
-        let mut overlay = LayerOverlay::spawn(wgpu::Instance::default(), (100, 50));
+        let mut overlay = LayerOverlay::spawn(create_shared_gpu(), (100, 50));
         // The saved position is exposed back for persistence.
         assert_eq!(overlay.position(), (100, 50));
         overlay.update(OverlayData {
@@ -974,11 +1022,11 @@ mod tests {
     #[test]
     #[ignore = "requires a Wayland session"]
     fn spawn_stop_respawn() {
-        // A single app-owned instance kept alive across every cycle, matching
-        // how the app shares it (see LayerOverlay::spawn).
-        let instance = wgpu::Instance::default();
+        // A single app-owned gpu kept alive across every cycle, matching how the
+        // app shares it (see LayerOverlay::spawn).
+        let gpu = create_shared_gpu();
         for _ in 0..3 {
-            let mut overlay = LayerOverlay::spawn(instance.clone(), (0, 0));
+            let mut overlay = LayerOverlay::spawn(gpu.clone(), (0, 0));
             overlay.update(OverlayData {
                 columns: vec!["DPS".into()],
                 rows: vec![OverlayRow {

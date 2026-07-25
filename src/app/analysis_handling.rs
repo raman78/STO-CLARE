@@ -75,6 +75,9 @@ enum AutoRefreshState {
 
 enum Instruction {
     Refresh(bool),
+    // Re-read the log but only send back the combats list to the requesting
+    // handler, so the main view's currently-open combat is left untouched.
+    RefreshCombatsList(u32),
     AutoRefresh,
     GetCombat(usize, u32),
     GetCombats(Vec<usize>, u32),
@@ -99,6 +102,13 @@ pub enum AnalysisInfo {
         /// Detected difficulty per combat, aligned with `combats`, for the
         /// compare view's difficulty filter.
         difficulties: Vec<Option<Difficulty>>,
+        file_size: Option<u64>,
+    },
+    // Like `Refreshed`, but only carries the refreshed combats list (no combat
+    // to switch the main view to). Used by the "Clear Log File" dialog so
+    // opening it refreshes the list without moving off the combat being viewed.
+    CombatsListRefreshed {
+        combats: Vec<String>,
         file_size: Option<u64>,
     },
     RefreshError,
@@ -152,6 +162,14 @@ impl AnalysisHandler {
 
     pub fn refresh(&self) {
         self.tx.send(Instruction::Refresh(false)).unwrap();
+    }
+
+    /// Re-reads the log and sends back only the refreshed combats list to this
+    /// handler, leaving the currently-viewed combat in place.
+    pub fn refresh_combats_list(&self) {
+        self.tx
+            .send(Instruction::RefreshCombatsList(self.id))
+            .unwrap();
     }
 
     pub fn get_combat(&self, combat_index: usize) {
@@ -293,6 +311,7 @@ impl AnalysisContext {
 
             match instruction {
                 Instruction::Refresh(auto_refresh) => self.refresh(auto_refresh),
+                Instruction::RefreshCombatsList(handler) => self.refresh_combats_list(handler),
                 Instruction::AutoRefresh => self.auto_refresh(),
                 Instruction::GetCombat(combat_index, handler) => {
                     self.get_combat(combat_index, handler);
@@ -365,6 +384,22 @@ impl AnalysisContext {
     /// log has not grown since the last notified refresh, so the view is not
     /// rebuilt (which would collapse expanded damage trees) for nothing. A
     /// manual refresh passes `false` so it always rebuilds the combats list.
+    /// Re-reads the log (like a manual refresh) but sends only the combats list
+    /// back to the requesting handler, so the main view keeps showing the combat
+    /// it was on. Reuses `try_refresh` for the actual re-read.
+    fn refresh_combats_list(&mut self, handler: u32) {
+        Self::set_is_busy(&self.is_busy, true);
+        if let Some(info) = self.try_refresh(false) {
+            let info = match info {
+                AnalysisInfo::Refreshed {
+                    combats, file_size, ..
+                } => AnalysisInfo::CombatsListRefreshed { combats, file_size },
+                other => other,
+            };
+            self.send_info(info, handler);
+        }
+    }
+
     fn try_refresh(&mut self, skip_when_unchanged: bool) -> Option<AnalysisInfo> {
         // Keep combatlog.log current in the background, but never touch the file
         // currently being read (the user may have opened a specific old log).
@@ -720,7 +755,9 @@ mod tests {
                         return;
                     }
                     AnalysisInfo::RefreshError => panic!("startup refresh errored"),
-                    AnalysisInfo::Combat(_) | AnalysisInfo::Combats(_) => {}
+                    AnalysisInfo::Combat(_)
+                    | AnalysisInfo::Combats(_)
+                    | AnalysisInfo::CombatsListRefreshed { .. } => {}
                 }
             }
             assert!(
@@ -827,6 +864,77 @@ mod tests {
             latest_count(&main_rx),
             Some(3),
             "manual refresh must rebuild the list after an auto refresh consumed the change"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The "Clear Log File" dialog refreshes the combats list via
+    /// `refresh_combats_list`. That must deliver the list only to the requesting
+    /// handler (the main window) as a `CombatsListRefreshed` — never a
+    /// `Refreshed`, which would move the main view onto the newest combat, and
+    /// never to the overlay.
+    #[test]
+    fn refresh_combats_list_updates_only_requesting_handler_without_switching_view() {
+        let dir =
+            std::env::temp_dir().join(format!("cla-list-refresh-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        let combat = |hh: u32, mm: u32| {
+            format!(
+                "26:07:23:{hh:02}:{mm:02}:00.0::Attacker,C[1 Npc_Foo],,*,Kestrel,P[1@2 Kestrel@handle],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+            )
+        };
+        std::fs::write(&log, format!("{}{}", combat(20, 0), combat(20, 5))).unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (main_tx, main_rx) = unbounded();
+        let main_handler = HandlerContext {
+            tx: main_tx,
+            auto_refresh: false,
+            id: 0,
+            viewport: ViewportId::ROOT,
+        };
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            main_handler,
+            instruction_tx,
+            settings,
+            Context::default(),
+            Arc::new(AtomicBool::new(false)),
+            1.0,
+        );
+        let (overlay_tx, overlay_rx) = unbounded();
+        context.handlers.push(HandlerContext {
+            tx: overlay_tx,
+            auto_refresh: true,
+            id: 1,
+            viewport: ViewportId::ROOT,
+        });
+
+        context.refresh_combats_list(0);
+
+        let main_infos: Vec<_> = main_rx.try_iter().collect();
+        assert_eq!(main_infos.len(), 1, "main window gets exactly one message");
+        match &main_infos[0] {
+            AnalysisInfo::CombatsListRefreshed { combats, .. } => {
+                assert_eq!(combats.len(), 2, "the refreshed list holds every combat");
+            }
+            AnalysisInfo::Refreshed { .. } => {
+                panic!("list-only refresh must not send Refreshed (it switches the main view)")
+            }
+            _ => panic!("expected CombatsListRefreshed"),
+        }
+        assert!(
+            overlay_rx.try_iter().next().is_none(),
+            "the overlay is left untouched by a list-only refresh"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

@@ -15,6 +15,10 @@ use crate::custom_widgets::popup_button::PopupButton;
 
 use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
 
+// The Linux wlr-layer-shell backend (always-on-top surface + its own thread).
+#[cfg(target_os = "linux")]
+pub mod layer_shell;
+
 pub struct Overlay(Arc<Mutex<OverlayInner>>);
 
 struct OverlayInner {
@@ -35,14 +39,14 @@ struct OverlayInner {
     state: State,
     settings: Settings,
     // On Linux the overlay is a wlr-layer-shell surface (always-on-top over
-    // full-screen games) instead of an eframe viewport; see layer_overlay.
+    // full-screen games) instead of an eframe viewport; see layer_shell.
     #[cfg(target_os = "linux")]
-    layer: Option<super::layer_overlay::LayerOverlay>,
-    // App-lifetime wgpu instance for the layer overlay. Created once and reused
-    // across show/hide: destroying it would unload Vulkan under eframe's own
-    // renderer and crash the app (see layer_overlay::LayerOverlay::spawn).
+    layer: Option<layer_shell::LayerOverlay>,
+    // wgpu handles shared with eframe's main-window renderer, used to spawn the
+    // layer-shell overlay. Injected once at startup by App::new (see set_gpu);
+    // there is no second wgpu instance/device.
     #[cfg(target_os = "linux")]
-    overlay_instance: Option<eframe::wgpu::Instance>,
+    overlay_gpu: Option<layer_shell::OverlayGpu>,
 }
 
 #[derive(Default)]
@@ -217,8 +221,16 @@ impl Overlay {
             #[cfg(target_os = "linux")]
             layer: None,
             #[cfg(target_os = "linux")]
-            overlay_instance: None,
+            overlay_gpu: None,
         })))
+    }
+
+    /// Injects the shared wgpu handles the layer-shell overlay renders through.
+    /// Called once at startup by `App::new`; without them the overlay can't
+    /// start (it never creates its own wgpu instance/device).
+    #[cfg(target_os = "linux")]
+    pub fn set_gpu(&self, gpu: layer_shell::OverlayGpu) {
+        self.0.lock().overlay_gpu = Some(gpu);
     }
 
     pub fn show(self: &Self, ui: &mut Ui) {
@@ -235,7 +247,7 @@ impl Overlay {
 
         // On non-Linux the overlay is a plain window, so its column config (⛭)
         // and move toggle (✋) live in the main window. On Linux both live on
-        // the layer-shell overlay's own toolbar (see layer_overlay).
+        // the layer-shell overlay's own toolbar (see layer_shell).
         #[cfg(not(target_os = "linux"))]
         {
             PopupButton::new("⛭").show(ui, |ui| {
@@ -283,7 +295,7 @@ impl Overlay {
             let mut config_changed = false;
             for event in events {
                 match event {
-                    super::layer_overlay::OverlayEvent::ToggleColumn(index) => {
+                    layer_shell::OverlayEvent::ToggleColumn(index) => {
                         if let Some(column) = inner.columns.get_mut(index) {
                             column.enabled = !column.enabled;
                             config_changed = true;
@@ -296,24 +308,22 @@ impl Overlay {
             }
 
             if inner.layer.is_none() {
-                let position = inner
-                    .settings
-                    .general
-                    .overlay_position
-                    .map_or((0, 0), |[top, left]| (top, left));
-                let instance = inner
-                    .overlay_instance
-                    .get_or_insert_with(eframe::wgpu::Instance::default)
-                    .clone();
-                inner.layer =
-                    Some(super::layer_overlay::LayerOverlay::spawn(instance, position));
+                if let Some(gpu) = inner.overlay_gpu.clone() {
+                    let position = inner
+                        .settings
+                        .general
+                        .overlay_position
+                        .map_or((0, 0), |[top, left]| (top, left));
+                    inner.layer =
+                        Some(layer_shell::LayerOverlay::spawn(gpu, position));
+                }
             }
             inner.check_update(ui.ctx());
             let data = inner.to_overlay_data();
-            let visuals = ui.style().visuals.clone();
+            let style = ui.style().clone();
             if let Some(layer) = &inner.layer {
                 layer.update(data);
-                layer.set_style(visuals);
+                layer.set_style(style);
             }
             // Keep the main app repainting so we keep feeding the overlay and
             // polling its toolbar events (column toggles) promptly.
@@ -373,7 +383,7 @@ impl Overlay {
 
 impl OverlayInner {
     // The eframe-viewport render path (non-Linux). On Linux the overlay is a
-    // layer-shell surface rendered on its own thread (see layer_overlay).
+    // layer-shell surface rendered on its own thread (see layer_shell).
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn show_overlay(&mut self, ui: &mut Ui) {
         self.check_update(ui.ctx());
@@ -444,14 +454,14 @@ impl OverlayInner {
     }
 
     #[cfg(target_os = "linux")]
-    fn to_overlay_data(&self) -> super::layer_overlay::OverlayData {
-        super::layer_overlay::OverlayData {
+    fn to_overlay_data(&self) -> layer_shell::OverlayData {
+        layer_shell::OverlayData {
             columns: self.data.columns.iter().map(|c| c.name.to_string()).collect(),
             rows: self
                 .data
                 .players
                 .iter()
-                .map(|p| super::layer_overlay::OverlayRow {
+                .map(|p| layer_shell::OverlayRow {
                     name: p.name.clone(),
                     values: p.columns.iter().map(|c| c.value_string.clone()).collect(),
                 })

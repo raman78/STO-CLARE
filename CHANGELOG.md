@@ -15,6 +15,13 @@
 - the Settings window can now be made as tall as you like (it was capped before), stays within the screen even when you expand a section, and remembers its size between sessions
 - fixed the average non-critical hit damage showing a wrong value on some runs (abilities that scored criticals on shields were miscounted)
 
+## v1.5.3
+### Other Changes
+- the overlay now shares the main window's graphics device instead of creating a second one, so it uses a little less memory
+
+### Fixes
+- opening "Clear Log File" no longer jumps the main view to the newest combat — the combat you were looking at stays open while the delete list refreshes
+
 ## v1.5.2
 ### Other Changes
 - opening "Clear Log File" now refreshes the combats list automatically, so it always shows every combat currently in the log
