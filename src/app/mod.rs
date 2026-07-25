@@ -16,8 +16,6 @@ use self::{
 mod analysis_handling;
 pub mod desktop_install;
 #[cfg(target_os = "linux")]
-pub mod layer_overlay;
-#[cfg(target_os = "linux")]
 mod log_consolidation;
 pub mod logging;
 pub mod self_upgrade;
@@ -27,6 +25,11 @@ mod settings;
 mod state;
 mod status;
 mod summary_copy;
+
+// The layer-shell overlay backend lives under `overlay::layer_shell`; re-export
+// the startup helper so main.rs can build the shared wgpu stack (see main.rs).
+#[cfg(target_os = "linux")]
+pub use overlay::layer_shell::create_shared_gpu;
 
 pub struct App {
     settings_window: SettingsWindow,
@@ -54,13 +57,16 @@ pub fn saved_window_geometry() -> (Option<Vec2>, bool) {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext,
+        overlay_instance: Option<eframe::wgpu::Instance>,
+    ) -> Self {
         cc.egui_ctx
             .memory_mut(|m| m.options.repaint_on_widget_change = false);
         let state = AppState::new(&cc.egui_ctx);
         let settings_window =
             SettingsWindow::new(&cc.egui_ctx, cc.egui_ctx.native_pixels_per_point());
-        Self {
+        let app = Self {
             settings_window,
             combats: Default::default(),
             selected_combat_index: None,
@@ -73,7 +79,26 @@ impl App {
             state,
             window_geometry_dirty: false,
             last_geometry_change: 0.0,
+        };
+
+        // On Linux, hand the layer-shell overlay the shared wgpu handles: the
+        // instance we created up front (passed in) plus eframe's
+        // adapter/device/queue — which, thanks to WgpuSetup::Existing, are the
+        // very ones we handed eframe. So both render through one device.
+        #[cfg(target_os = "linux")]
+        if let (Some(instance), Some(render_state)) = (overlay_instance, cc.wgpu_render_state.as_ref())
+        {
+            app.state.overlay.set_gpu(overlay::layer_shell::OverlayGpu {
+                instance,
+                adapter: render_state.adapter.clone(),
+                device: render_state.device.clone(),
+                queue: render_state.queue.clone(),
+            });
         }
+        #[cfg(not(target_os = "linux"))]
+        let _ = overlay_instance;
+
+        app
     }
 }
 
