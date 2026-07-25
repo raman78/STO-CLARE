@@ -37,9 +37,16 @@ See “Building the tool from Source” below.
 ## Getting started
 1. Install using one of the methods above (or download it from the Releases page).
 
-2. Make sure you turned off log rotation (see https://www.sto-league.com/how-to-disable-automatically-rotated-log-files/).
+2. **Recommended:** stop the game from splitting the combat log into many files.
+   Add the launch option `-NoAutoRotateLogs` to the game (on Steam: right‑click
+   Star Trek Online → Properties → Launch Options), so it always writes a single
+   `combatlog.log`. See this [step‑by‑step guide](https://www.sto-league.com/how-to-disable-automatically-rotated-log-files/).
 
-3. Go into the game and type "/Combatlog 1" into the chat window.
+   On Linux you can skip this if you want — if the log still gets split,
+   STO_CombatLogAnalyzer automatically merges the pieces back into one for you.
+
+3. Go into the game and type "/Combatlog 1" into the chat window. You have to do
+   this again every time you log in.
    
 4. Fight something.
 
