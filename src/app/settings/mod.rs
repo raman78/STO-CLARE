@@ -1,7 +1,8 @@
 use std::ffi::OsStr;
 
 pub use app_settings::Settings;
-use eframe::{Frame, egui::*};
+use egui::*;
+use crate::platform::AppWindow;
 
 use crate::analyzer::Combat;
 
@@ -63,7 +64,7 @@ impl SettingsWindow {
         selected_combat: Option<&Combat>,
         combats: &[String],
         ui: &mut Ui,
-        frame: &Frame,
+        frame: &AppWindow,
     ) {
         if ui.selectable_label(self.is_open, "Settings").clicked() && !self.is_open {
             self.initialize(state);

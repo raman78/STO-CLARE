@@ -1,7 +1,7 @@
 use std::hash::Hash;
 use std::ops::RangeInclusive;
 
-use eframe::egui::{Context, Id, Response, Slider, SliderClamping, TextEdit, Ui, Widget};
+use egui::{Context, Id, Response, Slider, SliderClamping, TextEdit, Ui, Widget};
 
 pub struct SliderTextEdit<'a> {
     value: &'a mut f64,

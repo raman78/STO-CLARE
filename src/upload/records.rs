@@ -1,7 +1,8 @@
 use std::{fs::File, io::Write, path::PathBuf, thread::JoinHandle, time::Duration};
 
 use chrono::DateTime;
-use eframe::{Frame, egui::*};
+use egui::*;
+use crate::platform::AppWindow;
 use flate2::write::GzDecoder;
 use itertools::{Either, Itertools};
 use reqwest::{Url, blocking::ClientBuilder};
@@ -41,7 +42,7 @@ pub enum Records {
 }
 
 impl Records {
-    pub fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &str) {
+    pub fn show(&mut self, ui: &mut Ui, frame: &AppWindow, url: &str) {
         let url = match Url::parse(url) {
             Ok(u) => u,
             Err(_) => {
@@ -159,7 +160,7 @@ impl LoadedLadders {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url) {
+    fn show(&mut self, ui: &mut Ui, frame: &AppWindow, url: Url) {
         if self.show_ladders_combo_boxes(ui) {
             self.entries = Entries::begin_load_ladder_entries(
                 ui.ctx().clone(),
@@ -228,7 +229,7 @@ enum Entries {
 }
 
 impl Entries {
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url, selected_ladder: &Ladder) {
+    fn show(&mut self, ui: &mut Ui, frame: &AppWindow, url: Url, selected_ladder: &Ladder) {
         match self {
             Entries::Loading(join_handle) => {
                 if join_handle.as_ref().unwrap().is_finished() {
@@ -418,7 +419,7 @@ impl LoadedEntries {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &Url) {
+    fn show(&mut self, ui: &mut Ui, frame: &AppWindow, url: &Url) {
         if self.entries.len() == 0 {
             ui.label("no entries");
             return;
@@ -499,7 +500,7 @@ impl DownloadLogState {
         }
     }
 
-    fn show_download_button(&mut self, row: &mut TableRow, frame: &Frame, url: &Url, log_id: i32) {
+    fn show_download_button(&mut self, row: &mut TableRow, frame: &AppWindow, url: &Url, log_id: i32) {
         if row
             .selectable_cell(false, |ui| {
                 ui.add_enabled_ui(self.is_idle(), |ui| {

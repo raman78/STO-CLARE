@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use eframe::egui::*;
+use egui::*;
 use egui_plot::*;
 use itertools::Itertools;
 

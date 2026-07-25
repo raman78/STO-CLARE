@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use eframe::egui::*;
+use egui::*;
 use egui_plot::*;
 use itertools::Itertools;
 

@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 
 use chrono::Duration;
-use eframe::egui::*;
+use egui::*;
 
 use crate::{
     analyzer::{Player as AnalyzedPlayer, *},

@@ -1,5 +1,5 @@
 use chrono::Duration;
-use eframe::egui::*;
+use egui::*;
 
 use crate::{
     analyzer::*,

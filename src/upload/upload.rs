@@ -1,6 +1,6 @@
 use std::{io::Write, thread::JoinHandle, time::Duration};
 
-use eframe::egui::*;
+use egui::*;
 use reqwest::{
     blocking::{
         multipart::{Form, Part},

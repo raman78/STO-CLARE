@@ -1,6 +1,6 @@
 use std::borrow::BorrowMut;
 
-use eframe::egui::*;
+use egui::*;
 
 use super::Settings;
 use crate::analyzer::Combat;

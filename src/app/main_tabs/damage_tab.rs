@@ -1,4 +1,4 @@
-use eframe::egui::*;
+use egui::*;
 
 use crate::{analyzer::*, app::settings::Settings, custom_widgets::splitter::Splitter};
 

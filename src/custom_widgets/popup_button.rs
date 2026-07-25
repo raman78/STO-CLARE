@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use eframe::egui::{Id, InnerResponse, Ui, WidgetText, Window};
+use egui::{Id, InnerResponse, Ui, WidgetText, Window};
 
 pub struct PopupButton {
     title: WidgetText,

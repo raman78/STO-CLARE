@@ -1,4 +1,4 @@
-use eframe::egui::Ui;
+use egui::Ui;
 use egui_plot::*;
 
 use crate::{app::settings::Settings, helpers::number_formatting::NumberFormatter};

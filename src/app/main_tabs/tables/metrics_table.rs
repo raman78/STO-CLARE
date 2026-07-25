@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 
 use educe::Educe;
-use eframe::egui::*;
+use egui::*;
 use rustc_hash::FxHashSet;
 
 use crate::{

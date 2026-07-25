@@ -1,6 +1,6 @@
 use std::f32::INFINITY;
 
-use eframe::{egui::*, emath::GuiRounding};
+use egui::{emath::GuiRounding, *};
 
 pub struct Table<'a> {
     ui: &'a mut Ui,

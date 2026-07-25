@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use eframe::{egui::*, emath::GuiRounding};
+use egui::{emath::GuiRounding, *};
 
 #[must_use = "You should call .show()"]
 pub struct Splitter {

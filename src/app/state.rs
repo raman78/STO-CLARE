@@ -1,4 +1,4 @@
-use eframe::egui::Context;
+use egui::Context;
 
 use crate::app::overlay::Overlay;
 

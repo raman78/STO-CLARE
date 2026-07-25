@@ -11,7 +11,7 @@ use std::{
 
 use chrono::Duration;
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use eframe::egui::{Context, ViewportId};
+use egui::{Context, ViewportId};
 use log::info;
 use notify::{RecommendedWatcher, Watcher, recommended_watcher};
 use timer::{Guard, Timer};

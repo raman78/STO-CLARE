@@ -1,6 +1,6 @@
 use std::{fmt::Debug, hash::Hash, str::FromStr};
 
-use eframe::egui::*;
+use egui::*;
 
 pub struct NumberEdit<'a, T: FromStr + Ord + ToString + Copy> {
     value: &'a mut T,

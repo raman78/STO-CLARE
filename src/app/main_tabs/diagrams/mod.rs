@@ -8,7 +8,7 @@ pub use crate::app::main_tabs::diagrams::common::DiagramType;
 use crate::app::settings::Settings;
 pub use common::PreparedDamageDataSet;
 pub use common::PreparedHealDataSet;
-use eframe::egui::Ui;
+use egui::Ui;
 use itertools::Itertools;
 pub use summary_chart::SummaryChart;
 pub use value_per_second_graph::ValuePerSecondGraph;

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use eframe::{egui::*, epaint::mutex::Mutex};
+use egui::{epaint::mutex::Mutex, *};
 
 use crate::{
     analyzer::{Combat, Player},
@@ -42,7 +42,7 @@ struct OverlayInner {
     // across show/hide: destroying it would unload Vulkan under eframe's own
     // renderer and crash the app (see layer_overlay::LayerOverlay::spawn).
     #[cfg(target_os = "linux")]
-    overlay_instance: Option<eframe::wgpu::Instance>,
+    overlay_instance: Option<wgpu::Instance>,
 }
 
 #[derive(Default)]
@@ -303,7 +303,7 @@ impl Overlay {
                     .map_or((0, 0), |[top, left]| (top, left));
                 let instance = inner
                     .overlay_instance
-                    .get_or_insert_with(eframe::wgpu::Instance::default)
+                    .get_or_insert_with(wgpu::Instance::default)
                     .clone();
                 inner.layer =
                     Some(super::layer_overlay::LayerOverlay::spawn(instance, position));

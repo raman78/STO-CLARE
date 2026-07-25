@@ -1,4 +1,4 @@
-use eframe::egui::Ui;
+use egui::Ui;
 
 use super::Settings;
 

@@ -1,7 +1,4 @@
-use eframe::{
-    egui::{ComboBox, Context, Style, Ui, Visuals, style::Selection},
-    epaint::{Rgba, Shadow},
-};
+use egui::{ComboBox, Context, Style, Ui, Visuals, epaint::{Rgba, Shadow}, style::Selection};
 
 use crate::{app::overlay::Overlay, custom_widgets::slider_text_edit::SliderTextEdit};
 
@@ -83,8 +80,8 @@ impl VisualsTab {
         style.visuals = visuals;
         style.interaction.selectable_labels = false;
         style.interaction.tooltip_delay = 0.0;
-        ctx.set_style_of(eframe::egui::Theme::Dark, style.clone());
-        ctx.set_style_of(eframe::egui::Theme::Light, style);
+        ctx.set_style_of(egui::Theme::Dark, style.clone());
+        ctx.set_style_of(egui::Theme::Light, style);
         Overlay::request_repaint(ctx);
     }
 

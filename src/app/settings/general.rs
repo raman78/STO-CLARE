@@ -1,5 +1,5 @@
-use eframe::Frame;
-use eframe::egui::*;
+use crate::platform::AppWindow;
+use egui::*;
 use rfd::FileDialog;
 
 use crate::{
@@ -28,7 +28,7 @@ impl GeneralTab {
         modified_settings: &mut Settings,
         combats: &[String],
         ui: &mut Ui,
-        frame: &Frame,
+        frame: &AppWindow,
     ) {
         ui.horizontal(|ui| {
             ui.label("Combatlog File");

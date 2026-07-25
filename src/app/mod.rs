@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use eframe::egui::*;
+use egui::*;
 use rfd::FileDialog;
 
 use crate::{
     analyzer::Combat,
+    platform::AppWindow,
     upload::{Records, Upload},
 };
 
@@ -54,12 +55,10 @@ pub fn saved_window_geometry() -> (Option<Vec2>, bool) {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext) -> Self {
-        cc.egui_ctx
-            .memory_mut(|m| m.options.repaint_on_widget_change = false);
-        let state = AppState::new(&cc.egui_ctx);
-        let settings_window =
-            SettingsWindow::new(&cc.egui_ctx, cc.egui_ctx.native_pixels_per_point());
+    pub fn new(ctx: &egui::Context, pixels_per_point: f32) -> Self {
+        ctx.memory_mut(|m| m.options.repaint_on_widget_change = false);
+        let state = AppState::new(ctx);
+        let settings_window = SettingsWindow::new(ctx, Some(pixels_per_point));
         Self {
             settings_window,
             combats: Default::default(),
@@ -77,16 +76,15 @@ impl App {
     }
 }
 
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
+impl App {
+    pub fn update(&mut self, ctx: &egui::Context, window: &AppWindow) {
         self.handle_analysis_infos();
-        self.track_window_geometry(ui.ctx());
         // Remember where the overlay was dragged (persisted on exit).
         #[cfg(target_os = "linux")]
         if let Some(position) = self.state.overlay.position() {
             self.state.settings.general.overlay_position = Some(position);
         }
-        CentralPanel::default().show_inside(ui, |ui| {
+        CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     self.settings_window.show(
@@ -94,10 +92,10 @@ impl eframe::App for App {
                         self.selected_combat.as_deref(),
                         &self.combats,
                         ui,
-                        frame,
+                        window,
                     );
                     self.records
-                        .show(ui, frame, &self.state.settings.upload.oscr_url);
+                        .show(ui, window, &self.state.settings.upload.oscr_url);
                 });
 
                 ui.horizontal_wrapped(|ui| {
@@ -163,7 +161,7 @@ impl eframe::App for App {
                             .set_file_name(
                                 &self.selected_combat.as_ref().unwrap().file_identifier(),
                             )
-                            .set_parent(frame)
+                            .set_parent(window)
                             .save_file()
                         {
                             self.state
@@ -190,59 +188,32 @@ impl eframe::App for App {
         });
     }
 
-    fn clear_color(&self, _visuals: &eframe::egui::Visuals) -> [f32; 4] {
-        _visuals.window_fill().to_normalized_gamma_f32()
-    }
-
-    fn on_exit(&mut self) {
-        // Backup flush of the latest geometry on close (see track_window_geometry).
+    /// Backup flush of the latest settings/geometry on close.
+    pub fn save_on_exit(&self) {
         self.state.settings.save();
     }
-}
 
-impl App {
-    /// Remembers the main window's size and maximized state so the next launch
-    /// restores them (see main.rs). The size comes from the egui viewport rect
-    /// because on Wayland the OS-reported `inner_rect` is `None`. The settings
-    /// file is written only once the size has settled (no change for a moment),
-    /// never while the edge is being dragged, so resizing stays smooth.
-    fn track_window_geometry(&mut self, ctx: &eframe::egui::Context) {
-        let now = ctx.input(|i| i.time);
-        let maximized = ctx.input(|i| i.viewport().maximized);
-        let size = ctx.viewport_rect().size();
-
+    /// Remembers the main window's size (in points) and maximized state so the
+    /// next launch restores them (see platform::run). Called each frame with the
+    /// SDL window size; the settings file is written only once the size has
+    /// settled (no change for ~2 s), never while the edge is being dragged.
+    pub fn track_window_geometry(&mut self, size: [f32; 2], maximized: bool, now: f64) {
         // Only remember the windowed size, so un-maximizing restores something
         // sane rather than the full-screen size.
-        if maximized != Some(true) {
-            let size = [size.x, size.y];
-            if self.state.settings.general.window_size != Some(size) {
-                self.state.settings.general.window_size = Some(size);
-                self.window_geometry_dirty = true;
-                self.last_geometry_change = now;
-            }
+        if !maximized && self.state.settings.general.window_size != Some(size) {
+            self.state.settings.general.window_size = Some(size);
+            self.window_geometry_dirty = true;
+            self.last_geometry_change = now;
         }
-        if let Some(maximized) = maximized {
-            if self.state.settings.general.window_maximized != maximized {
-                self.state.settings.general.window_maximized = maximized;
-                self.window_geometry_dirty = true;
-                self.last_geometry_change = now;
-            }
+        if self.state.settings.general.window_maximized != maximized {
+            self.state.settings.general.window_maximized = maximized;
+            self.window_geometry_dirty = true;
+            self.last_geometry_change = now;
         }
 
-        if self.window_geometry_dirty {
-            let idle = now - self.last_geometry_change;
-            if idle >= 2.0 {
-                // Settled for 2 s: write once, off the resize hot path.
-                self.state.settings.save();
-                self.window_geometry_dirty = false;
-            } else if idle < 0.5 {
-                // Actively resizing: keep redrawing every frame so the content
-                // tracks the window instead of lagging behind the drag.
-                ctx.request_repaint();
-            } else {
-                // Idle but not yet settled: check again to flush the size.
-                ctx.request_repaint_after(std::time::Duration::from_millis(300));
-            }
+        if self.window_geometry_dirty && now - self.last_geometry_change >= 2.0 {
+            self.state.settings.save();
+            self.window_geometry_dirty = false;
         }
     }
 

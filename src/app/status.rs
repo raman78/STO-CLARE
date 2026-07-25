@@ -1,4 +1,4 @@
-use eframe::egui::*;
+use egui::*;
 
 use crate::helpers::number_formatting::NumberFormatter;
 

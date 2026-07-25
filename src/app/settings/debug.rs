@@ -1,4 +1,4 @@
-use eframe::egui::{ComboBox, Ui};
+use egui::{ComboBox, Ui};
 
 use super::Settings;
 
