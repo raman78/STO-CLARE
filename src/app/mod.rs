@@ -43,6 +43,10 @@ pub struct App {
 /// frame.
 const GEOMETRY_SETTLE_TIME: f64 = 2.0;
 
+/// How long after the last size change the window still counts as being
+/// dragged, and is therefore redrawn every frame.
+const ACTIVE_RESIZE_TIME: f64 = 0.5;
+
 /// The window size and maximized state to start with, read before the window
 /// exists (see main.rs).
 pub fn saved_window_geometry() -> (Option<Vec2>, bool) {
@@ -199,6 +203,9 @@ impl App {
     /// so it is scaled back by the zoom factor to the logical pixels that
     /// `ViewportBuilder::with_inner_size` expects — otherwise a "ui scale"
     /// other than 1 would shrink or grow the window on every launch.
+    ///
+    /// A size change also means the window is being resized right now, which is
+    /// used to keep redrawing while that lasts.
     fn track_window_geometry(&mut self, ctx: &Context) {
         let now = ctx.input(|i| i.time);
         let maximized = ctx.input(|i| i.viewport().maximized);
@@ -226,13 +233,17 @@ impl App {
         }
 
         if self.window_geometry_dirty {
-            let settled_in = GEOMETRY_SETTLE_TIME - (now - self.last_geometry_change);
-            if settled_in <= 0.0 {
+            let idle = now - self.last_geometry_change;
+            if idle >= GEOMETRY_SETTLE_TIME {
                 self.save_window_geometry();
+            } else if idle < ACTIVE_RESIZE_TIME {
+                // The edge is still being dragged. Redraw every frame so the
+                // contents follow the window instead of trailing behind it.
+                ctx.request_repaint();
             } else {
-                // The size only changes while a window edge is dragged, and no
-                // further frame is guaranteed once that stops, so ask for one.
-                ctx.request_repaint_after(Duration::from_secs_f64(settled_in));
+                // Dragging has stopped and no further frame is guaranteed, so
+                // ask for the one that writes the settled size.
+                ctx.request_repaint_after(Duration::from_secs_f64(GEOMETRY_SETTLE_TIME - idle));
             }
         }
     }
