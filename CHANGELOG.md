@@ -4,8 +4,12 @@
 ### Major Changes
 - decreased the decimal count of most number to reduce used space (can be changed to be like before in the settings)
 
+### Other Changes
+- on Linux/Wayland the overlay now stays above full-screen games, and carries its own buttons for picking columns and moving it around
+
 ### Fixes
 - fixed auto refresh stopping to work when changing the logs path
+- fixed the program crashing on Linux/Wayland when the overlay is switched on
 
 ## v1.4.0
 ### Major Changes

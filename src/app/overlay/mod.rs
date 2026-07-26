@@ -8,9 +8,6 @@ use crate::{
     custom_widgets::table::Table,
     helpers::number_formatting::NumberFormatter,
 };
-// The column-config popup only lives in the main window on non-Linux; on Linux
-// it moved onto the layer-shell overlay's own toolbar.
-#[cfg(not(target_os = "linux"))]
 use crate::custom_widgets::popup_button::PopupButton;
 
 use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
@@ -22,29 +19,27 @@ pub mod layer_shell;
 pub struct Overlay(Arc<Mutex<OverlayInner>>);
 
 struct OverlayInner {
-    // Used by the eframe-viewport path (non-Linux); on Linux the layer-shell
-    // surface owns its own geometry.
-    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    // Used by the eframe-viewport path; the layer-shell surface owns its own
+    // geometry instead.
     position: Option<Pos2>,
-    #[cfg_attr(target_os = "linux", allow(dead_code))]
     current_size: Vec2,
     data: DisplayData,
     show: bool,
-    // Only the non-Linux viewport path toggles this; on Linux the overlay owns
-    // its own move state.
-    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    // Only the viewport path toggles this; the layer-shell overlay owns its own
+    // move state.
     move_around: bool,
     columns: Vec<ColumnDescriptor>,
     analysis_handler: AnalysisHandler,
     state: State,
     settings: Settings,
-    // On Linux the overlay is a wlr-layer-shell surface (always-on-top over
-    // full-screen games) instead of an eframe viewport; see layer_shell.
+    // In a Wayland session the overlay is a wlr-layer-shell surface (always-on-top
+    // over full-screen games) instead of an eframe viewport; see layer_shell.
     #[cfg(target_os = "linux")]
     layer: Option<layer_shell::LayerOverlay>,
     // wgpu handles shared with eframe's main-window renderer, used to spawn the
-    // layer-shell overlay. Injected once at startup by App::new (see set_gpu);
-    // there is no second wgpu instance/device.
+    // layer-shell overlay. Injected once at startup by App::new (see set_gpu),
+    // and only in a Wayland session — so their presence is what selects the
+    // layer-shell backend (see `uses_layer_shell`).
     #[cfg(target_os = "linux")]
     overlay_gpu: Option<layer_shell::OverlayGpu>,
 }
@@ -226,8 +221,9 @@ impl Overlay {
     }
 
     /// Injects the shared wgpu handles the layer-shell overlay renders through.
-    /// Called once at startup by `App::new`; without them the overlay can't
-    /// start (it never creates its own wgpu instance/device).
+    /// Called once at startup by `App::new`, and only when the app really is
+    /// running on Wayland — so this is also what selects the layer-shell
+    /// backend over the plain viewport one.
     #[cfg(target_os = "linux")]
     pub fn set_gpu(&self, gpu: layer_shell::OverlayGpu) {
         self.0.lock().overlay_gpu = Some(gpu);
@@ -245,11 +241,10 @@ impl Overlay {
             inner.toggle_show();
         }
 
-        // On non-Linux the overlay is a plain window, so its column config (⛭)
-        // and move toggle (✋) live in the main window. On Linux both live on
-        // the layer-shell overlay's own toolbar (see layer_shell).
-        #[cfg(not(target_os = "linux"))]
-        {
+        // With the viewport backend the overlay is a plain window, so its column
+        // config (⛭) and move toggle (✋) live in the main window. The
+        // layer-shell overlay carries both on its own toolbar instead.
+        if !inner.uses_layer_shell() {
             PopupButton::new("⛭").show(ui, |ui| {
                 ui.label("Configure what columns are displayed in the Overlay");
                 let mut config_changed = false;
@@ -280,12 +275,12 @@ impl Overlay {
             return;
         }
 
-        // Linux/Wayland: render the overlay on a wlr-layer-shell surface so it
-        // stays above full-screen games (the winit always-on-top hint is
-        // ignored on Wayland). We push the freshly computed rows to that
-        // surface's own thread; there is no eframe viewport here.
+        // Wayland: render the overlay on a wlr-layer-shell surface so it stays
+        // above full-screen games (the winit always-on-top hint is ignored
+        // there). We push the freshly computed rows to that surface's own
+        // thread; there is no eframe viewport in this case.
         #[cfg(target_os = "linux")]
-        {
+        if inner.uses_layer_shell() {
             // Apply column toggles raised by the overlay's own ⛭ popup.
             let events = inner
                 .layer
@@ -332,7 +327,8 @@ impl Overlay {
             return;
         }
 
-        #[cfg(not(target_os = "linux"))]
+        // Everywhere else — Windows, macOS and an X11 session on Linux — the
+        // overlay is a plain always-on-top eframe viewport.
         {
             let mut builder = ViewportBuilder::default()
                 .with_title("CLA Overlay")
@@ -382,9 +378,29 @@ impl Overlay {
 }
 
 impl OverlayInner {
-    // The eframe-viewport render path (non-Linux). On Linux the overlay is a
-    // layer-shell surface rendered on its own thread (see layer_shell).
-    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    /// Whether the overlay runs on a wlr-layer-shell surface instead of an
+    /// eframe viewport.
+    ///
+    /// This is decided at runtime rather than by `cfg`, because a Linux build
+    /// has to serve both session types: layer-shell is a Wayland protocol and
+    /// there is nothing to talk to in an X11 session, where the plain
+    /// always-on-top viewport works anyway. `App::new` only hands over the
+    /// shared wgpu handles when the app really came up on Wayland, so having
+    /// them is the same thing as being able to use layer-shell.
+    fn uses_layer_shell(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.overlay_gpu.is_some()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
+
+    // The eframe-viewport render path, used everywhere except a Wayland
+    // session, where the overlay is a layer-shell surface rendered on its own
+    // thread instead (see layer_shell).
     fn show_overlay(&mut self, ui: &mut Ui) {
         self.check_update(ui.ctx());
         CentralPanel::default().show_inside(ui, |ui| {
