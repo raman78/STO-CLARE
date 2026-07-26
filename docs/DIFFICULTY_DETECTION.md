@@ -90,7 +90,8 @@ map carrying everything about it (`DetectionRules { maps: HashMap<String, MapDef
       "difficulty": "Any" | "Normal" | "Advanced" | "Elite", // optional (default Any); a pinned tier
       "identifiers": ["<unique_name>", ...],        // entities whose presence identifies the map
       "death_counts": { "Advanced": { "<unique_name>": <count> }, "Elite": { ... } },
-      "hull_counts":  { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }
+      "hull_counts":  { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }, // all-of
+      "hull_any":     { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }  // any-of
     }
   }
 }
@@ -102,6 +103,13 @@ that apply are written; all are `#[serde(default)]`. A map with an **empty (abse
 we cannot detect yet; it never matches. A required death count of `0` means "must
 be present, any number of deaths" (e.g. the Advanced- vs Elite-only pet in Cure
 Found).
+
+**Never key `identifiers` (or tier tables) on a `Device_*` entity.** Those are
+player-carried devices (Kobayashi Maru Resupply, team buffs, …) that appear only
+when a player happens to equip one — random per run, not a property of the map.
+Anchor on fixed mission NPCs, objects, or allied ships instead (e.g. Unwanted
+Guests, whose enemies are randomly regular or Mirror Borg, is anchored on its
+allied Aetherian ships).
 
 `category` is curated **content-type metadata** (STO logs carry no such marker):
 `MapDef::display_name(name)` renders `[category] <name>` (e.g. `[TFO] Azure Nebula
@@ -128,9 +136,13 @@ Mirrors OSCR's `detect_map`, iterating `rules.maps`:
    (e.g. Hive Onslaught), compare each entity's **median hull damage suffered**
    (across instances) against its threshold: a tier matches when
    `threshold * (1 - HULL_VARIANCE) < median`, with `HULL_VARIANCE = 0.20`
-   (OSCR's `var`). Runs after the death phase and overrides it (higher tiers
-   still win); skipped when death tables existed but none matched (that stays
-   `Any`).
+   (OSCR's `var`). `hull_counts` is **all-of** (every listed entity must be
+   present and pass); `hull_any` is **any-of** (one present entity passing is
+   enough) — used for faction-randomized maps where the tier signal is one entity
+   per faction (list every variant with the same band; only whichever spawned is
+   checked, e.g. Unwanted Guests' dreadnought). Both run after the death phase and
+   override it (higher tiers still win); skipped when death tables existed but
+   none matched (that stays `Any`).
 
 ## Shared objective entities (anchor on the enemy, not the objective)
 

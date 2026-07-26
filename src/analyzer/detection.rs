@@ -108,6 +108,11 @@ struct MapDef {
     difficulty: Difficulty,
     /// Internal unique names whose presence identifies this map. Empty for
     /// catalog-only entries — a known map we cannot detect yet.
+    ///
+    /// NEVER use a `Device_*` entity here (or in the tier tables): those are
+    /// player-carried devices (e.g. Kobayashi Maru Resupply, team buffs), present
+    /// only when a player happens to equip one — random, not a property of the
+    /// map. Anchor on fixed mission NPCs/objects/allies instead.
     #[serde(default)]
     identifiers: Vec<String>,
     /// difficulty -> {entity unique name -> required death count}. A required
@@ -115,10 +120,17 @@ struct MapDef {
     #[serde(default)]
     death_counts: HashMap<Difficulty, HashMap<String, u32>>,
     /// difficulty -> {entity unique name -> hull-damage threshold}, breaking ties
-    /// where the tiers share death counts. An entity matches when its median hull
-    /// damage exceeds `threshold * (1 - VAR)`.
+    /// where the tiers share death counts. **All** listed entities must be present
+    /// and each exceed `threshold * (1 - VAR)`.
     #[serde(default)]
     hull_counts: HashMap<Difficulty, HashMap<String, f64>>,
+    /// Like `hull_counts` but **any-of**: the tier matches when *at least one*
+    /// listed entity is present and exceeds its threshold. For maps whose enemy
+    /// faction is randomized (e.g. Unwanted Guests: regular / Mirror / Control
+    /// Borg), where the tier signal is one entity per faction — list every
+    /// variant with the same band; only whichever spawned is checked.
+    #[serde(default)]
+    hull_any: HashMap<Difficulty, HashMap<String, f64>>,
 }
 
 fn any_difficulty() -> Difficulty {
@@ -282,11 +294,30 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
             }
         }
     }
+    // Any-of hull tie-break: for faction-randomized maps, whichever listed
+    // variant spawned decides the tier. Same low-to-high override.
+    for tier in DIFFICULTY_ORDER {
+        if let Some(table) = def.hull_any.get(&tier) {
+            if hull_any_match(table, critters) {
+                difficulty = Some(tier);
+            }
+        }
+    }
 
     Detected {
         map: Some(def.display_name(name)),
         difficulty,
     }
+}
+
+/// A tier matches when *at least one* listed entity is present and its median
+/// hull damage exceeds `threshold * (1 - VAR)`. See `MapDef::hull_any`.
+fn hull_any_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
+    table.iter().any(|(unique_name, threshold)| {
+        critters
+            .get(unique_name.as_str())
+            .is_some_and(|meta| threshold * (1.0 - HULL_VARIANCE) < meta.median_hull_damage())
+    })
 }
 
 /// A tier matches when every listed entity is present and its median hull damage
@@ -542,6 +573,42 @@ mod tests {
             assert_eq!(result.map.as_deref(), Some(map));
             assert_eq!(result.difficulty, None);
         }
+    }
+
+    #[test]
+    fn unwanted_guests_tier_by_dreadnought_any_faction() {
+        // Enemies are randomly regular / Mirror / Control Borg; the dreadnought's
+        // hull is the tier signal and is faction-independent in value — only the
+        // entity name changes — so it is matched any-of (`hull_any`). Anchored on
+        // the allied Aetherian ships. NB: NEVER anchor on `Device_*` entities —
+        // those are player-carried devices, present only if a player equips them.
+        let advanced = vec![
+            hull_critter("Space_Aetherian_Cruiser", 0.0),
+            hull_critter("Space_Borg_Dreadnought_Mirror", 1_954_225.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Unwanted Guests"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        // Elite resolves whichever faction spawned: plain (regular) Borg …
+        let elite_regular = vec![
+            hull_critter("Space_Aetherian_Cruiser", 0.0),
+            hull_critter("Space_Borg_Dreadnought", 8_300_426.0),
+        ];
+        assert_eq!(
+            detect(&bundled_rules(), &view(&elite_regular)).difficulty,
+            Some(Difficulty::Elite)
+        );
+
+        // … and Control Borg.
+        let elite_control = vec![
+            hull_critter("Space_Aetherian_Cruiser", 0.0),
+            hull_critter("Space_Borg_Dreadnought_Control", 8_568_353.0),
+        ];
+        assert_eq!(
+            detect(&bundled_rules(), &view(&elite_control)).difficulty,
+            Some(Difficulty::Elite)
+        );
     }
 
     #[test]

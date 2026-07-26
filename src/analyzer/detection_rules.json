@@ -962,7 +962,23 @@
     },
     "Unwanted Guests": {
       "category": "Patrol",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Aetherian_Cruiser",
+        "Space_Aetherian_Dreadnought"
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Space_Borg_Dreadnought_Mirror": 1500000,
+          "Space_Borg_Dreadnought_Control": 1500000,
+          "Space_Borg_Dreadnought": 1500000
+        },
+        "Elite": {
+          "Space_Borg_Dreadnought_Mirror": 4000000,
+          "Space_Borg_Dreadnought_Control": 4000000,
+          "Space_Borg_Dreadnought": 4000000
+        }
+      }
     },
     "Vault Shuttle Event": {
       "category": "TFO",
