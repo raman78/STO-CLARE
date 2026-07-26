@@ -87,17 +87,19 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 
 ---
 
-## [TFO] Defense of Starbase One — Space — anchor only (tier needs samples)
+## [TFO] Defense of Starbase One — Space — DONE (single-difficulty Normal)
 - Distinct Discovery-era Starbase One TFO (Discovery rep). Enemies: **Discovery
   Klingons** (`Space_Klingon_*_Dsc`). Not a collision with Resistance — they use
   *different* evacuation-ship entities (see below).
 - **Anchor:** `Space_Federation_Cruiser_Dsc_Tfo_Evacuation_Ship` (Discovery variant).
-- **Tier:** none yet — only one sample (user unsure of tier). Killed enemies for
-  when an Elite pair arrives: Battleship_Dsc 226k, Cruiser_Dsc 177k, Raider_Dsc 63k.
+- **Tier:** pinned `difficulty: "Normal"` — **single difficulty**: the in-game queue
+  offers only Normal (Raman confirmed he can't select higher). The wiki's `N/A/E`
+  for this TFO is **out of date**. First of the "Normal-only" maps; the schema
+  already supports it (`difficulty` field, like Winter Invasion / Operation Wolf).
 
 | sample | tier | Battleship_Dsc | Cruiser_Dsc | Raider_Dsc |
 |---|---|---|---|---|
-| 2026-07-26 17:41 | ~Advanced? | 226,313 | 176,588 | 63,403 |
+| 2026-07-26 17:41 | Normal | 226,313 | 176,588 | 63,403 |
 
 ## [TFO] Resistance of Starbase One — Space — DONE (anchor + any-of tier)
 - Randomized enemy group (both samples were **Mirror Borg**). **No collision with

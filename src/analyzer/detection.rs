@@ -685,11 +685,12 @@ mod tests {
     fn starbase_one_defense_and_resistance_dont_collide() {
         // The two Starbase One TFOs use different evacuation-ship entities
         // (Dsc / Discovery vs Vtx), so anchoring each on its own ship keeps them
-        // apart. Defense is detected without a tier yet (needs an Elite sample).
+        // apart. Defense is single-difficulty Normal (in-game queue offers only
+        // Normal; the wiki's N/A/E is out of date).
         let defense = vec![hull_critter("Space_Federation_Cruiser_Dsc_Tfo_Evacuation_Ship", 0.0)];
         let result = detect(&bundled_rules(), &view(&defense));
         assert_eq!(result.map.as_deref(), Some("[TFO] Defense of Starbase One"));
-        assert_eq!(result.difficulty, None);
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
     }
 
     #[test]
