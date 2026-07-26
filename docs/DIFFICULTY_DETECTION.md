@@ -53,10 +53,15 @@ Combat::name() ─▶ base = user rules ? join names : detected_map ?? "Combat"
 The Combat Name Rules editor (`app/settings/analysis::CombatNameRules`) lists the
 curated maps read-only below the user rules and flags overlaps two ways:
 
-- **Per rule** (`overlapping_maps`): each enabled rule is tested against every
-  curated identifier's unique name (`curated_map_identifiers()`); a match shows a
-  ⚠ on that rule's row, whose tooltip names the shadowed map(s). Wired via
-  `GroupRulesTable::with_row_warning`.
+- **Per rule** (`overlapping_maps`): a ⚠ on the rule's row, tooltip naming the
+  shadowed map(s). An enabled rule overlaps a curated map two ways, unioned: (1)
+  **entity** — the rule matches the map's identifying NPC (unique name,
+  `curated_map_identifiers()`); (2) **name** — the rule's own name equals the
+  map's name, ignoring the `[TFO]`/`[Patrol]` category prefix on either side
+  (`strip_category_prefix`), e.g. a rule named "Trouble Over Terrh" vs the
+  "[Patrol] Trouble Over Terrh" map. The name check catches rules written against
+  *display* names, which the entity check (unique names only) cannot see. Both are
+  combat-independent. Wired via `GroupRulesTable::with_row_warning`.
 - **Per-combat**: when the selected combat is auto-detected but a rule renamed it.
 
 The curated rules are never copied into the user's settings — they are rendered
@@ -73,50 +78,73 @@ Bundled next to the module and embedded via `include_str!`, parsed once into the
 `DETECTION_RULES` lazy static. A user override at
 `<config dir>/STO_CombatLogAnalyzer/detection_rules.json` (same dir as the app
 settings) **fully replaces** the bundled tables when present and valid; a
-malformed override is logged and ignored. Schema mirrors OSCR's three tables:
+malformed override is logged and ignored. The file is **keyed by map name**, each
+map carrying everything about it (`DetectionRules { maps: HashMap<String, MapDef> }`):
 
 ```jsonc
 {
-  "map_identifiers": {                 // entity present ⇒ this map
-    "<unique_name>": { "map": "...", "difficulty": "Any" | "Normal" | "Advanced" | "Elite" }
-  },
-  "death_counts": {                    // resolve tier by exact death counts
-    "<map>": { "Advanced": { "<unique_name>": <count> }, "Elite": { ... } }
-  },
-  "hull_counts": {                     // tie-break by median hull damage
-    "<map>": { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }
+  "maps": {
+    "<map name>": {                    // the key IS the map's bare name
+      "category": "TFO" | "Patrol" | ...,           // optional; shown as a "[category] " prefix
+      "combat_type": "Space" | "Ground" | "Shuttle", // optional; curated reference only, not shown
+      "difficulty": "Any" | "Normal" | "Advanced" | "Elite", // optional (default Any); a pinned tier
+      "identifiers": ["<unique_name>", ...],        // entities whose presence identifies the map
+      "death_counts": { "Advanced": { "<unique_name>": <count> }, "Elite": { ... } },
+      "hull_counts":  { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }
+    }
   }
 }
 ```
 
-A required death count of `0` means "must be present, any number of deaths" —
-used when only an entity's *existence* distinguishes the tier (e.g. the
-Advanced- vs Elite-only pet in Cure Found).
+Only `category`/`combat_type`/`difficulty`/`identifiers`/`death_counts`/`hull_counts`
+that apply are written; all are `#[serde(default)]`. A map with an **empty (absent)
+`identifiers`** is a **catalog-only** entry — a known map (e.g. from the STO wiki)
+we cannot detect yet; it never matches. A required death count of `0` means "must
+be present, any number of deaths" (e.g. the Advanced- vs Elite-only pet in Cure
+Found).
+
+`category` is curated **content-type metadata** (STO logs carry no such marker):
+`MapDef::display_name(name)` renders `[category] <name>` (e.g. `[TFO] Azure Nebula
+Rescue`); the bare key name stays the identity used everywhere else. `combat_type`
+(Space/Ground/Shuttle, from the STO wiki) is reference-only and never displayed.
 
 Keeping the tables as JSON (rather than hard-coded like OSCR) means they can be
-refreshed when OSCR updates, ideally from a shared canonical file rather than by
-scraping OSCR's Python.
+refreshed when OSCR/the wiki updates, ideally from a shared canonical file.
 
 ## Algorithm (`detection::detect`)
 
-Mirrors OSCR's `detect_map`:
+Mirrors OSCR's `detect_map`, iterating `rules.maps`:
 
-1. **Existence** — intersect the combat's present unique names with
-   `map_identifiers`. No match ⇒ `map = None` ("Combat"). A matching entity that
-   pins a non-`Any` difficulty returns immediately (e.g. Winter Invasion ⇒
-   Normal).
+1. **Existence** — find a map whose `identifiers` intersect the combat's present
+   unique names (`MapDef::is_present`). No match ⇒ `map = None` ("Combat"). A
+   matching map that pins a non-`Any` `difficulty` returns immediately (e.g.
+   Winter Invasion ⇒ Normal).
 2. **Death counts** — for the identified map, test each tier low→high
    (`DIFFICULTY_ORDER = [Advanced, Elite]`); a higher tier that also matches
    overrides a lower one. A tier matches when every listed entity is present and
    every entry with count `> 0` died *exactly* that many times. If the map has
    tables but none match, the tier is `Any`.
 3. **Hull tie-break** — for maps where the two tiers have identical death counts
-   (e.g. Hive Space), compare each entity's **median hull damage suffered**
+   (e.g. Hive Onslaught), compare each entity's **median hull damage suffered**
    (across instances) against its threshold: a tier matches when
    `threshold * (1 - HULL_VARIANCE) < median`, with `HULL_VARIANCE = 0.20`
    (OSCR's `var`). Runs after the death phase and overrides it (higher tiers
    still win); skipped when death tables existed but none matched (that stays
    `Any`).
+
+## Shared objective entities (anchor on the enemy, not the objective)
+
+The existence phase takes the **first** matching map; when several match, the
+winner is order-dependent (`maps` is a `HashMap`), so a map must list
+`identifiers` that are **unique to it**. This bites when two maps share an
+*objective* entity. Example: both **[TFO] Azure Nebula Rescue** and the
+**[Patrol] Trouble Over Terrh** patrol rescue the same allied ship
+(`Mission_Space_Romulan_Colony_Flagship_Lleiset`), so anchoring either on the
+Lleiset makes them indistinguishable. They are told apart by **enemy faction**
+instead — Azure lists a Tholian ship (`Space_Tholian_Cruiser_Web`), Terrh an
+Elachi one (`Space_Elachi_Frigate`) — which never co-occur, so the Lleiset is
+left out of both maps' `identifiers` entirely. Both tiers are then resolved by
+the hull tie-break (deaths are run-dependent), like Rescue and Search.
 
 ## What we already parse vs. what this adds
 
@@ -136,7 +164,8 @@ keyed by unique name.
 
 - `analyzer::detection::tests` — unit tests over synthetic critter tables:
   unknown map, Advanced by counts, Elite override, "known map but wrong counts ⇒
-  Any", a fixed-difficulty map, and the Hive Space hull tie-break (Advanced vs
-  Elite from median hull damage). `bundled_rules_parse` guards the JSON.
+  Any", a fixed-difficulty map, the Hive Space hull tie-break (Advanced vs Elite
+  from median hull damage), the Trouble Over Terrh hull tiers, and that Azure vs
+  Terrh are told apart by enemy faction. `bundled_rules_parse` guards the JSON.
 - `analyzer::tests::detects_maps_in_real_log` (ignored) — smoke test that prints
   detected `(map, difficulty)` for each combat in the live log.

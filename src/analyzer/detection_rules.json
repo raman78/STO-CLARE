@@ -1,156 +1,1039 @@
 {
-  "map_identifiers": {
-    "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial": { "map": "Infected Space", "difficulty": "Any" },
-    "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": { "map": "Infected Space", "difficulty": "Any" },
-    "Mission_Space_Romulan_Colony_Flagship_Lleiset": { "map": "Azure Nebula Rescue", "difficulty": "Any" },
-    "Space_Klingon_Dreadnought_Dsc_Sarcophagus": { "map": "Battle At The Binary Stars", "difficulty": "Any" },
-    "Event_Procyon_5_Queue_Krenim_Dreadnaught_Annorax": { "map": "Battle At Procyon V", "difficulty": "Any" },
-    "Mission_Space_Borg_Queen_Diamond_Brg_Queue_Liberation": { "map": "Borg Disconnected", "difficulty": "Any" },
-    "Mission_Starbase_Mirror_Ds9_Mu_Queue": { "map": "Counterpoint", "difficulty": "Any" },
-    "Space_Crystalline_Entity_2018": { "map": "Crystalline Entity", "difficulty": "Any" },
-    "Event_Ico_Qonos_Space_Herald_Dreadnaught": { "map": "Gateway To Grethor", "difficulty": "Any" },
-    "Mission_Space_Federation_Science_Herald_Sphere": { "map": "Herald Sphere", "difficulty": "Any" },
-    "Msn_Dsc_Priors_System_Tfo_Orbital_Platform_1_Fed_Dsc": { "map": "Operation Riposte", "difficulty": "Any" },
-    "Space_Borg_Dreadnought_R02": { "map": "Cure Found", "difficulty": "Any" },
-    "Space_Klingon_Tos_X3_Battlecruiser": { "map": "Days Of Doom", "difficulty": "Any" },
-    "Msn_Luk_Colony_Dranuur_Queue_System_Upgradeable_Satellite": { "map": "Dranuur Gauntlet", "difficulty": "Any" },
-    "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": { "map": "Khitomer Space", "difficulty": "Any" },
-    "Mission_Spire_Space_Voth_Frigate": { "map": "Storming The Spire", "difficulty": "Any" },
-    "Space_Drantzuli_Alpha_Battleship": { "map": "Swarm", "difficulty": "Any" },
-    "Mission_Beta_Lankal_Destructible_Reactor": { "map": "To Hell With Honor", "difficulty": "Any" },
-    "Space_Federation_Dreadnought_Jupiter_Class_Carrier": { "map": "Gravity Kills", "difficulty": "Any" },
-    "Msn_Luk_Hypermass_Queue_System_Tzk_Protomatter_Facility": { "map": "Gravity Kills", "difficulty": "Any" },
-    "Space_Borg_Dreadnought_Hive_Intro": { "map": "Hive Space", "difficulty": "Any" },
-    "Ground_Federation_Capt_Mirror_Runabout_Tfo": { "map": "Operation Wolf", "difficulty": "Normal" },
-    "Bluegills_Ground_Boss": { "map": "Bug Hunt", "difficulty": "Any" },
-    "Msn_Edren_Queue_Ground_Gorn_Lt_Tos_Range_Rock": { "map": "Miner Instabilities", "difficulty": "Any" },
-    "Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable": { "map": "Jupiter Station Showdown", "difficulty": "Any" },
-    "Mission_Event_Tholian_Invasion_Ext_Boss": { "map": "Nukara Prime: Transdimensional Tactics", "difficulty": "Any" },
-    "Space_Borg_Dreadnought_Wolf359": { "map": "Battle of Wolf 359", "difficulty": "Any" },
-    "Snowman_Q_Boss_Msn_Snowglobe": { "map": "Winter Invasion", "difficulty": "Normal" },
-    "Space_Klingon_Cruiser_Dsc_Mokai": { "map": "[Patrol] Rescue and Search", "difficulty": "Any" }
-  },
-  "death_counts": {
-    "Infected Space": {
-      "Advanced": {
-        "Space_Borg_Battleship_Raidisode": 5,
-        "Space_Borg_Cruiser_Raidisode": 6,
-        "Mission_Borgraid1_Transwarp_02": 1,
-        "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": 1
+  "maps": {
+    "Acamar System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Aftermath": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Alth'ndor System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Archer System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Arena of Sompek": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Atmosphere Assault": {
+      "category": "TFO",
+      "combat_type": "Shuttle"
+    },
+    "Azure Nebula Rescue": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Tholian_Cruiser_Web"
+      ]
+    },
+    "B'lii System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Battle At The Binary Stars": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Klingon_Dreadnought_Dsc_Sarcophagus"
+      ]
+    },
+    "Battle of Korfez": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Battle of Procyon V": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Event_Procyon_5_Queue_Krenim_Dreadnaught_Annorax"
+      ]
+    },
+    "Battle of Wolf 359": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Borg_Dreadnought_Wolf359"
+      ],
+      "death_counts": {
+        "Elite": {
+          "Space_Borg_Cruiser_Wolf359": 3
+        }
       },
-      "Elite": {
-        "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial": 2,
-        "Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss": 1,
-        "Space_Borg_Cruiser_Raidisode_Sibrian_Elite_Initial": 4,
-        "Space_Borg_Battleship_Raidisode": 2,
-        "Mission_Borgraid1_Transwarp_02": 1,
-        "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": 1
+      "hull_counts": {
+        "Elite": {
+          "Space_Borg_Turret_Medium_Plasma_Torpedo_Wolf359": 2081960,
+          "Space_Borg_Turret_Medium_Plasma_Beam_Wolf359": 2081960,
+          "Space_Borg_Turret_Medium_Tractor_Beam_Wolf359": 2081960,
+          "Space_Borg_Wolf359_Escape_Pod_Tractor_Beam": 2081960,
+          "Space_Borg_Frigate_Wolf359": 2081960,
+          "Space_Borg_Cruiser_Wolf359": 0
+        }
       }
+    },
+    "Bavar System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Belly of the Beast": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Best Served Cold": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Msn_Kcw_Rura_Penthe_System_Tfo_Prisoner_Transport"
+      ]
+    },
+    "Beta Lankal System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Beta Thoridor System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Beytan System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Bhea System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Binary Circuit": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Bird Cage": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Blockade Runner": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Borg Battle Royale": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Borg Battlefield Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Borg Disconnected": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Space_Borg_Queen_Diamond_Brg_Queue_Liberation"
+      ]
+    },
+    "Breach": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Bringers of War": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Brotherhood of the Sword": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Bug Hunt": {
+      "category": "TFO",
+      "combat_type": "Ground",
+      "identifiers": [
+        "Bluegills_Ground_Boss"
+      ]
+    },
+    "Carraya System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Cat's Tale": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Celes System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Cernan System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Ceron System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Clash Above Ceron": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Colony Invasion": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Core Assault": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Counterpoint": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Starbase_Mirror_Ds9_Mu_Queue"
+      ]
+    },
+    "Crystalline Catastrophe": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Crystalline_Entity_2018"
+      ]
+    },
+    "Cure Applied": {
+      "category": "TFO",
+      "combat_type": "Ground"
     },
     "Cure Found": {
-      "Advanced": {
-        "Space_Borg_Battleship_Raidisode_Cure": 3,
-        "Mission_Cure_Healer_Mini_Trans_02": 18,
-        "Space_Borg_Cruiser_Raidisode_Cure": 3,
-        "Space_Borg_Cruiser_Raidisode": 2,
-        "Space_Borg_Dreadnought_R02": 1,
-        "Space_Klingon_Raider_Pet_Borg_Carrier_Advanced": 0
-      },
-      "Elite": {
-        "Space_Borg_Battleship_Raidisode_Cure": 3,
-        "Mission_Cure_Healer_Mini_Trans_02": 18,
-        "Space_Borg_Cruiser_Raidisode_Cure": 3,
-        "Space_Borg_Cruiser_Raidisode": 2,
-        "Space_Borg_Dreadnought_R02": 1,
-        "Space_Klingon_Fighter_Pet_Borg_Elite": 0
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Borg_Dreadnought_R02"
+      ],
+      "death_counts": {
+        "Advanced": {
+          "Space_Borg_Battleship_Raidisode_Cure": 3,
+          "Mission_Cure_Healer_Mini_Trans_02": 18,
+          "Space_Borg_Cruiser_Raidisode_Cure": 3,
+          "Space_Borg_Cruiser_Raidisode": 2,
+          "Space_Borg_Dreadnought_R02": 1,
+          "Space_Klingon_Raider_Pet_Borg_Carrier_Advanced": 0
+        },
+        "Elite": {
+          "Space_Borg_Battleship_Raidisode_Cure": 3,
+          "Mission_Cure_Healer_Mini_Trans_02": 18,
+          "Space_Borg_Cruiser_Raidisode_Cure": 3,
+          "Space_Borg_Cruiser_Raidisode": 2,
+          "Space_Borg_Dreadnought_R02": 1,
+          "Space_Klingon_Fighter_Pet_Borg_Elite": 0
+        }
       }
     },
-    "Khitomer Space": {
-      "Advanced": {
-        "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": 1,
-        "Mission_Raidisode03_Donatra_Borg_Scimitar": 1,
-        "Mission_Borgraid1_Transwarp_02": 2,
-        "Space_Borg_Battleship_Raidisode": 4,
-        "Mission_Borgraid1_Comm_Array": 4,
-        "Space_Borg_Dreadnought_Raidisode": 0
+    "Dace System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Danteri System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Days Of Doom": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Klingon_Tos_X3_Battlecruiser"
+      ]
+    },
+    "Defend Rh'Ihho Station": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Defense of Starbase One": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Deferi Patrol Under Attack": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Devil's Heart": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Donia System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Dranuur Beach Assault": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Dranuur Gauntlet": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Msn_Luk_Colony_Dranuur_Queue_System_Upgradeable_Satellite"
+      ]
+    },
+    "Eirhess System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Elvren System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Emancipation": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Eriksson System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Europani System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "First Contact Day Re-Enactment": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Fleet Alert": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Fleet Transport Defense": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Forged in Fire": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Galorndon Core System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Gamma Eridon System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Gateway To Grethor": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Event_Ico_Qonos_Space_Herald_Dreadnaught"
+      ]
+    },
+    "Gerren System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Gone Dark": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Gravity Kills": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Federation_Dreadnought_Jupiter_Class_Carrier",
+        "Msn_Luk_Hypermass_Queue_System_Tzk_Protomatter_Facility"
+      ]
+    },
+    "Guillotine": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Hana System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Herald Sphere": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Space_Federation_Science_Herald_Sphere"
+      ]
+    },
+    "Hive Onslaught": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Borg_Dreadnought_Hive_Intro"
+      ],
+      "death_counts": {
+        "Advanced": {
+          "Mission_Space_Borg_Queen_Diamond": 1,
+          "Mission_Space_Borg_Battleship_Queen_2_0f_2": 1,
+          "Mission_Space_Borg_Battleship_Queen_1_0f_2": 1
+        },
+        "Elite": {
+          "Mission_Space_Borg_Queen_Diamond": 1,
+          "Mission_Space_Borg_Battleship_Queen_2_0f_2": 1,
+          "Mission_Space_Borg_Battleship_Queen_1_0f_2": 1
+        }
       },
-      "Elite": {
-        "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": 1,
-        "Mission_Raidisode03_Donatra_Borg_Scimitar": 1,
-        "Mission_Borgraid1_Transwarp_02": 2,
-        "Space_Borg_Battleship_Raidisode": 4,
-        "Mission_Borgraid1_Comm_Array": 4,
-        "Space_Borg_Dreadnought_Raidisode": 4
+      "hull_counts": {
+        "Advanced": {
+          "Space_Borg_Cruiser_Hive_Intro1": 461582,
+          "Space_Borg_Cruiser_Hive_Intro2": 461582,
+          "Space_Borg_Battleship_Hive_Intro": 576977,
+          "Space_Borg_Dreadnought_Hive_Intro": 1707034
+        },
+        "Elite": {
+          "Space_Borg_Cruiser_Hive_Intro1": 2165239,
+          "Space_Borg_Cruiser_Hive_Intro2": 2165239,
+          "Space_Borg_Battleship_Hive_Intro": 2706549,
+          "Space_Borg_Dreadnought_Hive_Intro": 8007542
+        }
       }
+    },
+    "Hodos System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Shuttle"
+    },
+    "Honod System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Icari System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Infected: Manus": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Infected: The Conduit": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial",
+        "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss"
+      ],
+      "death_counts": {
+        "Advanced": {
+          "Space_Borg_Battleship_Raidisode": 5,
+          "Space_Borg_Cruiser_Raidisode": 6,
+          "Mission_Borgraid1_Transwarp_02": 1,
+          "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": 1
+        },
+        "Elite": {
+          "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial": 2,
+          "Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss": 1,
+          "Space_Borg_Cruiser_Raidisode_Sibrian_Elite_Initial": 4,
+          "Space_Borg_Battleship_Raidisode": 2,
+          "Mission_Borgraid1_Transwarp_02": 1,
+          "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss": 1
+        }
+      }
+    },
+    "Into the Hive": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Iuppiter Iratus": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Jailbreak at Rura Penthe": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Japori System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Jouret System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Jupiter Gauntlet": {
+      "category": "Patrol",
+      "combat_type": "Space"
     },
     "Jupiter Station Showdown": {
-      "Elite": {
-        "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee_Adapt_Elite_Only": 0
+      "category": "Patrol",
+      "combat_type": "Ground",
+      "identifiers": [
+        "Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable"
+      ],
+      "death_counts": {
+        "Elite": {
+          "Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee_Adapt_Elite_Only": 0
+        }
       }
+    },
+    "Kalesta System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Kalferi System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Kei System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Kelvani Belt": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Kendren System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Khitomer Vortex": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss"
+      ],
+      "death_counts": {
+        "Advanced": {
+          "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": 1,
+          "Mission_Raidisode03_Donatra_Borg_Scimitar": 1,
+          "Mission_Borgraid1_Transwarp_02": 2,
+          "Space_Borg_Battleship_Raidisode": 4,
+          "Mission_Borgraid1_Comm_Array": 4,
+          "Space_Borg_Dreadnought_Raidisode": 0
+        },
+        "Elite": {
+          "Space_Borg_Dreadnought_Raidisode_Khitomer_Intro_Boss": 1,
+          "Mission_Raidisode03_Donatra_Borg_Scimitar": 1,
+          "Mission_Borgraid1_Transwarp_02": 2,
+          "Space_Borg_Battleship_Raidisode": 4,
+          "Mission_Borgraid1_Comm_Array": 4,
+          "Space_Borg_Dreadnought_Raidisode": 4
+        }
+      }
+    },
+    "Khitomer in Stasis": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Khonshu Khaibit": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Kobayashi Maru": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Koolhaas System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Lahra System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Legira System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Leviathan": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Lilitu System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "M'rade System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Maiewski System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Mandel System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Maro System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Mec System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
     },
     "Miner Instabilities": {
-      "Elite": {
-        "Ground_Nakuhl_Capt_Range_Male": 1
-      }
-    },
-    "Battle of Wolf 359": {
-      "Elite": {
-        "Space_Borg_Cruiser_Wolf359": 3
-      }
-    },
-    "Hive Space": {
-      "Advanced": {
-        "Mission_Space_Borg_Queen_Diamond": 1,
-        "Mission_Space_Borg_Battleship_Queen_2_0f_2": 1,
-        "Mission_Space_Borg_Battleship_Queen_1_0f_2": 1
+      "category": "TFO",
+      "combat_type": "Ground",
+      "identifiers": [
+        "Msn_Edren_Queue_Ground_Gorn_Lt_Tos_Range_Rock"
+      ],
+      "death_counts": {
+        "Elite": {
+          "Ground_Nakuhl_Capt_Range_Male": 1
+        }
       },
-      "Elite": {
-        "Mission_Space_Borg_Queen_Diamond": 1,
-        "Mission_Space_Borg_Battleship_Queen_2_0f_2": 1,
-        "Mission_Space_Borg_Battleship_Queen_1_0f_2": 1
-      }
-    }
-  },
-  "hull_counts": {
-    "Hive Space": {
-      "Advanced": {
-        "Space_Borg_Cruiser_Hive_Intro1": 461582,
-        "Space_Borg_Cruiser_Hive_Intro2": 461582,
-        "Space_Borg_Battleship_Hive_Intro": 576977,
-        "Space_Borg_Dreadnought_Hive_Intro": 1707034
-      },
-      "Elite": {
-        "Space_Borg_Cruiser_Hive_Intro1": 2165239,
-        "Space_Borg_Cruiser_Hive_Intro2": 2165239,
-        "Space_Borg_Battleship_Hive_Intro": 2706549,
-        "Space_Borg_Dreadnought_Hive_Intro": 8007542
+      "hull_counts": {
+        "Elite": {
+          "Ground_Romulan_Tos_Cdr_Range": 6513,
+          "Ground_Nakuhl_Capt_Range_Male": 20843
+        }
       }
     },
-    "Miner Instabilities": {
-      "Elite": {
-        "Ground_Romulan_Tos_Cdr_Range": 6513,
-        "Ground_Nakuhl_Capt_Range_Male": 20843
+    "Mirish System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Mryax System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Mycelial Realm": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Narendra System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Nequencia Alpha System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Nukara Prime: Self Destructive Tendencies": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Nukara Prime: Transdimensional Tactics": {
+      "category": "TFO",
+      "combat_type": "Ground",
+      "identifiers": [
+        "Mission_Event_Tholian_Invasion_Ext_Boss"
+      ]
+    },
+    "Ocampan Freighter Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Omar System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "One Night in Bozeman": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Operation Riposte": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Msn_Dsc_Priors_System_Tfo_Orbital_Platform_1_Fed_Dsc"
+      ]
+    },
+    "Operation Wolf": {
+      "category": "TFO",
+      "combat_type": "Ground",
+      "difficulty": "Normal",
+      "identifiers": [
+        "Ground_Federation_Capt_Mirror_Runabout_Tfo"
+      ]
+    },
+    "Oradhe System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Ore for Outpost 3": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Orendal System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Out of Control": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Outpost 3 Security": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Outpost 3 Under Siege": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Pahvo Dissension": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Pansarka System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Parein System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Pellme System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Peril Over Pahvo": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Pheben System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Pico System Distress Call": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Pico System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Preying Upon the Weak": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Ra'kholh System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Red Alert: Borg": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Red Alert: Elachi": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Red Alert: Na'kuhl": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Red Alert: Tholian": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Red Alert: Tzenkethi": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Redemption Over Qu'Vat": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Remain Klingon": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Rescue Deferi Captives": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Rescue and Search": {
+      "category": "Patrol",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Klingon_Cruiser_Dsc_Mokai"
+      ],
+      "hull_counts": {
+        "Advanced": {
+          "Space_Klingon_Cruiser_Dsc_Mokai": 300000,
+          "Space_Klingon_Battleship_Dsc_Mokai": 300000
+        },
+        "Elite": {
+          "Space_Klingon_Cruiser_Dsc_Mokai": 1200000,
+          "Space_Klingon_Battleship_Dsc_Mokai": 1200000
+        }
       }
     },
-    "Battle of Wolf 359": {
-      "Elite": {
-        "Space_Borg_Turret_Medium_Plasma_Torpedo_Wolf359": 2081960,
-        "Space_Borg_Turret_Medium_Plasma_Beam_Wolf359": 2081960,
-        "Space_Borg_Turret_Medium_Tractor_Beam_Wolf359": 2081960,
-        "Space_Borg_Wolf359_Escape_Pod_Tractor_Beam": 2081960,
-        "Space_Borg_Frigate_Wolf359": 2081960,
-        "Space_Borg_Cruiser_Wolf359": 0
+    "Resistance of Starbase One": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Reytan System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Rhi System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Rivos System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Romulan Imperial Minefield": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Royal Flush": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Ruben System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Ruins of Doom": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Sakari System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Sardah System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Satellite Defense": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Seedea System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Sentinels": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Servin System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Shattered Peace": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Shivolia System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Showdown": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Sienae System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Skeleton Crew": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Standoff": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Starbase 234 System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Starbase Fleet Defense": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Starbase Incursion": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Storm Chasers": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Storming The Spire": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Spire_Space_Voth_Frigate"
+      ]
+    },
+    "Strike at Seedea": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Swarm": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Drantzuli_Alpha_Battleship"
+      ]
+    },
+    "Synth Wave": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "T'liss System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Tazi System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Temple Offerings": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Tempting Targets": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Tephrei System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Terrh System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "The Breen Connection": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "The Ninth Rule": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "To Die With Honor": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "To Hell With Honor": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Beta_Lankal_Destructible_Reactor"
+      ]
+    },
+    "Trade Deal": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Trakia System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Trouble Over Terrh": {
+      "category": "Patrol",
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Elachi_Frigate"
+      ],
+      "hull_counts": {
+        "Advanced": {
+          "Space_Elachi_Frigate": 80000,
+          "Space_Elachi_Escort": 350000
+        },
+        "Elite": {
+          "Space_Elachi_Frigate": 300000,
+          "Space_Elachi_Escort": 1400000
+        }
       }
     },
-    "[Patrol] Rescue and Search": {
-      "Advanced": {
-        "Space_Klingon_Cruiser_Dsc_Mokai": 300000,
-        "Space_Klingon_Battleship_Dsc_Mokai": 300000
-      },
-      "Elite": {
-        "Space_Klingon_Cruiser_Dsc_Mokai": 1200000,
-        "Space_Klingon_Battleship_Dsc_Mokai": 1200000
-      }
+    "Twin Tribulations": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Tzenkethi Front": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Una System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Undine Assault": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Undine Infiltration": {
+      "category": "TFO",
+      "combat_type": "Ground"
+    },
+    "Unity": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Unwanted Guests": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Vault Shuttle Event": {
+      "category": "TFO",
+      "combat_type": "Shuttle"
+    },
+    "Vault: Ensnared": {
+      "category": "TFO",
+      "combat_type": "Space",
+      "identifiers": [
+        "Event_Vault_Ext_Tholian_Weaver"
+      ]
+    },
+    "Veela System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Vesper System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Vestalan System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Veyga System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Viscous Cycle": {
+      "category": "TFO",
+      "combat_type": "Space"
+    },
+    "Vor System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Wanted": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Watran System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Winter Invasion": {
+      "category": "TFO",
+      "combat_type": "Ground",
+      "difficulty": "Normal",
+      "identifiers": [
+        "Snowman_Q_Boss_Msn_Snowglobe"
+      ]
+    },
+    "Witches Brew": {
+      "category": "Patrol",
+      "combat_type": "Ground"
+    },
+    "Within The Briars": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Wyanti System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Xleen System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Space"
+    },
+    "Zenik System Patrol": {
+      "category": "Patrol",
+      "combat_type": "Ground"
     }
   }
 }

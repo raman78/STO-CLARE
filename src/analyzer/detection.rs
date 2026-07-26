@@ -88,27 +88,66 @@ impl CritterMeta {
     }
 }
 
+/// One curated map: how to recognize it and (optionally) how to tell its tiers
+/// apart. Keyed by map name in `DetectionRules::maps`.
 #[derive(Debug, Deserialize)]
-struct MapIdentifier {
-    map: String,
+struct MapDef {
+    /// Content type (e.g. "TFO", "Patrol"). Shown as a bracketed prefix on the
+    /// displayed name (`[TFO] Azure Nebula Rescue`). Curated metadata — STO logs
+    /// carry no content type.
+    #[serde(default)]
+    category: Option<String>,
+    /// Combat environment ("Space" / "Ground" / "Shuttle"), from the STO wiki.
+    /// Curated reference only; not shown in the name.
+    #[serde(default)]
+    #[allow(dead_code)]
+    combat_type: Option<String>,
+    /// A difficulty the map pins outright (e.g. Winter Invasion ⇒ Normal); `Any`
+    /// when the tier is resolved from the tables below (or cannot be resolved).
+    #[serde(default = "any_difficulty")]
     difficulty: Difficulty,
+    /// Internal unique names whose presence identifies this map. Empty for
+    /// catalog-only entries — a known map we cannot detect yet.
+    #[serde(default)]
+    identifiers: Vec<String>,
+    /// difficulty -> {entity unique name -> required death count}. A required
+    /// count of 0 means "must be present, any number of deaths".
+    #[serde(default)]
+    death_counts: HashMap<Difficulty, HashMap<String, u32>>,
+    /// difficulty -> {entity unique name -> hull-damage threshold}, breaking ties
+    /// where the tiers share death counts. An entity matches when its median hull
+    /// damage exceeds `threshold * (1 - VAR)`.
+    #[serde(default)]
+    hull_counts: HashMap<Difficulty, HashMap<String, f64>>,
 }
 
-/// The rule tables, deserialized from `detection_rules.json`.
+fn any_difficulty() -> Difficulty {
+    Difficulty::Any
+}
+
+impl MapDef {
+    /// The display name for `map_name`: the category prefix (if any) plus the
+    /// bare name (which stays the map's key).
+    fn display_name(&self, map_name: &str) -> String {
+        match self.category.as_deref().map(str::trim) {
+            Some(category) if !category.is_empty() => format!("[{category}] {map_name}"),
+            _ => map_name.to_string(),
+        }
+    }
+
+    /// Whether any of this map's identifying entities is present in the combat.
+    fn is_present(&self, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
+        self.identifiers
+            .iter()
+            .any(|e| critters.contains_key(e.as_str()))
+    }
+}
+
+/// The rule tables, deserialized from `detection_rules.json`: curated maps keyed
+/// by name, each carrying how to recognize it and how to tell its tiers apart.
 #[derive(Debug, Deserialize)]
 pub struct DetectionRules {
-    /// Internal entity name -> the map it identifies (and a fixed difficulty,
-    /// or `Any` when the tier must be resolved from the counts).
-    map_identifiers: HashMap<String, MapIdentifier>,
-    /// Map -> difficulty -> {entity unique name -> required death count}. A
-    /// required count of 0 means "must be present, any number of deaths"
-    /// (used when only the entity's existence distinguishes the tier).
-    death_counts: HashMap<String, HashMap<Difficulty, HashMap<String, u32>>>,
-    /// Map -> difficulty -> {entity unique name -> hull-damage threshold}. Used
-    /// to break ties where the tiers share death counts (e.g. Hive Space). An
-    /// entity matches when its median hull damage exceeds `threshold * (1 - VAR)`.
-    #[serde(default)]
-    hull_counts: HashMap<String, HashMap<Difficulty, HashMap<String, f64>>>,
+    maps: HashMap<String, MapDef>,
 }
 
 /// Variance tolerance for the hull-damage check (matches OSCR's `var`).
@@ -164,9 +203,10 @@ fn load_rules() -> DetectionRules {
 /// curated (auto-detected) maps in the Combat Name Rules editor.
 pub fn curated_map_names() -> Vec<String> {
     let mut names: Vec<String> = DETECTION_RULES
-        .map_identifiers
-        .values()
-        .map(|m| m.map.clone())
+        .maps
+        .iter()
+        .filter(|(_, def)| !def.identifiers.is_empty())
+        .map(|(name, def)| def.display_name(name))
         .collect();
     names.sort();
     names.dedup();
@@ -175,12 +215,18 @@ pub fn curated_map_names() -> Vec<String> {
 
 /// The `(entity unique name, map name)` pairs the detection keys on, so the
 /// editor can flag user naming rules that match the same entities (and thus
-/// shadow an auto-detected map).
+/// shadow an auto-detected map). Catalog-only maps (no identifiers) contribute
+/// nothing.
 pub fn curated_map_identifiers() -> Vec<(String, String)> {
     DETECTION_RULES
-        .map_identifiers
+        .maps
         .iter()
-        .map(|(unique_name, identifier)| (unique_name.clone(), identifier.map.clone()))
+        .flat_map(|(name, def)| {
+            let display = def.display_name(name);
+            def.identifiers
+                .iter()
+                .map(move |unique| (unique.clone(), display.clone()))
+        })
         .collect()
 }
 
@@ -188,21 +234,21 @@ pub fn curated_map_identifiers() -> Vec<(String, String)> {
 /// each entity's internal unique name. Mirrors OSCR's `detect_map`: identify the
 /// map by a present curated entity, then resolve the tier from death counts.
 pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) -> Detected {
-    // Existence phase: find a curated entity that is present. Some entities pin
-    // a fixed difficulty outright; otherwise we only learn the map here.
-    let mut map: Option<&str> = None;
-    for (unique_name, identifier) in rules.map_identifiers.iter() {
-        if critters.contains_key(unique_name.as_str()) {
-            map = Some(&identifier.map);
-            if identifier.difficulty != Difficulty::Any {
+    // Existence phase: find a map whose identifying entity is present. A map that
+    // pins a fixed difficulty returns immediately.
+    let mut matched: Option<(&str, &MapDef)> = None;
+    for (name, def) in rules.maps.iter() {
+        if def.is_present(critters) {
+            matched = Some((name.as_str(), def));
+            if def.difficulty != Difficulty::Any {
                 return Detected {
-                    map: Some(identifier.map.clone()),
-                    difficulty: Some(identifier.difficulty),
+                    map: Some(def.display_name(name)),
+                    difficulty: Some(def.difficulty),
                 };
             }
         }
     }
-    let Some(map) = map else {
+    let Some((name, def)) = matched else {
         return Detected::default();
     };
 
@@ -210,13 +256,11 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     // overrides. If the map has tables but none match, the tier stays `Any`.
     let mut difficulty = None;
     let mut had_tables = false;
-    if let Some(tier_tables) = rules.death_counts.get(map) {
-        for tier in DIFFICULTY_ORDER {
-            if let Some(table) = tier_tables.get(&tier) {
-                had_tables = true;
-                if death_counts_match(table, critters) {
-                    difficulty = Some(tier);
-                }
+    for tier in DIFFICULTY_ORDER {
+        if let Some(table) = def.death_counts.get(&tier) {
+            had_tables = true;
+            if death_counts_match(table, critters) {
+                difficulty = Some(tier);
             }
         }
     }
@@ -224,25 +268,23 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     // hull tie-break (as OSCR does) and report `Any`.
     if had_tables && difficulty.is_none() {
         return Detected {
-            map: Some(map.to_string()),
+            map: Some(def.display_name(name)),
             difficulty: Some(Difficulty::Any),
         };
     }
 
     // Hull-damage tie-break: overrides the death-count result where the tiers
-    // share death counts (e.g. Hive Space). Higher tiers still override lower.
-    if let Some(tier_tables) = rules.hull_counts.get(map) {
-        for tier in DIFFICULTY_ORDER {
-            if let Some(table) = tier_tables.get(&tier) {
-                if hull_damage_match(table, critters) {
-                    difficulty = Some(tier);
-                }
+    // share death counts (e.g. Hive Onslaught). Higher tiers still override lower.
+    for tier in DIFFICULTY_ORDER {
+        if let Some(table) = def.hull_counts.get(&tier) {
+            if hull_damage_match(table, critters) {
+                difficulty = Some(tier);
             }
         }
     }
 
     Detected {
-        map: Some(map.to_string()),
+        map: Some(def.display_name(name)),
         difficulty,
     }
 }
@@ -341,7 +383,7 @@ mod tests {
             ("Mission_Borgraid1_Transwarp_02", 1),
         ]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Infected Space"));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Infected: The Conduit"));
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
     }
 
@@ -357,7 +399,7 @@ mod tests {
             ("Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss", 1),
         ]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Infected Space"));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Infected: The Conduit"));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
@@ -369,7 +411,7 @@ mod tests {
             1,
         )]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Infected Space"));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Infected: The Conduit"));
         assert_eq!(result.difficulty, Some(Difficulty::Any));
     }
 
@@ -401,7 +443,7 @@ mod tests {
         owned.push(hull_critter("Space_Borg_Battleship_Hive_Intro", 576_977.0));
 
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Hive Space"));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Hive Onslaught"));
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
 
         // Now Elite-level hull damage on the dreadnought: expect Elite.
@@ -434,6 +476,75 @@ mod tests {
     }
 
     #[test]
+    fn trouble_over_terrh_tier_by_hull_damage() {
+        // The Elachi patrol shares the rescued Lleiset with Azure Nebula Rescue,
+        // so it is anchored on an Elachi enemy (Azure is anchored on a Tholian
+        // one). Tiers are told apart only by the median hull damage (~4.5x
+        // higher on Elite), like Rescue and Search.
+        let advanced = vec![
+            hull_critter("Space_Elachi_Frigate", 106_615.0),
+            hull_critter("Space_Elachi_Escort", 486_256.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Trouble Over Terrh"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            hull_critter("Space_Elachi_Frigate", 490_858.0),
+            hull_critter("Space_Elachi_Escort", 2_279_671.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&elite));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    #[test]
+    fn azure_and_terrh_are_told_apart_by_enemy_faction() {
+        // Both maps rescue the Lleiset; the enemy faction disambiguates them.
+        // Tholians -> Azure Nebula Rescue.
+        let azure = vec![hull_critter("Space_Tholian_Cruiser_Web", 1_700_205.0)];
+        let result = detect(&bundled_rules(), &view(&azure));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
+
+        // Elachi -> Trouble Over Terrh.
+        let terrh = vec![hull_critter("Space_Elachi_Frigate", 106_615.0)];
+        let result = detect(&bundled_rules(), &view(&terrh));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Trouble Over Terrh"));
+    }
+
+    #[test]
+    fn category_prefixes_the_displayed_map_name() {
+        let parse = |json: &str| serde_json::from_str::<MapDef>(json).unwrap();
+
+        assert_eq!(
+            parse(r#"{"category": "TFO", "combat_type": "Space"}"#)
+                .display_name("Azure Nebula Rescue"),
+            "[TFO] Azure Nebula Rescue"
+        );
+        // No category -> bare name.
+        assert_eq!(parse("{}").display_name("Infected: The Conduit"), "Infected: The Conduit");
+        // A whitespace-only category adds no brackets.
+        assert_eq!(parse(r#"{"category": "  "}"#).display_name("Bug Hunt"), "Bug Hunt");
+    }
+
+    #[test]
+    fn added_tfo_maps_detected_without_tier() {
+        // Identifiers taken from the user's own naming rules; no tier tables yet,
+        // so the map is detected but the difficulty stays unresolved (like Bug Hunt).
+        for (entity, map) in [
+            (
+                "Msn_Kcw_Rura_Penthe_System_Tfo_Prisoner_Transport",
+                "[TFO] Best Served Cold",
+            ),
+            ("Event_Vault_Ext_Tholian_Weaver", "[TFO] Vault: Ensnared"),
+        ] {
+            let owned = critters(&[(entity, 1)]);
+            let result = detect(&bundled_rules(), &view(&owned));
+            assert_eq!(result.map.as_deref(), Some(map));
+            assert_eq!(result.difficulty, None);
+        }
+    }
+
+    #[test]
     fn jupiter_elite_by_elite_only_entity() {
         // Jupiter's death counts vary per run; the tier is told by the presence
         // of the "..._Elite_Only" entity (required count 0 = must be present).
@@ -445,7 +556,7 @@ mod tests {
             ),
         ]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Jupiter Station Showdown"));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Jupiter Station Showdown"));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
@@ -456,7 +567,7 @@ mod tests {
             ("Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee", 20),
         ]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Jupiter Station Showdown"));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Jupiter Station Showdown"));
         assert_eq!(result.difficulty, Some(Difficulty::Any));
     }
 
@@ -466,7 +577,7 @@ mod tests {
         // discriminator we can key on yet, so the map is identified without a tier.
         let owned = critters(&[("Bluegills_Ground_Boss", 1)]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Bug Hunt"));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Bug Hunt"));
         assert_eq!(result.difficulty, None);
     }
 
@@ -475,7 +586,7 @@ mod tests {
         // Winter Invasion is pinned to Normal by its boss entity.
         let owned = critters(&[("Snowman_Q_Boss_Msn_Snowglobe", 1)]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("Winter Invasion"));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Winter Invasion"));
         assert_eq!(result.difficulty, Some(Difficulty::Normal));
     }
 }

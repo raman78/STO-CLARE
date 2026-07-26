@@ -397,19 +397,26 @@ impl CombatNameRules {
             });
     }
 
-    /// The curated maps a single rule shadows, i.e. whose identifying entity
-    /// (unique name) the rule matches. Sorted and deduped; empty when none or
-    /// when the rule is disabled.
+    /// The curated maps a single rule overlaps, either way:
+    /// - **entity**: the rule matches the map's identifying NPC (unique name), or
+    /// - **name**: the rule's own name equals the map's name, ignoring the
+    ///   `[TFO]`/`[Patrol]` category prefix on either side (e.g. a rule named
+    ///   "Trouble Over Terrh" vs the "[Patrol] Trouble Over Terrh" map).
+    ///
+    /// Sorted and deduped; empty when none or when the rule is disabled.
     fn overlapping_maps(group: &RulesGroup, identifiers: &[(String, String)]) -> Vec<String> {
         if !group.enabled {
             return Vec::new();
         }
+        let rule_name = strip_category_prefix(&group.name);
         let mut maps: Vec<String> = identifiers
             .iter()
-            .filter(|(unique_name, _)| {
+            .filter(|(unique_name, map)| {
                 group.matches_source_or_target_unique_names(std::iter::once(unique_name.as_str()))
                     || group
                         .matches_indirect_source_unique_names(std::iter::once(unique_name.as_str()))
+                    || (!rule_name.is_empty()
+                        && strip_category_prefix(map).eq_ignore_ascii_case(rule_name))
             })
             .map(|(_, map)| map.clone())
             .collect();
@@ -417,6 +424,15 @@ impl CombatNameRules {
         maps.dedup();
         maps
     }
+}
+
+/// Strip a leading `[category] ` prefix (e.g. `[TFO] `, `[Patrol] `) from a map
+/// or rule name, so names can be compared regardless of the category prefix.
+fn strip_category_prefix(name: &str) -> &str {
+    name.strip_prefix('[')
+        .and_then(|rest| rest.split_once(']'))
+        .map(|(_, after)| after.trim_start())
+        .unwrap_or(name)
 }
 
 impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
@@ -682,7 +698,7 @@ mod tests {
 
         assert_eq!(
             CombatNameRules::overlapping_maps(&hive.name_rule, &identifiers),
-            vec!["Hive Space".to_string()]
+            vec!["[TFO] Hive Onslaught".to_string()]
         );
         assert!(CombatNameRules::overlapping_maps(&unrelated.name_rule, &identifiers).is_empty());
     }
@@ -693,5 +709,46 @@ mod tests {
         let mut rule = unique_name_rule("My Hive", "Space_Borg_Dreadnought_Hive_Intro");
         rule.name_rule.enabled = false;
         assert!(CombatNameRules::overlapping_maps(&rule.name_rule, &identifiers).is_empty());
+    }
+
+    #[test]
+    fn strip_category_prefix_removes_only_a_leading_bracket_tag() {
+        assert_eq!(strip_category_prefix("[Patrol] Trouble Over Terrh"), "Trouble Over Terrh");
+        assert_eq!(strip_category_prefix("[TFO] Azure Nebula Rescue"), "Azure Nebula Rescue");
+        assert_eq!(strip_category_prefix("Infected Space"), "Infected Space");
+        // A bracket that is not a leading category tag is left alone.
+        assert_eq!(strip_category_prefix("Nukara [x]"), "Nukara [x]");
+    }
+
+    #[test]
+    fn rule_overlaps_a_curated_map_by_name_ignoring_prefix() {
+        // A rule whose *name* matches a curated map (prefix aside) is flagged,
+        // even though it matches on a display name the entity check cannot see.
+        let identifiers = vec![(
+            "Space_Elachi_Frigate".to_string(),
+            "[Patrol] Trouble Over Terrh".to_string(),
+        )];
+        let rule = CombatNameRule {
+            name_rule: RulesGroup {
+                name: "Trouble Over Terrh".to_string(),
+                enabled: true,
+                rules: vec![MatchRule {
+                    aspect: MatchAspect::SourceOrTargetName,
+                    expression: "R.R.W. Lleiset".to_string(),
+                    method: MatchMethod::Contains,
+                    enabled: true,
+                }],
+            },
+            additional_info_rules: Vec::new(),
+        };
+        assert_eq!(
+            CombatNameRules::overlapping_maps(&rule.name_rule, &identifiers),
+            vec!["[Patrol] Trouble Over Terrh".to_string()],
+        );
+
+        // A different name does not overlap.
+        let mut other = rule;
+        other.name_rule.name = "Something Else".to_string();
+        assert!(CombatNameRules::overlapping_maps(&other.name_rule, &identifiers).is_empty());
     }
 }
