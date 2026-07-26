@@ -150,7 +150,22 @@
       "combat_type": "Ground",
       "identifiers": [
         "Bluegills_Ground_Boss"
-      ]
+      ],
+      "death_counts": {
+        "Elite": {
+          "Bluegills_Ground_Ens_Noautospawn_Queenfodder": 0
+        }
+      },
+      "hull_counts": {
+        "Advanced": {
+          "Bluegills_Ground_Boss": 200000,
+          "Bluegills_Ground_Cdr": 5000
+        },
+        "Elite": {
+          "Bluegills_Ground_Boss": 380000,
+          "Bluegills_Ground_Cdr": 12000
+        }
+      }
     },
     "Carraya System Patrol": {
       "category": "Patrol",

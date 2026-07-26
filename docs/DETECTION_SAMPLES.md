@@ -132,19 +132,24 @@ the battleship/cruiser, which scales ~4× Adv→Elite regardless of faction).
 
 ---
 
-## [TFO] Bug Hunt — Ground — anchor only (tier needs an Advanced sample)
-- **Anchor:** `Bluegills_Ground_Boss`. Fixed faction (Bluegills / Undine), so no
-  any-of needed; tier will come from a death-count / Elite-only entity or a hull
-  threshold — but that requires comparing Elite vs Advanced.
-- Ladder has Bug Hunt `Elite` + `None` only (no Advanced), so ladder can't help.
+## [TFO] Bug Hunt — Ground — DONE (two tier signals)
+- **Anchor:** `Bluegills_Ground_Boss`. Fixed faction (Bluegills / Undine).
+- **Tier — two signals (user chose "both"):**
+  1. **Elite marker** (`death_counts` Elite): `Bluegills_Ground_Ens_Noautospawn_Queenfodder`
+     present ⇒ Elite (absent in the Advanced sample, present in Elite).
+  2. **Hull bands** (`hull_counts`): Boss (Adv 200k / Elite 380k) + Cdr (Adv 5k /
+     Elite 12k), double-gated. Labels Advanced too.
+- **Ground scales weakly** (~1.6-2x, vs ~4x in space) → thin hull margin; that's
+  why the Queenfodder marker backs it up. Both signals agreed on the samples.
+- **Latent edge** (revisit with more samples): the hull phase runs after the death
+  marker and could in principle downgrade a marker-Elite run to Advanced if that
+  run's boss hull were Advanced-level — but real Elite runs have Elite-level hull
+  (boss ~452k > the 380k band), so it doesn't happen in practice.
 
-| sample | tier | Boss hull | notable entities (deaths) |
-|---|---|---|---|
-| 2026-07-26 12:58 | Elite | 451,781 | Capt 1, Cdr 23, Lt 33, Ens 60, Ens_Noautospawn 83, **Ens_Noautospawn_Queenfodder 13** |
-
-Open: need a **Bug Hunt Advanced** run to diff against. Candidate discriminators to
-check then: is `Bluegills_Ground_Ens_Noautospawn_Queenfodder` Elite-only? does the
-boss hull (~452k Elite) separate the tiers? do the rank death counts differ?
+| sample | tier | Boss | Cdr | Queenfodder present? |
+|---|---|---|---|---|
+| 2026-07-26 14:18 | Advanced | 286,343 | 7,803 | no |
+| 2026-07-26 12:58 | Elite | 451,781 | 16,077 | yes (13 deaths) |
 
 ## [Patrol] Jupiter Station Showdown — Ground — DONE (anchor + tier)
 - **Anchor:** `Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable`.

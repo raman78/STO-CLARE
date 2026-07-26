@@ -294,9 +294,15 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
             }
         }
     }
-    // Death tables exist but none matched: the tier cannot be resolved. Skip the
-    // hull tie-break (as OSCR does) and report `Any`.
-    if had_tables && difficulty.is_none() {
+    // Death tables exist but none matched: the tier cannot be resolved *by deaths*.
+    // Report `Any` and skip the hull tie-break (as OSCR does) — unless the map also
+    // has hull tables, in which case a death marker is only one signal (e.g. Bug
+    // Hunt: an Elite-only entity plus hull bands) and we fall through to hull.
+    if had_tables
+        && difficulty.is_none()
+        && def.hull_counts.is_empty()
+        && def.hull_any.is_empty()
+    {
         return Detected {
             map: Some(def.display_name(name)),
             difficulty: Some(Difficulty::Any),
@@ -717,13 +723,40 @@ mod tests {
     }
 
     #[test]
-    fn bug_hunt_map_detected_without_tier() {
-        // Bug Hunt has both Advanced and Elite, but the log has no stable tier
-        // discriminator we can key on yet, so the map is identified without a tier.
-        let owned = critters(&[("Bluegills_Ground_Boss", 1)]);
-        let result = detect(&bundled_rules(), &view(&owned));
+    fn bug_hunt_tier_by_hull_and_elite_marker() {
+        // Ground map; tiers scale weakly (~1.6-2x, vs ~4x in space). Two signals:
+        // the Elite-only `..._Queenfodder` entity (a presence marker) and the
+        // Bluegill boss + commander hull bands (double-gated for the thin margin).
+        // Advanced: no marker, Advanced-level hull.
+        let advanced = vec![
+            hull_critter("Bluegills_Ground_Boss", 286_343.0),
+            hull_critter("Bluegills_Ground_Cdr", 7_803.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
         assert_eq!(result.map.as_deref(), Some("[TFO] Bug Hunt"));
-        assert_eq!(result.difficulty, None);
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        // Elite: Queenfodder marker present + Elite-level hull (both agree).
+        let elite = vec![
+            hull_critter("Bluegills_Ground_Boss", 451_781.0),
+            hull_critter("Bluegills_Ground_Cdr", 16_077.0),
+            hull_critter("Bluegills_Ground_Ens_Noautospawn_Queenfodder", 1_095.0),
+        ];
+        assert_eq!(
+            detect(&bundled_rules(), &view(&elite)).difficulty,
+            Some(Difficulty::Elite)
+        );
+
+        // The Elite marker alone (before the hull thresholds are reached) already
+        // resolves Elite.
+        let marker_only = vec![
+            hull_critter("Bluegills_Ground_Boss", 0.0),
+            hull_critter("Bluegills_Ground_Ens_Noautospawn_Queenfodder", 1_095.0),
+        ];
+        assert_eq!(
+            detect(&bundled_rules(), &view(&marker_only)).difficulty,
+            Some(Difficulty::Elite)
+        );
     }
 
     #[test]
