@@ -781,7 +781,22 @@
     },
     "Resistance of Starbase One": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship"
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Space_Borg_Dreadnought_Mirror": 1400000,
+          "Space_Borg_Dreadnought_Control": 1400000,
+          "Space_Borg_Dreadnought": 1400000
+        },
+        "Elite": {
+          "Space_Borg_Dreadnought_Mirror": 4000000,
+          "Space_Borg_Dreadnought_Control": 4000000,
+          "Space_Borg_Dreadnought": 4000000
+        }
+      }
     },
     "Reytan System Patrol": {
       "category": "Patrol",

@@ -82,6 +82,22 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 
 ---
 
+## [TFO] Resistance of Starbase One — Space — DONE (anchor + any-of tier)
+- Randomized enemy group (both samples were **Mirror Borg**). Note: the catalog
+  also has a separate "Defense of Starbase One" — if it shares the evacuation ship,
+  watch for a false match (need a Defense sample to check).
+- **Anchor:** allied `Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship`
+  (faction-independent; deaths=0, present in both).
+- **Tier:** `hull_any` on the dreadnought (deaths=1 ⇒ hull≈HP), bands Advanced 1.4M
+  / Elite 4.0M. Listed the Borg faction variants (`_Mirror` observed; `_Control` /
+  plain extrapolated from the established faction-independent dreadnought HP). If a
+  non-Borg-variant run appears without a tier, add its dreadnought entity.
+
+| sample | tier | faction | Dreadnought_Mirror | Battleship_Mirror |
+|---|---|---|---|---|
+| 2026-07-26 14:45 | Advanced | Mirror | 1,909,801 | 504,586 |
+| 2026-07-26 16:26 | Elite | Mirror | 8,804,174 | 2,352,650 |
+
 ## [Patrol] To Die With Honor — Space — DONE (anchor + tier)
 - Fixed-faction **Klingon** patrol (Forcas system). Distinct from the *TFO* "To
   Hell With Honor".

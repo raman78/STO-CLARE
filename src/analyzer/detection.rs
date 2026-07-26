@@ -671,6 +671,30 @@ mod tests {
     }
 
     #[test]
+    fn resistance_of_starbase_one_tier_by_dreadnought_any() {
+        // TFO with a randomized enemy group; anchored on the allied evacuation
+        // ship (faction-independent). Tier by the dreadnought hull (`hull_any`),
+        // listing the Borg faction variants — only Mirror was sampled; Control /
+        // plain are extrapolated from the established faction-independent HP.
+        let advanced = vec![
+            hull_critter("Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship", 0.0),
+            hull_critter("Space_Borg_Dreadnought_Mirror", 1_909_801.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Resistance of Starbase One"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            hull_critter("Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship", 0.0),
+            hull_critter("Space_Borg_Dreadnought_Mirror", 8_804_174.0),
+        ];
+        assert_eq!(
+            detect(&bundled_rules(), &view(&elite)).difficulty,
+            Some(Difficulty::Elite)
+        );
+    }
+
+    #[test]
     fn out_of_control_tier_by_control_borg_hull() {
         // Fixed-faction Borg patrol at the Sitor system: anchored on its Sitor
         // barrage turrets (mission structures, present in both tiers), tiers by
