@@ -7,6 +7,7 @@
 ### Other Changes
 - the main window now opens with the size it had when it was last closed, and comes back maximized if it was closed that way
 - the main window contents now follow the window while it is being resized, instead of trailing behind the drag
+- the main window can no longer be shrunk to a size where its controls no longer fit
 
 ### Fixes
 - fixed auto refresh stopping to work when changing the logs path

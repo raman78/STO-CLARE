@@ -34,7 +34,7 @@ fn main() {
     let native_options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_inner_size(size.unwrap_or(vec2(1280.0, 720.0)))
-            .with_min_inner_size(vec2(480.0, 270.0))
+            .with_min_inner_size(vec2(800.0, 600.0))
             .with_maximized(maximized)
             .with_icon(icon_data()),
         ..Default::default()
