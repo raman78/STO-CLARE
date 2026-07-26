@@ -38,18 +38,6 @@ pub struct App {
     upload: Upload,
     records: Records,
     state: AppState,
-    // Deferred persistence of the window size: written once resizing settles
-    // (see track_window_geometry).
-    window_geometry_dirty: bool,
-    last_geometry_change: f64,
-}
-
-/// Window geometry to restore at startup: last size (points) and whether the
-/// window was maximized. Read before the viewport is built (see main.rs).
-pub fn saved_window_geometry() -> (Option<Vec2>, bool) {
-    let settings = Settings::load_or_default();
-    let size = settings.general.window_size.map(|[w, h]| vec2(w, h));
-    (size, settings.general.window_maximized)
 }
 
 impl App {
@@ -73,8 +61,6 @@ impl App {
             upload: Default::default(),
             records: Default::default(),
             state,
-            window_geometry_dirty: false,
-            last_geometry_change: 0.0,
         };
 
         // On Linux, hand the layer-shell overlay the shared wgpu handles: the
@@ -101,7 +87,6 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
         self.handle_analysis_infos();
-        self.track_window_geometry(ui.ctx());
         // Remember where the overlay was dragged (persisted on exit).
         #[cfg(target_os = "linux")]
         if let Some(position) = self.state.overlay.position() {
@@ -209,57 +194,12 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
-        // Backup flush of the latest geometry on close (see track_window_geometry).
+        // Persists the overlay position picked up in `ui` above.
         self.state.settings.save();
     }
 }
 
 impl App {
-    /// Remembers the main window's size and maximized state so the next launch
-    /// restores them (see main.rs). The size comes from the egui viewport rect
-    /// because on Wayland the OS-reported `inner_rect` is `None`. The settings
-    /// file is written only once the size has settled (no change for a moment),
-    /// never while the edge is being dragged, so resizing stays smooth.
-    fn track_window_geometry(&mut self, ctx: &eframe::egui::Context) {
-        let now = ctx.input(|i| i.time);
-        let maximized = ctx.input(|i| i.viewport().maximized);
-        let size = ctx.viewport_rect().size();
-
-        // Only remember the windowed size, so un-maximizing restores something
-        // sane rather than the full-screen size.
-        if maximized != Some(true) {
-            let size = [size.x, size.y];
-            if self.state.settings.general.window_size != Some(size) {
-                self.state.settings.general.window_size = Some(size);
-                self.window_geometry_dirty = true;
-                self.last_geometry_change = now;
-            }
-        }
-        if let Some(maximized) = maximized {
-            if self.state.settings.general.window_maximized != maximized {
-                self.state.settings.general.window_maximized = maximized;
-                self.window_geometry_dirty = true;
-                self.last_geometry_change = now;
-            }
-        }
-
-        if self.window_geometry_dirty {
-            let idle = now - self.last_geometry_change;
-            if idle >= 2.0 {
-                // Settled for 2 s: write once, off the resize hot path.
-                self.state.settings.save();
-                self.window_geometry_dirty = false;
-            } else if idle < 0.5 {
-                // Actively resizing: keep redrawing every frame so the content
-                // tracks the window instead of lagging behind the drag.
-                ctx.request_repaint();
-            } else {
-                // Idle but not yet settled: check again to flush the size.
-                ctx.request_repaint_after(std::time::Duration::from_millis(300));
-            }
-        }
-    }
-
     fn handle_analysis_infos(&mut self) {
         let combatlog_file = &self.state.settings.analysis.combatlog_file;
         for info in self.state.analysis_handler.check_for_info() {

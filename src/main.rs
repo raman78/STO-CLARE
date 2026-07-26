@@ -26,15 +26,11 @@ fn main() {
     }));
 
     logging::initialize();
-
-    // Restore the last window size / maximized state (see app::App::on_exit).
-    let (saved_size, maximized) = app::saved_window_geometry();
     #[allow(unused_mut)]
     let mut native_options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
-            .with_inner_size(saved_size.unwrap_or(vec2(1280.0, 720.0)))
-            .with_min_inner_size(vec2(800.0, 600.0))
-            .with_maximized(maximized)
+            .with_inner_size(vec2(1280.0, 720.0))
+            .with_min_inner_size(vec2(480.0, 270.0))
             .with_icon(icon_data()),
         ..Default::default()
     };
