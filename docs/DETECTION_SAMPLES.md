@@ -87,10 +87,22 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 
 ---
 
+## [TFO] Defense of Starbase One — Space — anchor only (tier needs samples)
+- Distinct Discovery-era Starbase One TFO (Discovery rep). Enemies: **Discovery
+  Klingons** (`Space_Klingon_*_Dsc`). Not a collision with Resistance — they use
+  *different* evacuation-ship entities (see below).
+- **Anchor:** `Space_Federation_Cruiser_Dsc_Tfo_Evacuation_Ship` (Discovery variant).
+- **Tier:** none yet — only one sample (user unsure of tier). Killed enemies for
+  when an Elite pair arrives: Battleship_Dsc 226k, Cruiser_Dsc 177k, Raider_Dsc 63k.
+
+| sample | tier | Battleship_Dsc | Cruiser_Dsc | Raider_Dsc |
+|---|---|---|---|---|
+| 2026-07-26 17:41 | ~Advanced? | 226,313 | 176,588 | 63,403 |
+
 ## [TFO] Resistance of Starbase One — Space — DONE (anchor + any-of tier)
-- Randomized enemy group (both samples were **Mirror Borg**). Note: the catalog
-  also has a separate "Defense of Starbase One" — if it shares the evacuation ship,
-  watch for a false match (need a Defense sample to check).
+- Randomized enemy group (both samples were **Mirror Borg**). **No collision with
+  "Defense of Starbase One":** confirmed the two use different evacuation ships —
+  Resistance `..._Vtx_Tfo_Evacuation_Ship`, Defense `..._Dsc_Tfo_Evacuation_Ship`.
 - **Anchor:** allied `Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship`
   (faction-independent; deaths=0, present in both).
 - **Tier:** `hull_any` on the dreadnought (deaths=1 ⇒ hull≈HP), bands Advanced 1.4M

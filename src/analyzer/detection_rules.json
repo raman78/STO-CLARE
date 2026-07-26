@@ -263,7 +263,10 @@
     },
     "Defense of Starbase One": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Federation_Cruiser_Dsc_Tfo_Evacuation_Ship"
+      ]
     },
     "Deferi Patrol Under Attack": {
       "category": "Patrol",
