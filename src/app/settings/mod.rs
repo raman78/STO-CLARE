@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 
-pub use app_settings::Settings;
+pub use app_settings::{Settings, WindowGeometry};
 use eframe::{Frame, egui::*};
 
 use crate::analyzer::Combat;
