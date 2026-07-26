@@ -32,6 +32,18 @@ mod summary_copy;
 #[cfg(target_os = "linux")]
 pub use overlay::layer_shell::create_shared_gpu;
 
+/// Whether the app came up on Wayland, which is where the overlay needs the
+/// layer-shell backend. Asks the window system handle eframe was given, so it
+/// reports the backend winit actually chose.
+#[cfg(target_os = "linux")]
+fn is_wayland(cc: &eframe::CreationContext) -> bool {
+    use raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
+    matches!(
+        cc.display_handle().map(|handle| handle.as_raw()),
+        Ok(RawDisplayHandle::Wayland(_))
+    )
+}
+
 pub struct App {
     settings_window: SettingsWindow,
     combats: Vec<String>,
@@ -87,19 +99,30 @@ impl App {
             last_geometry_change: 0.0,
         };
 
-        // On Linux, hand the layer-shell overlay the shared wgpu handles: the
-        // instance we created up front (passed in) plus eframe's
+        // In a Wayland session, hand the layer-shell overlay the shared wgpu
+        // handles: the instance we created up front (passed in) plus eframe's
         // adapter/device/queue — which, thanks to WgpuSetup::Existing, are the
         // very ones we handed eframe. So both render through one device.
+        //
+        // In an X11 session there is no layer-shell to talk to, so the handles
+        // stay unset and the overlay falls back to the plain always-on-top
+        // viewport, which works there. `overlay_instance` is already `None` in
+        // that case (see main.rs); asking the window handle as well means the
+        // backend winit actually picked decides, not a guess.
         #[cfg(target_os = "linux")]
-        if let (Some(instance), Some(render_state)) = (overlay_instance, cc.wgpu_render_state.as_ref())
+        if is_wayland(cc)
+            && let (Some(instance), Some(render_state)) =
+                (overlay_instance, cc.wgpu_render_state.as_ref())
         {
+            log::info!("overlay backend: layer-shell (Wayland session)");
             app.state.overlay.set_gpu(overlay::layer_shell::OverlayGpu {
                 instance,
                 adapter: render_state.adapter.clone(),
                 device: render_state.device.clone(),
                 queue: render_state.queue.clone(),
             });
+        } else {
+            log::info!("overlay backend: always-on-top window");
         }
         #[cfg(not(target_os = "linux"))]
         let _ = overlay_instance;

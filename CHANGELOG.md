@@ -54,8 +54,12 @@
 - the main window now remembers its size and whether it was maximized, resizes more smoothly, and has a larger minimum size
 - the "Browse" button now opens in the folder you last picked a combat log from
 
+### Other Changes
+- on Linux/Wayland the overlay now stays above full-screen games, and carries its own buttons for picking columns and moving it around
+
 ### Fixes
 - fixed auto refresh stopping to work when changing the logs path
+- fixed the program crashing on Linux/Wayland when the overlay is switched on
 
 ## v1.4.0
 ### Major Changes
