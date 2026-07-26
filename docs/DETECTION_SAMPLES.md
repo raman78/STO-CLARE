@@ -18,11 +18,16 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
 - **Tier only on entities that die** (`deaths > 0`): their median hull damage ≈ HP.
   A `deaths = 0` entity's hull is just the damage we *happened to deal* to it
   (player-dependent), not its HP — fine as an anchor, useless as a tier threshold.
-- Non-dying **"friend"/objective ships** make good anchors, but individually they
-  recur across maps (only *narrowing* the choice). The same *combination* of two
-  rarely repeats — so anchor on the **set together** via `identifiers_all` (all-of),
-  not `identifiers` (any-of). E.g. To Die With Honor = Mrek **and** Lrell; Unwanted
-  Guests = both Aetherian ships.
+- Non-dying **"friend"/objective ships** make good anchors, but a *generic* one
+  recurs across maps (only narrows). The same *combination* rarely repeats, so
+  `identifiers_all` (all-of) pins it. **BUT combinations are fragile to combat
+  splitting** (a user's `combat_separation_time_seconds` — 45s — fragments a patrol
+  with long lulls; a fragment may carry only part of the set → the map goes
+  unrecognized). So prefer **any-of on a *named*/specific entity** (it doesn't
+  recur, and one is enough in every fragment); reserve `identifiers_all` for
+  genuinely generic friends on maps that don't fragment. E.g. To Die With Honor is
+  any-of [Mrek, Lrell] (a 45s split left a fragment with only Lrell + Mrek's Placate
+  variant); Unwanted Guests keeps the Aetherian pair (it doesn't split).
 
 ---
 
@@ -101,9 +106,11 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 ## [Patrol] To Die With Honor — Space — DONE (anchor + tier)
 - Fixed-faction **Klingon** patrol (Forcas system). Distinct from the *TFO* "To
   Hell With Honor".
-- **Anchor:** named mission dreadnoughts `Space_Klingon_Dreadnought_Mrek` **and**
-  `Space_Klingon_Dreadnought_Ktinga_Lrell` together (`identifiers_all` — both
-  deaths=0; the pair pins the map even if either recurs alone elsewhere).
+- **Anchor:** named mission dreadnoughts `Space_Klingon_Dreadnought_Mrek` /
+  `Space_Klingon_Dreadnought_Ktinga_Lrell` — **any-of** (each is specific enough
+  alone). Was `identifiers_all`, but a 45s-separation split produced a second
+  fragment (13:41–13:43) carrying only Lrell + `..._Mrek_Placate_Nonplayers`,
+  which the all-of anchor missed. Lrell is in every fragment, so any-of recovers it.
 - **Tier:** `hull_counts` on ships that **die** — `Space_Klingon_Battlecruiser`
   (Adv 250k / Elite 800k) + `Space_Klingon_Raider` (Adv 90k / Elite 350k).
 - **Lesson:** don't tier on a deaths=0 entity (Mrek) — its "hull" is damage we

@@ -117,9 +117,12 @@ struct MapDef {
     #[serde(default)]
     identifiers: Vec<String>,
     /// Like `identifiers` but **all-of**: the map matches only when *every* listed
-    /// entity is present together. For anchoring on non-dying "friend"/objective
-    /// ships — individually they recur across maps (only narrowing), but the same
-    /// *combination* rarely repeats, so requiring the whole set pins the map.
+    /// entity is present together. For anchoring on generic non-dying
+    /// "friend"/objective ships that recur individually but not as a set. NOTE:
+    /// fragile to combat splitting — if the fight is split (short
+    /// `combat_separation_time_seconds`), a fragment may carry only part of the set
+    /// and go unrecognized; prefer any-of `identifiers` on a *named*/specific entity
+    /// when one exists.
     #[serde(default)]
     identifiers_all: Vec<String>,
     /// difficulty -> {entity unique name -> required death count}. A required
@@ -665,9 +668,17 @@ mod tests {
             Some(Difficulty::Elite)
         );
 
-        // The combination anchor needs *both* named ships; one alone is not enough.
-        let only_mrek = vec![hull_critter("Space_Klingon_Dreadnought_Mrek", 5_832_321.0)];
-        assert!(detect(&bundled_rules(), &view(&only_mrek)).map.is_none());
+        // Any-of: either named ship alone identifies the map — robust to the fight
+        // splitting into fragments that carry only one of them (a real 45s-separation
+        // split had a later fragment with Lrell but only Mrek's Placate variant).
+        let split_fragment = vec![
+            hull_critter("Space_Klingon_Dreadnought_Ktinga_Lrell", 41_624.0),
+            hull_critter("Space_Klingon_Battlecruiser", 1_196_890.0),
+            hull_critter("Space_Klingon_Raider", 495_636.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&split_fragment));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] To Die With Honor"));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
     #[test]
