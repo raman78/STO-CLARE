@@ -651,7 +651,21 @@
     },
     "Out of Control": {
       "category": "Patrol",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Borg_Barrage_Turret_Sitor_Patrol",
+        "Space_Borg_Barrage_Turret_Sitor_Patrol_Caster"
+      ],
+      "hull_counts": {
+        "Advanced": {
+          "Space_Borg_Battleship_Control": 300000,
+          "Space_Borg_Cruiser_Control": 200000
+        },
+        "Elite": {
+          "Space_Borg_Battleship_Control": 1000000,
+          "Space_Borg_Cruiser_Control": 800000
+        }
+      }
     },
     "Outpost 3 Security": {
       "category": "Patrol",
@@ -902,7 +916,21 @@
     },
     "To Die With Honor": {
       "category": "Patrol",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers_all": [
+        "Space_Klingon_Dreadnought_Mrek",
+        "Space_Klingon_Dreadnought_Ktinga_Lrell"
+      ],
+      "hull_counts": {
+        "Advanced": {
+          "Space_Klingon_Battlecruiser": 250000,
+          "Space_Klingon_Raider": 90000
+        },
+        "Elite": {
+          "Space_Klingon_Battlecruiser": 800000,
+          "Space_Klingon_Raider": 350000
+        }
+      }
     },
     "To Hell With Honor": {
       "category": "TFO",
@@ -963,7 +991,7 @@
     "Unwanted Guests": {
       "category": "Patrol",
       "combat_type": "Space",
-      "identifiers": [
+      "identifiers_all": [
         "Space_Aetherian_Cruiser",
         "Space_Aetherian_Dreadnought"
       ],

@@ -88,7 +88,8 @@ map carrying everything about it (`DetectionRules { maps: HashMap<String, MapDef
       "category": "TFO" | "Patrol" | ...,           // optional; shown as a "[category] " prefix
       "combat_type": "Space" | "Ground" | "Shuttle", // optional; curated reference only, not shown
       "difficulty": "Any" | "Normal" | "Advanced" | "Elite", // optional (default Any); a pinned tier
-      "identifiers": ["<unique_name>", ...],        // entities whose presence identifies the map
+      "identifiers": ["<unique_name>", ...],        // any-of: any one present identifies the map
+      "identifiers_all": ["<unique_name>", ...],    // all-of: the whole set must be present together
       "death_counts": { "Advanced": { "<unique_name>": <count> }, "Elite": { ... } },
       "hull_counts":  { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }, // all-of
       "hull_any":     { "Advanced": { "<unique_name>": <threshold> }, "Elite": { ... } }  // any-of
@@ -123,10 +124,12 @@ refreshed when OSCR/the wiki updates, ideally from a shared canonical file.
 
 Mirrors OSCR's `detect_map`, iterating `rules.maps`:
 
-1. **Existence** — find a map whose `identifiers` intersect the combat's present
-   unique names (`MapDef::is_present`). No match ⇒ `map = None` ("Combat"). A
-   matching map that pins a non-`Any` `difficulty` returns immediately (e.g.
-   Winter Invasion ⇒ Normal).
+1. **Existence** — find a map that `MapDef::is_present`: any one of its any-of
+   `identifiers` is present, or its whole all-of `identifiers_all` set is present
+   together. No match ⇒ `map = None` ("Combat"). A matching map that pins a
+   non-`Any` `difficulty` returns immediately (e.g. Winter Invasion ⇒ Normal).
+   (`identifiers_all` anchors on a *combination* of non-dying friend/objective
+   ships that recur individually but not as a set.)
 2. **Death counts** — for the identified map, test each tier low→high
    (`DIFFICULTY_ORDER = [Advanced, Elite]`); a higher tier that also matches
    overrides a lower one. A tier matches when every listed entity is present and

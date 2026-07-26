@@ -106,8 +106,9 @@ struct MapDef {
     /// when the tier is resolved from the tables below (or cannot be resolved).
     #[serde(default = "any_difficulty")]
     difficulty: Difficulty,
-    /// Internal unique names whose presence identifies this map. Empty for
-    /// catalog-only entries — a known map we cannot detect yet.
+    /// Internal unique names whose presence identifies this map — **any-of** (one
+    /// present is enough). Empty for catalog-only entries (a known map we cannot
+    /// detect yet).
     ///
     /// NEVER use a `Device_*` entity here (or in the tier tables): those are
     /// player-carried devices (e.g. Kobayashi Maru Resupply, team buffs), present
@@ -115,6 +116,12 @@ struct MapDef {
     /// map. Anchor on fixed mission NPCs/objects/allies instead.
     #[serde(default)]
     identifiers: Vec<String>,
+    /// Like `identifiers` but **all-of**: the map matches only when *every* listed
+    /// entity is present together. For anchoring on non-dying "friend"/objective
+    /// ships — individually they recur across maps (only narrowing), but the same
+    /// *combination* rarely repeats, so requiring the whole set pins the map.
+    #[serde(default)]
+    identifiers_all: Vec<String>,
     /// difficulty -> {entity unique name -> required death count}. A required
     /// count of 0 means "must be present, any number of deaths".
     #[serde(default)]
@@ -147,11 +154,23 @@ impl MapDef {
         }
     }
 
-    /// Whether any of this map's identifying entities is present in the combat.
+    /// Whether this map's identifying entities are present: any one of the
+    /// any-of `identifiers`, or the full `identifiers_all` set together.
     fn is_present(&self, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
         self.identifiers
             .iter()
             .any(|e| critters.contains_key(e.as_str()))
+            || (!self.identifiers_all.is_empty()
+                && self
+                    .identifiers_all
+                    .iter()
+                    .all(|e| critters.contains_key(e.as_str())))
+    }
+
+    /// Every entity this map keys on (any-of + all-of), for the editor overlap
+    /// warning and the "detectable" filter.
+    fn all_identifiers(&self) -> impl Iterator<Item = &String> {
+        self.identifiers.iter().chain(self.identifiers_all.iter())
     }
 }
 
@@ -217,7 +236,7 @@ pub fn curated_map_names() -> Vec<String> {
     let mut names: Vec<String> = DETECTION_RULES
         .maps
         .iter()
-        .filter(|(_, def)| !def.identifiers.is_empty())
+        .filter(|(_, def)| def.all_identifiers().next().is_some())
         .map(|(name, def)| def.display_name(name))
         .collect();
     names.sort();
@@ -235,8 +254,7 @@ pub fn curated_map_identifiers() -> Vec<(String, String)> {
         .iter()
         .flat_map(|(name, def)| {
             let display = def.display_name(name);
-            def.identifiers
-                .iter()
+            def.all_identifiers()
                 .map(move |unique| (unique.clone(), display.clone()))
         })
         .collect()
@@ -584,6 +602,7 @@ mod tests {
         // those are player-carried devices, present only if a player equips them.
         let advanced = vec![
             hull_critter("Space_Aetherian_Cruiser", 0.0),
+            hull_critter("Space_Aetherian_Dreadnought", 0.0),
             hull_critter("Space_Borg_Dreadnought_Mirror", 1_954_225.0),
         ];
         let result = detect(&bundled_rules(), &view(&advanced));
@@ -593,6 +612,7 @@ mod tests {
         // Elite resolves whichever faction spawned: plain (regular) Borg …
         let elite_regular = vec![
             hull_critter("Space_Aetherian_Cruiser", 0.0),
+            hull_critter("Space_Aetherian_Dreadnought", 0.0),
             hull_critter("Space_Borg_Dreadnought", 8_300_426.0),
         ];
         assert_eq!(
@@ -603,10 +623,68 @@ mod tests {
         // … and Control Borg.
         let elite_control = vec![
             hull_critter("Space_Aetherian_Cruiser", 0.0),
+            hull_critter("Space_Aetherian_Dreadnought", 0.0),
             hull_critter("Space_Borg_Dreadnought_Control", 8_568_353.0),
         ];
         assert_eq!(
             detect(&bundled_rules(), &view(&elite_control)).difficulty,
+            Some(Difficulty::Elite)
+        );
+    }
+
+    #[test]
+    fn to_die_with_honor_tier_by_killed_klingon_hull() {
+        // Fixed-faction Klingon patrol; anchored on the named mission dreadnoughts
+        // (Mrek / Lrell). Tier from Klingon ships that actually die (hull ~ HP);
+        // the Mrek dreadnought is skipped for tiers — it never dies, so its "hull"
+        // is just damage we happened to deal (player-dependent), not its HP.
+        let advanced = vec![
+            hull_critter("Space_Klingon_Dreadnought_Mrek", 1_144_742.0),
+            hull_critter("Space_Klingon_Dreadnought_Ktinga_Lrell", 15_902.0),
+            hull_critter("Space_Klingon_Battlecruiser", 357_756.0),
+            hull_critter("Space_Klingon_Raider", 118_931.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] To Die With Honor"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            hull_critter("Space_Klingon_Dreadnought_Mrek", 5_832_321.0),
+            hull_critter("Space_Klingon_Dreadnought_Ktinga_Lrell", 45_107.0),
+            hull_critter("Space_Klingon_Battlecruiser", 1_196_890.0),
+            hull_critter("Space_Klingon_Raider", 523_080.0),
+        ];
+        assert_eq!(
+            detect(&bundled_rules(), &view(&elite)).difficulty,
+            Some(Difficulty::Elite)
+        );
+
+        // The combination anchor needs *both* named ships; one alone is not enough.
+        let only_mrek = vec![hull_critter("Space_Klingon_Dreadnought_Mrek", 5_832_321.0)];
+        assert!(detect(&bundled_rules(), &view(&only_mrek)).map.is_none());
+    }
+
+    #[test]
+    fn out_of_control_tier_by_control_borg_hull() {
+        // Fixed-faction Borg patrol at the Sitor system: anchored on its Sitor
+        // barrage turrets (mission structures, present in both tiers), tiers by
+        // the Control Borg battleship/cruiser hull (~3.5-4x Advanced->Elite).
+        let advanced = vec![
+            hull_critter("Space_Borg_Barrage_Turret_Sitor_Patrol", 0.0),
+            hull_critter("Space_Borg_Battleship_Control", 421_569.0),
+            hull_critter("Space_Borg_Cruiser_Control", 289_338.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Out of Control"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            hull_critter("Space_Borg_Barrage_Turret_Sitor_Patrol", 0.0),
+            hull_critter("Space_Borg_Battleship_Control", 1_489_182.0),
+            hull_critter("Space_Borg_Cruiser_Control", 1_211_985.0),
+        ];
+        assert_eq!(
+            detect(&bundled_rules(), &view(&elite)).difficulty,
             Some(Difficulty::Elite)
         );
     }

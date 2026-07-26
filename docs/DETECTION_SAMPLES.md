@@ -15,6 +15,14 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
   (`Space_Federation_Cruiser_Galaxy` is too broad — appears everywhere).
 - When the **tier signal** entity varies by faction but its HP does not, list every
   variant under `hull_any` (any-of) with the same band.
+- **Tier only on entities that die** (`deaths > 0`): their median hull damage ≈ HP.
+  A `deaths = 0` entity's hull is just the damage we *happened to deal* to it
+  (player-dependent), not its HP — fine as an anchor, useless as a tier threshold.
+- Non-dying **"friend"/objective ships** make good anchors, but individually they
+  recur across maps (only *narrowing* the choice). The same *combination* of two
+  rarely repeats — so anchor on the **set together** via `identifiers_all` (all-of),
+  not `identifiers` (any-of). E.g. To Die With Honor = Mrek **and** Lrell; Unwanted
+  Guests = both Aetherian ships.
 
 ---
 
@@ -56,8 +64,9 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
 ## [Patrol] Unwanted Guests — Space — DONE (anchor + any-of tier)
 - **Enemies randomized** across ~3 Borg factions: regular (`Space_Borg_*`), Mirror
   (`Space_Borg_*_Mirror`), Control (`Space_Borg_*_Control`).
-- **Anchor:** allied `Space_Aetherian_Cruiser` / `Space_Aetherian_Dreadnought`
-  (stable across factions; NOT the Borg, NOT the `Device_*` team buff).
+- **Anchor:** allied `Space_Aetherian_Cruiser` **and** `Space_Aetherian_Dreadnought`
+  together (`identifiers_all`; stable across factions; NOT the Borg, NOT the
+  `Device_*` team buff).
 - **Tier:** `hull_any` on the dreadnought — HP is faction-independent, only the
   entity name changes. Bands: Advanced 1.5M / Elite 4.0M; variants listed:
   `Space_Borg_Dreadnought_Mirror` / `_Control` / plain `Space_Borg_Dreadnought`.
@@ -72,6 +81,37 @@ Open: only Mirror seen at Advanced — a regular/Control **Advanced** sample wou
 confirm the dreadnought's Advanced band is truly faction-independent.
 
 ---
+
+## [Patrol] To Die With Honor — Space — DONE (anchor + tier)
+- Fixed-faction **Klingon** patrol (Forcas system). Distinct from the *TFO* "To
+  Hell With Honor".
+- **Anchor:** named mission dreadnoughts `Space_Klingon_Dreadnought_Mrek` **and**
+  `Space_Klingon_Dreadnought_Ktinga_Lrell` together (`identifiers_all` — both
+  deaths=0; the pair pins the map even if either recurs alone elsewhere).
+- **Tier:** `hull_counts` on ships that **die** — `Space_Klingon_Battlecruiser`
+  (Adv 250k / Elite 800k) + `Space_Klingon_Raider` (Adv 90k / Elite 350k).
+- **Lesson:** don't tier on a deaths=0 entity (Mrek) — its "hull" is damage we
+  *dealt*, player-dependent, not its HP. Use killed entities (hull ~ HP).
+
+| sample | tier | Mrek (deaths=0, not HP) | Battlecruiser | Raider | Escort |
+|---|---|---|---|---|---|
+| 2026-07-26 12:47 | Advanced | 1,144,742 | 357,756 | 118,931 | 206,499 |
+| 2026-07-26 13:38 | Elite | 5,832,321 | 1,196,890 | 523,080 | 928,583 |
+
+## [Patrol] Out of Control — Space — DONE (anchor + tier)
+- **Fixed faction** (Borg Control in both samples — not randomized like Unwanted
+  Guests). Sitor-system patrol.
+- **Anchor:** `Space_Borg_Barrage_Turret_Sitor_Patrol` / `..._Caster` (mission
+  barrage turrets, deaths=0, present in both tiers, Sitor-specific).
+- **Tier:** `hull_counts` (all-of) on `Space_Borg_Battleship_Control`
+  (Adv 300k / Elite 1.0M) + `Space_Borg_Cruiser_Control` (Adv 200k / Elite 800k).
+- The Control Borg entities are shared with Unwanted Guests, but the anchors
+  differ (Sitor turret vs Aetherian ally), so the maps never cross.
+
+| sample | tier | Battleship_Control | Cruiser_Control | Frigate_Control |
+|---|---|---|---|---|
+| 2026-07-26 12:54 | Advanced | 421,569 | 289,338 | 117,537 |
+| 2026-07-26 13:12 | Elite | 1,489,182 | 1,211,985 | 467,344 |
 
 ## [Patrol] The Ninth Rule — Space — CATALOG-ONLY (no reliable anchor)
 - **Enemies fully randomized** (~3–4 factions); samples show Gorn and Orion.
@@ -91,6 +131,20 @@ Open: confirm whether `Mission_..._Hofmann` (or another fixed ally/object) is in
 the battleship/cruiser, which scales ~4× Adv→Elite regardless of faction).
 
 ---
+
+## [TFO] Bug Hunt — Ground — anchor only (tier needs an Advanced sample)
+- **Anchor:** `Bluegills_Ground_Boss`. Fixed faction (Bluegills / Undine), so no
+  any-of needed; tier will come from a death-count / Elite-only entity or a hull
+  threshold — but that requires comparing Elite vs Advanced.
+- Ladder has Bug Hunt `Elite` + `None` only (no Advanced), so ladder can't help.
+
+| sample | tier | Boss hull | notable entities (deaths) |
+|---|---|---|---|
+| 2026-07-26 12:58 | Elite | 451,781 | Capt 1, Cdr 23, Lt 33, Ens 60, Ens_Noautospawn 83, **Ens_Noautospawn_Queenfodder 13** |
+
+Open: need a **Bug Hunt Advanced** run to diff against. Candidate discriminators to
+check then: is `Bluegills_Ground_Ens_Noautospawn_Queenfodder` Elite-only? does the
+boss hull (~452k Elite) separate the tiers? do the rank death counts differ?
 
 ## [Patrol] Jupiter Station Showdown — Ground — DONE (anchor + tier)
 - **Anchor:** `Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable`.
