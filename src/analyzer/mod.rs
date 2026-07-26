@@ -766,12 +766,16 @@ mod tests {
     /// Real-data check for the "delete combats" flow: keep a subset of combats
     /// by concatenating their byte ranges, then re-analyze and assert exactly
     /// those combats survive, in order (removing a middle combat must not merge
-    /// its neighbours). Run with:
-    /// `cargo test keep_subset_of_combats -- --ignored --nocapture`.
+    /// its neighbours). Point `CLA_TEST_COMBATLOG` at a real combatlog.log and
+    /// run with:
+    /// `CLA_TEST_COMBATLOG=<path> cargo test keep_subset_of_combats -- --ignored --nocapture`.
     #[test]
     #[ignore = "reads a real STO log"]
     fn keep_subset_of_combats() {
-        let src = "/home/raman/Games/steamapps/common/Star Trek Online/Star Trek Online/Live/logs/GameClient/combatlog.log";
+        let Some(src) = std::env::var_os("CLA_TEST_COMBATLOG") else {
+            println!("set CLA_TEST_COMBATLOG to a combatlog.log to run this test");
+            return;
+        };
         let dir = std::env::temp_dir().join("cla-keep-combats-test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

@@ -725,13 +725,17 @@ mod tests {
 
     /// The app should populate the combats list on startup on its own (no manual
     /// Refresh). Creates a handler exactly like the app does and waits for the
-    /// automatic first refresh to deliver the combats.
+    /// automatic first refresh to deliver the combats. Point
+    /// `CLA_TEST_COMBATLOG` at a real combatlog.log to run it.
     #[test]
     #[ignore = "reads a real STO log"]
     fn loads_combats_on_startup() {
         // Work on a copy in a scratch dir: pointing the handler at the real log
         // folder would let its consolidator touch the real files.
-        let src = "/home/raman/Games/steamapps/common/Star Trek Online/Star Trek Online/Live/logs/GameClient/combatlog.log";
+        let Some(src) = std::env::var_os("CLA_TEST_COMBATLOG") else {
+            println!("set CLA_TEST_COMBATLOG to a combatlog.log to run this test");
+            return;
+        };
         let dir = std::env::temp_dir().join(format!("cla-startup-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
