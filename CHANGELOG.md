@@ -4,6 +4,9 @@
 ### Major Changes
 - decreased the decimal count of most number to reduce used space (can be changed to be like before in the settings)
 
+### Other Changes
+- the main window now opens with the size it had when it was last closed, and comes back maximized if it was closed that way
+
 ### Fixes
 - fixed auto refresh stopping to work when changing the logs path
 

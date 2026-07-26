@@ -14,6 +14,20 @@ pub struct Settings {
     pub debug: DebugSettings,
     #[serde(default)]
     pub upload: UploadSettings,
+    #[serde(default)]
+    pub window: WindowGeometry,
+}
+
+/// Size and maximized state of the main window, remembered between runs.
+///
+/// Kept out of [`General`] on purpose: the settings dialog compares that
+/// section to decide whether the log has to be analyzed again, and resizing a
+/// window is no reason to redo the analysis.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct WindowGeometry {
+    /// Inner size in logical pixels, as last seen while not maximized.
+    pub size: Option<[f32; 2]>,
+    pub maximized: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
@@ -134,5 +148,31 @@ impl Default for DebugSettings {
 impl Default for UploadSettings {
     fn default() -> Self {
         Settings::default().upload.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_file_without_window_section_still_loads() {
+        // Settings files written by older versions have no window section.
+        let settings: Settings = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
+        assert_eq!(WindowGeometry::default(), settings.window);
+    }
+
+    #[test]
+    fn window_geometry_survives_a_save_and_load() {
+        let mut settings = Settings::default();
+        settings.window = WindowGeometry {
+            size: Some([1024.0, 768.0]),
+            maximized: true,
+        };
+
+        let json = serde_json::to_string(&settings).unwrap();
+        let loaded: Settings = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(settings.window, loaded.window);
     }
 }

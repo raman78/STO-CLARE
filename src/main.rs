@@ -26,10 +26,16 @@ fn main() {
     }));
 
     logging::initialize();
+
+    // Restore the window size of the previous run. eframe clamps the requested
+    // size to the largest monitor on its own, so a window that was last used on
+    // a bigger screen still comes up usable here.
+    let (size, maximized) = app::saved_window_geometry();
     let native_options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
-            .with_inner_size(vec2(1280.0, 720.0))
+            .with_inner_size(size.unwrap_or(vec2(1280.0, 720.0)))
             .with_min_inner_size(vec2(480.0, 270.0))
+            .with_maximized(maximized)
             .with_icon(icon_data()),
         ..Default::default()
     };

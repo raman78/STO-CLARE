@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use eframe::egui::*;
 use rfd::FileDialog;
@@ -33,6 +33,21 @@ pub struct App {
     upload: Upload,
     records: Records,
     state: AppState,
+    window_geometry: WindowGeometry,
+    window_geometry_dirty: bool,
+    last_geometry_change: f64,
+}
+
+/// How long the window size has to stay unchanged before it is written to the
+/// settings file, so that dragging a window edge does not cause a write per
+/// frame.
+const GEOMETRY_SETTLE_TIME: f64 = 2.0;
+
+/// The window size and maximized state to start with, read before the window
+/// exists (see main.rs).
+pub fn saved_window_geometry() -> (Option<Vec2>, bool) {
+    let window = Settings::load_or_default().window;
+    (window.size.map(|[w, h]| vec2(w, h)), window.maximized)
 }
 
 impl App {
@@ -52,7 +67,10 @@ impl App {
             summary_copy: Default::default(),
             upload: Default::default(),
             records: Default::default(),
+            window_geometry: state.settings.window,
             state,
+            window_geometry_dirty: false,
+            last_geometry_change: 0.0,
         }
     }
 }
@@ -60,6 +78,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
         self.handle_analysis_infos();
+        self.track_window_geometry(ui.ctx());
         CentralPanel::default().show_inside(ui, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
@@ -160,9 +179,82 @@ impl eframe::App for App {
     fn clear_color(&self, _visuals: &eframe::egui::Visuals) -> [f32; 4] {
         _visuals.window_fill().to_normalized_gamma_f32()
     }
+
+    fn on_exit(&mut self) {
+        // Catches a size change that has not settled yet when the window is
+        // closed (see track_window_geometry).
+        if self.window_geometry_dirty {
+            self.save_window_geometry();
+        }
+    }
 }
 
 impl App {
+    /// Remembers the window size and maximized state so that the next launch
+    /// can restore them (see `saved_window_geometry`).
+    ///
+    /// The size comes from the egui viewport rect instead of
+    /// `ViewportInfo::inner_rect`, because the latter is `None` on Wayland,
+    /// where a client is not told where its window is. That rect is in points,
+    /// so it is scaled back by the zoom factor to the logical pixels that
+    /// `ViewportBuilder::with_inner_size` expects — otherwise a "ui scale"
+    /// other than 1 would shrink or grow the window on every launch.
+    fn track_window_geometry(&mut self, ctx: &Context) {
+        let now = ctx.input(|i| i.time);
+        let maximized = ctx.input(|i| i.viewport().maximized);
+
+        // Only remember the size the window has while not maximized, so that
+        // un-maximizing it after a restart gives back a usable window.
+        if maximized != Some(true) {
+            let size = (ctx.viewport_rect().size() * ctx.zoom_factor()).round();
+            self.set_window_geometry(
+                now,
+                WindowGeometry {
+                    size: Some([size.x, size.y]),
+                    ..self.window_geometry
+                },
+            );
+        }
+        if let Some(maximized) = maximized {
+            self.set_window_geometry(
+                now,
+                WindowGeometry {
+                    maximized,
+                    ..self.window_geometry
+                },
+            );
+        }
+
+        if self.window_geometry_dirty {
+            let settled_in = GEOMETRY_SETTLE_TIME - (now - self.last_geometry_change);
+            if settled_in <= 0.0 {
+                self.save_window_geometry();
+            } else {
+                // The size only changes while a window edge is dragged, and no
+                // further frame is guaranteed once that stops, so ask for one.
+                ctx.request_repaint_after(Duration::from_secs_f64(settled_in));
+            }
+        }
+    }
+
+    fn set_window_geometry(&mut self, now: f64, geometry: WindowGeometry) {
+        if self.window_geometry != geometry {
+            self.window_geometry = geometry;
+            self.window_geometry_dirty = true;
+            self.last_geometry_change = now;
+        }
+    }
+
+    /// Writes the tracked geometry into the settings file. The geometry is held
+    /// in a field rather than in `state.settings` because the settings dialog
+    /// replaces the whole settings object when it is applied, which would drop
+    /// a resize made while the dialog was open.
+    fn save_window_geometry(&mut self) {
+        self.state.settings.window = self.window_geometry;
+        self.state.settings.save();
+        self.window_geometry_dirty = false;
+    }
+
     fn handle_analysis_infos(&mut self) {
         let combatlog_file = &self.state.settings.analysis.combatlog_file;
         for info in self.state.analysis_handler.check_for_info() {
