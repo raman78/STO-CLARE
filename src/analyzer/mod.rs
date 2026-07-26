@@ -827,14 +827,17 @@ mod tests {
 
     /// Real-data smoke test for map/difficulty detection: analyze the live log
     /// and print each combat's name alongside the detected map and difficulty.
-    /// Run with:
-    /// `cargo test detects_maps_in_real_log -- --ignored --nocapture`.
+    /// Point `CLA_TEST_COMBATLOG` at a real combatlog.log and run with:
+    /// `CLA_TEST_COMBATLOG=<path> cargo test detects_maps_in_real_log -- --ignored --nocapture`.
     #[test]
     #[ignore = "reads a real STO log"]
     fn detects_maps_in_real_log() {
-        let src = "/home/raman/Games/steamapps/common/Star Trek Online/Star Trek Online/Live/logs/GameClient/combatlog.log";
+        let Some(src) = std::env::var_os("CLA_TEST_COMBATLOG") else {
+            println!("set CLA_TEST_COMBATLOG to a combatlog.log to run this test");
+            return;
+        };
         let mut analyzer = Analyzer::new(AnalysisSettings {
-            combatlog_file: src.to_string(),
+            combatlog_file: src.to_string_lossy().into_owned(),
             ..Default::default()
         })
         .unwrap();

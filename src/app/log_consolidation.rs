@@ -342,14 +342,17 @@ mod tests {
     }
 
     /// Safety check against a COPY of the real rotating logs: every line must
-    /// survive consolidation exactly once (no loss, no duplication). Run with:
-    /// `cargo test verify_against_real_logs -- --ignored --nocapture`.
+    /// survive consolidation exactly once (no loss, no duplication). Point
+    /// `CLA_TEST_LOG_DIR` at the game's GameClient log folder and run with:
+    /// `CLA_TEST_LOG_DIR=<path> cargo test verify_against_real_logs -- --ignored --nocapture`.
     #[test]
     #[ignore = "reads the real STO log folder"]
     fn verify_against_real_logs() {
-        let real = Path::new(
-            "/home/raman/Games/steamapps/common/Star Trek Online/Star Trek Online/Live/logs/GameClient",
-        );
+        let Some(real) = std::env::var_os("CLA_TEST_LOG_DIR") else {
+            println!("set CLA_TEST_LOG_DIR to the GameClient log folder to run this test");
+            return;
+        };
+        let real = Path::new(&real);
         let dir = std::env::temp_dir().join("cla-consolidation-real");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
