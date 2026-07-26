@@ -1,5 +1,11 @@
 # Change Log
 
+# unreleased
+### Fixes
+- on Linux the overlay works again outside of a Wayland session: under X11 the Overlay button used to do nothing at all, and now opens the overlay window as it does on Windows (over a full-screen game it still depends on your window manager — a Wayland session remains the reliable one)
+- the remembered window size no longer shrinks a little on every start when the UI scale is set to anything other than 100%
+- resizing the main window while the Settings window is open no longer makes the log be analyzed again for no reason
+
 ## v1.6.0
 
 ### Major Changes
@@ -54,12 +60,8 @@
 - the main window now remembers its size and whether it was maximized, resizes more smoothly, and has a larger minimum size
 - the "Browse" button now opens in the folder you last picked a combat log from
 
-### Other Changes
-- on Linux/Wayland the overlay now stays above full-screen games, and carries its own buttons for picking columns and moving it around
-
 ### Fixes
 - fixed auto refresh stopping to work when changing the logs path
-- fixed the program crashing on Linux/Wayland when the overlay is switched on
 
 ## v1.4.0
 ### Major Changes
