@@ -1,19 +1,17 @@
 # Change Log
 
-# unreleased
+## v1.6.0
 
 ### Major Changes
-- combats now show the automatically detected difficulty in brackets (e.g. "Hive Space [Elite]"), recognized from what actually happened in the fight rather than the name: combats you haven't named show the detected map and level instead of just "Combat", and the level is also added to combats your own rules name (so you always see Elite/Advanced even when your rule only sets the map name). Your naming rules still decide the base name (they no longer need to add the level themselves — the default rules that used to add "(Elite)" have been cleaned up), and the settings list the auto-detected maps and put a warning icon next to any of your rules that overlaps one (hover it to see which map)
+- added a Compare Combats view: several combats (across all logs in a folder) can be selected and compared side by side, with each part of the damage breakdown lined up group by group and shown as green/red +/- deltas against the first combat; the compared columns are configurable and remembered, and any ability branch can be charted across the compared combats
+- combats now show their map and difficulty automatically, worked out from what actually happened in the fight rather than the name: a combat with no matching name rule shows the detected map — tagged [TFO] or [Patrol] — with its Advanced / Elite level in brackets (e.g. "[TFO] Hive Onslaught [Elite]") instead of just "Combat", and the level is added on top of combats a name rule already names. A wide set of Task Force Operations and patrols is recognized, including ones whose enemy faction is randomized and fights that split into pieces. Name rules still decide the base name (they no longer need to add the level themselves), and the settings list the auto-detected maps and flag any name rule that overlaps one
 
 ### Other Changes
-- the Compare Combats difficulty filter (Advanced / Elite) now recognizes each combat's real difficulty from what happened in the fight instead of guessing from its name, so filtering by Elite or Advanced is accurate even when the combat name doesn't mention the difficulty
-- you can drop a detection_rules.json file next to your settings to update or tweak how maps and difficulties are recognized, without waiting for a new build
-- the [Patrol] Rescue and Search patrol is now recognized, so its Advanced / Elite level shows automatically
-- the [Patrol] Trouble Over Terrh patrol is now recognized with its Advanced / Elite level, and is no longer confused with [TFO] Azure Nebula Rescue (both rescue the same allied ship, so they used to be mixed up)
-- the difficulty now also shows for Jupiter Station Showdown
+- the Compare Combats difficulty filter (Advanced / Elite) and the difficulty shown on each combat now come from what actually happened in the fight rather than the combat's name
+- a detection rules file placed next to the settings can refresh or tweak how maps and difficulties are recognized, without waiting for a new build
 
 ### Fixes
-- the Settings window can now be made as tall as you like (it was capped before), stays within the screen even when you expand a section, and remembers its size between sessions
+- the Settings window can now be made as tall as wanted (it was capped before), stays within the screen even when a section is expanded, and remembers its size between sessions
 - fixed the average non-critical hit damage showing a wrong value on some runs (abilities that scored criticals on shields were miscounted)
 
 ## v1.5.3
