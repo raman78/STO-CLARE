@@ -378,10 +378,25 @@ impl Combat {
         self.update_log_pos(record);
     }
 
-    /// Accumulate per-NPC facts used for map/difficulty detection. Only damage
-    /// dealt to a non-player entity contributes; a kill increments that entity's
-    /// death count. Must run after `update_names`, which interns the unique name.
+    /// Accumulate per-NPC facts used for map/difficulty detection.
+    ///
+    /// *Presence* is recorded for any non-player entity in either role, because
+    /// the anchors several maps key on are non-combatant allies/objectives: one
+    /// may fire a single shot and never be hit (only ever a source), or only
+    /// ever be healed. Keying presence off damage taken alone made those runs
+    /// undetectable. *Hull damage and deaths* still come only from damage dealt
+    /// to the entity — an entity present with no hull record simply has a median
+    /// of 0 and matches no tier threshold.
+    ///
+    /// Must run after `update_names`, which interns the unique name.
     fn update_critters(&mut self, record: &Record) {
+        for entity in [&record.source, &record.target] {
+            if let Entity::NonPlayer { unique_name, .. } = entity {
+                let handle = self.name_manager.handle(unique_name);
+                self.critters.entry(handle).or_default();
+            }
+        }
+
         let RecordValue::Damage(hit) = &record.value else {
             return;
         };
@@ -727,6 +742,45 @@ impl CombatName {
 mod tests {
     use super::*;
 
+    /// A non-combatant ally that only ever *fires* — never takes damage — must
+    /// still register as present, otherwise it cannot anchor a map. Real case:
+    /// The Ninth Rule run of 2026-07-28 22:18, where the allied Galaxy cruiser
+    /// fires a single shot and is never hit, leaving the combat unidentified.
+    #[test]
+    fn source_only_ally_is_present_for_detection() {
+        let dir = std::env::temp_dir().join("cla-source-only-critter-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        // The ally appears solely as a source; the enemy battleship takes hull
+        // damage in The Ninth Rule's Advanced band.
+        let records = concat!(
+            "26:07:28:22:20:17.5::U.S.S. Birmingham,C[11636 Space_Federation_Cruiser_Galaxy],,*,",
+            "Talon Battleship,C[11759 Space_Nausicaan_Battleship],Phaser Array,Pn.Cedjls,Phaser,,100.0,100.0\n",
+            "26:07:28:22:20:18.5::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Talon Battleship,C[11759 Space_Nausicaan_Battleship],Phaser Array,Pn.Cedjls,Phaser,Kill,345674.0,345674.0\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        assert_eq!(
+            combat.detected_map.as_deref(),
+            Some("[Patrol] The Ninth Rule"),
+            "the source-only ally must anchor the map"
+        );
+        assert_eq!(combat.detected_difficulty, Some(Difficulty::Advanced));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn append_difficulty_adds_bracketed_level() {
         assert_eq!(
@@ -823,6 +877,61 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Research tool: dump every NPC's median hull damage from the live log as
+    /// TSV, tagged with the combat's detected map and difficulty, so the HP
+    /// bands can be compared *across* maps (are they a property of the ship
+    /// class rather than the map?). Only entities that died are emitted — for
+    /// the others the median is damage we happened to deal, not their HP.
+    /// Point `CLA_TEST_COMBATLOG` at a real combatlog.log and run with:
+    /// `CLA_TEST_COMBATLOG=<path> cargo test dump_critter_hp_by_tier -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "reads a real STO log"]
+    fn dump_critter_hp_by_tier() {
+        let Some(src) = std::env::var_os("CLA_TEST_COMBATLOG") else {
+            println!("set CLA_TEST_COMBATLOG to a combatlog.log to run this test");
+            return;
+        };
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: src.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        println!("combat\tmap\tdifficulty\tentity\tdeaths\tinstances\tmedian_hull");
+        for (combat_index, combat) in analyzer.result().iter().enumerate() {
+            let (Some(map), Some(difficulty)) =
+                (&combat.detected_map, combat.detected_difficulty)
+            else {
+                continue;
+            };
+            for (handle, meta) in combat.critters.iter() {
+                if meta.deaths == 0 || meta.hull_damage_per_instance.is_empty() {
+                    continue;
+                }
+                let mut values: Vec<f64> =
+                    meta.hull_damage_per_instance.values().copied().collect();
+                values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let n = values.len();
+                let median = if n % 2 == 1 {
+                    values[n / 2]
+                } else {
+                    (values[n / 2 - 1] + values[n / 2]) / 2.0
+                };
+                println!(
+                    "{}\t{}\t{:?}\t{}\t{}\t{}\t{:.0}",
+                    combat_index,
+                    map,
+                    difficulty,
+                    combat.name_manager.name(*handle),
+                    meta.deaths,
+                    n,
+                    median
+                );
+            }
+        }
     }
 
     /// Real-data smoke test for map/difficulty detection: analyze the live log

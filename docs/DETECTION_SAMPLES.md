@@ -10,9 +10,27 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
 
 **Anchoring rules learned:**
 - Never anchor on `Device_*` — player-carried devices, random per run.
-- Patrols/TFOs randomize the **enemy** faction → anchor on a stable, *specific*
-  ally / mission object, not the enemy, and not a generic ally
-  (`Space_Federation_Cruiser_Galaxy` is too broad — appears everywhere).
+- Patrols/TFOs randomize the **enemy** faction → anchor on a stable ally /
+  mission object, not the enemy.
+- **Measure "generic" before rejecting it.** A plain-looking ally name is not
+  automatically too broad: scan the whole log and count how many *distinct*
+  combats contain it. `Space_Federation_Cruiser_Galaxy` was written off here as
+  "appears everywhere", but it occurs in 7 of 62 combats and all 7 are The Ninth
+  Rule — non-combatant allies are rarer in logs than their names suggest.
+- **A non-combatant ally is only logged when it trades damage**, so its absence
+  from a run does *not* mean it was absent from the map. That makes any single
+  ally anchor lossy; pairing two of them any-of covers each other's gaps
+  (The Ninth Rule: Hofmann ∪ Galaxy = 8/8 runs, neither alone > 5/8).
+- **Presence now counts either role** (fixed 2026-07-29). `update_critters` used
+  to register an NPC only as the *target* of a damage record, so an ally that
+  fires once and is never hit — or is only ever healed — was invisible to
+  detection no matter what the rules said. It now registers a non-player in
+  source **or** target position as present, while hull/death tier data still
+  comes only from damage dealt to it. Verified against the real log: of 59
+  combats exactly one changed (the 2026-07-28 22:18 Ninth Rule run), no
+  regressions, no measurable parse cost. If a map still goes unrecognized with a
+  correct-looking anchor, check whether the anchor appears in the log **at all**
+  before blaming the rules.
 - When the **tier signal** entity varies by faction but its HP does not, list every
   variant under `hull_any` (any-of) with the same band.
 - **Tier only on entities that die** (`deaths > 0`): their median hull damage ≈ HP.
@@ -87,10 +105,24 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 
 ---
 
+## [TFO] Defense of Starbase One — Space — DONE (single-difficulty Normal)
+- Distinct Discovery-era Starbase One TFO (Discovery rep). Enemies: **Discovery
+  Klingons** (`Space_Klingon_*_Dsc`). Not a collision with Resistance — they use
+  *different* evacuation-ship entities (see below).
+- **Anchor:** `Space_Federation_Cruiser_Dsc_Tfo_Evacuation_Ship` (Discovery variant).
+- **Tier:** pinned `difficulty: "Normal"` — **single difficulty**: the in-game queue
+  offers only Normal (Raman confirmed he can't select higher). The wiki's `N/A/E`
+  for this TFO is **out of date**. First of the "Normal-only" maps; the schema
+  already supports it (`difficulty` field, like Winter Invasion / Operation Wolf).
+
+| sample | tier | Battleship_Dsc | Cruiser_Dsc | Raider_Dsc |
+|---|---|---|---|---|
+| 2026-07-26 17:41 | Normal | 226,313 | 176,588 | 63,403 |
+
 ## [TFO] Resistance of Starbase One — Space — DONE (anchor + any-of tier)
-- Randomized enemy group (both samples were **Mirror Borg**). Note: the catalog
-  also has a separate "Defense of Starbase One" — if it shares the evacuation ship,
-  watch for a false match (need a Defense sample to check).
+- Randomized enemy group (both samples were **Mirror Borg**). **No collision with
+  "Defense of Starbase One":** confirmed the two use different evacuation ships —
+  Resistance `..._Vtx_Tfo_Evacuation_Ship`, Defense `..._Dsc_Tfo_Evacuation_Ship`.
 - **Anchor:** allied `Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship`
   (faction-independent; deaths=0, present in both).
 - **Tier:** `hull_any` on the dreadnought (deaths=1 ⇒ hull≈HP), bands Advanced 1.4M
@@ -136,24 +168,100 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 | 2026-07-26 12:54 | Advanced | 421,569 | 289,338 | 117,537 |
 | 2026-07-26 13:12 | Elite | 1,489,182 | 1,211,985 | 467,344 |
 
-## [Patrol] The Ninth Rule — Space — CATALOG-ONLY (no reliable anchor)
-- **Enemies fully randomized** (~3–4 factions); samples show Gorn and Orion.
-- **No usable common anchor.** Entities present in both runs: only
-  `Device_Event_Kobayashi_Maru_Resupply` (device, excluded) and
-  `Space_Federation_Cruiser_Galaxy` (generic ally → false positives).
-- `Mission_Space_Federation_Science_Hofmann` (mission-specific ally) appeared in
-  the Elite run but **not** the Advanced run — not reliably present.
+## [Patrol] The Ninth Rule — Space — DONE (any-of anchor + per-class any-of tier)
+- **Enemies fully randomized** across ≥4 factions — Gorn, Nausicaan, Orion,
+  Terran/Mirror-Discovery — and a single run can mix **two** of them
+  (2026-07-25 Terran+Orion, 2026-07-29 Gorn+Orion, 2026-07-23 Gorn+Nausicaan).
+- **Anchor:** any-of `Mission_Space_Federation_Science_Hofmann` **or**
+  `Space_Federation_Cruiser_Galaxy` (both allied, `deaths = 0`). Neither alone is
+  enough — see below.
+- **Tier:** `hull_any`, banded **per ship class, not per faction** (measured; see
+  the invariance table). Battleship Adv 300k / Elite 1.2M · Cruiser 240k / 1.0M ·
+  Escort 180k / 800k · Frigate 95k / 400k, each listed for every observed faction
+  variant. `Space_Gorn_Cruiser_Phalanx` is **deliberately excluded** — its
+  Advanced median (196k–215k) sits too close to the 240k cruiser band.
 
-| sample | tier | faction | Battleship | Cruiser | Frigate |
+### Why two anchors (the earlier "no reliable anchor" verdict was wrong)
+The previous note dismissed `Space_Federation_Cruiser_Galaxy` as "a generic ally →
+false positives". A full scan of the 2026-07-23 → 07-29 log (705k lines,
+**62 combats**) shows that is **not** true in practice: the Galaxy cruiser appears
+in **7 combats, and all 7 are this patrol**. It is a *non-combatant* mission ally,
+so the risk was overstated.
+
+Conversely `Mission_..._Hofmann` is 100% specific but only *sometimes* logged —
+it is a non-combatant, so it only surfaces when it happens to trade damage. Each
+anchor covers the other's gap:
+
+| run | faction | tier | Hofmann | Galaxy | map confirmed by Raman |
 |---|---|---|---|---|---|
-| 2026-07-26 11:42 | Advanced | Gorn | 343,967 | 276,849 | 113,646 |
-| 2026-07-26 12:24 | Elite | Orion | 1,513,717 | 1,192,155 | 477,575 |
+| 2026-07-23 13:22 | Gorn + Nausicaan | Advanced | — | ✅ | ❔ inferred |
+| 2026-07-25 00:24 | Terran-Mirror + Orion | Elite | ✅ | ✅ | ❔ inferred |
+| 2026-07-26 11:42 | Gorn | Advanced | — | ✅ | ✅ |
+| 2026-07-26 12:24 | Orion | Elite | ✅ | ✅ | ✅ |
+| 2026-07-28 18:38 *(split fragment)* | Gorn | Advanced | ✅ | — | ✅ |
+| 2026-07-28 18:40 | Gorn | Advanced | ✅ | ✅ | ✅ |
+| 2026-07-28 22:18 | Nausicaan + Gorn | Advanced | — | ✅ | ❔ inferred |
+| 2026-07-29 21:56 | Gorn + Orion | Elite | ✅ | ✅ | ✅ |
 
-Open: confirm whether `Mission_..._Hofmann` (or another fixed ally/object) is in
-**every** Ninth Rule run — if yes, anchor on it (tier could then use `hull_any` on
-the battleship/cruiser, which scales ~4× Adv→Elite regardless of faction).
+The 18:38 row is a real 45s-separation fragment (61s lull before 18:40:33) that
+carries Hofmann but no Galaxy — exactly the split-fragility any-of exists for.
+
+⚠ The three **inferred** rows were never named by Raman; they are grouped here
+because they carry the Galaxy anchor and match the pattern (a lone non-dying
+Federation ally + a randomized 1–2 faction enemy fleet, class HP in-band). The
+confirmed 2026-07-29 run *does* mix two factions (Gorn + Orion), which is what
+makes the Gorn+Nausicaan pairing credible — but it is not proof. If any of them
+turns out to be a different patrol, the Galaxy anchor is contaminated and must be
+dropped back to Hofmann-only (which costs 3 of 8 runs).
+
+### HP is per class, not per faction (measured)
+The 2026-07-29 Elite run settles this: it spawned Gorn **and** Orion together, and
+their same-class ships land within 0.4–1.7% of each other. Same for Advanced Gorn
+vs Nausicaan. So one band per class covers every faction, including the ones never
+yet seen at a given tier.
+
+| class | Advanced | Elite | ratio |
+|---|---|---|---|
+| Battleship | Gorn 326,971 / 343,967 / 349,282 · Nausicaan 345,674 | Gorn 1,519,796 · Orion 1,513,717 · Terran 1,532,854 | ~4.4× |
+| Cruiser | Gorn 265,301 / 276,849 / 279,422 | Gorn 1,205,138 · Orion 1,192,155 / 1,200,843 · Terran 1,192,785 | ~4.4× |
+| Escort | Nausicaan 203,391 / 210,443 / 214,071 / 223,368 | Terran 925,069 | ~4.4× |
+| Frigate | Gorn 103,119 / 107,894 / 112,073 · Nausicaan 111,100 / 115,184 | Gorn 481,527 · Orion 469,080 / 477,575 / 489,814 · Terran 476,289 | ~4.3× |
+
+Open: Normal-tier runs (patrols offer N/A/E) fall below the Advanced band and
+report no tier — consistent with the other patrols, no table written.
 
 ---
+
+## [TFO] Tzenkethi Front — Space — DONE (anchor + any-of tier)
+- **Fixed faction** (Tzenkethi). Four runs in the log, splitting cleanly into two
+  Advanced and two Elite.
+- **Anchor:** the mission assault objects `Msn_Tzk_Tzenkethi_Assault_Ball` /
+  `..._Assault_Tzenkethi_Starbase` (deaths = 0, present in all four runs).
+- ⚠ **Deliberately not anchored** on `Mission_Event_Tzenkethi_Red_Alert_Tzenkethi_*`.
+  Despite appearing in every Tzenkethi Front run, those are **reused Red Alert
+  assets**, and the catalog holds a separate `Red Alert: Tzenkethi` map. No Red
+  Alert run exists in this log to check against, so anchoring there could merge
+  the two maps. They are still used as a *tier* signal — that is read only after
+  the map already matched, so it cannot cross the maps.
+- **Tier:** `hull_any` (any-of, so a split fragment carrying only one ship class
+  still resolves). Bands: Dreadnought 1.3M / 6.0M · Cruiser_Var2 200k / 900k ·
+  Cruiser_Var1 180k / 700k · Frigate 85k / 330k.
+
+| sample | tier | Dreadnought | Cruiser_Var2 | Cruiser_Var1 | Frigate |
+|---|---|---|---|---|---|
+| 2026-07-27 19:32 | Advanced | 1,787,974 | 260,424 | 226,552 | 134,227 |
+| 2026-07-29 15:59 | Advanced | 1,682,031 | 248,757 | 227,332 | 101,212 |
+| 2026-07-27 18:35 | Elite | 8,955,752 | 1,207,045 | 1,017,930 | 448,302 |
+| 2026-07-29 22:50 | Elite | 8,424,430 | 1,286,509 | 1,017,058 | 469,240 |
+
+`Space_Tzenkethi_Cruiser_Var1` is the steadiest signal in any map measured so far
+(226,552 / 227,332 Advanced; 1,017,930 / 1,017,058 Elite). `Space_Tzenkethi_Battleship`
+was **left out**: many instances survive (deaths 2–4 of 6–15), so its median is
+diluted by ships we merely damaged and it drifts (301k–389k Advanced).
+
+Open: no `Red Alert: Tzenkethi` sample yet — one would confirm whether the
+`Mission_Event_..._Red_Alert_*` ships really are shared, and let that map be
+anchored without risk of colliding with this one.
 
 ## [TFO] Bug Hunt — Ground — DONE (two tier signals)
 - **Anchor:** `Bluegills_Ground_Boss`. Fixed faction (Bluegills / Undine).
