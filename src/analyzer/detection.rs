@@ -570,6 +570,98 @@ mod tests {
     }
 
     #[test]
+    fn ninth_rule_tier_by_hull_damage_across_random_factions() {
+        // The Ninth Rule randomizes its enemy fleet (Gorn / Nausicaan / Orion /
+        // Terran-Mirror, sometimes two at once), so the tier is `hull_any`: HP is
+        // per *class*, not per faction. Real medians below.
+
+        // 2026-07-28 18:40 — Gorn, Advanced.
+        let advanced = vec![
+            hull_critter("Space_Federation_Cruiser_Galaxy", 34_130.0),
+            hull_critter("Space_Gorn_Battleship", 326_971.0),
+            hull_critter("Space_Gorn_Cruiser", 265_301.0),
+            hull_critter("Space_Gorn_Frigate", 107_894.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] The Ninth Rule"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        // 2026-07-29 21:56 — Gorn *and* Orion together, Elite. Both factions'
+        // ships must land in the same band (Gorn cruiser 1.205M, Orion 1.201M).
+        let elite = vec![
+            hull_critter("Space_Federation_Cruiser_Galaxy", 60_775.0),
+            hull_critter("Space_Gorn_Battleship", 1_519_796.0),
+            hull_critter("Space_Gorn_Cruiser", 1_205_138.0),
+            hull_critter("Space_Orion_Pirates_Cruiser", 1_200_843.0),
+            hull_critter("Space_Gorn_Frigate", 481_527.0),
+            hull_critter("Space_Orion_Pirates_Frigate", 489_814.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&elite));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] The Ninth Rule"));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    #[test]
+    fn tzenkethi_front_tier_by_hull_damage() {
+        // Fixed-faction TFO. Anchored on the mission assault objects, *not* on
+        // the `Mission_Event_Tzenkethi_Red_Alert_*` ships — those carry reused
+        // Red Alert assets and the catalog holds a separate "Red Alert:
+        // Tzenkethi" map, so anchoring there could cross the two. They are still
+        // safe as a tier signal, which is only read after the map matched.
+        let advanced = vec![
+            hull_critter("Msn_Tzk_Tzenkethi_Assault_Ball", 0.0),
+            hull_critter(
+                "Mission_Event_Tzenkethi_Red_Alert_Tzenkethi_Dreadnought",
+                1_682_031.0,
+            ),
+            hull_critter("Space_Tzenkethi_Cruiser_Var1", 227_332.0),
+            hull_critter("Space_Tzenkethi_Frigate", 101_212.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Tzenkethi Front"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            hull_critter("Msn_Tzk_Tzenkethi_Assault_Ball", 0.0),
+            hull_critter(
+                "Mission_Event_Tzenkethi_Red_Alert_Tzenkethi_Dreadnought",
+                8_424_430.0,
+            ),
+            hull_critter("Space_Tzenkethi_Cruiser_Var1", 1_017_058.0),
+            hull_critter("Space_Tzenkethi_Frigate", 469_240.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&elite));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Tzenkethi Front"));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    #[test]
+    fn ninth_rule_anchors_survive_a_combat_split() {
+        // A 45s `combat_separation_time_seconds` splits this patrol. The two
+        // anchors are listed any-of precisely because neither is in every
+        // fragment: the 2026-07-28 18:38 fragment carries Hofmann but no Galaxy,
+        // while the 2026-07-28 22:18 run carries Galaxy but no Hofmann.
+        let hofmann_only = vec![
+            hull_critter("Mission_Space_Federation_Science_Hofmann", 8_159.0),
+            hull_critter("Space_Gorn_Cruiser", 264_812.0),
+            hull_critter("Space_Gorn_Frigate", 103_119.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&hofmann_only));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] The Ninth Rule"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let galaxy_only = vec![
+            hull_critter("Space_Federation_Cruiser_Galaxy", 8_667.0),
+            hull_critter("Space_Nausicaan_Battleship", 345_674.0),
+            hull_critter("Space_Nausicaan_Escort", 210_443.0),
+            hull_critter("Space_Nausicaan_Frigate", 115_184.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&galaxy_only));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] The Ninth Rule"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+    }
+
+    #[test]
     fn category_prefixes_the_displayed_map_name() {
         let parse = |json: &str| serde_json::from_str::<MapDef>(json).unwrap();
 

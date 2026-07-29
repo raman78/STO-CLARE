@@ -946,7 +946,53 @@
     },
     "The Ninth Rule": {
       "category": "Patrol",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Space_Federation_Science_Hofmann",
+        "Space_Federation_Cruiser_Galaxy"
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Space_Gorn_Battleship": 300000,
+          "Space_Gorn_Battleship_Varanus": 300000,
+          "Space_Nausicaan_Battleship": 300000,
+          "Space_Orion_Pirates_Battleship": 300000,
+          "Space_Orion_Pirates_Battleship_Marauder": 300000,
+          "Space_Federation_Battleship_Dsc_Mirror": 300000,
+          "Space_Gorn_Cruiser": 240000,
+          "Space_Gorn_Cruiser_Draguas": 240000,
+          "Space_Orion_Pirates_Cruiser": 240000,
+          "Space_Federation_Cruiser_Dsc_Mirror": 240000,
+          "Space_Nausicaan_Escort": 180000,
+          "Space_Nausicaan_Escort_Guramba": 180000,
+          "Space_Nausicaan_Escort_Scourge": 180000,
+          "Space_Federation_Escort_Dsc_Mirror": 180000,
+          "Space_Gorn_Frigate": 95000,
+          "Space_Nausicaan_Frigate": 95000,
+          "Space_Orion_Pirates_Frigate": 95000,
+          "Space_Federation_Frigate_Dsc_Mirror": 95000
+        },
+        "Elite": {
+          "Space_Gorn_Battleship": 1200000,
+          "Space_Gorn_Battleship_Varanus": 1200000,
+          "Space_Nausicaan_Battleship": 1200000,
+          "Space_Orion_Pirates_Battleship": 1200000,
+          "Space_Orion_Pirates_Battleship_Marauder": 1200000,
+          "Space_Federation_Battleship_Dsc_Mirror": 1200000,
+          "Space_Gorn_Cruiser": 1000000,
+          "Space_Gorn_Cruiser_Draguas": 1000000,
+          "Space_Orion_Pirates_Cruiser": 1000000,
+          "Space_Federation_Cruiser_Dsc_Mirror": 1000000,
+          "Space_Nausicaan_Escort": 800000,
+          "Space_Nausicaan_Escort_Guramba": 800000,
+          "Space_Nausicaan_Escort_Scourge": 800000,
+          "Space_Federation_Escort_Dsc_Mirror": 800000,
+          "Space_Gorn_Frigate": 400000,
+          "Space_Nausicaan_Frigate": 400000,
+          "Space_Orion_Pirates_Frigate": 400000,
+          "Space_Federation_Frigate_Dsc_Mirror": 400000
+        }
+      }
     },
     "To Die With Honor": {
       "category": "Patrol",
@@ -1004,7 +1050,25 @@
     },
     "Tzenkethi Front": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Msn_Tzk_Tzenkethi_Assault_Ball",
+        "Msn_Tzk_Tzenkethi_Assault_Tzenkethi_Starbase"
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Mission_Event_Tzenkethi_Red_Alert_Tzenkethi_Dreadnought": 1300000,
+          "Space_Tzenkethi_Cruiser_Var2": 200000,
+          "Space_Tzenkethi_Cruiser_Var1": 180000,
+          "Space_Tzenkethi_Frigate": 85000
+        },
+        "Elite": {
+          "Mission_Event_Tzenkethi_Red_Alert_Tzenkethi_Dreadnought": 6000000,
+          "Space_Tzenkethi_Cruiser_Var2": 900000,
+          "Space_Tzenkethi_Cruiser_Var1": 700000,
+          "Space_Tzenkethi_Frigate": 330000
+        }
+      }
     },
     "Una System Patrol": {
       "category": "Patrol",
