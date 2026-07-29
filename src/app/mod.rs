@@ -284,6 +284,10 @@ impl eframe::App for App {
         // Persists the overlay position picked up in `ui`, plus a size change
         // that has not settled yet (see track_window_geometry).
         self.state.settings.window = self.window_geometry;
+        // Written here rather than as the overlay is toggled: `general` is
+        // compared when the settings dialog is applied, and a difference there
+        // re-analyzes the log.
+        self.state.settings.general.overlay_shown = self.state.overlay.is_shown();
         self.state.settings.save();
     }
 }

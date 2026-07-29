@@ -42,6 +42,13 @@ pub struct General {
     // (Linux). Restored when the overlay is next shown. See app::overlay.
     #[serde(default)]
     pub overlay_position: Option<[i32; 2]>,
+    // Whether the overlay was open when the app was last closed, so the next
+    // launch comes back up the same way. Written only in `App::on_exit`: this
+    // section is compared when the settings dialog is applied, and a difference
+    // there triggers a re-analysis of the log, which toggling an overlay is no
+    // reason for.
+    #[serde(default)]
+    pub overlay_shown: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -190,6 +197,27 @@ mod tests {
         // Settings files written by older versions have no window section.
         let settings: Settings = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
         assert_eq!(WindowGeometry::default(), settings.window);
+    }
+
+    /// Existing settings files have no `overlay_shown`; they must keep loading,
+    /// with the overlay staying closed as before.
+    #[test]
+    fn settings_file_without_overlay_shown_still_loads() {
+        let json = r#"{"more_decimals": false, "overlay_position": [19, 1920]}"#;
+        let general: General = serde_json::from_str(json).unwrap();
+        assert!(!general.overlay_shown);
+        assert_eq!(Some([19, 1920]), general.overlay_position);
+    }
+
+    #[test]
+    fn overlay_shown_survives_a_save_and_load() {
+        let mut settings = Settings::default();
+        settings.general.overlay_shown = true;
+
+        let json = serde_json::to_string(&settings).unwrap();
+        let loaded: Settings = serde_json::from_str(&json).unwrap();
+
+        assert!(loaded.general.overlay_shown);
     }
 
     #[test]

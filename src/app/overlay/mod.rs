@@ -209,7 +209,10 @@ impl Overlay {
             current_size: vec2(240.0, 80.0),
             data: Default::default(),
             position: None,
-            show: false,
+            // Come back up the way the app was left. The handler below already
+            // starts with auto-refresh on, which is what `toggle_show` would
+            // have set for a visible overlay, so nothing else is needed here.
+            show: settings.general.overlay_shown,
             analysis_handler: root_handler.get_handler(true, Self::viewport_id()),
             state: State::Empty,
             settings: settings.clone(),
@@ -218,6 +221,11 @@ impl Overlay {
             #[cfg(target_os = "linux")]
             overlay_gpu: None,
         })))
+    }
+
+    /// Whether the overlay is currently open, so it can be persisted on exit.
+    pub fn is_shown(&self) -> bool {
+        self.0.lock().show
     }
 
     /// Injects the shared wgpu handles the layer-shell overlay renders through.

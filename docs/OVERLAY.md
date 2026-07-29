@@ -227,6 +227,28 @@ margins self-correct rather than drift.
 starts `true` so a freshly shown overlay can be positioned before being locked
 down.
 
+## What is remembered across restarts
+
+Two things persist, both in the `general` settings section:
+
+| setting | written | read |
+|---|---|---|
+| `overlay_position` | every frame in `App::ui` (Linux) | when the overlay is next shown |
+| `overlay_shown` | `App::on_exit` only | `Overlay::new`, straight into `OverlayInner.show` |
+
+`overlay_shown` is written **only on exit**, not as the ✋/Overlay button is
+toggled. `SettingsWindow::apply_setting_changes` compares the whole `general`
+section against the live settings and re-analyzes the log when they differ, so a
+value that changed mid-session would trigger a pointless re-analysis on the next
+Apply. (`overlay_position` does update live and has exactly that quirk.)
+
+Restoring needs nothing beyond setting `show`: the render path in
+`Overlay::show` branches on `inner.show` alone, and the analysis handler is
+already created with auto-refresh on — the same state `toggle_show` would leave
+behind for a visible overlay. `set_gpu` still runs first, because `App::new`
+finishes before the first frame, so the layer-shell back end is selected
+normally.
+
 ## Unified styling
 
 Both back ends render with the same `Table` widget
