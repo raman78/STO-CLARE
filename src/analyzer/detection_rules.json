@@ -1,4 +1,45 @@
 {
+  "global_tier": {
+    "comment": "Global Advanced/Elite split derived from 9 mapped TFOs/patrols. Space HP is a property of the ship class, not of the map or faction: for the same entity Elite is ~4.4x Advanced (median 4.44x, quartiles 4.20-4.61 over 45 entity pairs). Each threshold is the geometric mean between the highest observed Advanced and the lowest observed Elite of that class, so it sits ~2.1x above a typical Advanced. Ground maps scale ~1.54x instead and are excluded. Match order matters: Battlecruiser must be tested before Cruiser.",
+    "exclude": [
+      "Device_",
+      "Photonic_Fleet",
+      "Player_",
+      "Distress",
+      "Assistance_Beacon",
+      "_Pet",
+      "Drone",
+      "Torpedo",
+      "Probe",
+      "Projectile",
+      "Platform",
+      "Turret",
+      "Barrage",
+      "Shuttle",
+      "Fodder",
+      "Stationmod",
+      "Critter",
+      "Wing",
+      "Squadron",
+      "Mine_",
+      "Portal",
+      "Gateway",
+      "Ground",
+      "Crewman",
+      "Bluegills",
+      "Boss",
+      "Queen"
+    ],
+    "classes": [
+      { "match": "Dreadnought", "threshold": 4000000 },
+      { "match": "Battlecruiser", "threshold": 650000 },
+      { "match": "Battleship", "threshold": 850000 },
+      { "match": "Cruiser", "threshold": 640000 },
+      { "match": "Escort", "threshold": 670000 },
+      { "match": "Frigate", "threshold": 264000 },
+      { "match": "Raider", "threshold": 250000 }
+    ]
+  },
   "maps": {
     "Acamar System Patrol": {
       "category": "Patrol",

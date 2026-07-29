@@ -49,6 +49,64 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
 
 ---
 
+## The global ship-class tier (map-independent Advanced/Elite)
+
+Derived 2026-07-29 from the nine mapped TFOs/patrols below, by dumping every
+NPC's median hull damage tagged with the detected map and tier
+(`dump_critter_hp_by_tier`, an ignored test).
+
+**Finding: space HP is a property of the ship *class*, not of the map or the
+faction.** For the *same entity*, Elite carries ~4.4x the hull of Advanced:
+
+| environment | n (entity pairs) | median Elite/Advanced | quartiles |
+|---|---|---|---|
+| Space | 45 | **4.44x** | 4.20–4.61 |
+| Ground | 7 | **1.54x** | 1.33–1.58 |
+| Boss | 1 | 6.31x | — |
+
+Because the ratio is near-constant, each class occupies the same band on every
+map, and one global table can tier a map we have never sampled:
+
+| class | Advanced observed | Elite observed | threshold used |
+|---|---|---|---|
+| Dreadnought | 1.68–1.95M | 8.30–8.99M | 4,000,000 |
+| Battleship | 301–620k | 1.16–7.09M | 850,000 |
+| Escort | 203–491k | 915k–2.28M | 670,000 |
+| Battlecruiser | 273–358k | 1.20–1.21M | 650,000 |
+| Cruiser | 196–465k | 875k–2.57M | 640,000 |
+| Frigate | 91–167k | 418–746k | 264,000 |
+| Raider | 92–155k | 399–551k | 250,000 |
+
+Each threshold is the geometric mean of the highest Advanced and lowest Elite of
+that class, i.e. ~2.1x (= √4.4) above a typical Advanced.
+
+**Validation — leave-one-map-out** (thresholds recomputed *without* the map under
+test, so the map is genuinely unseen): **217/220 entities**, and **44/44 combats**
+once entities vote by majority. The three entity-level misses are all
+`Space_Elachi_Escort`, whose Advanced hull (486–491k) is double every other
+Advanced escort (203–223k) — Elachi "escorts" are really cruiser-rank. The combat
+still resolved correctly, 5 votes to 1.
+
+**Verified against the live log:** with the global table enabled, of 66 combats
+**not one** of the 19 already-tabled maps changed its tier, and Azure Nebula
+Rescue — anchored but with no tables at all — gained 4 correct tiers.
+
+**Exclusions (by entity name), each with a measured reason:**
+- `Ground` / `Crewman` / `Bluegills` — ground scales 1.54x, not 4.4x.
+- `Boss` / `Queen` — own scale (`..._Sibrian_Final_Boss` is 7.8M on *Advanced*,
+  which would read as Elite on any class band).
+- `Device_`, `Photonic_Fleet`, `Player_`, `Distress`, `Assistance_Beacon` —
+  player-carried items and player-summoned allies (`Rom_Photonic_Fleet_Battleship`
+  showed 88k on Elite).
+- pets/drones/torpedoes/turrets/platforms etc. — not rank-scaled.
+
+**Limits.** Only Advanced vs Elite: a Normal run reads as Advanced. Entities whose
+name carries no class word cannot vote. The bands come from one player's ~week of
+logs across 9 maps. If Cryptic ever retunes the multiplier, only these seven
+numbers need revisiting — that is the point of keeping it global.
+
+---
+
 ## [Patrol] Trouble Over Terrh — Space — DONE (anchor + tier)
 - **Anchor:** `Space_Elachi_Frigate` (Elachi enemy). Shares the rescued Lleiset
   (`Mission_Space_Romulan_Colony_Flagship_Lleiset`) with Azure Nebula Rescue, so

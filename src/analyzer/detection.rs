@@ -177,11 +177,94 @@ impl MapDef {
     }
 }
 
+/// One ship class and the hull-damage threshold that splits Advanced from Elite
+/// for it. Matched as a case-insensitive substring of the entity's unique name.
+#[derive(Debug, Deserialize)]
+struct ShipClassBand {
+    /// Substring identifying the class, e.g. `Dreadnought`.
+    #[serde(rename = "match")]
+    class: String,
+    /// Median hull damage above which the entity is Elite.
+    threshold: f64,
+}
+
+/// Map-independent Advanced/Elite split.
+///
+/// Space HP turned out to be a property of the **ship class**, not of the map or
+/// the faction: across nine mapped TFOs and patrols, the same entity has ~4.4x
+/// the hull on Elite (median 4.44x over 45 entity pairs), and each class sits in
+/// the same band whichever map it appears on. That makes a single global table
+/// enough to tier a map we have never sampled — which is most of the catalog.
+///
+/// Validated leave-one-map-out (thresholds recomputed without the map under
+/// test): 217/220 entities and 44/44 combats classified correctly.
+///
+/// Not applicable to ground maps (they scale ~1.54x, not ~4.4x), to bosses
+/// (own scale), or to player-summoned allies — all excluded by name.
+#[derive(Debug, Deserialize)]
+struct GlobalTier {
+    /// Entity name substrings that disqualify an entity from voting.
+    #[serde(default)]
+    exclude: Vec<String>,
+    /// Class bands, tried **in order** — `Battlecruiser` must precede `Cruiser`,
+    /// which is a substring of it.
+    #[serde(default)]
+    classes: Vec<ShipClassBand>,
+}
+
+impl GlobalTier {
+    /// Tier this combat by majority vote of the entities that died. Returns
+    /// `None` when nothing could vote, or when the vote is tied (ambiguous —
+    /// better to fall back to the map's own tables than to guess).
+    fn classify(&self, critters: &FxHashMap<&str, &CritterMeta>) -> Option<Difficulty> {
+        let (mut advanced, mut elite) = (0usize, 0usize);
+        for (name, meta) in critters.iter() {
+            // Only entities that died: for the others the hull figure is damage
+            // we happened to deal, not the entity's HP.
+            if meta.deaths == 0 {
+                continue;
+            }
+            let lower = name.to_lowercase();
+            if self
+                .exclude
+                .iter()
+                .any(|e| lower.contains(&e.to_lowercase()))
+            {
+                continue;
+            }
+            let Some(band) = self
+                .classes
+                .iter()
+                .find(|c| lower.contains(&c.class.to_lowercase()))
+            else {
+                continue;
+            };
+            let median = meta.median_hull_damage();
+            if median <= 0.0 {
+                continue;
+            }
+            if median > band.threshold {
+                elite += 1;
+            } else {
+                advanced += 1;
+            }
+        }
+        match elite.cmp(&advanced) {
+            std::cmp::Ordering::Greater => Some(Difficulty::Elite),
+            std::cmp::Ordering::Less => Some(Difficulty::Advanced),
+            std::cmp::Ordering::Equal => None,
+        }
+    }
+}
+
 /// The rule tables, deserialized from `detection_rules.json`: curated maps keyed
-/// by name, each carrying how to recognize it and how to tell its tiers apart.
+/// by name, each carrying how to recognize it and how to tell its tiers apart,
+/// plus the map-independent tier table.
 #[derive(Debug, Deserialize)]
 pub struct DetectionRules {
     maps: HashMap<String, MapDef>,
+    #[serde(default)]
+    global_tier: Option<GlobalTier>,
 }
 
 /// Variance tolerance for the hull-damage check (matches OSCR's `var`).
@@ -297,6 +380,13 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
             }
         }
     }
+    // Map-independent tier, from the ship classes present. Computed up front so
+    // it can also rescue a map whose death tables did not match.
+    let global = rules
+        .global_tier
+        .as_ref()
+        .and_then(|global| global.classify(critters));
+
     // Death tables exist but none matched: the tier cannot be resolved *by deaths*.
     // Report `Any` and skip the hull tie-break (as OSCR does) — unless the map also
     // has hull tables, in which case a death marker is only one signal (e.g. Bug
@@ -308,7 +398,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     {
         return Detected {
             map: Some(def.display_name(name)),
-            difficulty: Some(Difficulty::Any),
+            difficulty: Some(global.unwrap_or(Difficulty::Any)),
         };
     }
 
@@ -329,6 +419,24 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
                 difficulty = Some(tier);
             }
         }
+    }
+
+    // The global table has the last word, so that disagreements with the curated
+    // per-map tables surface immediately instead of being masked by them. Any
+    // disagreement is logged: on a map with hand-verified tables it means one of
+    // the two is wrong, and that is exactly what we want to see.
+    if let Some(global) = global {
+        if let Some(from_tables) = difficulty {
+            if from_tables != global && from_tables != Difficulty::Any {
+                warn!(
+                    "{}: global ship-class tier says {:?}, the map's own tables say {:?}",
+                    def.display_name(name),
+                    global,
+                    from_tables
+                );
+            }
+        }
+        difficulty = Some(global);
     }
 
     Detected {
@@ -413,9 +521,19 @@ mod tests {
     }
 
     /// Build a critter with a single instance carrying the given hull damage.
+    /// Note `deaths` stays 0, so the global ship-class tier ignores it — these
+    /// exercise the per-map tables only.
     fn hull_critter(name: &'static str, hull_damage: f64) -> (&'static str, CritterMeta) {
         let mut meta = CritterMeta::default();
         meta.hull_damage_per_instance.insert(0, hull_damage);
+        (name, meta)
+    }
+
+    /// Like `hull_critter` but the entity died, so it votes in the global tier.
+    fn dead_hull_critter(name: &'static str, hull_damage: f64) -> (&'static str, CritterMeta) {
+        let mut meta = CritterMeta::default();
+        meta.hull_damage_per_instance.insert(0, hull_damage);
+        meta.deaths = 1;
         (name, meta)
     }
 
@@ -599,6 +717,80 @@ mod tests {
         let result = detect(&bundled_rules(), &view(&elite));
         assert_eq!(result.map.as_deref(), Some("[Patrol] The Ninth Rule"));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    /// Azure Nebula Rescue is anchored but has no tier tables of its own. The
+    /// global ship-class table alone must tier it. Figures are the real samples
+    /// recorded in docs/DETECTION_SAMPLES.md.
+    #[test]
+    fn global_tier_resolves_a_map_without_its_own_tables() {
+        let advanced = vec![
+            dead_hull_critter("Space_Tholian_Cruiser_Web", 355_249.0),
+            dead_hull_critter("Space_Tholian_Battleship", 652_603.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            dead_hull_critter("Space_Tholian_Cruiser_Web", 1_700_205.0),
+            dead_hull_critter("Space_Tholian_Battleship", 2_888_013.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&elite));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    /// Ground maps scale ~1.54x, not ~4.4x, so ground entities must never vote —
+    /// otherwise an Elite ground boss (well under any space threshold) would drag
+    /// the combat to Advanced. Bug Hunt keeps resolving from its own tables.
+    #[test]
+    fn global_tier_ignores_ground_entities() {
+        let rules = bundled_rules();
+        let elite = vec![
+            ("Bluegills_Ground_Boss", {
+                let mut m = CritterMeta::default();
+                m.deaths = 1;
+                m.hull_damage_per_instance.insert(0, 451_781.0);
+                m
+            }),
+            ("Bluegills_Ground_Cdr", {
+                let mut m = CritterMeta::default();
+                m.deaths = 1;
+                m.hull_damage_per_instance.insert(0, 16_077.0);
+                m
+            }),
+            ("Bluegills_Ground_Ens_Noautospawn_Queenfodder", {
+                let mut m = CritterMeta::default();
+                m.deaths = 13;
+                m
+            }),
+        ];
+        let result = detect(&rules, &view(&elite));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Bug Hunt"));
+        assert_eq!(
+            result.difficulty,
+            Some(Difficulty::Elite),
+            "ground entities must not vote in the global space tier"
+        );
+    }
+
+    /// `Cruiser` is a substring of `Battlecruiser`, so the class bands are tried
+    /// in order. 645k sits *between* the two bands — below the battlecruiser's
+    /// 650k (Advanced) but above the cruiser's 640k (Elite) — so the result tells
+    /// the two apart: matching `Cruiser` first would wrongly yield Elite.
+    #[test]
+    fn global_tier_matches_battlecruiser_before_cruiser() {
+        let owned = vec![
+            dead_hull_critter("Space_Klingon_Dreadnought_Ktinga_Lrell", 0.0),
+            dead_hull_critter("Space_Klingon_Battlecruiser", 645_000.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&owned));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] To Die With Honor"));
+        assert_eq!(
+            result.difficulty,
+            Some(Difficulty::Advanced),
+            "the battlecruiser band must win over the cruiser substring"
+        );
     }
 
     #[test]

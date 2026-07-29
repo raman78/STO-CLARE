@@ -40,6 +40,9 @@ parse record ─▶ Combat::update_critters()      accumulate per-NPC facts
    (mod.rs)        └─ target is NonPlayer? ─▶ critters[unique_name].deaths += KILL
                                               + hull damage per instance (by id)
 
+                   (tier phases, in order: death_counts ─▶ hull_counts ─▶
+                    hull_any ─▶ global ship-class table, which has the last word)
+
 Combat::update() ─▶ Combat::update_detection()
                        ├─ build view: unique_name &str ─▶ &CritterMeta
                        └─ detection::detect(&DETECTION_RULES, &view) ─▶ Detected
@@ -85,6 +88,32 @@ them is a JSON swap that leaves user rules untouched.
 `critters` is accumulated live as records stream in (once each), so it is
 complete by the time `update()` runs, and it grows monotonically for live
 combats — it is never cleared/recomputed like `hits_manger`.
+
+### The global ship-class tier (`global_tier`)
+
+A map-independent Advanced/Elite split, applied **after** the per-map tables and
+overriding them. Rationale and the measured numbers live in
+`DETECTION_SAMPLES.md`; in short, space HP is a property of the ship *class*, so
+one table tiers maps we never sampled — 18 of the 37 detectable maps have an
+anchor but no tier tables of their own.
+
+```
+GlobalTier { exclude: Vec<String>, classes: Vec<ShipClassBand> }
+ShipClassBand { match: String, threshold: f64 }   // "match" = case-insensitive substring
+```
+
+Each entity that **died** and is not excluded votes Advanced/Elite against its
+class threshold; the majority wins, a tie yields `None` (ambiguous — fall back to
+the map's tables). `classes` is an ordered list, not a map: `Battlecruiser` must
+be tested before `Cruiser`, which is a substring of it.
+
+It deliberately has the **last word** rather than acting as a fallback, so that a
+disagreement with a hand-verified per-map table surfaces instead of being masked.
+Disagreements are logged via `warn!`. Against the live log the two never
+disagreed on the 19 tabled maps.
+
+⚠ Unit tests built with `hull_critter` have `deaths = 0`, so the global tier does
+not vote in them; use `dead_hull_critter` to exercise it.
 
 ### Presence vs. tier data (why the two branches differ)
 

@@ -3,6 +3,7 @@
 # unreleased
 
 ### Other Changes
+- the Advanced / Elite level is now worked out from how tough the enemy ships were, using one measure that applies to every space map — so many more maps show their level, including ones that never had their own numbers collected
 - the patrol "The Ninth Rule" is now recognized automatically, together with its Advanced or Elite level, no matter which enemy faction the patrol rolls (it can even mix two of them in one run)
 - the Task Force Operation "Tzenkethi Front" is now recognized automatically, together with its Advanced or Elite level
 
