@@ -1,5 +1,15 @@
 # Change Log
 
+# unreleased
+
+### Other Changes
+- the patrol "The Ninth Rule" is now recognized automatically, together with its Advanced or Elite level, no matter which enemy faction the patrol rolls (it can even mix two of them in one run)
+- the Task Force Operation "Tzenkethi Front" is now recognized automatically, together with its Advanced or Elite level
+
+### Fixes
+- maps that are recognized by a friendly or mission ship are no longer missed when that ship happens to take no damage during the fight — such combats used to show up as plain "Combat"
+- the ⚠ mark that flags a naming rule overlapping an auto-detected map now also appears when the rule's name carries your own annotation (e.g. a trailing tag) instead of exactly matching the map name
+
 ## v1.6.0
 
 ### Major Changes

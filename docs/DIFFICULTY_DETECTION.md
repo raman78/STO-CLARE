@@ -35,6 +35,8 @@ never the difficulty). It also drives the Compare filter.
 
 ```
 parse record ─▶ Combat::update_critters()      accumulate per-NPC facts
+   (mod.rs)        ├─ source or target is NonPlayer? ─▶ critters[unique_name]
+   (mod.rs)        │     exists  ("present", even with no damage record at all)
    (mod.rs)        └─ target is NonPlayer? ─▶ critters[unique_name].deaths += KILL
                                               + hull damage per instance (by id)
 
@@ -56,12 +58,24 @@ curated maps read-only below the user rules and flags overlaps two ways:
 - **Per rule** (`overlapping_maps`): a ⚠ on the rule's row, tooltip naming the
   shadowed map(s). An enabled rule overlaps a curated map two ways, unioned: (1)
   **entity** — the rule matches the map's identifying NPC (unique name,
-  `curated_map_identifiers()`); (2) **name** — the rule's own name equals the
-  map's name, ignoring the `[TFO]`/`[Patrol]` category prefix on either side
+  `curated_map_identifiers()`); (2) **name** — the map's name *appears in* the
+  rule's own name, ignoring the `[TFO]`/`[Patrol]` category prefix on either side
   (`strip_category_prefix`), e.g. a rule named "Trouble Over Terrh" vs the
   "[Patrol] Trouble Over Terrh" map. The name check catches rules written against
   *display* names, which the entity check (unique names only) cannot see. Both are
   combat-independent. Wired via `GroupRulesTable::with_row_warning`.
+
+  The name check is **containment, not equality**. Users annotate their rules
+  (a real one is `[Patrol] The Ninth Rule [M]`), and the trailing tag is not a
+  category prefix, so `strip_category_prefix` leaves it in place and an exact
+  comparison silently produced *no* warning — the failure mode is invisible,
+  which is the worst kind. No curated map name is a substring of another (203
+  names, verified), so containment introduces no ambiguity.
+
+  Note the entity check only sees **unique** names, so a rule keyed on a
+  `SourceOrTargetName` (display name, e.g. "U.S.S. Birmingham") can only ever be
+  flagged by the name check — the rules file carries no display names to compare
+  against.
 - **Per-combat**: when the selected combat is auto-detected but a rule renamed it.
 
 The curated rules are never copied into the user's settings — they are rendered
@@ -71,6 +85,24 @@ them is a JSON swap that leaves user rules untouched.
 `critters` is accumulated live as records stream in (once each), so it is
 complete by the time `update()` runs, and it grows monotonically for live
 combats — it is never cleared/recomputed like `hits_manger`.
+
+### Presence vs. tier data (why the two branches differ)
+
+The two branches above answer different questions, and conflating them was a bug:
+
+- **Presence** (`identifiers` / `identifiers_all`) — "was this entity on the map?"
+  Recorded for a non-player in **either** role. Many maps anchor on a
+  non-combatant ally or objective, and such an entity may fire a single shot and
+  never be hit, or only ever be healed. Keying presence off damage *taken* made
+  those runs undetectable (e.g. a Ninth Rule run whose allied Galaxy cruiser fires
+  once and is never targeted).
+- **Tier data** (`hull_counts` / `hull_any` / `death_counts`) — "how tough was it?"
+  Still recorded **only** from damage dealt *to* the entity, since that is the
+  only thing that approximates HP.
+
+An entity that is present but never damaged therefore has an empty
+`hull_damage_per_instance`, so `median_hull_damage()` returns `0.0` and it matches
+no tier threshold. Presence is widened; tier resolution is unchanged.
 
 ## The rules (`detection_rules.json`)
 
