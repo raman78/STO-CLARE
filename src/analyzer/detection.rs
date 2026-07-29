@@ -186,6 +186,11 @@ struct ShipClassBand {
     class: String,
     /// Median hull damage above which the entity is Elite.
     threshold: f64,
+    /// Median hull damage at or below which the entity is Normal. Absent means
+    /// the class never votes Normal — the Normal bands rest on far less data
+    /// than the Advanced/Elite ones (see `DETECTION_SAMPLES.md`).
+    #[serde(default)]
+    normal_threshold: Option<f64>,
 }
 
 /// Map-independent Advanced/Elite split.
@@ -217,7 +222,7 @@ impl GlobalTier {
     /// `None` when nothing could vote, or when the vote is tied (ambiguous —
     /// better to fall back to the map's own tables than to guess).
     fn classify(&self, critters: &FxHashMap<&str, &CritterMeta>) -> Option<Difficulty> {
-        let (mut advanced, mut elite) = (0usize, 0usize);
+        let (mut normal, mut advanced, mut elite) = (0usize, 0usize, 0usize);
         for (name, meta) in critters.iter() {
             // Only entities that died: for the others the hull figure is damage
             // we happened to deal, not the entity's HP.
@@ -245,15 +250,27 @@ impl GlobalTier {
             }
             if median > band.threshold {
                 elite += 1;
+            } else if band.normal_threshold.is_some_and(|n| median <= n) {
+                normal += 1;
             } else {
                 advanced += 1;
             }
         }
-        match elite.cmp(&advanced) {
-            std::cmp::Ordering::Greater => Some(Difficulty::Elite),
-            std::cmp::Ordering::Less => Some(Difficulty::Advanced),
-            std::cmp::Ordering::Equal => None,
-        }
+        // Strict majority wins; a tie is ambiguous, so decline and let the map's
+        // own tables decide.
+        let winner = [
+            (elite, Difficulty::Elite),
+            (advanced, Difficulty::Advanced),
+            (normal, Difficulty::Normal),
+        ]
+        .into_iter()
+        .max_by_key(|(votes, _)| *votes)?;
+        let tied = [elite, advanced, normal]
+            .iter()
+            .filter(|v| **v == winner.0)
+            .count()
+            > 1;
+        (winner.0 > 0 && !tied).then_some(winner.1)
     }
 }
 
@@ -738,6 +755,36 @@ mod tests {
         ];
         let result = detect(&bundled_rules(), &view(&elite));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    /// The experimental Normal band, on a map with no tables of its own. Hull
+    /// figures are below the Normal thresholds for their classes (cruiser 188k,
+    /// battleship 260k) but well above nothing, so the vote is unanimous.
+    #[test]
+    fn global_tier_can_report_normal() {
+        let owned = vec![
+            dead_hull_critter("Space_Tholian_Cruiser_Web", 175_000.0),
+            dead_hull_critter("Space_Tholian_Battleship", 220_000.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&owned));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
+    }
+
+    /// A split vote is ambiguous, so the global tier declines rather than
+    /// guessing — here one entity reads Normal and the other Advanced.
+    #[test]
+    fn global_tier_declines_a_tied_vote() {
+        let owned = vec![
+            dead_hull_critter("Space_Tholian_Cruiser_Web", 175_000.0),
+            dead_hull_critter("Space_Tholian_Battleship", 400_000.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&owned));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
+        assert_eq!(
+            result.difficulty, None,
+            "a tie must not resolve to a tier"
+        );
     }
 
     /// Ground maps scale ~1.54x, not ~4.4x, so ground entities must never vote —

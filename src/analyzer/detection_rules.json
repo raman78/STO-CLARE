@@ -31,14 +31,43 @@
       "Queen"
     ],
     "classes": [
-      { "match": "Dreadnought", "threshold": 4000000 },
-      { "match": "Battlecruiser", "threshold": 650000 },
-      { "match": "Battleship", "threshold": 850000 },
-      { "match": "Cruiser", "threshold": 640000 },
-      { "match": "Escort", "threshold": 670000 },
-      { "match": "Frigate", "threshold": 264000 },
-      { "match": "Raider", "threshold": 250000 }
-    ]
+      {
+        "match": "Dreadnought",
+        "normal_threshold": 1200000,
+        "threshold": 4000000
+      },
+      {
+        "match": "Battlecruiser",
+        "normal_threshold": 195000,
+        "threshold": 650000
+      },
+      {
+        "match": "Battleship",
+        "normal_threshold": 260000,
+        "threshold": 850000
+      },
+      {
+        "match": "Cruiser",
+        "normal_threshold": 188000,
+        "threshold": 640000
+      },
+      {
+        "match": "Escort",
+        "normal_threshold": 200000,
+        "threshold": 670000
+      },
+      {
+        "match": "Frigate",
+        "normal_threshold": 46000,
+        "threshold": 264000
+      },
+      {
+        "match": "Raider",
+        "normal_threshold": 81000,
+        "threshold": 250000
+      }
+    ],
+    "comment_normal": "EXPERIMENTAL Normal band. Derived from a single Normal map (Defense of Starbase One), so it rests on far less data than the Advanced/Elite split: measured for Battleship (n=10), Cruiser (n=5), Raider (n=5), Frigate (n=2); Dreadnought, Battlecruiser and Escort are extrapolated at 0.30x the Elite threshold (the median ratio of the measured ones). Advanced/Normal is only ~1.6x apart versus ~4.4x for Elite/Advanced, so the margins are thin - Cruiser is the tightest (188k against a lowest observed Advanced of 194k). Expect false Normal readings here before anywhere else."
   },
   "maps": {
     "Acamar System Patrol": {

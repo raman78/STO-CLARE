@@ -100,7 +100,47 @@ Rescue — anchored but with no tables at all — gained 4 correct tiers.
   showed 88k on Elite).
 - pets/drones/torpedoes/turrets/platforms etc. — not rank-scaled.
 
-**Limits.** Only Advanced vs Elite: a Normal run reads as Advanced. Entities whose
+### Normal — EXPERIMENTAL
+
+Added 2026-07-29 on far weaker evidence than the Advanced/Elite split, and marked
+as such in the rules file. Only one Normal map exists in the log (Defense of
+Starbase One), so every Normal figure comes from a single map and faction.
+
+| class | Normal observed | lowest Advanced | threshold | basis |
+|---|---|---|---|---|
+| Battleship | 209,618–224,842 | 300,537 | 260,000 | measured, n=10 |
+| Cruiser | 169,169–181,217 | 194,197 | 188,000 | measured, n=5 |
+| Raider | 60,045–71,669 | 92,360 | 81,000 | measured, n=5 |
+| Frigate | 18,372–26,061 | 81,493 | 46,000 | measured, n=2 |
+| Dreadnought | — | — | 1,200,000 | extrapolated |
+| Battlecruiser | — | — | 195,000 | extrapolated |
+| Escort | — | — | 200,000 | extrapolated |
+
+Extrapolated classes use 0.30x the Elite threshold — the median
+`normal_threshold / threshold` of the four measured ones (0.293–0.325, with
+Frigate an outlier at 0.175).
+
+**Margins are thin.** Advanced/Normal is only ~1.6x apart, versus ~4.4x for
+Elite/Advanced, while HP spread *within* a class across factions is itself larger
+than 1.6x. Cruiser is the tightest: 188,000 against a lowest observed Advanced of
+194,197 — 3%. Expect the first false readings here.
+
+**Trap found while deriving this.** The first attempt showed Normal and Advanced
+bands overlapping in every class, which would have killed the idea. The cause was
+a single combat: at the 90 s separation used by the manual test, a Defense of
+Starbase One run and a Rescue and Search run **merged into one combat**, so
+Advanced-tier `Space_Klingon_*_Dsc_Mokai` ships were tagged Normal. `_Dsc_Mokai`
+at 354,749 "Normal" against 336,087–351,796 Advanced was the tell: identical HP
+for the identical entity. Excluding that combat, and medians resting on fewer
+than 3 kills, made the bands separate cleanly. **When a cross-map comparison shows
+an impossible overlap, suspect a merged combat before doubting the model.**
+
+**Live check:** enabling the Normal band changed **no** existing verdict — 30
+Advanced, 20 Elite, 6 Normal, and all 6 Normal are Defense of Starbase One, which
+pins Normal outright and never reaches the global table. So there is no positive
+confirmation yet; that needs a Normal run on some other map.
+
+**Limits.** Entities whose
 name carries no class word cannot vote. The bands come from one player's ~week of
 logs across 9 maps. If Cryptic ever retunes the multiplier, only these seven
 numbers need revisiting — that is the point of keeping it global.

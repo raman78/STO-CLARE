@@ -99,13 +99,21 @@ anchor but no tier tables of their own.
 
 ```
 GlobalTier { exclude: Vec<String>, classes: Vec<ShipClassBand> }
-ShipClassBand { match: String, threshold: f64 }   // "match" = case-insensitive substring
+ShipClassBand {
+    match: String,                    // case-insensitive substring of the unique name
+    threshold: f64,                   // above this  -> Elite
+    normal_threshold: Option<f64>,    // at or below -> Normal (absent = never Normal)
+}
 ```
 
-Each entity that **died** and is not excluded votes Advanced/Elite against its
-class threshold; the majority wins, a tie yields `None` (ambiguous — fall back to
-the map's tables). `classes` is an ordered list, not a map: `Battlecruiser` must
-be tested before `Cruiser`, which is a substring of it.
+Each entity that **died** and is not excluded votes Normal/Advanced/Elite against
+its class thresholds; a strict majority wins, and a tie yields `None` (ambiguous —
+fall back to the map's tables). `classes` is an ordered list, not a map:
+`Battlecruiser` must be tested before `Cruiser`, which is a substring of it.
+
+`normal_threshold` is **experimental** and rests on one Normal map, with margins
+of ~1.6x rather than the ~4.4x that makes the Advanced/Elite split safe. It is
+optional per class precisely so it can be dropped again without touching code.
 
 It deliberately has the **last word** rather than acting as a fallback, so that a
 disagreement with a hand-verified per-map table surfaces instead of being masked.
