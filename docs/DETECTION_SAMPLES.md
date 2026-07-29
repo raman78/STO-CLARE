@@ -186,6 +186,44 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## Red Alerts — all five DONE (single-difficulty Normal)
+
+Raman confirmed from the in-game queue that **every Red Alert is Normal-only**, so
+all five carry `difficulty: "Normal"` and never reach the tier tables. Sampled
+2026-07-30 in one sitting.
+
+| map | anchor(s) |
+|---|---|
+| Borg | `Mission_Space_Borg_Battleship_7_Of_10`, `Space_Borg_Battleship_Dse`, `Space_Borg_Cruiser_Dse` |
+| Tholian | `Space_Tholian_Dreadnought_Red_Alert` |
+| Tzenkethi | `Msn_Event_Tzenkethi_Alert_System_Satellite`, `Mission_Tzenkethi_Protomatter_Torpedo_Entity` |
+| Elachi | `Mission_Space_Elachi_Frigate` |
+| Na'kuhl | `Event_Nakuhl_Space_Convoy_Transport`, `Space_Federation_Frigate_Nakuhl_Red_Alert` |
+
+**Pattern worth reusing:** a Red Alert shares its rank-and-file ships with the
+regular map of the same faction, and is distinguished only by a *mission object* —
+an escorted convoy, an alert satellite, a named boss. Three of the five collided
+with an existing map (Tholian↔Azure Nebula Rescue, Tzenkethi↔Tzenkethi Front,
+Elachi↔Trouble Over Terrh). Never anchor a Red Alert on its faction's ordinary
+ships, and when adding any faction map, check whether that faction has a Red Alert
+first.
+
+The same faction is also **weaker on a Red Alert** than on its regular map (Elachi
+battleship 217,336 vs 292,930 on Terrh Normal; the Tzenkethi dreadnought 1,052,092
+vs 1,682,031 on Tzenkethi Front Advanced), so tier bands never transfer between a
+Red Alert and its parent map.
+
+## [TFO] Red Alert: Na'kuhl — Space — DONE (single-difficulty Normal)
+- **Anchor:** any-of `Event_Nakuhl_Space_Convoy_Transport` (the escorted convoy,
+  present the whole fight, deaths = 0) and
+  `Space_Federation_Frigate_Nakuhl_Red_Alert` (only in the first half).
+- No other Na'kuhl map exists in the catalog, so there is nothing to collide with.
+- **Tier:** pinned `difficulty: "Normal"`.
+
+| sample | tier | Dreadnought | Battleship | Cruiser | Frigate |
+|---|---|---|---|---|---|
+| 2026-07-30 01:33 | Normal | 977,294 | 224,627 | 175,553 | 74,208 |
+
 ## [TFO] Red Alert: Elachi — Space — DONE (single-difficulty Normal)
 - **Anchor:** `Mission_Space_Elachi_Frigate` — present for the whole fight and in
   this map alone.

@@ -841,7 +841,11 @@
     "Red Alert: Na'kuhl": {
       "category": "TFO",
       "combat_type": "Space",
-      "difficulty": "Normal"
+      "difficulty": "Normal",
+      "identifiers": [
+        "Event_Nakuhl_Space_Convoy_Transport",
+        "Space_Federation_Frigate_Nakuhl_Red_Alert"
+      ]
     },
     "Red Alert: Tholian": {
       "category": "TFO",

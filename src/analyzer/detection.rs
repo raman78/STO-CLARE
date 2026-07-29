@@ -757,6 +757,30 @@ mod tests {
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
+    /// Red Alert: Na'kuhl, anchored any-of: the escorted convoy runs the whole
+    /// fight while the named Red Alert frigate only appears in its first half, so
+    /// either half of a split still resolves.
+    #[test]
+    fn red_alert_nakuhl_resolves_from_either_anchor() {
+        let rules = bundled_rules();
+        for anchor in [
+            "Event_Nakuhl_Space_Convoy_Transport",
+            "Space_Federation_Frigate_Nakuhl_Red_Alert",
+        ] {
+            let owned = vec![
+                dead_hull_critter(anchor, 8_464.0),
+                dead_hull_critter("Space_Nakuhl_Battleship", 224_627.0),
+            ];
+            let result = detect(&rules, &view(&owned));
+            assert_eq!(
+                result.map.as_deref(),
+                Some("[TFO] Red Alert: Na'kuhl"),
+                "anchor {anchor} must identify the map on its own"
+            );
+            assert_eq!(result.difficulty, Some(Difficulty::Normal));
+        }
+    }
+
     /// Trouble Over Terrh and Red Alert: Elachi are told apart by anchors whose
     /// names differ only by a `Mission_` prefix — `Space_Elachi_Frigate` versus
     /// `Mission_Space_Elachi_Frigate`. Identifier lookup is exact (a hash-map
