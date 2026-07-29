@@ -757,6 +757,34 @@ mod tests {
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
+    /// Trouble Over Terrh and Red Alert: Elachi are told apart by anchors whose
+    /// names differ only by a `Mission_` prefix — `Space_Elachi_Frigate` versus
+    /// `Mission_Space_Elachi_Frigate`. Identifier lookup is exact (a hash-map
+    /// key), not substring, so the two never cross; this test would fail if that
+    /// ever became a `contains` match. They do share the battleships and escorts,
+    /// which is why neither is anchored on those.
+    #[test]
+    fn elachi_maps_are_told_apart_by_the_mission_prefix() {
+        let rules = bundled_rules();
+        let red_alert = vec![
+            dead_hull_critter("Mission_Space_Elachi_Frigate", 62_531.0),
+            dead_hull_critter("Space_Elachi_Battleship_V1", 217_336.0),
+            dead_hull_critter("Space_Elachi_Escort", 211_767.0),
+        ];
+        let result = detect(&rules, &view(&red_alert));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Elachi"));
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
+
+        let terrh = vec![
+            dead_hull_critter("Space_Elachi_Frigate", 111_565.0),
+            dead_hull_critter("Space_Elachi_Battleship_V1", 606_172.0),
+            dead_hull_critter("Space_Elachi_Escort", 486_256.0),
+        ];
+        let result = detect(&rules, &view(&terrh));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Trouble Over Terrh"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+    }
+
     /// Tzenkethi Front and Red Alert: Tzenkethi genuinely share the
     /// `Mission_Event_Tzenkethi_Red_Alert_*` ships — confirmed once a real Red
     /// Alert run appeared. Each is anchored on something the other never fields,

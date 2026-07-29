@@ -186,6 +186,27 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Red Alert: Elachi — Space — DONE (single-difficulty Normal)
+- **Anchor:** `Mission_Space_Elachi_Frigate` — present for the whole fight and in
+  this map alone.
+- ⚠ **One `Mission_` prefix away from Trouble Over Terrh's anchor**
+  (`Space_Elachi_Frigate`). They are different entities and identifier lookup is
+  exact — a hash-map key, not a substring — so they never cross. Guarded by
+  `elachi_maps_are_told_apart_by_the_mission_prefix`, which would fail if the
+  lookup ever loosened. When grepping a log for one of these, anchor the pattern
+  (`C\[\d+ Space_Elachi_Frigate\]`): a bare `Space_Elachi_Frigate` also matches
+  the `Mission_` one and makes a non-existent collision look real.
+- The two maps **do** share `Space_Elachi_Battleship_V1/V2` and
+  `Space_Elachi_Escort`, so neither is anchored on those.
+- **Tier:** pinned `difficulty: "Normal"`.
+
+| sample | tier | Battleship_V1 | Battleship_V2 | Escort | Mission_Frigate |
+|---|---|---|---|---|---|
+| 2026-07-30 01:25 | Normal | 217,336 | 213,382 | 211,767 | 62,531 |
+
+Elachi on a Red Alert are weaker than on Terrh Normal (battleship 217,336 vs
+292,930), so again the tier bands do not transfer between maps.
+
 ## [TFO] Red Alert: Tzenkethi — Space — DONE (single-difficulty Normal)
 - **Anchor:** any-of `Msn_Event_Tzenkethi_Alert_System_Satellite` and
   `Mission_Tzenkethi_Protomatter_Torpedo_Entity`. Both run the whole fight

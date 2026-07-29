@@ -833,7 +833,10 @@
     "Red Alert: Elachi": {
       "category": "TFO",
       "combat_type": "Space",
-      "difficulty": "Normal"
+      "difficulty": "Normal",
+      "identifiers": [
+        "Mission_Space_Elachi_Frigate"
+      ]
     },
     "Red Alert: Na'kuhl": {
       "category": "TFO",
