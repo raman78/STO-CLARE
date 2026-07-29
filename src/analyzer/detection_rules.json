@@ -822,23 +822,31 @@
     },
     "Red Alert: Borg": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "difficulty": "Normal"
     },
     "Red Alert: Elachi": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "difficulty": "Normal"
     },
     "Red Alert: Na'kuhl": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "difficulty": "Normal"
     },
     "Red Alert: Tholian": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "difficulty": "Normal",
+      "identifiers": [
+        "Space_Tholian_Dreadnought_Red_Alert"
+      ]
     },
     "Red Alert: Tzenkethi": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "difficulty": "Normal"
     },
     "Redemption Over Qu'Vat": {
       "category": "Patrol",

@@ -757,6 +757,33 @@ mod tests {
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
+    /// A Red Alert: Tholian run also contains `Space_Tholian_Cruiser_Web`, the
+    /// entity Azure Nebula Rescue is anchored on, so both maps match. The Red
+    /// Alert must win: it pins a difficulty, and `detect` returns as soon as it
+    /// reaches a map that does, whatever the (unordered) map iteration order.
+    #[test]
+    fn red_alert_wins_over_azure_when_both_match() {
+        let owned = vec![
+            dead_hull_critter("Space_Tholian_Dreadnought_Red_Alert", 1_619_134.0),
+            dead_hull_critter("Space_Tholian_Cruiser_Web", 198_722.0),
+            dead_hull_critter("Space_Tholian_Battleship", 230_750.0),
+        ];
+        for _ in 0..16 {
+            let result = detect(&bundled_rules(), &view(&owned));
+            assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Tholian"));
+            assert_eq!(result.difficulty, Some(Difficulty::Normal));
+        }
+
+        // Azure on its own is unaffected.
+        let azure = vec![
+            dead_hull_critter("Space_Tholian_Cruiser_Web", 355_249.0),
+            dead_hull_critter("Space_Tholian_Battleship", 652_603.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&azure));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+    }
+
     /// The experimental Normal band, on a map with no tables of its own. Hull
     /// figures are below the Normal thresholds for their classes (cruiser 188k,
     /// battleship 260k) but well above nothing, so the vote is unanimous.

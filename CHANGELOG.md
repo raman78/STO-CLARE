@@ -6,6 +6,7 @@
 - the difficulty level is now worked out from how tough the enemy ships were, using one measure that applies to every space map — so many more maps show their level, including ones that never had their own numbers collected. Normal is recognized too, though that part is still experimental and based on limited data
 - the patrol "The Ninth Rule" is now recognized automatically, together with its Advanced or Elite level, no matter which enemy faction the patrol rolls (it can even mix two of them in one run)
 - the Task Force Operation "Tzenkethi Front" is now recognized automatically, together with its Advanced or Elite level
+- "Red Alert: Tholian" is now recognized and always shown as Normal, and it is no longer mistaken for Azure Nebula Rescue (both involve Tholian ships)
 
 ### Fixes
 - maps that are recognized by a friendly or mission ship are no longer missed when that ship happens to take no damage during the fight — such combats used to show up as plain "Combat"

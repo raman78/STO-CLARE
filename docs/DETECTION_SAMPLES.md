@@ -186,6 +186,27 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Red Alert: Tholian — Space — DONE (single-difficulty Normal)
+- **Anchor:** `Space_Tholian_Dreadnought_Red_Alert` (appears in this map only,
+  across the whole log).
+- **Tier:** pinned `difficulty: "Normal"` — Red Alerts are **single-difficulty**
+  (Raman, from the in-game queue). All five Red Alert entries in the catalog carry
+  the pin; only Tholian has an anchor so far.
+- ⚠ **Collides with Azure Nebula Rescue.** A Red Alert run also contains
+  `Space_Tholian_Cruiser_Web`, which is Azure's anchor, so both maps match and the
+  run was misreported as "[TFO] Azure Nebula Rescue [Normal]". The pin resolves it
+  deterministically: `detect` returns as soon as it reaches a map with a fixed
+  difficulty, regardless of the unordered map iteration. Guarded by
+  `red_alert_wins_over_azure_when_both_match`. Azure's own four runs are
+  unaffected. If Azure ever needs to stop relying on this, it needs a narrower
+  anchor than the generic `Cruiser_Web`.
+- Note `Mission_Event_Tzenkethi_Red_Alert_*` belongs to **Tzenkethi Front**, not
+  to Red Alert: Tzenkethi — reused assets, see that map's entry.
+
+| sample | tier | Dreadnought_Red_Alert | Tholian_Battleship | Tholian_Cruiser |
+|---|---|---|---|---|
+| 2026-07-30 00:45 | Normal | 1,619,134 | 230,750 | 176,695 |
+
 ## [TFO] Azure Nebula Rescue — Space — anchor only (no tier yet)
 - **Anchor:** `Space_Tholian_Cruiser_Web` (re-anchored off the shared Lleiset onto a
   Tholian ship, so Elachi/Terrh runs no longer false-match Azure).
