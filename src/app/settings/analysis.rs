@@ -399,16 +399,21 @@ impl CombatNameRules {
 
     /// The curated maps a single rule overlaps, either way:
     /// - **entity**: the rule matches the map's identifying NPC (unique name), or
-    /// - **name**: the rule's own name equals the map's name, ignoring the
+    /// - **name**: the map's name *appears in* the rule's own name, ignoring the
     ///   `[TFO]`/`[Patrol]` category prefix on either side (e.g. a rule named
     ///   "Trouble Over Terrh" vs the "[Patrol] Trouble Over Terrh" map).
+    ///
+    /// The name check is containment rather than equality on purpose: users
+    /// annotate their rules (e.g. "[Patrol] The Ninth Rule [M]"), and an exact
+    /// comparison silently dropped the warning for every such rule. No curated
+    /// map name is a substring of another, so containment adds no ambiguity.
     ///
     /// Sorted and deduped; empty when none or when the rule is disabled.
     fn overlapping_maps(group: &RulesGroup, identifiers: &[(String, String)]) -> Vec<String> {
         if !group.enabled {
             return Vec::new();
         }
-        let rule_name = strip_category_prefix(&group.name);
+        let rule_name = strip_category_prefix(&group.name).to_lowercase();
         let mut maps: Vec<String> = identifiers
             .iter()
             .filter(|(unique_name, map)| {
@@ -416,7 +421,7 @@ impl CombatNameRules {
                     || group
                         .matches_indirect_source_unique_names(std::iter::once(unique_name.as_str()))
                     || (!rule_name.is_empty()
-                        && strip_category_prefix(map).eq_ignore_ascii_case(rule_name))
+                        && rule_name.contains(&strip_category_prefix(map).to_lowercase()))
             })
             .map(|(_, map)| map.clone())
             .collect();
@@ -750,5 +755,43 @@ mod tests {
         let mut other = rule;
         other.name_rule.name = "Something Else".to_string();
         assert!(CombatNameRules::overlapping_maps(&other.name_rule, &identifiers).is_empty());
+    }
+
+    /// Real user rules, verbatim: they carry the `[Patrol] ` prefix *and* match
+    /// on a display name, so the prefix must be stripped on both sides and the
+    /// entity check cannot be what flags them. The annotated `[M]` variant is
+    /// the case an exact name comparison used to miss.
+    #[test]
+    fn prefixed_and_annotated_rule_names_overlap_the_curated_map() {
+        let identifiers = curated_map_identifiers();
+        let rule = |name: &str| RulesGroup {
+            name: name.to_string(),
+            enabled: true,
+            rules: vec![MatchRule {
+                aspect: MatchAspect::SourceOrTargetName,
+                expression: "U.S.S. Birmingham".to_string(),
+                method: MatchMethod::Contains,
+                enabled: true,
+            }],
+        };
+        let expected = vec!["[Patrol] The Ninth Rule".to_string()];
+
+        for name in [
+            "[Patrol] The Ninth Rule",
+            "[Patrol] The Ninth Rule [M]",
+            "The Ninth Rule [M]",
+            "the ninth rule",
+        ] {
+            assert_eq!(
+                CombatNameRules::overlapping_maps(&rule(name), &identifiers),
+                expected,
+                "rule named {name:?} must be flagged"
+            );
+        }
+
+        // A rule that merely mentions an unrelated name is still not flagged.
+        assert!(
+            CombatNameRules::overlapping_maps(&rule("My Own Thing"), &identifiers).is_empty()
+        );
     }
 }
