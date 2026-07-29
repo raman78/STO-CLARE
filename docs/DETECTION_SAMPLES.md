@@ -120,10 +120,36 @@ Extrapolated classes use 0.30x the Elite threshold — the median
 `normal_threshold / threshold` of the four measured ones (0.293–0.325, with
 Frigate an outlier at 0.175).
 
-**Margins are thin.** Advanced/Normal is only ~1.6x apart, versus ~4.4x for
-Elite/Advanced, while HP spread *within* a class across factions is itself larger
-than 1.6x. Cruiser is the tightest: 188,000 against a lowest observed Advanced of
-194,197 — 3%. Expect the first false readings here.
+**Margins are thin, and that forced per-faction bands.** Advanced/Normal is only
+~1.6x apart versus ~4.4x for Elite/Advanced, while the HP spread *within* a class
+across factions reaches 2.3x — larger than the step we are trying to detect. On
+Advanced, Battleship runs Elachi 609k → Borg 473k → Tzenkethi 396k → Nausicaan
+346k → Gorn 336k → Klingon 336k → Tholian 301k. It is a gradient, not one outlier.
+
+Confirmed live on 2026-07-30 by three real Normal runs. Rescue and Search (4 votes
+Normal) and The Ninth Rule (3 Normal, 1 Advanced — the majority carried it) were
+right; **Trouble Over Terrh read Advanced**, because Elachi ships on *Normal* are
+as tough as other factions on *Advanced* (battleship 292,930 vs a lowest observed
+Advanced of 300,537 elsewhere).
+
+Fixed by giving Elachi their own bands, listed **before** the generic ones — the
+class list is matched in order, so this needed no code change:
+
+| class | all factions | excluding Elachi | Elachi alone |
+|---|---|---|---|
+| Escort | **overlap** | x1.96 | x2.06 |
+| Battleship | x1.03 | x1.34 | x2.05 |
+| Frigate | x1.05 | x1.14 | x1.38 |
+| Cruiser | x1.07 | x1.07 | no pair yet |
+| Raider | x1.24 | x1.24 | no pair yet |
+
+Cruiser (x1.07) and Frigate (x1.14) stay tight even without Elachi — there the
+squeeze comes from Tholians at the *bottom* (Cruiser_Web 194,197 against a
+Klingon Normal of 181,217). Majority voting absorbs a single wrong vote, which is
+what keeps them working; add per-faction bands the same way if a map misreads.
+
+Verified on a frozen log (62 combats): adding the Elachi bands changed **exactly
+one** verdict — the Trouble Over Terrh run above — with no side effects.
 
 **Trap found while deriving this.** The first attempt showed Normal and Advanced
 bands overlapping in every class, which would have killed the idea. The cause was
@@ -135,10 +161,9 @@ for the identical entity. Excluding that combat, and medians resting on fewer
 than 3 kills, made the bands separate cleanly. **When a cross-map comparison shows
 an impossible overlap, suspect a merged combat before doubting the model.**
 
-**Live check:** enabling the Normal band changed **no** existing verdict — 30
-Advanced, 20 Elite, 6 Normal, and all 6 Normal are Defense of Starbase One, which
-pins Normal outright and never reaches the global table. So there is no positive
-confirmation yet; that needs a Normal run on some other map.
+**Live check:** 30 Advanced, 20 Elite, 9 Normal. The three added Normals are the
+2026-07-30 runs above — the first positive confirmations that the band works on
+maps that do *not* pin Normal. No Advanced or Elite verdict changed.
 
 **Limits.** Entities whose
 name carries no class word cannot vote. The bands come from one player's ~week of

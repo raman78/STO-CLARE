@@ -111,9 +111,17 @@ its class thresholds; a strict majority wins, and a tie yields `None` (ambiguous
 fall back to the map's tables). `classes` is an ordered list, not a map:
 `Battlecruiser` must be tested before `Cruiser`, which is a substring of it.
 
-`normal_threshold` is **experimental** and rests on one Normal map, with margins
-of ~1.6x rather than the ~4.4x that makes the Advanced/Elite split safe. It is
-optional per class precisely so it can be dropped again without touching code.
+`normal_threshold` is **experimental**, with margins of ~1.6x rather than the
+~4.4x that makes the Advanced/Elite split safe. It is optional per class precisely
+so it can be dropped again without touching code.
+
+**Per-faction bands.** Because `classes` is matched in order, a faction-specific
+entry placed before the generic one overrides it — `Elachi_Battleship` wins over
+`Battleship`. This is how the ~2.3x HP spread *between factions within a class* is
+handled, and it needed no code change: it is the same ordering rule that already
+puts `Battlecruiser` before `Cruiser`. Elachi have their own bands because their
+Normal ships are as tough as other factions' Advanced ones. Add further factions
+the same way when a map misreads.
 
 It deliberately has the **last word** rather than acting as a fallback, so that a
 disagreement with a hand-verified per-map table surfaces instead of being masked.

@@ -32,6 +32,21 @@
     ],
     "classes": [
       {
+        "match": "Elachi_Battleship",
+        "normal_threshold": 419000,
+        "threshold": 1323000
+      },
+      {
+        "match": "Elachi_Escort",
+        "normal_threshold": 339000,
+        "threshold": 1058000
+      },
+      {
+        "match": "Elachi_Frigate",
+        "normal_threshold": 91000,
+        "threshold": 239000
+      },
+      {
         "match": "Dreadnought",
         "normal_threshold": 1200000,
         "threshold": 4000000
@@ -53,21 +68,22 @@
       },
       {
         "match": "Escort",
-        "normal_threshold": 200000,
+        "normal_threshold": 145000,
         "threshold": 670000
       },
       {
         "match": "Frigate",
-        "normal_threshold": 46000,
+        "normal_threshold": 76000,
         "threshold": 264000
       },
       {
         "match": "Raider",
-        "normal_threshold": 81000,
+        "normal_threshold": 83000,
         "threshold": 250000
       }
     ],
-    "comment_normal": "EXPERIMENTAL Normal band. Derived from a single Normal map (Defense of Starbase One), so it rests on far less data than the Advanced/Elite split: measured for Battleship (n=10), Cruiser (n=5), Raider (n=5), Frigate (n=2); Dreadnought, Battlecruiser and Escort are extrapolated at 0.30x the Elite threshold (the median ratio of the measured ones). Advanced/Normal is only ~1.6x apart versus ~4.4x for Elite/Advanced, so the margins are thin - Cruiser is the tightest (188k against a lowest observed Advanced of 194k). Expect false Normal readings here before anywhere else."
+    "comment_normal": "EXPERIMENTAL Normal band. Derived from a single Normal map (Defense of Starbase One), so it rests on far less data than the Advanced/Elite split: measured for Battleship (n=10), Cruiser (n=5), Raider (n=5), Frigate (n=2); Dreadnought, Battlecruiser and Escort are extrapolated at 0.30x the Elite threshold (the median ratio of the measured ones). Advanced/Normal is only ~1.6x apart versus ~4.4x for Elite/Advanced, so the margins are thin - Cruiser is the tightest (188k against a lowest observed Advanced of 194k). Expect false Normal readings here before anywhere else.",
+    "comment_factions": "Faction-specific bands come FIRST because the list is matched in order. HP varies by faction within a class by up to 2.3x (Battleship: Elachi 609k down to Tholian 301k on Advanced), which is as large as the whole Normal->Advanced step of ~1.6x - so a single per-class Normal band overlapped. Elachi are the worst offender (Escort 486k vs 206-212k for Klingon/Nausicaan) and get their own bands; that lifts the Escort Normal/Advanced margin from an overlap to x1.96 and Battleship from x1.03 to x1.34. Add more factions here the same way if they misread."
   },
   "maps": {
     "Acamar System Patrol": {
