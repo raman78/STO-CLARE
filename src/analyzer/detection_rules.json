@@ -823,7 +823,12 @@
     "Red Alert: Borg": {
       "category": "TFO",
       "combat_type": "Space",
-      "difficulty": "Normal"
+      "difficulty": "Normal",
+      "identifiers": [
+        "Mission_Space_Borg_Battleship_7_Of_10",
+        "Space_Borg_Battleship_Dse",
+        "Space_Borg_Cruiser_Dse"
+      ]
     },
     "Red Alert: Elachi": {
       "category": "TFO",

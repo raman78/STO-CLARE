@@ -757,6 +757,29 @@ mod tests {
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
+    /// Red Alert: Borg is anchored any-of, because the named boss only shows up
+    /// in the fight's later phase — an early split fragment must still be
+    /// recognized by the rank-and-file `_Dse` ships.
+    #[test]
+    fn red_alert_borg_is_recognized_without_its_boss() {
+        let rules = bundled_rules();
+        let with_boss = vec![
+            dead_hull_critter("Mission_Space_Borg_Battleship_7_Of_10", 3_107_477.0),
+            dead_hull_critter("Space_Borg_Battleship_Dse", 211_201.0),
+        ];
+        let result = detect(&rules, &view(&with_boss));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Borg"));
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
+
+        let boss_missing = vec![
+            dead_hull_critter("Space_Borg_Cruiser_Dse", 187_210.0),
+            dead_hull_critter("Space_Borg_Frigate_Dse", 79_156.0),
+        ];
+        let result = detect(&rules, &view(&boss_missing));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Borg"));
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
+    }
+
     /// A Red Alert: Tholian run also contains `Space_Tholian_Cruiser_Web`, the
     /// entity Azure Nebula Rescue is anchored on, so both maps match. The Red
     /// Alert must win: it pins a difficulty, and `detect` returns as soon as it

@@ -186,6 +186,21 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Red Alert: Borg — Space — DONE (single-difficulty Normal)
+- **Anchor:** any-of `Mission_Space_Borg_Battleship_7_Of_10` (named boss) plus
+  `Space_Borg_Battleship_Dse` / `Space_Borg_Cruiser_Dse`. The boss only appears in
+  the fight's **later phase**, so the `_Dse` rank-and-file — present throughout —
+  keeps an early split fragment recognizable.
+- The `_Dse` suffix (Deep Space Encounter) marks the Red Alert roster and occurs
+  in this map alone across the log, so no collision with the other Borg maps
+  (Unwanted Guests, Resistance of Starbase One, Out of Control, Infected), which
+  all key on different Borg entities.
+- **Tier:** pinned `difficulty: "Normal"`.
+
+| sample | tier | Battleship_7_Of_10 | Battleship_Dse | Cruiser_Dse | Frigate_Dse |
+|---|---|---|---|---|---|
+| 2026-07-30 00:53 | Normal | 3,107,477 | 211,201 | 187,210 | 79,156 |
+
 ## [TFO] Red Alert: Tholian — Space — DONE (single-difficulty Normal)
 - **Anchor:** `Space_Tholian_Dreadnought_Red_Alert` (appears in this map only,
   across the whole log).
