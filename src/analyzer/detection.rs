@@ -757,6 +757,36 @@ mod tests {
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
+    /// Tzenkethi Front and Red Alert: Tzenkethi genuinely share the
+    /// `Mission_Event_Tzenkethi_Red_Alert_*` ships — confirmed once a real Red
+    /// Alert run appeared. Each is anchored on something the other never fields,
+    /// so the shared ships cannot merge them. This is why Tzenkethi Front is
+    /// deliberately *not* anchored on those entities despite them being present
+    /// in all of its runs.
+    #[test]
+    fn tzenkethi_front_and_red_alert_stay_apart() {
+        let rules = bundled_rules();
+        let shared = "Mission_Event_Tzenkethi_Red_Alert_Tzenkethi_Dreadnought";
+
+        let red_alert = vec![
+            dead_hull_critter(shared, 1_052_092.0),
+            dead_hull_critter("Msn_Event_Tzenkethi_Alert_System_Satellite", 0.0),
+            dead_hull_critter("Space_Tzenkethi_Cruiser_Var1", 109_986.0),
+        ];
+        let result = detect(&rules, &view(&red_alert));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Tzenkethi"));
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
+
+        let front = vec![
+            dead_hull_critter(shared, 1_682_031.0),
+            dead_hull_critter("Msn_Tzk_Tzenkethi_Assault_Ball", 0.0),
+            dead_hull_critter("Space_Tzenkethi_Cruiser_Var1", 227_332.0),
+        ];
+        let result = detect(&rules, &view(&front));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Tzenkethi Front"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+    }
+
     /// Red Alert: Borg is anchored any-of, because the named boss only shows up
     /// in the fight's later phase — an early split fragment must still be
     /// recognized by the rank-and-file `_Dse` ships.

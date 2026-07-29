@@ -851,7 +851,11 @@
     "Red Alert: Tzenkethi": {
       "category": "TFO",
       "combat_type": "Space",
-      "difficulty": "Normal"
+      "difficulty": "Normal",
+      "identifiers": [
+        "Msn_Event_Tzenkethi_Alert_System_Satellite",
+        "Mission_Tzenkethi_Protomatter_Torpedo_Entity"
+      ]
     },
     "Redemption Over Qu'Vat": {
       "category": "Patrol",

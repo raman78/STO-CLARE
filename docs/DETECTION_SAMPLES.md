@@ -186,6 +186,30 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Red Alert: Tzenkethi — Space — DONE (single-difficulty Normal)
+- **Anchor:** any-of `Msn_Event_Tzenkethi_Alert_System_Satellite` and
+  `Mission_Tzenkethi_Protomatter_Torpedo_Entity`. Both run the whole fight
+  (01:15–01:17) and occur in this map alone, so a split fragment still resolves.
+- ✅ **Confirms the reused-asset call on Tzenkethi Front.** This run fields
+  `Mission_Event_Tzenkethi_Red_Alert_*` — the very ships Tzenkethi Front was
+  deliberately *not* anchored on. Had it been, this Red Alert would have been
+  reported as Tzenkethi Front. Each map is anchored on something the other never
+  fields, so the shared ships cannot merge them; guarded by
+  `tzenkethi_front_and_red_alert_stay_apart`. Tzenkethi Front's four runs are
+  unaffected.
+- ⚠ `Stationmod_Universal_Priors_Satellite` also appears here and looks
+  map-specific, but it occurs in 12 unrelated combats — it is a **player console**.
+  `Stationmod` is already in the global-tier exclusions for the same reason.
+- **Tier:** pinned `difficulty: "Normal"`.
+
+| sample | tier | RedAlert_Dreadnought | RedAlert_Battleship | Cruiser_Var1 |
+|---|---|---|---|---|
+| 2026-07-30 01:15 | Normal | 1,052,092 | 191,876 | 109,986 |
+
+Note the shared dreadnought is 1,052,092 here against 1,682,031 on Tzenkethi Front
+Advanced — the same entity is weaker on a Red Alert, so its tier bands are not
+transferable between the two maps.
+
 ## [TFO] Red Alert: Borg — Space — DONE (single-difficulty Normal)
 - **Anchor:** any-of `Mission_Space_Borg_Battleship_7_Of_10` (named boss) plus
   `Space_Borg_Battleship_Dse` / `Space_Borg_Cruiser_Dse`. The boss only appears in
