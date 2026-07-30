@@ -69,8 +69,8 @@ struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
     /// Optional per-row warning: returns a tooltip when the row's rule should be
     /// flagged (e.g. it shadows an auto-detected map). Adds a ⚠ cell per row.
     row_warning: Option<&'a dyn Fn(&RulesGroup) -> Option<String>>,
-    /// Height to keep free below the table for whatever the caller draws there.
-    reserve_below: f32,
+    /// Explicit height cap; falls back to all available space.
+    max_height: Option<f32>,
 }
 
 struct RulesTable<'a> {
@@ -311,10 +311,25 @@ impl CombatNameRules {
         };
 
         {
-            // The auto-detected map list is drawn below and must stay visible:
-            // its 15 rows plus the ⚠ legend and two headings.
-            let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
-            let reserve = row * 19.0;
+            // The rules table and the auto-detected map list below it share the
+            // window. Each may take up to half; whichever needs less than its
+            // half gives the remainder to the other, so neither is squeezed while
+            // the other shows empty space.
+            let text_row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
+            let available = ui.available_height();
+            let half = available / 2.0;
+            // What each would use if unconstrained.
+            let rules_need = HEADER_HEIGHT
+                + ROW_HEIGHT * modified_settings.combat_name_rules.len() as f32
+                + text_row * 2.0;
+            let maps_need = text_row * (curated_map_names().len() as f32 + 4.0);
+            let (rules_height, maps_height) = if rules_need <= half {
+                (rules_need, available - rules_need)
+            } else if maps_need <= half {
+                (available - maps_need, maps_need)
+            } else {
+                (half, half)
+            };
             GroupRulesTable::new(
                 &mut modified_settings.combat_name_rules,
                 "Combat Name Detection Rules",
@@ -322,7 +337,7 @@ impl CombatNameRules {
                 &mut self.selected_group,
                 200.0,
             )
-            .reserving_below(reserve)
+            .with_max_height(rules_height)
             .with_row_warning(&row_warning)
             .show(ui, |r, ui| {
                 RulesTable::new(
@@ -365,7 +380,7 @@ impl CombatNameRules {
                 });
             });
 
-            Self::show_auto_detected(ui);
+            Self::show_auto_detected(maps_height, ui);
         }
     }
 
@@ -375,7 +390,7 @@ impl CombatNameRules {
     /// shadow a detected map are flagged with a ⚠ on their row (see
     /// `overlapping_maps`); this section additionally notes it for the selected
     /// combat and lists the detectable maps.
-    fn show_auto_detected(ui: &mut Ui) {
+    fn show_auto_detected(max_height: f32, ui: &mut Ui) {
         // Legend for the per-row ⚠, directly under the rules frame above.
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -397,12 +412,10 @@ impl CombatNameRules {
 
         ui.add_space(6.0);
         ui.label(RichText::new("Auto-detected maps:").weak());
-        // Sized in rows rather than pixels, so it still shows 15 entries when the
-        // font or UI scale changes.
         let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
         ScrollArea::vertical()
             .id_salt("auto detected maps")
-            .max_height(row * 15.0)
+            .max_height(ui.available_height().min(max_height).at_least(row * 4.0))
             .show(ui, |ui| {
                 for map in curated_map_names() {
                     ui.label(RichText::new(map).weak());
@@ -468,14 +481,14 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
             selected_group,
             popup_extra_space,
             row_warning: None,
-            reserve_below: 0.0,
+            max_height: None,
         }
     }
 
     /// Show a ⚠ on the right of each row for which `warning` returns a tooltip.
-    /// Keep `height` free below the table, for content the caller draws there.
-    fn reserving_below(mut self, height: f32) -> Self {
-        self.reserve_below = height;
+    /// Cap the table at `height`. `None` lets it use whatever is available.
+    fn with_max_height(mut self, height: f32) -> Self {
+        self.max_height = Some(height);
         self
     }
 
@@ -497,7 +510,10 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
         // Fills whatever height the window offers, minus whatever the caller
         // reserved for the content below it. The Settings window scrolls as a
         // whole, so a short list still takes only the room it needs.
-        let height = (ui.available_height() - self.reserve_below).at_least(ROW_HEIGHT * 4.0);
+        let height = self
+            .max_height
+            .unwrap_or_else(|| ui.available_height())
+            .at_least(ROW_HEIGHT * 4.0);
         Table::new(ui)
             .min_scroll_height(0.0)
             .max_scroll_height(height)
