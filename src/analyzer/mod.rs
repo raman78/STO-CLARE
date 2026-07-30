@@ -130,16 +130,23 @@ impl Analyzer {
     ///
     /// `total_damage_out` is the sum over *all* players, so a run where the user
     /// only healed is still kept as long as anyone in the group dealt damage.
-    /// The **newest** combat is never dropped: it may still be in progress, with
-    /// its first damage record yet to be read.
+    ///
+    /// The newest combat is **not** exempt. Exempting it (on the grounds that it
+    /// might be a fight still in progress) meant that whenever the log ended on
+    /// such a burst — the game closed, or the player idling on a social map — the
+    /// junk entry stayed at the top of the list for good.
+    ///
+    /// Nothing in the log says whether a fight is still running, so "in progress"
+    /// cannot be detected; but it does not need to be. A live fight in which
+    /// anyone has already dealt damage is kept by the rule itself. The only case
+    /// dropped mid-fight is one where a refresh lands between a player's opening
+    /// buffs and their first shot: the buffs are discarded and the combat then
+    /// starts at that first shot instead (measured — the fight is *not* split in
+    /// two). Damage figures are unaffected, since `combat_time` only ever starts
+    /// at the first damage record anyway.
     fn discard_combats_without_damage(&mut self) {
-        let last = self.combats.len().saturating_sub(1);
-        let mut index = 0;
-        self.combats.retain(|combat| {
-            let keep = index == last || f64::from(combat.total_damage_out.all) > 0.0;
-            index += 1;
-            keep
-        });
+        self.combats
+            .retain(|combat| f64::from(combat.total_damage_out.all) > 0.0);
     }
 
     fn process_next_record(
@@ -868,17 +875,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The newest combat is kept even with no damage yet: the log is read live,
-    /// so it may be a fight whose first damage record has not arrived.
+    /// The newest combat gets no exemption. A log ending on fall damage or a
+    /// self-buff — the game closed, or the player idling on a social map — used
+    /// to leave that junk entry sitting at the top of the list permanently.
     #[test]
-    fn newest_combat_is_kept_even_without_damage() {
+    fn newest_combat_is_discarded_too_when_it_has_no_damage() {
         let dir = std::env::temp_dir().join("cla-newest-combat-test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let log = dir.join("combatlog.log");
+        // A real fight, then a self-buff burst that ends the log.
         std::fs::write(
             &log,
-            "26:07:23:20:00:00.0::,,,,Sara,P[9@9 Sara@x],falling,Autodesc.Combatevent.Falling,HitPoints,,6.2,0\n",
+            concat!(
+                "26:07:23:20:00:00.0::Kestrel,P[1@2 Kestrel@h],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n",
+                "26:07:23:20:10:00.0::Valir,P[3@4 Valir@y],,*,,*,Personal Shields,Pn.d,Shield,,0.02,0\n",
+            ),
         )
         .unwrap();
 
@@ -888,7 +900,12 @@ mod tests {
         })
         .unwrap();
         analyzer.update();
-        assert_eq!(1, analyzer.result().len());
+        assert_eq!(
+            1,
+            analyzer.result().len(),
+            "the trailing self-buff burst must not survive as a combat"
+        );
+        assert!(f64::from(analyzer.result()[0].total_damage_out.all) > 0.0);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1122,6 +1139,7 @@ mod tests {
         println!("combats: {:?}", combats);
     }
 }
+
 
 
 
