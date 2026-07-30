@@ -126,28 +126,35 @@ Rescue — anchored but with no tables at all — gained 4 correct tiers.
   showed 88k on Elite).
 - pets/drones/torpedoes/turrets/platforms etc. — not rank-scaled.
 
-### Ground maps — why the global table skips them, and what would work
+### Ground maps — a global rank table does NOT work
 
-Ground scales ~1.54x between tiers, not ~4.4x, which is why ground entities are
-excluded from the global table. Three Advanced ground samples (Bug Hunt, Into the
-Hive, Undine Infiltration) plus one Elite (Bug Hunt) show a global **rank** table
-is feasible, but only on the senior ranks:
+Ground scales ~1.54x between tiers rather than ~4.4x, which is why ground entities
+are excluded from the global table. The open question was whether a table keyed on
+**rank** (Ens/Lt/Cdr/Capt) could work anyway.
 
-| rank | Advanced across 3 maps | spread | lowest Elite | margin |
-|---|---|---|---|---|
-| Cdr | 5,113–8,236 | 1.61x | 16,077 | **1.95x** — usable |
-| Capt | 13,842–21,807 | 1.58x | 33,332 | **1.53x** — usable |
-| Lt | 2,867–3,890 | 1.36x | 4,346 | 1.12x — unusable |
-| Ens | 1,873–2,470 | 1.32x | 2,740 | 1.11x — unusable |
+**With three Advanced samples and one Elite it looked promising** — Cdr showed a
+1.95x margin, Capt 1.53x — and this document recommended building one on the
+senior ranks. **A second Elite map killed that.** Devil's Heart (Elite) has
+weaker troops than Bug Hunt has on *Advanced*:
 
-The cannon fodder is the problem: Into the Hive's *Advanced* rank-and-file is
-tougher than Bug Hunt's, leaving barely 11% to Bug Hunt's *Elite*. Since low
-ranks also vastly outnumber the rest (dozens of Ens against one boss), a naive
-majority vote would be decided by exactly the entities that cannot tell the tiers
-apart. A ground table must therefore vote on **Cdr and above** only.
+| rank | Advanced across 4 maps | Elite across 2 maps | verdict |
+|---|---|---|---|
+| Capt | 13,842–21,807 | 22,087–33,332 | x1.01 — noise |
+| Cdr | 4,536–8,236 | 7,095–16,077 | **overlap** |
+| Lt | 2,514–3,890 | 4,346–5,114 | x1.12 |
+| Ens | 1,873–2,470 | 2,740–3,756 | x1.11 |
 
-Needed before implementing: Advanced+Elite pairs from at least three ground maps.
-Currently only Bug Hunt has both.
+Devil's Heart on **Elite** fields a Cdr of 7,095 against Bug Hunt's 7,803 on
+**Advanced** — 9% *weaker* one tier up. No threshold can separate those.
+
+**Conclusion: ground HP is a property of the map, not of the rank.** Unlike space,
+where one table covers every map, ground tiers can only ever come from per-map
+tables — which needs an Advanced+Elite pair for each map individually.
+
+**Lesson worth keeping:** the earlier recommendation rested on a single Elite map.
+One map cannot show whether a spread is a property of the tier or of that map; it
+takes two to tell those apart. The same trap was avoided in space only because the
+Elite samples came from four different maps early on.
 
 ### Normal — EXPERIMENTAL
 
@@ -234,6 +241,21 @@ numbers need revisiting — that is the point of keeping it global.
 | 2026-07-25 12:08 | Elite | 490,858 | 2,279,671 | 2,835,426 |
 
 ---
+
+## [TFO] Devil's Heart — Ground — DONE (anchor only, no tier)
+- **Anchor:** the five entities carrying `Devils_Heart` in their name — the Borg
+  miniboss, the Aetherian hacker and boss, the boss's explosive drones and the
+  miniboss turret. Between them the miniboss (00:18–00:20) and the hacker
+  (00:20–00:22) cover the whole fight.
+- ⚠ The `Vtx_` prefix is **not** map-specific: `Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship`
+  anchors Resistance of Starbase One. It marks the episode, not the map — only
+  `Devils_Heart` pins this one.
+- **Tier:** none. Ground maps are excluded from the global table, and this run is
+  what proved a rank-based ground table cannot work (see above).
+
+| sample | tier | Miniboss | Aetherian_Cdr | Aetherian_Lt | Aetherian_Ens |
+|---|---|---|---|---|---|
+| 2026-07-31 00:18 | Elite | 22,087 | 7,095 | 5,114 | 3,756 |
 
 ## [TFO] Iuppiter Iratus — Space — DONE (anchor + global tier)
 - **Anchor:** `Space_Holo_Projector_Jupiter_Tfo` (Iuppiter is Latin for Jupiter,

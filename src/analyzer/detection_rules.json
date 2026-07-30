@@ -385,7 +385,14 @@
     },
     "Devil's Heart": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss",
+        "Ground_Aetherian_Hacker_Vtx_Devils_Heart",
+        "Ground_Aetherian_Boss_Vtx_Devils_Heart",
+        "Vtx_Devils_Heart_Tfo_Boss_Explosive_Drone",
+        "Vtx_Devils_Heart_Tfo_Miniboss_Turret"
+      ]
     },
     "Donia System Patrol": {
       "category": "Patrol",
