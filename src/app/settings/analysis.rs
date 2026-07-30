@@ -287,10 +287,10 @@ impl CombatNameRules {
             })
         };
 
-        CollapsingHeader::new("Combat Name Detection Rules").show_unindented(ui, |ui| {
+        {
             GroupRulesTable::new(
                 &mut modified_settings.combat_name_rules,
-                "",
+                "Combat Name Detection Rules",
                 "Combat Name",
                 &mut self.selected_group,
                 200.0,
@@ -338,7 +338,7 @@ impl CombatNameRules {
             });
 
             Self::show_auto_detected(selected_combat, ui);
-        });
+        }
     }
 
     /// Read-only view of the maps the analyzer auto-detects. These act as a
@@ -467,7 +467,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
     fn show(&mut self, ui: &mut Ui, mut edit: impl FnMut(&mut T, &mut Ui)) {
         let row_warning = self.row_warning;
         ui.horizontal(|ui| {
-            ui.label(self.title);
+            ui.strong(self.title);
             if ui.button("Add ✚").clicked() {
                 self.group_rules.push(Default::default());
             }
@@ -475,8 +475,11 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
             show_move_up_down(self.selected_group, self.group_rules, ui);
         });
         Table::new(ui)
-            .min_scroll_height(200.0)
-            .max_scroll_height(200.0)
+            // Grows with the list and only starts scrolling past ~16 rows; the
+            // Settings window scrolls as a whole, so a short table here just
+            // takes less room rather than leaving a fixed gap.
+            .min_scroll_height(0.0)
+            .max_scroll_height(420.0)
             .cell_spacing(10.0)
             .header(HEADER_HEIGHT, |r| {
                 r.cell(|ui| {
@@ -569,8 +572,8 @@ impl<'a> RulesTable<'a> {
         });
         ui.push_id(self.title, |ui| {
             Table::new(ui)
-                .min_scroll_height(100.0)
-                .max_scroll_height(200.0)
+                .min_scroll_height(0.0)
+                .max_scroll_height(320.0)
                 .cell_spacing(10.0)
                 .header(HEADER_HEIGHT, |r| {
                     r.cell(|ui| {
