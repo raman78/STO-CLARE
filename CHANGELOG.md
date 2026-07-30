@@ -2,6 +2,10 @@
 
 # unreleased
 
+### Fixes
+- the Upload button now always says what happened: it used to do nothing at all, without any message, when the combat could not be read back from the log file, and an upload that produced no ladder entries showed an empty window
+- uploads are now written to the log file (when logging is enabled in the settings), including the reason the server gave for rejecting one
+
 ### Other Changes
 - combats now show whether the map is a space or a ground map, in parentheses after the name (e.g. "[TFO] Into the Hive (Ground)")
 - the Task Force Operations "Into the Hive", "Undine Assault" and "Undine Infiltration" are now recognized automatically
