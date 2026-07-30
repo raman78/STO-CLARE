@@ -60,7 +60,7 @@ struct CombatNameRules {
     selected_additional_info_rule: Option<usize>,
 }
 
-struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default> {
+struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
     group_rules: &'a mut Vec<T>,
     title: &'a str,
     name_header: &'a str,
@@ -466,7 +466,7 @@ fn strip_category_prefix(name: &str) -> &str {
         .unwrap_or(name)
 }
 
-impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
+impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
     fn new(
         group_rules: &'a mut Vec<T>,
         title: &'a str,
@@ -515,11 +515,17 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                     ui.label("Edit");
                 });
                 r.cell(|ui| {
+                    ui.label("Copy");
+                });
+                r.cell(|ui| {
                     ui.label(self.name_header);
                 });
             })
             .body(ROW_HEIGHT, |t| {
                 let mut to_remove = Vec::new();
+                // At most one row can be cloned per frame, so the index stays
+                // valid: removals are applied first, then this is bounds-checked.
+                let mut to_clone: Option<usize> = None;
                 for (id, rule) in self.group_rules.iter_mut().enumerate() {
                     let row_response = t.selectable_row(*self.selected_group == Some(id), |r| {
                         r.cell(|ui| {
@@ -532,6 +538,16 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                                 // HACK: so that the popup does not close when clicking the in one of the combo boxes
                                 ui.add_space(self.popup_extra_space);
                             });
+                        });
+
+                        r.cell(|ui| {
+                            if ui
+                                .selectable_label(false, "🗐")
+                                .on_hover_text("Duplicate this rule")
+                                .clicked()
+                            {
+                                to_clone = Some(id);
+                            }
                         });
 
                         r.cell(|ui| {
@@ -568,6 +584,14 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                 to_remove.into_iter().rev().for_each(|i| {
                     self.group_rules.remove(i);
                 });
+
+                // The copy lands directly below the original and becomes the
+                // selection, so it can be renamed straight away.
+                if let Some(index) = to_clone.filter(|i| *i < self.group_rules.len()) {
+                    let copy = self.group_rules[index].clone();
+                    self.group_rules.insert(index + 1, copy);
+                    *self.selected_group = Some(index + 1);
+                }
             });
     }
 }
@@ -614,9 +638,14 @@ impl<'a> RulesTable<'a> {
                     r.cell(|ui| {
                         ui.label("Text to match");
                     });
+                    r.cell(|ui| {
+                        ui.label("Copy");
+                    });
                 })
                 .body(ROW_HEIGHT, |t| {
                     let mut to_remove = Vec::new();
+                    // One clone per frame; see GroupRulesTable for the reasoning.
+                    let mut to_clone: Option<usize> = None;
                     for (id, rule) in self.rules.iter_mut().enumerate() {
                         let row_response = t.selectable_row(*self.selected_rule == Some(id), |r| {
                             r.cell(|ui| {
@@ -659,6 +688,16 @@ impl<'a> RulesTable<'a> {
                             });
 
                             r.cell(|ui| {
+                                if ui
+                                    .selectable_label(false, "🗐")
+                                    .on_hover_text("Duplicate this condition")
+                                    .clicked()
+                                {
+                                    to_clone = Some(id);
+                                }
+                            });
+
+                            r.cell(|ui| {
                                 if ui.selectable_label(false, "🗑").clicked() {
                                     to_remove.push(id);
                                 }
@@ -673,6 +712,12 @@ impl<'a> RulesTable<'a> {
                     to_remove.into_iter().rev().for_each(|i| {
                         self.rules.remove(i);
                     });
+
+                    if let Some(index) = to_clone.filter(|i| *i < self.rules.len()) {
+                        let copy = self.rules[index].clone();
+                        self.rules.insert(index + 1, copy);
+                        *self.selected_rule = Some(index + 1);
+                    }
                 });
         });
     }
