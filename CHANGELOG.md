@@ -2,6 +2,8 @@
 
 # unreleased
 
+- new installs now split combats on a 60 second gap instead of 90, matching the value the OSCR server uses when it reads an uploaded log (existing settings are left alone)
+
 ### Fixes
 - the Upload button now always says what happened: it used to do nothing at all, without any message, when the combat could not be read back from the log file, and an upload that produced no ladder entries showed an empty window
 - uploads are now written to the log file (when logging is enabled in the settings), including the reason the server gave for rejecting one

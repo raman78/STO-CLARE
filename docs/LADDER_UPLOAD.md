@@ -41,9 +41,9 @@ combat = parser.combats[0]
 ```
 
 Note `seconds_between_combats: 60` — the server splits combats on a 60 s gap,
-regardless of the client's `combat_separation_time_seconds`. A slice cut with a
+hard-coded, with no setting or environment variable behind it. A slice cut with a
 longer separation can therefore contain more than the server will look at, and
-only its first part counts.
+only its first part counts. Our own default was 90 s and is now 60 s to match.
 
 ## The server re-detects everything
 
