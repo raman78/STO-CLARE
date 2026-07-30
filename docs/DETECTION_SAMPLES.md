@@ -215,11 +215,16 @@ numbers need revisiting — that is the point of keeping it global.
 ---
 
 ## [TFO] Iuppiter Iratus — Space — DONE (anchor + global tier)
-- **Anchor:** the three `*_S25_Tfo` ships — `Space_Federation_Mirror_Enterprise_S25_Tfo`,
-  `..._Mirror_Sci_Reskava_S25_Tfo`, `Space_Federation_Science_Escort_S25_Tfo`. The
-  suffix marks them as this TFO's own set.
-- They only appear in the last three minutes (23:50–23:52 of 23:43–23:52), which
-  is safe: the fight has **no internal gap over 30 s**, so it cannot split.
+- **Anchor:** `Space_Holo_Projector_Jupiter_Tfo` (Iuppiter is Latin for Jupiter,
+  so the name pins the map outright), the allied `Space_Federation_Voyager`, and
+  the three `*_S25_Tfo` ships whose suffix marks them as this TFO's own set.
+- **The friendly ship carries the coverage.** The `*_S25_Tfo` set only appears in
+  the last three minutes (23:50–23:52 of 23:43–23:52); Voyager runs 23:43 and
+  23:45–23:51, nearly the whole fight. The fight has no internal gap over 30 s so
+  it cannot split today, but anchoring on the ally means it would survive one.
+- ⚠ `Msn_Dyz_Az_Space_Federation_Science` looked like a good mission-object
+  anchor and was **rejected by counting**: it also appears in the Breach run an
+  hour earlier. A reminder that "looks map-specific" is not a measurement.
 - **Rejected:** the `Space_Federation_*_Mirror` rank-and-file, which cover the
   whole fight. Note these are *not* the same entities as The Ninth Rule's
   `Space_Federation_*_Dsc_Mirror` — Terran Discovery ships are a separate set —

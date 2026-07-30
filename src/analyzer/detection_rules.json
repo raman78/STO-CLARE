@@ -567,6 +567,8 @@
       "category": "TFO",
       "combat_type": "Space",
       "identifiers": [
+        "Space_Holo_Projector_Jupiter_Tfo",
+        "Space_Federation_Voyager",
         "Space_Federation_Mirror_Enterprise_S25_Tfo",
         "Space_Federation_Mirror_Sci_Reskava_S25_Tfo",
         "Space_Federation_Science_Escort_S25_Tfo"
