@@ -7,6 +7,7 @@
 - uploads are now written to the log file (when logging is enabled in the settings), including the reason the server gave for rejecting one
 
 ### Other Changes
+- the Analysis settings are now split into sub-tabs (Combat Names, Source Reversal, Custom Grouping, Damage Exclusion) instead of four sections stacked one under another, so each rule table gets the window's full height and shows about twice as many rows
 - combats now show whether the map is a space or a ground map, in parentheses after the name (e.g. "[TFO] Into the Hive (Ground)")
 - the Task Force Operations "Into the Hive", "Undine Assault" and "Undine Infiltration" are now recognized automatically
 - combats in which nobody dealt any damage are no longer listed — standing around on a social map writes fall damage and self-buffs, and each burst of those used to show up as its own empty combat

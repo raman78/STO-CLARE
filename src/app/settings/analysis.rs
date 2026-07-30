@@ -17,10 +17,23 @@ const WARN_COLOR: Color32 = Color32::from_rgb(0xd9, 0x95, 0x00);
 pub struct AnalysisTab {
     list_selected_combat_occurred_names: bool,
     occurred_combat_names_search_term: String,
+    selected_section: AnalysisSection,
     indirect_source_reversal_rules: IndirectSourceReversalRules,
     custom_grouping_rules: CustomGroupingRules,
     damage_out_exclusion_rules: DamageOutExclusionRules,
     combat_names_rules: CombatNameRules,
+}
+
+/// The Analysis tab holds four independent rule sets. Stacking them made each
+/// table compete for height inside one scroll area; as sub-tabs only one is on
+/// screen at a time, so it can use the window's full height.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum AnalysisSection {
+    #[default]
+    CombatNames,
+    SourceReversal,
+    CustomGrouping,
+    DamageExclusion,
 }
 
 #[derive(Default)]
@@ -82,25 +95,38 @@ impl AnalysisTab {
             self.list_selected_combat_occurred_names = true;
         }
 
-        self.indirect_source_reversal_rules
-            .show(&mut modified_settings.analysis, ui);
-        ui.add_space(20.0);
-
-        ui.separator();
-        ui.push_id(line!(), |ui| {
-            self.custom_grouping_rules
-                .show(&mut modified_settings.analysis, ui);
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            use AnalysisSection::*;
+            for (section, label) in [
+                (CombatNames, "Combat Names"),
+                (SourceReversal, "Source Reversal"),
+                (CustomGrouping, "Custom Grouping"),
+                (DamageExclusion, "Damage Exclusion"),
+            ] {
+                ui.selectable_value(&mut self.selected_section, section, label);
+            }
         });
-        ui.add_space(20.0);
-
         ui.separator();
-        self.damage_out_exclusion_rules
-            .show(&mut modified_settings.analysis, ui);
-        ui.add_space(20.0);
 
-        ui.separator();
-        self.combat_names_rules
-            .show(&mut modified_settings.analysis, selected_combat, ui);
+        match self.selected_section {
+            AnalysisSection::CombatNames => {
+                self.combat_names_rules
+                    .show(&mut modified_settings.analysis, selected_combat, ui)
+            }
+            AnalysisSection::SourceReversal => self
+                .indirect_source_reversal_rules
+                .show(&mut modified_settings.analysis, ui),
+            AnalysisSection::CustomGrouping => {
+                ui.push_id(line!(), |ui| {
+                    self.custom_grouping_rules
+                        .show(&mut modified_settings.analysis, ui);
+                });
+            }
+            AnalysisSection::DamageExclusion => self
+                .damage_out_exclusion_rules
+                .show(&mut modified_settings.analysis, ui),
+        }
 
         self.show_occurred_names_window(selected_combat, ui);
     }
@@ -479,7 +505,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
             // Settings window scrolls as a whole, so a short table here just
             // takes less room rather than leaving a fixed gap.
             .min_scroll_height(0.0)
-            .max_scroll_height(420.0)
+            .max_scroll_height(600.0)
             .cell_spacing(10.0)
             .header(HEADER_HEIGHT, |r| {
                 r.cell(|ui| {
@@ -573,7 +599,7 @@ impl<'a> RulesTable<'a> {
         ui.push_id(self.title, |ui| {
             Table::new(ui)
                 .min_scroll_height(0.0)
-                .max_scroll_height(320.0)
+                .max_scroll_height(400.0)
                 .cell_spacing(10.0)
                 .header(HEADER_HEIGHT, |r| {
                     r.cell(|ui| {
