@@ -41,6 +41,11 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
 - **Tier only on entities that die** (`deaths > 0`): their median hull damage ≈ HP.
   A `deaths = 0` entity's hull is just the damage we *happened to deal* to it
   (player-dependent), not its HP — fine as an anchor, useless as a tier threshold.
+- **Look for the friendly ships first.** Enemy rosters are shared between maps far
+  more often than the allies escorting them, and allies also tend to be present
+  from the first minute, where a boss or a late objective is not. Iuppiter Iratus
+  is the clearest case: its own `*_S25_Tfo` ships appear only in the last three
+  minutes, while the allied Voyager covers nearly the whole fight.
 - Non-dying **"friend"/objective ships** make good anchors, but a *generic* one
   recurs across maps (only narrows). The same *combination* rarely repeats, so
   `identifiers_all` (all-of) pins it. **BUT combinations are fragile to combat
