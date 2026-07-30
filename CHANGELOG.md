@@ -1,18 +1,21 @@
 # Change Log
 
-# unreleased
+## v1.7.0
+
+### Major Changes
+- the Advanced / Elite level is now worked out from how tough the enemy ships actually were, using one measure that applies to every space map — so the level shows up on far more maps, including ones whose numbers were never collected individually. Normal is recognized as well, though that part is still experimental
 
 ### Other Changes
-- the difficulty level is now worked out from how tough the enemy ships were, using one measure that applies to every space map — so many more maps show their level, including ones that never had their own numbers collected. Normal is recognized too, though that part is still experimental and based on limited data
-- the patrol "The Ninth Rule" is now recognized automatically, together with its Advanced or Elite level, no matter which enemy faction the patrol rolls (it can even mix two of them in one run)
-- the Task Force Operation "Tzenkethi Front" is now recognized automatically, together with its Advanced or Elite level
-- all five Red Alert events (Borg, Tholian, Tzenkethi, Elachi, Na'kuhl) are now recognized and always shown as Normal, and they are no longer mixed up with the regular maps that use the same enemy ships — Red Alert: Tholian used to show up as Azure Nebula Rescue
-- the overlay now remembers whether it was open: close the program with it showing and it comes back up on the next start
+- more maps are recognized automatically: the patrol "The Ninth Rule", the Task Force Operations "Tzenkethi Front" and "Defense of Starbase One", and all five Red Alert events (Borg, Tholian, Tzenkethi, Elachi, Na'kuhl)
+- "The Ninth Rule" is recognized whichever enemy faction it rolls, even when a single run mixes two of them
+- Red Alerts and "Defense of Starbase One" always show as Normal, since that is the only level they offer
+- the overlay now remembers whether it was open, and reopens itself on the next start
 
 ### Fixes
-- maps that are recognized by a friendly or mission ship are no longer missed when that ship happens to take no damage during the fight — such combats used to show up as plain "Combat"
-- applying settings no longer re-reads the whole combat log when nothing about the analysis changed — previously moving the overlay and then pressing Apply froze the app for a couple of seconds on a large log
-- the ⚠ mark that flags a naming rule overlapping an auto-detected map now also appears when the rule's name carries your own annotation (e.g. a trailing tag) instead of exactly matching the map name
+- Red Alert: Tholian is no longer reported as Azure Nebula Rescue, and the other Red Alerts no longer mix with the regular maps that field the same enemy ships
+- maps recognized by a friendly or mission ship are no longer missed when that ship happens to take no damage during the fight — such combats used to show up as plain "Combat"
+- applying settings is much faster when nothing about the analysis changed: the combat log is no longer re-read from scratch, which used to stall the program after moving the overlay
+- the ⚠ mark that flags a naming rule overlapping an auto-detected map now also appears when the rule's name carries an extra annotation instead of exactly matching the map name
 
 ## v1.6.1
 ### Fixes
