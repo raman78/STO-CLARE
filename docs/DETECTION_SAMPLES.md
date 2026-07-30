@@ -151,6 +151,40 @@ Devil's Heart on **Elite** fields a Cdr of 7,095 against Bug Hunt's 7,803 on
 where one table covers every map, ground tiers can only ever come from per-map
 tables — which needs an Advanced+Elite pair for each map individually.
 
+### Decision (2026-07-31): wait for measured pairs
+
+Ground tiers will come from **per-map tables built from an Advanced+Elite pair of
+that same map**. Two shortcuts were considered and declined:
+
+- **Pinning a difficulty** — only valid where the queue offers one tier, as with
+  Battle of Korfez. Devil's Heart is not such a map.
+- **Extrapolating from the 1.54x ground multiplier**, i.e. taking a map's single
+  sample, predicting the other tier and putting the threshold between them. This
+  does work on Bug Hunt — a threshold derived from its Advanced alone correctly
+  separates its real Elite, for all five ranks — but that multiplier *comes from*
+  Bug Hunt, so the check is circular. Devil's Heart having weaker Elite troops
+  than Bug Hunt's Advanced is exactly the kind of spread that would break it.
+
+Until a pair exists, these maps show no tier. That is the honest output: a wrong
+tier is worse than none, and unlike the space table there is no independent
+evidence to lean on.
+
+**What is missing, per map:**
+
+| map | have | needs |
+|---|---|---|
+| Bug Hunt | Advanced + Elite | — (has tables) |
+| Brotherhood of the Sword | Advanced | Elite |
+| Into the Hive | Advanced | Elite |
+| Khitomer in Stasis | Advanced | Elite |
+| Pahvo Dissension | Advanced | Elite |
+| Undine Infiltration | Advanced | Elite |
+| Devil's Heart | Elite | **Advanced** |
+
+A second pair would also settle whether the 1.54x multiplier is a property of
+ground content or just of Bug Hunt — which is the one thing that would make the
+extrapolation shortcut usable after all.
+
 **Lesson worth keeping:** the earlier recommendation rested on a single Elite map.
 One map cannot show whether a spread is a property of the tier or of that map; it
 takes two to tell those apart. The same trap was avoided in space only because the
