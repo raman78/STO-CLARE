@@ -313,14 +313,6 @@ impl Combat {
         append_detected_difficulty(base, self.detected_difficulty)
     }
 
-    /// The auto-detected name: the map with the difficulty appended in square
-    /// brackets when resolved (e.g. `"Hive Space [Elite]"`); `None` when no map
-    /// was detected. Used to show what detection alone would name a combat.
-    pub fn detected_name(&self) -> Option<String> {
-        let map = self.detected_map.clone()?;
-        let map = append_detected_combat_type(map, self.detected_combat_type.as_deref());
-        Some(append_detected_difficulty(map, self.detected_difficulty))
-    }
 
     pub fn file_identifier(&self) -> String {
         let date_times = format!(

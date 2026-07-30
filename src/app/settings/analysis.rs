@@ -112,7 +112,7 @@ impl AnalysisTab {
         match self.selected_section {
             AnalysisSection::CombatNames => {
                 self.combat_names_rules
-                    .show(&mut modified_settings.analysis, selected_combat, ui)
+                    .show(&mut modified_settings.analysis, ui)
             }
             AnalysisSection::SourceReversal => self
                 .indirect_source_reversal_rules
@@ -294,12 +294,7 @@ impl CustomGroupingRules {
 }
 
 impl CombatNameRules {
-    fn show(
-        &mut self,
-        modified_settings: &mut AnalysisSettings,
-        selected_combat: Option<&Combat>,
-        ui: &mut Ui,
-    ) {
+    fn show(&mut self, modified_settings: &mut AnalysisSettings, ui: &mut Ui) {
         // Flag rules that shadow an auto-detected map, as a ⚠ on the rule's row.
         let identifiers = curated_map_identifiers();
         let row_warning = |group: &RulesGroup| {
@@ -363,7 +358,7 @@ impl CombatNameRules {
                 });
             });
 
-            Self::show_auto_detected(selected_combat, ui);
+            Self::show_auto_detected(ui);
         }
     }
 
@@ -373,7 +368,7 @@ impl CombatNameRules {
     /// shadow a detected map are flagged with a ⚠ on their row (see
     /// `overlapping_maps`); this section additionally notes it for the selected
     /// combat and lists the detectable maps.
-    fn show_auto_detected(selected_combat: Option<&Combat>, ui: &mut Ui) {
+    fn show_auto_detected(ui: &mut Ui) {
         // Legend for the per-row ⚠, directly under the rules frame above.
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -392,24 +387,6 @@ impl CombatNameRules {
         ui.label(
             RichText::new("Auto-detected maps — used only when no rule above matches.").weak(),
         );
-
-        // Collision note for the currently selected combat, if a rule renamed it.
-        if let Some(combat) = selected_combat {
-            if let Some(detected) = combat.detected_name() {
-                if !combat.combat_names.is_empty() {
-                    ui.add_space(6.0);
-                    ui.colored_label(
-                        WARN_COLOR,
-                        format!(
-                            "⚠ Your rules name the selected combat \"{}\", shadowing the \
-                             detected \"{}\".",
-                            combat.name(),
-                            detected
-                        ),
-                    );
-                }
-            }
-        }
 
         ui.add_space(6.0);
         ui.label(RichText::new("Auto-detected maps:").weak());

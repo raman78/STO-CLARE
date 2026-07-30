@@ -136,8 +136,6 @@ curated maps read-only below the user rules and flags overlaps two ways:
   `SourceOrTargetName` (display name, e.g. "U.S.S. Birmingham") can only ever be
   flagged by the name check — the rules file carries no display names to compare
   against.
-- **Per-combat**: when the selected combat is auto-detected but a rule renamed it.
-
 The curated rules are never copied into the user's settings — they are rendered
 from `detection::curated_map_names()` / `curated_map_identifiers()` — so refreshing
 them is a JSON swap that leaves user rules untouched.
