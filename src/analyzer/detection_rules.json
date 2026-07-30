@@ -565,7 +565,12 @@
     },
     "Iuppiter Iratus": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Federation_Mirror_Enterprise_S25_Tfo",
+        "Space_Federation_Mirror_Sci_Reskava_S25_Tfo",
+        "Space_Federation_Science_Escort_S25_Tfo"
+      ]
     },
     "Jailbreak at Rura Penthe": {
       "category": "Patrol",

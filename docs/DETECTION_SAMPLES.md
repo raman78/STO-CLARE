@@ -214,6 +214,28 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Iuppiter Iratus — Space — DONE (anchor + global tier)
+- **Anchor:** the three `*_S25_Tfo` ships — `Space_Federation_Mirror_Enterprise_S25_Tfo`,
+  `..._Mirror_Sci_Reskava_S25_Tfo`, `Space_Federation_Science_Escort_S25_Tfo`. The
+  suffix marks them as this TFO's own set.
+- They only appear in the last three minutes (23:50–23:52 of 23:43–23:52), which
+  is safe: the fight has **no internal gap over 30 s**, so it cannot split.
+- **Rejected:** the `Space_Federation_*_Mirror` rank-and-file, which cover the
+  whole fight. Note these are *not* the same entities as The Ninth Rule's
+  `Space_Federation_*_Dsc_Mirror` — Terran Discovery ships are a separate set —
+  but plain Mirror ships plausibly appear in other Terran content and there is
+  none in this log to count against.
+- ⚠ **Raman's hand-written rule matched "Data Thief"**, which is the *display*
+  name of `Space_Federation_Frigate_Mirror`. Detection cannot use display names,
+  so the rule gave no hint as to what to anchor on — exactly the caveat recorded
+  for the archived rules.
+- **Tier:** from the global ship-class table (battleship 453,593 against an 850k
+  band ⇒ Advanced).
+
+| sample | tier | Mirror_Enterprise | Battleship_Mirror | Cruiser_Mirror_2 | Frigate_Mirror |
+|---|---|---|---|---|---|
+| 2026-07-30 23:43 | Advanced | 4,626,261 | 453,593 | 387,758 | 173,633 |
+
 ## [TFO] Breach — Space — DONE (anchor + global tier)
 - **Anchor:** the Dyson breach emplacements (`Mission_Dys_Breach_Hard_Point`,
   `Msn_Dys_Event_Breach_{Beam,Cannon}_Turret`, `..._Beam_Turret_Boss`) and the Voth
