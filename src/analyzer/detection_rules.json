@@ -125,7 +125,8 @@
       "category": "TFO",
       "combat_type": "Space",
       "identifiers": [
-        "Space_Klingon_Dreadnought_Dsc_Sarcophagus"
+        "Space_Klingon_Dreadnought_Dsc_Sarcophagus",
+        "Space_Federation_Cruiser_Dsc_Shenzhou"
       ],
       "difficulty": "Normal"
     },
@@ -257,7 +258,8 @@
       "category": "TFO",
       "combat_type": "Ground",
       "identifiers": [
-        "Bluegills_Ground_Boss"
+        "Bluegills_Ground_Boss",
+        "Msn_Dlt_Bluegill_Hunt_Ground_Demolitions_Expert"
       ],
       "death_counts": {
         "Elite": {
@@ -1197,7 +1199,8 @@
       "category": "Patrol",
       "combat_type": "Space",
       "identifiers": [
-        "Space_Elachi_Frigate"
+        "Space_Elachi_Frigate",
+        "Space_Romulan_Colony_Escort"
       ],
       "hull_counts": {
         "Advanced": {

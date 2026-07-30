@@ -41,6 +41,22 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
 - **Tier only on entities that die** (`deaths > 0`): their median hull damage ≈ HP.
   A `deaths = 0` entity's hull is just the damage we *happened to deal* to it
   (player-dependent), not its HP — fine as an anchor, useless as a tier threshold.
+- **A sweep for friendly anchors was done 2026-07-31** across all 27 maps with
+  samples in the log (`/tmp` scratch analysis, method: group every combat, keep
+  entities that never die and appear in *every* run of that map, then check the
+  entity occurs in no other map). It found usable allies for only three maps —
+  most already anchor on a mission object, and the rest field nothing but shared
+  faction ships. Results:
+  - Trouble Over Terrh gains `Space_Romulan_Colony_Escort` (5/5 runs) beside its
+    Elachi enemy anchor.
+  - Bug Hunt gains `Msn_Dlt_Bluegill_Hunt_Ground_Demolitions_Expert` (2/2 runs),
+    which is present far longer in each fight than the boss it sits next to.
+  - Battle at the Binary Stars gains `Space_Federation_Cruiser_Dsc_Shenzhou`.
+  - Azure Nebula Rescue has **no** ally to offer: only the generic
+    `Space_Tholian_Cruiser_Web` appears in all 5 runs. Worth noting the Lleiset,
+    once dropped from Azure for being shared with Terrh, turns out to occur in
+    Terrh alone — but it does not appear in Azure's runs at all, so it is no help
+    there either.
 - **Look for the friendly ships first.** Enemy rosters are shared between maps far
   more often than the allies escorting them, and allies also tend to be present
   from the first minute, where a boss or a late objective is not. Iuppiter Iratus
