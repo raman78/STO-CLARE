@@ -3,6 +3,44 @@
 How the analyzer figures out **which STO map** a combat is and **at what
 difficulty** (Advanced / Elite / …), independent of the combat's display name.
 
+## What the combat log does *not* contain (verified 2026-07-30)
+
+Checked against a real 765,692-line log, because "the log has no map marker" is
+the premise everything here rests on:
+
+- **Every single line has the same 12-field shape.** No header lines, no
+  differently-shaped records, nothing to mark a map load, a combat start, or a
+  combat end.
+- The type field only ever holds damage kinds (`Shield`, `Phaser`, `Kinetic`,
+  `HitPoints`, …) — there are no system events.
+- Not one occurrence of "map", "instance" or "loading". The only hits for "Zone"
+  are `Gravimetric Detonation Zone`, a player kit power.
+
+So there is **no map name and no map id anywhere in the log**, which is why
+entity anchors are the only route to a map name — and why OSCR does the same.
+
+### A map-boundary signal does exist, in another file
+
+`CLIENTSERVERCOMM.log`, written by the game next to `combatlog.log`, logs server
+transfers — i.e. actual map changes — with timestamps **in UTC**. Against the
+2026-07-30 combats these line up closely:
+
+| combat (combatlog, local time) | transfer logged |
+|---|---|
+| Into the Hive ends 12:10:02 | 12:10:22 |
+| Undine Assault 12:17:00–12:23:07 | 12:15:56 (in), **12:23:08** (out) |
+| Undine Infiltration ends 12:46:47 | 12:46:52 |
+
+It carries **no map names** — only "disconnected from our gameserver for
+transfer" — so it cannot help identify a map. What it could give is exact combat
+*boundaries*, replacing the `combat_separation_time_seconds` heuristic. That
+heuristic has a known failure: at 90 s a Defense of Starbase One run merged with
+a Rescue and Search run into one combat, which briefly made the Normal HP bands
+look like they overlapped (see `DETECTION_SAMPLES.md`).
+
+Not implemented. It would add a dependency on a second file whose presence and
+format we do not control (unverified on Windows), plus timezone conversion.
+
 ## Why this exists
 
 STO combat logs carry no explicit map or difficulty marker. Two separate
