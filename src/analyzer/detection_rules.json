@@ -234,7 +234,16 @@
     },
     "Brotherhood of the Sword": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Msn_Ico_Qonos_Ground_02_Ferasan_Lt_Honor_Guard_02",
+        "Msn_Ico_Qonos_Ground_02_Klingon_Lt_Honor_Guard_01",
+        "Msn_Ico_Qonos_Ground_02_Nausicaan_Lt_Honor_Guard_03",
+        "Msn_Ico_Qonos_Ground_02_Andorian_Lt_Maco_03",
+        "Msn_Ico_Qonos_Ground_02_Tellarite_Lt_Maco_01",
+        "Msn_Ico_Qonos_Ground_02_Vulcan_Lt_Maco_02",
+        "Msn_Ico_Qonos_Ground_Orion_Pirates_Lt_Ally_01"
+      ]
     },
     "Bug Hunt": {
       "category": "TFO",

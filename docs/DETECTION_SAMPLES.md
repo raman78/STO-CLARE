@@ -214,6 +214,27 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Brotherhood of the Sword — Ground — DONE (anchor only, no tier)
+- **Anchor:** the seven `Msn_Ico_Qonos_Ground*` allies — Honor Guards (Ferasan,
+  Klingon, Nausicaan), MACO (Andorian, Tellarite, Vulcan) and an Orion ally. All
+  seven are listed because the escort's species look randomised per run, so a
+  different set may turn up next time.
+- They only appear in two of the fight's six minutes (22:41–22:42 of 22:40–22:45),
+  which is safe here: the fight has **no gap longer than 30 s**, so it cannot
+  split at any sensible separation.
+- **Rejected:** the `Ground_Herald_*` troops cover the whole fight and occur
+  nowhere else in the log, but Heralds appear across the Iconian War content and
+  there is no other Herald ground map here to check against — the counting rule
+  cannot clear them. If a split ever loses the early part, they are the fallback.
+- **Tier:** none — ground maps are excluded from the global table.
+
+| sample | tier | Capt_Gravity | Cdr_Melee | Lieutenant | Ensign |
+|---|---|---|---|---|---|
+| 2026-07-30 22:40 | Advanced | 24,336 | 5,030 | 2,159 | 1,657 |
+
+Fifth Advanced ground sample. Still no Elite pair from a second ground map, so the
+rank table described above remains unbuilt.
+
 ## [TFO] Peril Over Pahvo — Space — DONE (anchor only, no tier)
 - **Anchor:** `Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite` (runs the
   whole fight) and `..._Planetary_Shield` (second half).
