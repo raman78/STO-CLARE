@@ -10,6 +10,11 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
 
 **Anchoring rules learned:**
 - Never anchor on `Device_*` — player-carried devices, random per run.
+- **"Too generic" is a measurement, not an intuition.** Count how many distinct
+  combats an entity appears in across the whole log before rejecting it. This has
+  now been wrong twice in the same direction: `Space_Federation_Cruiser_Galaxy`
+  (written off as ubiquitous, actually 7 combats, all one patrol) and the Pahvo
+  rank-and-file (written off as shared Terran troops, actually one fight).
 - Patrols/TFOs randomize the **enemy** faction → anchor on a stable ally /
   mission object, not the enemy.
 - **Measure "generic" before rejecting it.** A plain-looking ally name is not
@@ -211,17 +216,24 @@ numbers need revisiting — that is the point of keeping it global.
 
 ## [TFO] Pahvo Dissension — Ground — DONE (anchor only, no tier)
 - **Anchor:** any-of the two named bosses
-  `Ground_Federation_Capt_Range_{Eng,Tac}_Mirror_Dsc_Pahvo_Boss`.
-- ⚠ They only appear in the **last minute** of a ~10 minute fight (16:15–16:16 of
-  16:06–16:16). That is safe at the user's 60 s separation — the largest internal
-  gap is 52 s, so the fight does not split — but a shorter separation would leave
-  the early part unrecognized.
+  `Ground_Federation_Capt_Range_{Eng,Tac}_Mirror_Dsc_Pahvo_Boss` **plus** the
+  rank-and-file `Ground_Federation_Ens_Range_{Tac,Eng,Sci}_Mirror_Dsc`.
+- The bosses alone were not enough: they appear only in the **last minute** of a
+  ~10 minute fight (16:15–16:16 of 16:06–16:16). That happens to be safe at a 60 s
+  separation — the largest internal gap is 52 s, so this fight does not split —
+  but a shorter separation would have left the early part unrecognized. The Ens
+  ranks run the whole fight, so they close that hole.
+- ⚠ **The rank-and-file were first dismissed as "generic Terran ground troops
+  that would collide with other maps". That was an assumption, not a measurement,
+  and measuring contradicted it:** every `Ground_Federation_*_Mirror_Dsc` entity
+  occurs in this one fight and nowhere else in the whole log. The residual risk is
+  that another Mirror-Discovery ground map (none in the catalog is anchored yet)
+  fields the same troops — if one ever misreads as Pahvo Dissension, drop the Ens
+  entries and accept the boss-only coverage.
 - **Rejected anchors:** `Device_Pahvo_Tfo_Crystal_Tether` covers the whole fight
   and looks map-specific, but it is a `Device_*` (see the anchoring rules), and
   one sample is not enough to prove it is mission-issued rather than carried.
   Same for `Ground_Universal_Kit_Pahvo_Crystal_Prism_Module_Summon`, a player kit.
-  The rank-and-file `Ground_Federation_*_Mirror_Dsc` are generic Terran ground
-  troops and would collide with other maps.
 - **Tier:** none — ground maps are excluded from the global table.
 
 | sample | tier | Boss_Eng | Boss_Tac | Cdr | Lt | Ens |

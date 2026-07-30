@@ -790,7 +790,10 @@
       "combat_type": "Ground",
       "identifiers": [
         "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss",
-        "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss"
+        "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss",
+        "Ground_Federation_Ens_Range_Tac_Mirror_Dsc",
+        "Ground_Federation_Ens_Range_Eng_Mirror_Dsc",
+        "Ground_Federation_Ens_Range_Sci_Mirror_Dsc"
       ]
     },
     "Pansarka System Patrol": {
