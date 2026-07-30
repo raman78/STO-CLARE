@@ -108,7 +108,16 @@ impl SettingsWindow {
                 });
 
                 ui.separator();
-                ScrollArea::both().show(ui, |ui| match self.selected_tab {
+                // Leave room for the separator and the Ok/Cancel row below, and
+                // stop the area auto-sizing to its contents. Without both, the
+                // scroll area sizes itself to everything inside it: the buttons
+                // are pushed past the bottom edge and the window springs back to
+                // full content height whenever it is dragged smaller.
+                let bottom_bar = ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 4.0;
+                ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .max_height((ui.available_height() - bottom_bar).at_least(80.0))
+                    .show(ui, |ui| match self.selected_tab {
                     SettingsTab::General => self.general_tab.show(
                         &state.analysis_handler,
                         &mut self.modified_settings,
