@@ -209,6 +209,24 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Battle at the Binary Stars — Space — DONE (single-difficulty Normal)
+- Was already detectable via `Space_Klingon_Dreadnought_Dsc_Sarcophagus`; this run
+  only added the tier and fixed the name.
+- **Tier:** pinned `difficulty: "Normal"` — Normal-only in the queue (Raman).
+- ✅ **First independent check of the global Normal band.** Before pinning, the
+  global ship-class table tiered this run Normal entirely on its own, on a map with
+  no tier tables and no hand-tuned thresholds. Every voting entity agreed:
+  Battleship_Dsc 216,081 (band 260k), Cruiser_Dsc 170,195 (188k), Escort_Dsc
+  132,630 (145k), Raider_Dsc 63,031 (83k). The pin now makes it authoritative
+  rather than inferred.
+- **Renamed** "Battle At The Binary Stars" → "Battle at the Binary Stars" (wiki
+  capitalisation). Note `Battle of the Binary Stars` on the wiki redirects to the
+  *story mission*, not this TFO — they are different content.
+
+| sample | tier | Battleship_Dsc | Cruiser_Dsc | Escort_Dsc | Raider_Dsc |
+|---|---|---|---|---|---|
+| 2026-07-30 13:57 | Normal | 216,081 | 170,195 | 132,630 | 63,031 |
+
 ## Red Alerts — all five DONE (single-difficulty Normal)
 
 Raman confirmed from the in-game queue that **every Red Alert is Normal-only**, so

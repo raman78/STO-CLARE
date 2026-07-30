@@ -121,12 +121,13 @@
       "category": "Patrol",
       "combat_type": "Space"
     },
-    "Battle At The Binary Stars": {
+    "Battle at the Binary Stars": {
       "category": "TFO",
       "combat_type": "Space",
       "identifiers": [
         "Space_Klingon_Dreadnought_Dsc_Sarcophagus"
-      ]
+      ],
+      "difficulty": "Normal"
     },
     "Battle of Korfez": {
       "category": "TFO",

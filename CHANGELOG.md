@@ -9,6 +9,7 @@
 ### Other Changes
 - combats now show whether the map is a space or a ground map, in parentheses after the name (e.g. "[TFO] Into the Hive (Ground)")
 - the Task Force Operations "Into the Hive", "Undine Assault" and "Undine Infiltration" are now recognized automatically
+- "Battle at the Binary Stars" now shows its level (Normal, the only one it offers), and its name is spelled the way the wiki does
 
 ## v1.7.0
 
