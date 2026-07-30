@@ -3,6 +3,24 @@
 How the analyzer figures out **which STO map** a combat is and **at what
 difficulty** (Advanced / Elite / …), independent of the combat's display name.
 
+## Archived hand-written name rules
+
+`legacy_combat_name_rules.json` holds the 41 Combat Name Rules Raman built by
+hand before detection existed, exported from his live settings on 2026-07-30 and
+kept purely as a safety net — they are not loaded by anything.
+
+Detection has been replacing them one map at a time, and the export records how
+far that got: **37 of the 41 are already switched off**, leaving four still doing
+work — Breach, Brotherhood of the Sword, Iuppiter Iratus and Peril Over Pahvo.
+Those four are exactly the maps still missing an anchor, so the file doubles as a
+to-do list: each still-enabled rule names a map worth adding, and its match
+expression is a hint at what to anchor on (though rules match *display* names,
+which the detection cannot use — it keys on unique names).
+
+To restore any of them, paste the entry back into the `analysis.combat_name_rules`
+array of the settings file. Note the format is the app's own settings schema, not
+`detection_rules.json`.
+
 ## What the combat log does *not* contain (verified 2026-07-30)
 
 Checked against a real 765,692-line log, because "the log has no map marker" is
