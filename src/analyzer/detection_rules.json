@@ -1198,7 +1198,11 @@
     },
     "Undine Infiltration": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss",
+        "Event_Undine_Infiltration_Ground_Fire"
+      ]
     },
     "Unity": {
       "category": "Patrol",

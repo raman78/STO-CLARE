@@ -100,6 +100,29 @@ Rescue — anchored but with no tables at all — gained 4 correct tiers.
   showed 88k on Elite).
 - pets/drones/torpedoes/turrets/platforms etc. — not rank-scaled.
 
+### Ground maps — why the global table skips them, and what would work
+
+Ground scales ~1.54x between tiers, not ~4.4x, which is why ground entities are
+excluded from the global table. Three Advanced ground samples (Bug Hunt, Into the
+Hive, Undine Infiltration) plus one Elite (Bug Hunt) show a global **rank** table
+is feasible, but only on the senior ranks:
+
+| rank | Advanced across 3 maps | spread | lowest Elite | margin |
+|---|---|---|---|---|
+| Cdr | 5,113–8,236 | 1.61x | 16,077 | **1.95x** — usable |
+| Capt | 13,842–21,807 | 1.58x | 33,332 | **1.53x** — usable |
+| Lt | 2,867–3,890 | 1.36x | 4,346 | 1.12x — unusable |
+| Ens | 1,873–2,470 | 1.32x | 2,740 | 1.11x — unusable |
+
+The cannon fodder is the problem: Into the Hive's *Advanced* rank-and-file is
+tougher than Bug Hunt's, leaving barely 11% to Bug Hunt's *Elite*. Since low
+ranks also vastly outnumber the rest (dozens of Ens against one boss), a naive
+majority vote would be decided by exactly the entities that cannot tell the tiers
+apart. A ground table must therefore vote on **Cdr and above** only.
+
+Needed before implementing: Advanced+Elite pairs from at least three ground maps.
+Currently only Bug Hunt has both.
+
 ### Normal — EXPERIMENTAL
 
 Added 2026-07-29 on far weaker evidence than the Advanced/Elite split, and marked
