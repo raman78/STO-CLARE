@@ -117,6 +117,29 @@ impl Analyzer {
                 .iter_mut()
                 .for_each(|p| p.update(&self.settings));
         }
+
+        self.discard_combats_without_damage();
+    }
+
+    /// Drop "combats" in which no player dealt any damage at all.
+    ///
+    /// Standing around on a social map still writes records — fall damage
+    /// (`Autodesc.Combatevent.Falling`) and self-buffs — and each burst of those
+    /// becomes its own combat, cluttering the list with entries that hold
+    /// nothing. Real fights always have damage out from someone.
+    ///
+    /// `total_damage_out` is the sum over *all* players, so a run where the user
+    /// only healed is still kept as long as anyone in the group dealt damage.
+    /// The **newest** combat is never dropped: it may still be in progress, with
+    /// its first damage record yet to be read.
+    fn discard_combats_without_damage(&mut self) {
+        let last = self.combats.len().saturating_sub(1);
+        let mut index = 0;
+        self.combats.retain(|combat| {
+            let keep = index == last || f64::from(combat.total_damage_out.all) > 0.0;
+            index += 1;
+            keep
+        });
     }
 
     fn process_next_record(
@@ -802,6 +825,74 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Standing on a social map still writes records - fall damage and
+    /// self-buffs - and each burst becomes its own "combat". Those hold no
+    /// player damage at all and are dropped, except the newest, which may still
+    /// be in progress.
+    #[test]
+    fn combats_without_player_damage_are_discarded() {
+        let dir = std::env::temp_dir().join("cla-empty-combat-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        // 1) fall damage, nobody attacking   2) a real fight   3) a self-buff
+        //    4) another real fight, so the junk at 3 is not the newest combat
+        let records = concat!(
+            "26:07:23:20:00:00.0::,,,,Sara,P[9@9 Sara@x],falling,Autodesc.Combatevent.Falling,HitPoints,,6.2,0\n",
+            "26:07:23:20:10:00.0::Kestrel,P[1@2 Kestrel@h],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n",
+            "26:07:23:20:20:00.0::Valir,P[3@4 Valir@y],,*,,*,Personal Shields,Pn.d,Shield,,0.02,0\n",
+            "26:07:23:20:30:00.0::Kestrel,P[1@2 Kestrel@h],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        assert_eq!(
+            2,
+            analyzer.result().len(),
+            "only the two combats with player damage should remain"
+        );
+        for combat in analyzer.result() {
+            assert!(
+                f64::from(combat.total_damage_out.all) > 0.0,
+                "a kept combat must have damage"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The newest combat is kept even with no damage yet: the log is read live,
+    /// so it may be a fight whose first damage record has not arrived.
+    #[test]
+    fn newest_combat_is_kept_even_without_damage() {
+        let dir = std::env::temp_dir().join("cla-newest-combat-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        std::fs::write(
+            &log,
+            "26:07:23:20:00:00.0::,,,,Sara,P[9@9 Sara@x],falling,Autodesc.Combatevent.Falling,HitPoints,,6.2,0\n",
+        )
+        .unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+        assert_eq!(1, analyzer.result().len());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn append_combat_type_adds_parenthesised_environment() {
         assert_eq!(
@@ -1031,5 +1122,7 @@ mod tests {
         println!("combats: {:?}", combats);
     }
 }
+
+
 
 

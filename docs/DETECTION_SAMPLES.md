@@ -209,6 +209,30 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Pahvo Dissension — Ground — DONE (anchor only, no tier)
+- **Anchor:** any-of the two named bosses
+  `Ground_Federation_Capt_Range_{Eng,Tac}_Mirror_Dsc_Pahvo_Boss`.
+- ⚠ They only appear in the **last minute** of a ~10 minute fight (16:15–16:16 of
+  16:06–16:16). That is safe at the user's 60 s separation — the largest internal
+  gap is 52 s, so the fight does not split — but a shorter separation would leave
+  the early part unrecognized.
+- **Rejected anchors:** `Device_Pahvo_Tfo_Crystal_Tether` covers the whole fight
+  and looks map-specific, but it is a `Device_*` (see the anchoring rules), and
+  one sample is not enough to prove it is mission-issued rather than carried.
+  Same for `Ground_Universal_Kit_Pahvo_Crystal_Prism_Module_Summon`, a player kit.
+  The rank-and-file `Ground_Federation_*_Mirror_Dsc` are generic Terran ground
+  troops and would collide with other maps.
+- **Tier:** none — ground maps are excluded from the global table.
+
+| sample | tier | Boss_Eng | Boss_Tac | Cdr | Lt | Ens |
+|---|---|---|---|---|---|---|
+| 2026-07-30 16:06 | Advanced | 35,027 | 27,182 | 4,536 | 2,514 | 2,047 |
+
+This is a **fourth Advanced ground sample**. It widens the Cdr spread across maps
+to 1.81x (4,536–8,236), against a 1.95x margin to the lowest known Elite — so the
+"senior ranks only" plan still holds, but with less room than three maps
+suggested. Ens stays useless (1,873–2,470 across four maps).
+
 ## [TFO] Battle at the Binary Stars — Space — DONE (single-difficulty Normal)
 - Was already detectable via `Space_Klingon_Dreadnought_Dsc_Sarcophagus`; this run
   only added the tier and fixed the name.

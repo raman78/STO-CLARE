@@ -789,7 +789,7 @@ mod tests {
         // separation is 90s); the target is the player so the combat has data.
         let combat = |hh: u32, mm: u32| {
             format!(
-                "26:07:23:{hh:02}:{mm:02}:00.0::Attacker,C[1 Npc_Foo],,*,Kestrel,P[1@2 Kestrel@handle],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+                "26:07:23:{hh:02}:{mm:02}:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n"
             )
         };
         std::fs::write(&log, format!("{}{}", combat(20, 0), combat(20, 5))).unwrap();
@@ -888,7 +888,7 @@ mod tests {
 
         let combat = |hh: u32, mm: u32| {
             format!(
-                "26:07:23:{hh:02}:{mm:02}:00.0::Attacker,C[1 Npc_Foo],,*,Kestrel,P[1@2 Kestrel@handle],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+                "26:07:23:{hh:02}:{mm:02}:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n"
             )
         };
         std::fs::write(&log, format!("{}{}", combat(20, 0), combat(20, 5))).unwrap();
