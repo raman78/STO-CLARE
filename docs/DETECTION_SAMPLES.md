@@ -214,6 +214,28 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Peril Over Pahvo — Space — DONE (anchor only, no tier)
+- **Anchor:** `Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite` (runs the
+  whole fight) and `..._Planetary_Shield` (second half).
+- ⚠ **Forced a re-anchor of Rescue and Search.** This map fields the *same*
+  `Space_Klingon_*_Dsc_Mokai` ships that Rescue and Search was anchored on, so
+  both matched and the winner came down to hash-map iteration order — the run was
+  reported as Rescue and Search. Neither map pins a difficulty, so the early
+  return that settles the Red Alert / Azure clash does not apply here.
+- **Rescue and Search now anchors on the rescued Lukari ships**
+  (`Msn_Space_Lukari_Science_Vessel` / `_Frigate` / `_Escort`). Measured: all 14 of
+  its runs in the log carry them, in every minute of each fight, and no other map
+  does. Its Mokai hull bands are unchanged — they still resolve the tier, they
+  just no longer identify the map. Guarded by
+  `pahvo_and_rescue_are_told_apart_by_their_mission_objects`.
+- One 533-line fragment (2026-07-30 22:02) holds nothing but Mokai ships, with no
+  mission object of either map, and is now correctly left unidentified rather than
+  mislabelled Rescue and Search.
+
+| sample | tier | Battleship_Mokai | Cruiser_Mokai | Raider_Mokai |
+|---|---|---|---|---|
+| 2026-07-30 22:05 | Advanced | 472,023 | 376,972 | 126,811 |
+
 ## [TFO] Battle of Korfez — Space — DONE (single-difficulty Elite)
 - **Anchor:** `Dlt_Vaadwaur_Stf_System_Dreadnought_Boss` (27.8M hull — the STF's
   final dreadnought).

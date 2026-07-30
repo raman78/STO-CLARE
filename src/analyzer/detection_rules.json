@@ -824,7 +824,11 @@
     },
     "Peril Over Pahvo": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite",
+        "Msn_Dsc_Pahvo_Defense_Queue_System_Planetary_Shield"
+      ]
     },
     "Pheben System Patrol": {
       "category": "Patrol",
@@ -906,7 +910,9 @@
       "category": "Patrol",
       "combat_type": "Space",
       "identifiers": [
-        "Space_Klingon_Cruiser_Dsc_Mokai"
+        "Msn_Space_Lukari_Science_Vessel",
+        "Msn_Space_Lukari_Frigate",
+        "Msn_Space_Lukari_Escort"
       ],
       "hull_counts": {
         "Advanced": {

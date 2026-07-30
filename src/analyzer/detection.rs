@@ -660,8 +660,11 @@ mod tests {
     #[test]
     fn rescue_and_search_tier_by_hull_damage() {
         // A patrol with no fixed death counts: only the median hull damage of
-        // the Mokai ships (~4x higher on Elite) tells the tiers apart.
+        // the Mokai ships (~4x higher on Elite) tells the tiers apart. The map
+        // itself is identified by the rescued Lukari ships — the Mokai are
+        // shared with Peril Over Pahvo and cannot identify anything.
         let advanced = vec![
+            hull_critter("Msn_Space_Lukari_Science_Vessel", 0.0),
             hull_critter("Space_Klingon_Cruiser_Dsc_Mokai", 363_000.0),
             hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 338_000.0),
         ];
@@ -670,11 +673,39 @@ mod tests {
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
 
         let elite = vec![
+            hull_critter("Msn_Space_Lukari_Science_Vessel", 0.0),
             hull_critter("Space_Klingon_Cruiser_Dsc_Mokai", 1_492_000.0),
             hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 1_540_000.0),
         ];
         let result = detect(&bundled_rules(), &view(&elite));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    /// Peril Over Pahvo fields the same Mokai ships as Rescue and Search, so
+    /// neither can be identified by them. Each keys on its own mission objects:
+    /// the rescued Lukari ships, and the Pahvo defence satellites.
+    #[test]
+    fn pahvo_and_rescue_are_told_apart_by_their_mission_objects() {
+        let rules = bundled_rules();
+        let shared = "Space_Klingon_Cruiser_Dsc_Mokai";
+
+        let pahvo = vec![
+            dead_hull_critter("Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite", 0.0),
+            dead_hull_critter(shared, 376_972.0),
+            dead_hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 472_023.0),
+        ];
+        let result = detect(&rules, &view(&pahvo));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Peril Over Pahvo"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let rescue = vec![
+            dead_hull_critter("Msn_Space_Lukari_Science_Vessel", 0.0),
+            dead_hull_critter(shared, 363_000.0),
+            dead_hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 338_000.0),
+        ];
+        let result = detect(&rules, &view(&rescue));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Rescue and Search"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
     }
 
     #[test]

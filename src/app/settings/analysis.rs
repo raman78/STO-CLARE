@@ -515,7 +515,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                     ui.label("Edit");
                 });
                 r.cell(|ui| {
-                    ui.label("Copy");
+                    ui.label("Clone");
                 });
                 r.cell(|ui| {
                     ui.label(self.name_header);
@@ -543,7 +543,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         r.cell(|ui| {
                             if ui
                                 .selectable_label(false, "🗐")
-                                .on_hover_text("Duplicate this rule")
+                                .on_hover_text("Clone this rule")
                                 .clicked()
                             {
                                 to_clone = Some(id);
@@ -585,12 +585,13 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                     self.group_rules.remove(i);
                 });
 
-                // The copy lands directly below the original and becomes the
-                // selection, so it can be renamed straight away.
+                // The clone goes to the end of the list and becomes the
+                // selection, so it can be renamed straight away without the rows
+                // around it shifting.
                 if let Some(index) = to_clone.filter(|i| *i < self.group_rules.len()) {
-                    let copy = self.group_rules[index].clone();
-                    self.group_rules.insert(index + 1, copy);
-                    *self.selected_group = Some(index + 1);
+                    let clone = self.group_rules[index].clone();
+                    self.group_rules.push(clone);
+                    *self.selected_group = Some(self.group_rules.len() - 1);
                 }
             });
     }
@@ -639,7 +640,7 @@ impl<'a> RulesTable<'a> {
                         ui.label("Text to match");
                     });
                     r.cell(|ui| {
-                        ui.label("Copy");
+                        ui.label("Clone");
                     });
                 })
                 .body(ROW_HEIGHT, |t| {
@@ -690,7 +691,7 @@ impl<'a> RulesTable<'a> {
                             r.cell(|ui| {
                                 if ui
                                     .selectable_label(false, "🗐")
-                                    .on_hover_text("Duplicate this condition")
+                                    .on_hover_text("Clone this condition")
                                     .clicked()
                                 {
                                     to_clone = Some(id);
@@ -714,9 +715,9 @@ impl<'a> RulesTable<'a> {
                     });
 
                     if let Some(index) = to_clone.filter(|i| *i < self.rules.len()) {
-                        let copy = self.rules[index].clone();
-                        self.rules.insert(index + 1, copy);
-                        *self.selected_rule = Some(index + 1);
+                        let clone = self.rules[index].clone();
+                        self.rules.push(clone);
+                        *self.selected_rule = Some(self.rules.len() - 1);
                     }
                 });
         });
