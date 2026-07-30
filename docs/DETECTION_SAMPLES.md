@@ -214,6 +214,28 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Khitomer in Stasis — Ground — DONE (anchor only, no tier)
+- **Anchor:** `Mission_Borgraid03_Borg_Power_Node` plus the `Ground_Borg_*_Raidisode_*`
+  troops and `Ground_Borg_Ens_Melee_Wolf_359`.
+- ⚠ **Shares its rank-and-file with Into the Hive.** `Ground_Borg_Capt_Melee`,
+  `_Cdr_Melee`, `_Ens_Melee`, `_Ens_Melee_Spawned`, `_Lt_Range`, `Borg_Anchor` and
+  `_Neo_Melee_Ambush_Pet` all occur in **both** maps, so none of them can anchor
+  either. The `Raidisode` variants and the Borgraid03 power node occur in this map
+  alone — the counting rule earns its keep here, in the opposite direction to
+  Pahvo: this time the generic-looking troops really were shared.
+- **Why so many anchors:** no single one covers the fight. The Infected Romulan
+  troops run 16:32–16:38, the power node 16:37–16:40, and the Wolf 359 drones
+  16:39–16:42. `Infected_{Fed,Klingon,Romulan}` look like randomised variants, so
+  all three are listed. Together they leave no gap. The fight held together at 60 s
+  (largest internal gap 57 s), but only barely.
+- `Ground_Borg_Ens_Melee_Wolf_359` is presumably a reused asset; Battle of Wolf 359
+  is a *space* queue, so a ground entity of that name should not collide with it.
+- **Tier:** none — ground maps are excluded from the global table.
+
+| sample | tier | Capt_Melee | Power_Node | Cdr_Melee | Lt_Range | Ens_Melee |
+|---|---|---|---|---|---|---|
+| 2026-07-30 16:32 | Advanced | 14,047 | 6,401 | 5,325 | 3,795 | 3,181 |
+
 ## [TFO] Pahvo Dissension — Ground — DONE (anchor only, no tier)
 - **Anchor:** any-of the two named bosses
   `Ground_Federation_Capt_Range_{Eng,Tac}_Mirror_Dsc_Pahvo_Boss` **plus** the

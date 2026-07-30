@@ -621,7 +621,17 @@
     },
     "Khitomer in Stasis": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Mission_Borgraid03_Borg_Power_Node",
+        "Ground_Borg_Commander_Melee_Raidisode_Infected_Fed",
+        "Ground_Borg_Commander_Melee_Raidisode_Infected_Klingon",
+        "Ground_Borg_Commander_Melee_Raidisode_Infected_Romulan",
+        "Ground_Borg_Lt_Melee_Raidisode_Infected_Romulan",
+        "Ground_Borg_Ens_Melee_Raidisode",
+        "Ground_Borg_Lt_Melee_Raidisode_No_Loot",
+        "Ground_Borg_Ens_Melee_Wolf_359"
+      ]
     },
     "Khonshu Khaibit": {
       "category": "Patrol",

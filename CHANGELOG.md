@@ -10,7 +10,7 @@
 - combats now show whether the map is a space or a ground map, in parentheses after the name (e.g. "[TFO] Into the Hive (Ground)")
 - the Task Force Operations "Into the Hive", "Undine Assault" and "Undine Infiltration" are now recognized automatically
 - combats in which nobody dealt any damage are no longer listed — standing around on a social map writes fall damage and self-buffs, and each burst of those used to show up as its own empty combat
-- the Task Force Operation "Pahvo Dissension" is now recognized automatically
+- the Task Force Operations "Pahvo Dissension" and "Khitomer in Stasis" are now recognized automatically
 - "Battle at the Binary Stars" now shows its level (Normal, the only one it offers), and its name is spelled the way the wiki does
 
 ## v1.7.0
