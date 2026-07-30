@@ -52,6 +52,7 @@ AnalysisHandler::latest_info() ─▶ AnalysisInfo::Refreshed { difficulties, ..
    ─▶ App.combat_difficulties ─▶ CompareView difficulty filter
 
 Combat::name() ─▶ base = user rules ? join names : detected_map ?? "Combat"
+                  append_detected_combat_type(base, detected_combat_type) ─▶ "... (Ground)"
                   append_detected_difficulty(base, detected_difficulty) ─▶ "... [Elite]"
 ```
 
@@ -148,6 +149,22 @@ The two branches above answer different questions, and conflating them was a bug
 An entity that is present but never damaged therefore has an empty
 `hull_damage_per_instance`, so `median_hull_damage()` returns `0.0` and it matches
 no tier threshold. Presence is widened; tier resolution is unchanged.
+
+### Environment in the name (`combat_type`)
+
+Every catalogued map carries a curated `combat_type` — "Space" (156), "Ground"
+(44) or "Shuttle" (3) — taken from the STO wiki. The log states no such thing, so
+this is metadata, not detection. It rides along in `Detected::combat_type` and is
+appended in parentheses: `[TFO] Into the Hive (Ground) [Advanced]`.
+
+It is **not** folded into `MapDef::display_name`, even though that would be
+shorter. That string is what the settings editor matches user naming rules
+against (`overlapping_maps`), so appending an environment there would stop a rule
+named after the map from being recognized as overlapping it.
+
+`append_detected_combat_type` skips the suffix when the base name already
+mentions the environment, so a user rule called "Bug Hunt Ground" does not become
+"Bug Hunt Ground (Ground)".
 
 ## The rules (`detection_rules.json`)
 

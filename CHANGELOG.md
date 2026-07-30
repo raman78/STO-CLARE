@@ -1,5 +1,11 @@
 # Change Log
 
+# unreleased
+
+### Other Changes
+- combats now show whether the map is a space or a ground map, in parentheses after the name (e.g. "[TFO] Into the Hive (Ground)")
+- the Task Force Operations "Into the Hive" and "Undine Assault" are now recognized automatically
+
 ## v1.7.0
 
 ### Major Changes

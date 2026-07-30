@@ -98,9 +98,13 @@ struct MapDef {
     #[serde(default)]
     category: Option<String>,
     /// Combat environment ("Space" / "Ground" / "Shuttle"), from the STO wiki.
-    /// Curated reference only; not shown in the name.
+    /// Curated metadata — the log itself carries no such marker. Shown in
+    /// parentheses on the combat's name (e.g. `[TFO] Into the Hive (Ground)`).
+    ///
+    /// Kept out of `display_name` on purpose: that string is also what the
+    /// settings editor matches naming rules against, and appending the
+    /// environment there would stop a rule named after the map from matching it.
     #[serde(default)]
-    #[allow(dead_code)]
     combat_type: Option<String>,
     /// A difficulty the map pins outright (e.g. Winter Invasion ⇒ Normal); `Any`
     /// when the tier is resolved from the tables below (or cannot be resolved).
@@ -294,6 +298,8 @@ pub struct Detected {
     pub map: Option<String>,
     /// The resolved difficulty, or `None` when the map is unknown.
     pub difficulty: Option<Difficulty>,
+    /// The map's environment ("Space" / "Ground" / "Shuttle"), when curated.
+    pub combat_type: Option<String>,
 }
 
 lazy_static! {
@@ -377,6 +383,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
                 return Detected {
                     map: Some(def.display_name(name)),
                     difficulty: Some(def.difficulty),
+                    combat_type: def.combat_type.clone(),
                 };
             }
         }
@@ -416,6 +423,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
         return Detected {
             map: Some(def.display_name(name)),
             difficulty: Some(global.unwrap_or(Difficulty::Any)),
+            combat_type: def.combat_type.clone(),
         };
     }
 
@@ -459,6 +467,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     Detected {
         map: Some(def.display_name(name)),
         difficulty,
+        combat_type: def.combat_type.clone(),
     }
 }
 

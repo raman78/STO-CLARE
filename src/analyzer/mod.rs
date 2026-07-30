@@ -65,6 +65,10 @@ pub struct Combat {
     pub detected_map: Option<String>,
     /// Detected difficulty (`None` when the map is unknown).
     pub detected_difficulty: Option<Difficulty>,
+    /// The detected map's environment ("Space" / "Ground" / "Shuttle"), curated
+    /// metadata rather than anything the log states. Appended to the combat's
+    /// name in parentheses.
+    pub detected_combat_type: Option<String>,
     pub name_manager: NameManager,
     pub hits_manger: HitsManager,
     pub heal_ticks_manger: HealTicksManager,
@@ -227,6 +231,7 @@ impl Combat {
             critters: Default::default(),
             detected_map: None,
             detected_difficulty: None,
+            detected_combat_type: None,
             name_manager: Default::default(),
             hits_manger: Default::default(),
             heal_ticks_manger: Default::default(),
@@ -266,6 +271,7 @@ impl Combat {
                 .unwrap_or_else(|| "Combat".to_string())
         };
 
+        let base = append_detected_combat_type(base, self.detected_combat_type.as_deref());
         append_detected_difficulty(base, self.detected_difficulty)
     }
 
@@ -274,6 +280,7 @@ impl Combat {
     /// was detected. Used to show what detection alone would name a combat.
     pub fn detected_name(&self) -> Option<String> {
         let map = self.detected_map.clone()?;
+        let map = append_detected_combat_type(map, self.detected_combat_type.as_deref());
         Some(append_detected_difficulty(map, self.detected_difficulty))
     }
 
@@ -349,6 +356,7 @@ impl Combat {
         };
         self.detected_map = detected.map;
         self.detected_difficulty = detected.difficulty;
+        self.detected_combat_type = detected.combat_type;
     }
 
     fn recalculate_damage_group_percentage(
@@ -710,6 +718,19 @@ fn append_detected_difficulty(base: String, difficulty: Option<Difficulty>) -> S
     }
 }
 
+/// Append the map's environment in parentheses (e.g. `(Ground)`), unless the
+/// base name already mentions it — a user rule named "Bug Hunt Ground" should
+/// not become "Bug Hunt Ground (Ground)". Comes from the curated rules, since
+/// the log itself never states whether a fight was in space or on the ground.
+fn append_detected_combat_type(base: String, combat_type: Option<&str>) -> String {
+    match combat_type.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(label) if !base.to_lowercase().contains(&label.to_lowercase()) => {
+            format!("{base} ({label})")
+        }
+        _ => base,
+    }
+}
+
 impl CombatName {
     fn new(rule: &CombatNameRule, name_manager: &NameManager) -> Self {
         let additional_infos: Vec<_> = rule
@@ -779,6 +800,28 @@ mod tests {
         assert_eq!(combat.detected_difficulty, Some(Difficulty::Advanced));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn append_combat_type_adds_parenthesised_environment() {
+        assert_eq!(
+            append_detected_combat_type("[TFO] Into the Hive".to_string(), Some("Ground")),
+            "[TFO] Into the Hive (Ground)"
+        );
+        // A name that already says it is not doubled.
+        assert_eq!(
+            append_detected_combat_type("Bug Hunt Ground".to_string(), Some("Ground")),
+            "Bug Hunt Ground"
+        );
+        // No curated environment, or a blank one, leaves the name alone.
+        assert_eq!(
+            append_detected_combat_type("Combat".to_string(), None),
+            "Combat"
+        );
+        assert_eq!(
+            append_detected_combat_type("Combat".to_string(), Some("  ")),
+            "Combat"
+        );
     }
 
     #[test]

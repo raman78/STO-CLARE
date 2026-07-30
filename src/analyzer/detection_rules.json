@@ -535,7 +535,11 @@
     },
     "Into the Hive": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Ground_Borg_Queen_Disembodied",
+        "Ground_Borg_Queen"
+      ]
     },
     "Iuppiter Iratus": {
       "category": "TFO",
@@ -1186,7 +1190,11 @@
     },
     "Undine Assault": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Missione_Event_Planetary_Invasion_Rift",
+        "Space_Undine_Planet_Killer_Massive"
+      ]
     },
     "Undine Infiltration": {
       "category": "TFO",
