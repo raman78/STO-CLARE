@@ -214,6 +214,25 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Battle of Korfez — Space — DONE (single-difficulty Elite)
+- **Anchor:** `Dlt_Vaadwaur_Stf_System_Dreadnought_Boss` (27.8M hull — the STF's
+  final dreadnought).
+- **Tier:** pinned `difficulty: "Elite"` — Elite-only in the queue (Raman). First
+  map pinned to Elite; the others pinned so far are all Normal.
+- ⚠ Same shape as Pahvo Dissension: the boss only shows up at the **end**
+  (17:29–17:30 of 17:22–17:30). Left as the sole anchor because the fight holds
+  together comfortably — largest internal gap 32 s against a 60 s separation — and
+  because `Space_Vaadwaur_*` are ordinary faction ships that Delta Quadrant
+  patrols may also field. There is no such patrol in the log to check against, so
+  the counting rule cannot clear them here; if a split ever loses the early part,
+  add `Space_Vaadwaur_Cruiser` / `_Frigate` and watch for collisions.
+- The global table would have reached Elite on its own (cruiser 2.27M against a
+  1.0M band, dreadnought 27.8M against 4.0M); the pin just makes it certain.
+
+| sample | tier | Boss | Cruiser | Battleship | Frigate |
+|---|---|---|---|---|---|
+| 2026-07-30 17:22 | Elite | 27,822,587 | 2,274,614 | 2,188,095 | 665,022 |
+
 ## [TFO] Khitomer in Stasis — Ground — DONE (anchor only, no tier)
 - **Anchor:** `Mission_Borgraid03_Borg_Power_Node` plus the `Ground_Borg_*_Raidisode_*`
   troops and `Ground_Borg_Ens_Melee_Wolf_359`.

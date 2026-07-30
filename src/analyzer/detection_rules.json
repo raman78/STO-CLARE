@@ -131,7 +131,11 @@
     },
     "Battle of Korfez": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Dlt_Vaadwaur_Stf_System_Dreadnought_Boss"
+      ],
+      "difficulty": "Elite"
     },
     "Battle of Procyon V": {
       "category": "TFO",
