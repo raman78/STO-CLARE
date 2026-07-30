@@ -544,11 +544,8 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         });
 
                         r.cell(|ui| {
-                            if ui
-                                .selectable_label(false, "🗐")
-                                .on_hover_text("Clone this rule")
-                                .clicked()
-                            {
+                            // A framed button, to match the ✏ next to it.
+                            if ui.button("🗐").on_hover_text("Clone this rule").clicked() {
                                 to_clone = Some(id);
                             }
                         });
@@ -634,6 +631,9 @@ impl<'a> RulesTable<'a> {
                         ui.label("On");
                     });
                     r.cell(|ui| {
+                        ui.label("Clone");
+                    });
+                    r.cell(|ui| {
                         ui.label("Aspect to match");
                     });
                     r.cell(|ui| {
@@ -641,9 +641,6 @@ impl<'a> RulesTable<'a> {
                     });
                     r.cell(|ui| {
                         ui.label("Text to match");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Clone");
                     });
                 })
                 .body(ROW_HEIGHT, |t| {
@@ -654,6 +651,16 @@ impl<'a> RulesTable<'a> {
                         let row_response = t.selectable_row(*self.selected_rule == Some(id), |r| {
                             r.cell(|ui| {
                                 ui.checkbox(&mut rule.enabled, "");
+                            });
+
+                            r.cell(|ui| {
+                                if ui
+                                    .button("🗐")
+                                    .on_hover_text("Clone this condition")
+                                    .clicked()
+                                {
+                                    to_clone = Some(id);
+                                }
                             });
 
                             r.cell(|ui| {
@@ -689,16 +696,6 @@ impl<'a> RulesTable<'a> {
                                 TextEdit::singleline(&mut rule.expression)
                                     .clip_text(false)
                                     .show(ui);
-                            });
-
-                            r.cell(|ui| {
-                                if ui
-                                    .selectable_label(false, "🗐")
-                                    .on_hover_text("Clone this condition")
-                                    .clicked()
-                                {
-                                    to_clone = Some(id);
-                                }
                             });
 
                             r.cell(|ui| {
