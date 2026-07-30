@@ -144,6 +144,14 @@ impl Analyzer {
     /// starts at that first shot instead (measured — the fight is *not* split in
     /// two). Damage figures are unaffected, since `combat_time` only ever starts
     /// at the first damage record anyway.
+    ///
+    /// Considered and rejected: hiding the in-progress combat from the list
+    /// entirely, leaving live numbers to the overlay. It needs a wall clock to
+    /// tell "in progress" from "last one before the game closed" — without one
+    /// the final combat of a session would never appear — which means enabling
+    /// chrono's `clock` feature, adding a flag to `AnalysisInfo::Refreshed`, and
+    /// splitting what the overlay shows from what the main window shows. Not
+    /// worth it while the damage filter alone keeps the list clean.
     fn discard_combats_without_damage(&mut self) {
         self.combats
             .retain(|combat| f64::from(combat.total_damage_out.all) > 0.0);
