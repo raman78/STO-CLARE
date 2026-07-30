@@ -10,6 +10,7 @@
 
 ### Other Changes
 - rules can now be duplicated with the 🗐 button next to the bin, in both the rule lists and their conditions — the copy appears right below the original and is selected, ready to be renamed
+- the rule tables in the Analysis settings now grow with the window: making it taller shows more rules instead of leaving empty space below them
 - the Analysis settings are now split into sub-tabs (Combat Names, Source Reversal, Custom Grouping, Damage Exclusion) instead of four sections stacked one under another, so each rule table gets the window's full height and shows about twice as many rows
 - combats now show whether the map is a space or a ground map, in parentheses after the name (e.g. "[TFO] Into the Hive (Ground)")
 - the Task Force Operations "Into the Hive", "Undine Assault" and "Undine Infiltration" are now recognized automatically

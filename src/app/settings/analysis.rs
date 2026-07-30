@@ -69,6 +69,8 @@ struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
     /// Optional per-row warning: returns a tooltip when the row's rule should be
     /// flagged (e.g. it shadows an auto-detected map). Adds a ⚠ cell per row.
     row_warning: Option<&'a dyn Fn(&RulesGroup) -> Option<String>>,
+    /// Height to keep free below the table for whatever the caller draws there.
+    reserve_below: f32,
 }
 
 struct RulesTable<'a> {
@@ -309,6 +311,10 @@ impl CombatNameRules {
         };
 
         {
+            // The auto-detected map list is drawn below and must stay visible:
+            // its 15 rows plus the ⚠ legend and two headings.
+            let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
+            let reserve = row * 19.0;
             GroupRulesTable::new(
                 &mut modified_settings.combat_name_rules,
                 "Combat Name Detection Rules",
@@ -316,6 +322,7 @@ impl CombatNameRules {
                 &mut self.selected_group,
                 200.0,
             )
+            .reserving_below(reserve)
             .with_row_warning(&row_warning)
             .show(ui, |r, ui| {
                 RulesTable::new(
@@ -461,10 +468,17 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
             selected_group,
             popup_extra_space,
             row_warning: None,
+            reserve_below: 0.0,
         }
     }
 
     /// Show a ⚠ on the right of each row for which `warning` returns a tooltip.
+    /// Keep `height` free below the table, for content the caller draws there.
+    fn reserving_below(mut self, height: f32) -> Self {
+        self.reserve_below = height;
+        self
+    }
+
     fn with_row_warning(mut self, warning: &'a dyn Fn(&RulesGroup) -> Option<String>) -> Self {
         self.row_warning = Some(warning);
         self
@@ -480,12 +494,13 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
 
             show_move_up_down(self.selected_group, self.group_rules, ui);
         });
+        // Fills whatever height the window offers, minus whatever the caller
+        // reserved for the content below it. The Settings window scrolls as a
+        // whole, so a short list still takes only the room it needs.
+        let height = (ui.available_height() - self.reserve_below).at_least(ROW_HEIGHT * 4.0);
         Table::new(ui)
-            // Grows with the list and only starts scrolling past ~16 rows; the
-            // Settings window scrolls as a whole, so a short table here just
-            // takes less room rather than leaving a fixed gap.
             .min_scroll_height(0.0)
-            .max_scroll_height(600.0)
+            .max_scroll_height(height)
             .cell_spacing(10.0)
             .header(HEADER_HEIGHT, |r| {
                 r.cell(|ui| {
@@ -599,9 +614,10 @@ impl<'a> RulesTable<'a> {
             show_move_up_down(self.selected_rule, self.rules, ui);
         });
         ui.push_id(self.title, |ui| {
+            let height = ui.available_height().at_least(ROW_HEIGHT * 4.0);
             Table::new(ui)
                 .min_scroll_height(0.0)
-                .max_scroll_height(400.0)
+                .max_scroll_height(height)
                 .cell_spacing(10.0)
                 .header(HEADER_HEIGHT, |r| {
                     r.cell(|ui| {
