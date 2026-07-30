@@ -413,9 +413,12 @@ impl CombatNameRules {
 
         ui.add_space(6.0);
         ui.label(RichText::new("Auto-detected maps:").weak());
+        // Sized in rows rather than pixels, so it still shows 15 entries when the
+        // font or UI scale changes.
+        let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
         ScrollArea::vertical()
             .id_salt("auto detected maps")
-            .max_height(150.0)
+            .max_height(row * 15.0)
             .show(ui, |ui| {
                 for map in curated_map_names() {
                     ui.label(RichText::new(map).weak());
