@@ -214,6 +214,24 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
+## [TFO] Breach — Space — DONE (anchor + global tier)
+- **Anchor:** the Dyson breach emplacements (`Mission_Dys_Breach_Hard_Point`,
+  `Msn_Dys_Event_Breach_{Beam,Cannon}_Turret`, `..._Beam_Turret_Boss`) and the Voth
+  objectives (`Msn_Space_Voth_Boss_Power_Core`, `Msn_Space_Voth_Shield_Core_3`).
+- **Why both halves:** the emplacements only run 22:57–22:59 and the Voth cores
+  23:04–23:06, of a fight spanning 22:55:57–23:06:56. Neither set alone covers it.
+  The fight does hold together at 60 s, but the largest internal gap is **57 s** —
+  three seconds of margin, so a shorter separation would split it and each half
+  needs its own anchor.
+- **Rejected:** plain `Space_Voth_*` ships. Voth appear across Dyson Sphere
+  content, and there is no second Voth map in this log to count against.
+- **Tier:** from the global ship-class table (cruiser 446,733 against a 640k band
+  ⇒ Advanced). No tables of its own.
+
+| sample | tier | Voth_Power_Core | Dreadnaught | Cruiser | Frigate |
+|---|---|---|---|---|---|
+| 2026-07-30 22:55 | Advanced | 6,707,080 | 3,081,268 | 446,733 | 181,219 |
+
 ## [TFO] Brotherhood of the Sword — Ground — DONE (anchor only, no tier)
 - **Anchor:** the seven `Msn_Ico_Qonos_Ground*` allies — Honor Guards (Ferasan,
   Klingon, Nausicaan), MACO (Andorian, Tellarite, Vulcan) and an Orion ally. All

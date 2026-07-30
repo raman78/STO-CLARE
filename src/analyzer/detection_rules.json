@@ -226,7 +226,15 @@
     },
     "Breach": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Dys_Breach_Hard_Point",
+        "Msn_Dys_Event_Breach_Beam_Turret",
+        "Msn_Dys_Event_Breach_Cannon_Turret",
+        "Msn_Dys_Event_Breach_Beam_Turret_Boss",
+        "Msn_Space_Voth_Boss_Power_Core",
+        "Msn_Space_Voth_Shield_Core_3"
+      ]
     },
     "Bringers of War": {
       "category": "Patrol",
