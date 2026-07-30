@@ -28,6 +28,10 @@ pub struct SettingsWindow {
     visuals_tab: VisualsTab,
     upload_tab: UploadTab,
     debug_tab: DebugTab,
+    /// Title bar + frame margins, measured from the previous frame. The
+    /// remembered size describes the window's *content*, so this is what has to
+    /// be added to it to know how much room the whole window takes.
+    window_chrome: Vec2,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +58,7 @@ impl SettingsWindow {
             debug_tab: Default::default(),
             upload_tab: Default::default(),
             visuals_tab,
+            window_chrome: Vec2::ZERO,
         }
     }
 
@@ -81,7 +86,11 @@ impl SettingsWindow {
             .general
             .settings_window_size
             .unwrap_or([760.0, 560.0]);
-        let max_size = ui.ctx().content_rect().size() - vec2(16.0, 16.0);
+        // `Window::max_size` caps the *content*, while the title bar and frame
+        // sit outside it — so the chrome has to come off here too, or the whole
+        // window ends up taller than the viewport.
+        let max_size =
+            (ui.ctx().content_rect().size() - vec2(16.0, 16.0) - self.window_chrome).at_least(vec2(200.0, 150.0));
         let window_response = Window::new("Settings")
             .collapsible(false)
             .resizable(true)
@@ -126,15 +135,25 @@ impl SettingsWindow {
                     if ui.button("Cancel").clicked() {
                         self.discard_setting_changes(ui, state);
                     }
-                })
+                });
+
+                // The content size, which is what `default_size` expects back.
+                ui.min_rect().size()
             });
 
         // Remember the current size (persisted with the app settings on apply and
         // on exit). Written to both the working copy and the live settings so it
         // survives regardless of whether the dialog is closed with Ok or Cancel.
         if let Some(window_response) = window_response {
-            let size = window_response.response.rect.size();
-            let size = [size.x, size.y];
+            let Some(content_size) = window_response.inner else {
+                return;
+            };
+            // Measure the chrome for the next frame's cap.
+            self.window_chrome = window_response.response.rect.size() - content_size;
+            // Store the *content* size. Storing the outer size instead fed the
+            // title bar back in as content on the next launch, so the window
+            // grew by its own title bar every time the app was restarted.
+            let size = [content_size.x, content_size.y];
             if state.settings.general.settings_window_size != Some(size) {
                 self.modified_settings.general.settings_window_size = Some(size);
                 state.settings.general.settings_window_size = Some(size);
