@@ -237,10 +237,26 @@ Two things persist, both in the `general` settings section:
 | `overlay_shown` | `App::on_exit` only | `Overlay::new`, straight into `OverlayInner.show` |
 
 `overlay_shown` is written **only on exit**, not as the ✋/Overlay button is
-toggled. `SettingsWindow::apply_setting_changes` compares the whole `general`
-section against the live settings and re-analyzes the log when they differ, so a
-value that changed mid-session would trigger a pointless re-analysis on the next
-Apply. (`overlay_position` does update live and has exactly that quirk.)
+toggled, so that a mid-session change cannot make the settings dialog think the
+`general` section moved.
+
+`overlay_position` *does* update every frame, and that used to be expensive:
+`SettingsWindow::apply_setting_changes` compared `analysis` and `general`
+together and, on any difference, both replaced the `Analyzer` and refreshed. So
+nudging the overlay and then applying any setting re-parsed the whole log. The
+two are now gated separately, because they cost very different amounts
+(measured on a 150 MB log):
+
+| call | what it does | cost |
+|---|---|---|
+| `set_settings` | builds a new `Analyzer` — full re-parse | **2.54 s** |
+| `refresh` | reuses it, reads only what the log grew by, re-sends the result | **2.8 µs** |
+
+Only `analysis` can invalidate the analyzer (it is the only thing the analyzer is
+ever given), so `set_settings` is now gated on that alone. A `general` change
+still triggers `refresh`, because tables bake `more_decimals` into their
+formatted strings when built (`ShieldAndHullTextValue::new`) rather than at draw
+time — but that path is effectively free.
 
 Restoring needs nothing beyond setting `show`: the render path in
 `Overlay::show` branches on `inner.show` alone, and the analysis handler is

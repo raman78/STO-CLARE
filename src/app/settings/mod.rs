@@ -181,13 +181,33 @@ impl SettingsWindow {
 
     fn apply_setting_changes(&mut self, state: &mut AppState) {
         self.is_open = false;
-        if self.modified_settings.analysis != state.settings.analysis
-            || self.modified_settings.general != state.settings.general
-        {
+        // The two halves cost wildly different amounts, so they are gated
+        // separately:
+        //
+        // - `set_settings` replaces the `Analyzer`, which re-parses the whole
+        //   combat log from scratch (seconds on a large one). Only the analysis
+        //   settings can invalidate it — the analyzer is never given `general`.
+        // - `refresh` reuses the existing analyzer and only reads what the log
+        //   has grown by, then re-sends the result so the views rebuild.
+        //
+        // A `general` change still needs the second one, because the tables bake
+        // `more_decimals` into their formatted strings when they are built
+        // (`ShieldAndHullTextValue::new`) rather than at draw time. It must not
+        // trigger the first: moving the overlay writes `overlay_position` into
+        // `general` every frame, so applying any setting after nudging the
+        // overlay used to re-parse the entire log for nothing.
+        let analysis_changed = self.modified_settings.analysis != state.settings.analysis;
+        let general_changed = self.modified_settings.general != state.settings.general;
+
+        if analysis_changed || general_changed {
             state.overlay.settings_changed(&self.modified_settings);
+        }
+        if analysis_changed {
             state
                 .analysis_handler
                 .set_settings(self.modified_settings.analysis.clone());
+        }
+        if analysis_changed || general_changed {
             state.analysis_handler.refresh();
         }
 

@@ -11,6 +11,7 @@
 
 ### Fixes
 - maps that are recognized by a friendly or mission ship are no longer missed when that ship happens to take no damage during the fight — such combats used to show up as plain "Combat"
+- applying settings no longer re-reads the whole combat log when nothing about the analysis changed — previously moving the overlay and then pressing Apply froze the app for a couple of seconds on a large log
 - the ⚠ mark that flags a naming rule overlapping an auto-detected map now also appears when the rule's name carries your own annotation (e.g. a trailing tag) instead of exactly matching the map name
 
 ## v1.6.1
