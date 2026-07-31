@@ -36,6 +36,15 @@ Rule of thumb: hull thresholds sit between the Advanced and Elite medians, with 
   regressions, no measurable parse cost. If a map still goes unrecognized with a
   correct-looking anchor, check whether the anchor appears in the log **at all**
   before blaming the rules.
+- **Display names are not entity names.** Bug Hunt's friendly NPC shows in the log
+  as "Lt. VanDerveer" but its entity is `Msn_Dlt_Bluegill_Hunt_Ground_Demolitions_Expert`;
+  Iuppiter Iratus's "Data Thief" is `Space_Federation_Frigate_Mirror`. Anchors key
+  on the entity name, so always grep the `C[id name]` field, never the label.
+- **Presence covers source and target, not `indirect_source`** — deliberately.
+  Measured: 138 entities appear *only* in that column and every one is a player
+  effect (`Warp_Plasma_*`, `Gravity_Well*`, `Stationmod_*` consoles, torpedo
+  rifts), never a map ally. Including it would add noise, not anchors. Allies that
+  act through it, like VanDerveer, are still seen because they also take damage.
 - When the **tier signal** entity varies by faction but its HP does not, list every
   variant under `hull_any` (any-of) with the same band.
 - **Tier only on entities that die** (`deaths > 0`): their median hull damage ≈ HP.
