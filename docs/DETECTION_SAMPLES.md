@@ -260,22 +260,45 @@ purpose: at 1.20x its Advanced figure (8,236) sits *above* the Elite firing
 threshold (9,868 x 0.8 = 7,894), so it would light up Elite on an Advanced run.
 Every other entity clears its separation.
 
-⚠ **No Normal band, and this one is a warning about extrapolation.** A derived
-Normal band (Advanced ÷ 2.11) was written, tested, and immediately withdrawn: it
-made the *opening fragment* of the Advanced session read as Normal. That fragment
-(2026-07-30 12:35:04–12:36:29, 47 lines, cut off by a 70 s gap) contains exactly
-one entity — the boss, with **deaths = 0** and a median of 14,192. That figure is
-not the boss's HP, it is merely the damage dealt to it before the fragment ended,
-and it cleared the derived Normal threshold of 14,555 x 0.8 = 11,644.
+It carries a derived Normal band (Advanced ÷ 2.11), like the other tiered ground
+maps — but getting there exposed an engine bug worth recording.
 
-That exposed a gap wider than this map: `hull_any_match` and `hull_damage_match`
-**do not check `deaths`**, while the global ship-class table does so explicitly
-and for exactly this reason ("for the others the hull figure is damage we happened
-to deal, not the entity's HP"). Measured against the real log, adding the same
-guard to both per-map matchers changes **nothing** — 96 of 98 combats, verdict for
-verdict identical — but it costs 11 unit tests, whose fixtures use the
-`hull_critter` helper that leaves `deaths` at 0. Pending Raman's decision; the
-band was dropped instead, which fixes this map without touching the engine.
+### The surviving-entity bug (found here, fixed 2026-07-31)
+
+The derived Normal band was written and immediately made the *opening fragment* of
+the Advanced session read as Normal. That fragment (2026-07-30 12:35:04–12:36:29,
+47 lines, cut off by a 70 s gap) contains exactly one entity — the boss, with
+**deaths = 0** and a median of 14,192. That figure is not the boss's HP; it is
+merely the damage dealt to it before the fragment ended, and it cleared the
+derived threshold of 14,555 x 0.8 = 11,644.
+
+The gap was wider than this map: `hull_any_match` and `hull_damage_match` never
+checked `deaths`, while the global ship-class table has always skipped
+`deaths == 0` explicitly, for exactly this reason ("for the others the hull figure
+is damage we happened to deal, not the entity's HP"). Any per-map tier could
+therefore be decided by an entity that merely got hurt.
+
+Both matchers now carry the same guard. What the fix was measured against before
+being made, rather than argued about:
+
+- **On the real log it changes nothing** — 96 of 98 combats, verdict for verdict
+  identical to before. Resistance of Starbase One was the one regression
+  candidate (its `Space_Borg_Dreadnought` entries never die in the log) and it
+  survives, because `hull_any` only needs one listed entity and its others do die.
+- **11 unit tests went red**, all for the same reason: the `hull_critter` fixture
+  helper left `deaths` at 0. Since a median hull figure is meaningless for an
+  entity that lived, that helper was simply wrong; it now sets `deaths = 1` and
+  the separate `dead_hull_critter` is folded into it.
+- **The per-map tests still stand on their own.** Because the global table has the
+  last word (it overwrites the per-map verdict), a fixture that starts voting in
+  it could make a test pass for the wrong reason. Re-running the suite with the
+  global override disabled, every per-map tier test still passed; only the three
+  `global_tier_*` tests and the two that deliberately rely on it failed.
+
+Guarded by `an_entity_that_survived_does_not_decide_the_tier`, which was itself
+checked to fail without the fix (it reports `Some(Advanced)` instead of `None`).
+The first version of that test passed either way and was rebuilt — with the band
+removed, 14,192 no longer reached any threshold, so it proved nothing.
 
 ### Decision (2026-07-31): wait for measured pairs
 

@@ -1375,6 +1375,13 @@
         "Event_Undine_Infiltration_Ground_Fire"
       ],
       "hull_any": {
+        "Normal": {
+          "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss": 14555,
+          "Ground_Undine_Capt_Range_Psi": 9230,
+          "Ground_Undine_Cdr_Range_Psi": 3381,
+          "Ground_Undine_Lt_Range_Psi": 1665,
+          "Ground_Undine_Lt_Mixed": 1844
+        },
         "Advanced": {
           "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss": 30710,
           "Ground_Undine_Capt_Range_Psi": 19476,
