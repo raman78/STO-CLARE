@@ -911,6 +911,27 @@ anchored without risk of colliding with this one.
 
 ---
 
+## [TFO] Counterpoint — Space — DONE (anchor from day one, confirmed by sample)
+- **Anchor:** `Mission_Starbase_Mirror_Ds9_Mu_Queue`, present ~3,100 lines in the
+  sample. `Mission_Starbase_Ds9_Mu_Queue` (no `Mirror`) is an equally unique
+  second candidate if the first ever turns out to be skippable; not needed so far.
+- **Tier:** none of its own — the **global ship-class table alone** decided it.
+- This map is the first blind confirmation of that table. Both the anchor and the
+  category came from the very first detection commit (ported, never sampled), and
+  the tier was never measured for Mirror ships at all. The 2026-07-31 14:51 run
+  came back `[TFO] Counterpoint (Space) [Advanced]` with no rule change: 13 voting
+  entities, **13 of 13 Advanced, zero dissent**.
+- Worth noting *which* entities voted. Nothing here is Mirror-specific to the
+  table — Dreadnought, Battleship, Cruiser, Escort and Frigate bands all caught
+  their Mirror counterparts on the first try, e.g. `Space_Federation_Cruiser_Mirror`
+  at 379,533 inside a band built with no Mirror sample in it. That is the
+  per-class (not per-faction) claim holding on genuinely unseen ships.
+- Six `..._Science_...` entities matched no class and simply abstained. The table
+  has no `Science` band; adding one is not warranted by a single map, and
+  abstention is the correct, safe behaviour.
+
+---
+
 ## OSCR-ported maps (thresholds from OSCR, not from our logs)
 Infected: The Conduit, Cure Found, Khitomer Vortex, Hive Onslaught, Battle of
 Wolf 359, Miner Instabilities — death-count and/or hull tables were ported from
