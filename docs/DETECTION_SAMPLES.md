@@ -202,6 +202,26 @@ Note this does **not** revive the rank table: 1.53x describes *the same entity*
 across tiers, whereas the rank table compared *different maps' entities* of the
 same rank, which is where the overlap came from.
 
+### Normal bands on ground maps (extrapolated, 2026-07-31)
+
+**Every ground TFO offers Normal** (Raman), so any map tiered only for
+Advanced/Elite can receive a Normal run. Such a run does *not* misreport — its HP
+falls well short of the Advanced threshold, so nothing matches and the combat
+simply shows no tier — but that is incomplete rather than correct.
+
+All six tiered ground maps therefore have a `Normal` band at **Advanced ÷ 2.11**,
+the only measured Normal→Advanced ratio (Khitomer in Stasis). The margin is
+generous: a threshold at `Advanced/2.11` still fires for any real ratio between
+about 1.0x and 2.6x, and beyond that the failure mode is a missing tier, never a
+wrong one. Verified: every existing ground verdict is unchanged.
+
+Replace each with a measured band as Normal runs of those maps arrive.
+
+**Undine Infiltration is deliberately left with no bands at all.** Only its
+Advanced is sampled, and adding an Advanced band alone would make a future Elite
+run read as Advanced — actively worse than the current "no tier". It needs its
+Elite sample first.
+
 ### Decision (2026-07-31): wait for measured pairs
 
 Ground tiers will come from **per-map tables built from an Advanced+Elite pair of

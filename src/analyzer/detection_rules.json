@@ -254,6 +254,13 @@
         "Msn_Ico_Qonos_Ground_Orion_Pirates_Lt_Ally_01"
       ],
       "hull_any": {
+        "Normal": {
+          "Ground_Herald_Capt_Gravity": 11534,
+          "Ground_Herald_Cdr_Melee": 2384,
+          "Ground_Herald_Cdr_Ranged": 2376,
+          "Ground_Herald_Lieutenant": 1023,
+          "Ground_Herald_Ensign": 785
+        },
         "Advanced": {
           "Ground_Herald_Capt_Gravity": 24336,
           "Ground_Herald_Cdr_Melee": 5030,
@@ -283,6 +290,10 @@
         }
       },
       "hull_counts": {
+        "Normal": {
+          "Bluegills_Ground_Boss": 94787,
+          "Bluegills_Ground_Cdr": 2370
+        },
         "Advanced": {
           "Bluegills_Ground_Boss": 200000,
           "Bluegills_Ground_Cdr": 5000
@@ -410,6 +421,12 @@
         "Vtx_Devils_Heart_Tfo_Miniboss_Turret"
       ],
       "hull_any": {
+        "Normal": {
+          "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss": 6490,
+          "Ground_Aetherian_Hacker_Vtx_Devils_Heart": 2465,
+          "Ground_Borg_Cdr_Range_Control_Anchor": 2251,
+          "Ground_Borg_Ens_Range_Control": 1028
+        },
         "Advanced": {
           "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss": 13693,
           "Ground_Aetherian_Hacker_Vtx_Devils_Heart": 5202,
@@ -602,6 +619,13 @@
         "Ground_Borg_Queen"
       ],
       "hull_any": {
+        "Normal": {
+          "Ground_Borg_Capt_Gorn": 8956,
+          "Ground_Borg_Capt_Melee": 6560,
+          "Ground_Borg_Cdr_Melee": 2423,
+          "Ground_Borg_Lt_Range": 1359,
+          "Ground_Borg_Ens_Melee": 1171
+        },
         "Advanced": {
           "Ground_Borg_Capt_Gorn": 18898,
           "Ground_Borg_Capt_Melee": 13842,
@@ -905,6 +929,13 @@
         "Ground_Federation_Ens_Range_Sci_Mirror_Dsc"
       ],
       "hull_any": {
+        "Normal": {
+          "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss": 16600,
+          "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss": 12882,
+          "Ground_Federation_Cdr_Range_Eng_Mirror_Dsc": 2150,
+          "Ground_Federation_Lt_Range_Eng_Mirror_Dsc": 1190,
+          "Ground_Federation_Ens_Range_Eng_Mirror_Dsc": 970
+        },
         "Advanced": {
           "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss": 35027,
           "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss": 27182,
