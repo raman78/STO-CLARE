@@ -252,7 +252,23 @@
         "Msn_Ico_Qonos_Ground_02_Tellarite_Lt_Maco_01",
         "Msn_Ico_Qonos_Ground_02_Vulcan_Lt_Maco_02",
         "Msn_Ico_Qonos_Ground_Orion_Pirates_Lt_Ally_01"
-      ]
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Ground_Herald_Capt_Gravity": 24336,
+          "Ground_Herald_Cdr_Melee": 5030,
+          "Ground_Herald_Cdr_Ranged": 5014,
+          "Ground_Herald_Lieutenant": 2159,
+          "Ground_Herald_Ensign": 1657
+        },
+        "Elite": {
+          "Ground_Herald_Capt_Gravity": 42315,
+          "Ground_Herald_Cdr_Melee": 9218,
+          "Ground_Herald_Cdr_Ranged": 8745,
+          "Ground_Herald_Lieutenant": 3763,
+          "Ground_Herald_Ensign": 3354
+        }
+      }
     },
     "Bug Hunt": {
       "category": "TFO",

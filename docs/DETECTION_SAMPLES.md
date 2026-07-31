@@ -167,20 +167,26 @@ sample defensible.
 | Borg Cdr (Anchor) | 4,749 | 7,021 | 1.48x |
 | Borg Ens (Range) | 2,169 | 3,316 | 1.53x |
 
-Three more pairs followed the same day. Four independent measurements:
+Four more pairs followed the same day. Five independent measurements:
 
 | map | median ratio | spread within the map |
 |---|---|---|
-| Bug Hunt | 1.54x | 1.33–2.06x |
 | Devil's Heart | 1.53x | 1.34–2.18x |
+| Bug Hunt | 1.54x | 1.33–2.06x |
 | Pahvo Dissension | 1.58x | 1.42–2.04x |
-| Into the Hive | **1.67x** | 1.49–1.74x |
+| Into the Hive | 1.67x | 1.49–1.74x |
+| Brotherhood of the Sword | **1.74x** | 1.39–2.09x |
 
-The multiplier is real, but **1.53–1.67x between maps is a ~9% spread**, and
-within a single map individual entities range 1.33–2.18x. So a threshold
-extrapolated from one sample would be roughly right, not exact — fine for telling
-two tiers 55% apart, but with less headroom than the space table's 4.4x. All four
-maps carry measured bands, so none relies on it.
+**The between-map spread grew with every sample: 3% at three maps, 9% at four,
+14% at five (1.53–1.74x).** A ground multiplier exists, but it is an
+approximation per map rather than the near-constant the space ratio turned out to
+be — and each new map has so far widened it rather than settling it.
+
+Consequence: extrapolating a threshold from a single sample is *plausible* but
+would carry ~15% error against tiers only ~60% apart, leaving little room. The
+space table works because its 4.4x step dwarfs that kind of error; here it does
+not. All five maps carry measured bands, so none relies on the multiplier — and
+on this evidence, waiting for a real pair remains the better call.
 
 Note this does **not** revive the rank table: 1.53x describes *the same entity*
 across tiers, whereas the rank table compared *different maps' entities* of the
@@ -212,7 +218,7 @@ evidence to lean on.
 | Devil's Heart | Advanced + Elite | — (has tables) |
 | Pahvo Dissension | Advanced + Elite | — (has tables) |
 | Into the Hive | Advanced + Elite | — (has tables) |
-| Brotherhood of the Sword | Advanced | Elite |
+| Brotherhood of the Sword | Advanced + Elite | — (has tables) |
 | Undine Infiltration | Advanced | Elite |
 | Khitomer in Stasis | Advanced | **Normal** — the queue offers no Elite (Raman) |
 
