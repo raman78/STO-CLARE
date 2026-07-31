@@ -151,6 +151,29 @@ Devil's Heart on **Elite** fields a Cdr of 7,095 against Bug Hunt's 7,803 on
 where one table covers every map, ground tiers can only ever come from per-map
 tables — which needs an Advanced+Elite pair for each map individually.
 
+### Update (2026-07-31): the 1.54x ground multiplier is confirmed
+
+A Devil's Heart Advanced run arrived, giving a **second** ground map with both
+tiers. Its Elite/Advanced ratio across nine entities is a median of **1.53x**,
+against Bug Hunt's **1.54x** — so the multiplier is a property of ground content,
+not of Bug Hunt. That was the one thing needed to make extrapolation from a single
+sample defensible.
+
+| entity | Advanced | Elite | ratio |
+|---|---|---|---|
+| Miniboss | 13,693 | 22,087 | 1.61x |
+| Aetherian Hacker | 5,202 | 8,396 | 1.61x |
+| Aetherian Commander | 4,780 | 7,095 | 1.48x |
+| Borg Cdr (Anchor) | 4,749 | 7,021 | 1.48x |
+| Borg Ens (Range) | 2,169 | 3,316 | 1.53x |
+
+Devil's Heart now has measured `hull_any` bands from this pair, so it needs no
+extrapolation itself.
+
+Note this does **not** revive the rank table: 1.53x describes *the same entity*
+across tiers, whereas the rank table compared *different maps' entities* of the
+same rank, which is where the overlap came from.
+
 ### Decision (2026-07-31): wait for measured pairs
 
 Ground tiers will come from **per-map tables built from an Advanced+Elite pair of
@@ -174,12 +197,12 @@ evidence to lean on.
 | map | have | needs |
 |---|---|---|
 | Bug Hunt | Advanced + Elite | — (has tables) |
+| Devil's Heart | Advanced + Elite | — (has tables) |
 | Brotherhood of the Sword | Advanced | Elite |
 | Into the Hive | Advanced | Elite |
-| Khitomer in Stasis | Advanced | Elite |
 | Pahvo Dissension | Advanced | Elite |
 | Undine Infiltration | Advanced | Elite |
-| Devil's Heart | Elite | **Advanced** |
+| Khitomer in Stasis | Advanced | **Normal** — the queue offers no Elite (Raman) |
 
 A second pair would also settle whether the 1.54x multiplier is a property of
 ground content or just of Bug Hunt — which is the one thing that would make the

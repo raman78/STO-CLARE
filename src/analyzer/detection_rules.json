@@ -392,7 +392,21 @@
         "Ground_Aetherian_Boss_Vtx_Devils_Heart",
         "Vtx_Devils_Heart_Tfo_Boss_Explosive_Drone",
         "Vtx_Devils_Heart_Tfo_Miniboss_Turret"
-      ]
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss": 13693,
+          "Ground_Aetherian_Hacker_Vtx_Devils_Heart": 5202,
+          "Ground_Borg_Cdr_Range_Control_Anchor": 4749,
+          "Ground_Borg_Ens_Range_Control": 2169
+        },
+        "Elite": {
+          "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss": 22087,
+          "Ground_Aetherian_Hacker_Vtx_Devils_Heart": 8396,
+          "Ground_Borg_Cdr_Range_Control_Anchor": 7021,
+          "Ground_Borg_Ens_Range_Control": 3316
+        }
+      }
     },
     "Donia System Patrol": {
       "category": "Patrol",
