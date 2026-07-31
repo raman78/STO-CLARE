@@ -53,10 +53,18 @@ impl Difficulty {
     }
 }
 
-/// Difficulties tried during the death-count phase, ordered low to high. A
-/// higher tier that also matches overrides a lower one (mirrors OSCR, where the
-/// tables are ordered so Elite is checked after Advanced).
-const DIFFICULTY_ORDER: [Difficulty; 2] = [Difficulty::Advanced, Difficulty::Elite];
+/// Difficulties tried during the death-count and hull phases, ordered low to
+/// high. A higher tier that also matches overrides a lower one (mirrors OSCR,
+/// where the tables are ordered so Elite is checked after Advanced).
+///
+/// `Normal` is included so a map whose queue offers Normal and Advanced but no
+/// Elite — Khitomer in Stasis, for one — can carry per-map bands for it. Maps
+/// without a Normal table are unaffected: the lookup simply finds nothing.
+const DIFFICULTY_ORDER: [Difficulty; 3] = [
+    Difficulty::Normal,
+    Difficulty::Advanced,
+    Difficulty::Elite,
+];
 
 /// Per-NPC facts gathered from a combat, keyed elsewhere by the entity's
 /// internal unique name. Enough to run OSCR's detection.
@@ -1010,6 +1018,30 @@ mod tests {
             Some(Difficulty::Advanced),
             "the battlecruiser band must win over the cruiser substring"
         );
+    }
+
+    /// Khitomer in Stasis offers Normal and Advanced but no Elite, so its bands
+    /// live under `Normal`. That tier is only reached because it was added to
+    /// `DIFFICULTY_ORDER`; before that the table was parsed and never consulted.
+    #[test]
+    fn ground_map_resolves_its_normal_band() {
+        let rules = bundled_rules();
+        let normal = vec![
+            dead_hull_critter("Mission_Borgraid03_Borg_Power_Node", 5_947.0),
+            dead_hull_critter("Ground_Borg_Capt_Melee", 6_541.0),
+            dead_hull_critter("Ground_Borg_Cdr_Melee", 2_392.0),
+        ];
+        let result = detect(&rules, &view(&normal));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Khitomer in Stasis"));
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
+
+        let advanced = vec![
+            dead_hull_critter("Mission_Borgraid03_Borg_Power_Node", 6_401.0),
+            dead_hull_critter("Ground_Borg_Capt_Melee", 14_047.0),
+            dead_hull_critter("Ground_Borg_Cdr_Melee", 5_325.0),
+        ];
+        let result = detect(&rules, &view(&advanced));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
     }
 
     #[test]

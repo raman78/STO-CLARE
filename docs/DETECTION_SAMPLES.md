@@ -182,6 +182,16 @@ Four more pairs followed the same day. Five independent measurements:
 approximation per map rather than the near-constant the space ratio turned out to
 be — and each new map has so far widened it rather than settling it.
 
+**Normal→Advanced is a bigger step than Advanced→Elite.** Khitomer in Stasis is
+the only ground map with that pair (its queue has no Elite) and its median ratio
+is **2.11x**, against 1.53–1.74x for Elite/Advanced. Worth knowing if a Normal
+band is ever needed elsewhere: there is more room there, not less.
+
+One entity is a striking exception — `Mission_Borgraid03_Borg_Power_Node` sits at
+**1.08x**, essentially unchanged between tiers. Mission objects apparently have
+fixed HP while the troops around them scale, so they make poor tier signals even
+though they are excellent anchors. It is excluded from the bands.
+
 Consequence: extrapolating a threshold from a single sample is *plausible* but
 would carry ~15% error against tiers only ~60% apart, leaving little room. The
 space table works because its 4.4x step dwarfs that kind of error; here it does
@@ -219,8 +229,8 @@ evidence to lean on.
 | Pahvo Dissension | Advanced + Elite | — (has tables) |
 | Into the Hive | Advanced + Elite | — (has tables) |
 | Brotherhood of the Sword | Advanced + Elite | — (has tables) |
+| Khitomer in Stasis | Normal + Advanced | — (has tables; the queue offers no Elite) |
 | Undine Infiltration | Advanced | Elite |
-| Khitomer in Stasis | Advanced | **Normal** — the queue offers no Elite (Raman) |
 
 A second pair would also settle whether the 1.54x multiplier is a property of
 ground content or just of Bug Hunt — which is the one thing that would make the

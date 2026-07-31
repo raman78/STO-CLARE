@@ -714,7 +714,23 @@
         "Ground_Borg_Ens_Melee_Raidisode",
         "Ground_Borg_Lt_Melee_Raidisode_No_Loot",
         "Ground_Borg_Ens_Melee_Wolf_359"
-      ]
+      ],
+      "hull_any": {
+        "Normal": {
+          "Ground_Borg_Capt_Melee": 6541,
+          "Ground_Borg_Cdr_Melee": 2392,
+          "Ground_Borg_Lt_Melee_Raidisode_No_Loot": 1962,
+          "Ground_Borg_Lt_Range": 1542,
+          "Ground_Borg_Ens_Melee": 1457
+        },
+        "Advanced": {
+          "Ground_Borg_Capt_Melee": 14047,
+          "Ground_Borg_Cdr_Melee": 5325,
+          "Ground_Borg_Lt_Melee_Raidisode_No_Loot": 4048,
+          "Ground_Borg_Lt_Range": 3795,
+          "Ground_Borg_Ens_Melee": 3181
+        }
+      }
     },
     "Khonshu Khaibit": {
       "category": "Patrol",
