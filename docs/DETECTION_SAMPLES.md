@@ -218,7 +218,22 @@ Advanced/Elite can receive a Normal run. Such a run does *not* misreport — its
 falls well short of the Advanced threshold, so nothing matches and the combat
 simply shows no tier — but that is incomplete rather than correct.
 
-All six tiered ground maps therefore have a `Normal` band at **Advanced ÷ 2.11**,
+**The extrapolation was then checked against reality.** A measured Bug Hunt Normal
+run arrived the same day: its boss came in at 241,116 against a predicted
+threshold of 135,708 (firing above 108,566), and its Cdr at 3,523 against 3,698
+(firing above 2,958) — both comfortably detected. Bug Hunt now carries the
+measured band; the rest keep the derived one.
+
+That run also gives a second Normal→Advanced ratio: **2.07x**, against Khitomer's
+2.11x. Unlike the Elite/Advanced multiplier, which widened with every sample, this
+one is holding.
+
+⚠ But note *which* entities carry it. Bug Hunt's boss scales only **1.19x**
+Normal→Advanced and its Ensign 1.15x, while Capt/Cdr/Lt sit at 2.07–2.24x. Bosses
+and rank-and-file both compress at the bottom of the tier range — the same effect
+seen in Khitomer's power node at 1.08x. Mid ranks are the reliable tier signal.
+
+The remaining five tiered ground maps have a `Normal` band at **Advanced ÷ 2.11**,
 the only measured Normal→Advanced ratio (Khitomer in Stasis). The margin is
 generous: a threshold at `Advanced/2.11` still fires for any real ratio between
 about 1.0x and 2.6x, and beyond that the failure mode is a missing tier, never a
