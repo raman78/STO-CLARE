@@ -1373,7 +1373,23 @@
       "identifiers": [
         "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss",
         "Event_Undine_Infiltration_Ground_Fire"
-      ]
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss": 30710,
+          "Ground_Undine_Capt_Range_Psi": 19476,
+          "Ground_Undine_Cdr_Range_Psi": 7134,
+          "Ground_Undine_Lt_Range_Psi": 3513,
+          "Ground_Undine_Lt_Mixed": 3890
+        },
+        "Elite": {
+          "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss": 71916,
+          "Ground_Undine_Capt_Range_Psi": 31900,
+          "Ground_Undine_Cdr_Range_Psi": 11207,
+          "Ground_Undine_Lt_Range_Psi": 5695,
+          "Ground_Undine_Lt_Mixed": 5734
+        }
+      }
     },
     "Unity": {
       "category": "Patrol",

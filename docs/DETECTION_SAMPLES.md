@@ -241,10 +241,41 @@ wrong one. Verified: every existing ground verdict is unchanged.
 
 Replace each with a measured band as Normal runs of those maps arrive.
 
-**Undine Infiltration is deliberately left with no bands at all.** Only its
-Advanced is sampled, and adding an Advanced band alone would make a future Elite
-run read as Advanced — actively worse than the current "no tier". It needs its
-Elite sample first.
+**Undine Infiltration — DONE (2026-07-31 20:23 Elite closed the pair).** It had
+been deliberately left with no bands at all while only its Advanced was sampled,
+because an Advanced-only band would have made a future Elite read as Advanced.
+The Elite run arrived and the map now has a measured `hull_any` pair.
+
+| entity | Advanced | Elite | ratio |
+|---|---|---|---|
+| `Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss` | 30,710 | 71,916 | 2.34x |
+| `Ground_Undine_Capt_Range_Psi` | 19,476 | 31,900 | 1.64x |
+| `Ground_Undine_Cdr_Range_Psi` | 7,134 | 11,207 | 1.57x |
+| `Ground_Undine_Lt_Range_Psi` | 3,513 | 5,695 | 1.62x |
+| `Ground_Undine_Lt_Mixed` | 3,890 | 5,734 | 1.47x |
+| ~~`Ground_Undine_Cdr_Melee`~~ | 8,236 | 9,868 | **1.20x — excluded** |
+
+Median 1.57x, inside the 1.53–1.74x ground range. `Cdr_Melee` is left out on
+purpose: at 1.20x its Advanced figure (8,236) sits *above* the Elite firing
+threshold (9,868 x 0.8 = 7,894), so it would light up Elite on an Advanced run.
+Every other entity clears its separation.
+
+⚠ **No Normal band, and this one is a warning about extrapolation.** A derived
+Normal band (Advanced ÷ 2.11) was written, tested, and immediately withdrawn: it
+made the *opening fragment* of the Advanced session read as Normal. That fragment
+(2026-07-30 12:35:04–12:36:29, 47 lines, cut off by a 70 s gap) contains exactly
+one entity — the boss, with **deaths = 0** and a median of 14,192. That figure is
+not the boss's HP, it is merely the damage dealt to it before the fragment ended,
+and it cleared the derived Normal threshold of 14,555 x 0.8 = 11,644.
+
+That exposed a gap wider than this map: `hull_any_match` and `hull_damage_match`
+**do not check `deaths`**, while the global ship-class table does so explicitly
+and for exactly this reason ("for the others the hull figure is damage we happened
+to deal, not the entity's HP"). Measured against the real log, adding the same
+guard to both per-map matchers changes **nothing** — 96 of 98 combats, verdict for
+verdict identical — but it costs 11 unit tests, whose fixtures use the
+`hull_critter` helper that leaves `deaths` at 0. Pending Raman's decision; the
+band was dropped instead, which fixes this map without touching the engine.
 
 ### Decision (2026-07-31): wait for measured pairs
 
@@ -274,7 +305,7 @@ evidence to lean on.
 | Into the Hive | Advanced + Elite | — (has tables) |
 | Brotherhood of the Sword | Advanced + Elite | — (has tables) |
 | Khitomer in Stasis | Normal + Advanced | — (has tables; the queue offers no Elite) |
-| Undine Infiltration | Advanced | Elite |
+| Undine Infiltration | Advanced + Elite | — (has tables) |
 | Infected: Manus | — (anchor only) | Normal + Advanced |
 | Cure Applied | — (anchor only) | Normal + Advanced |
 
