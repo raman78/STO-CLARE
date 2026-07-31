@@ -268,13 +268,22 @@ evidence to lean on.
 
 | map | have | needs |
 |---|---|---|
-| Bug Hunt | Advanced + Elite | — (has tables) |
+| Bug Hunt | Normal + Advanced + Elite | — (all three measured) |
 | Devil's Heart | Advanced + Elite | — (has tables) |
 | Pahvo Dissension | Advanced + Elite | — (has tables) |
 | Into the Hive | Advanced + Elite | — (has tables) |
 | Brotherhood of the Sword | Advanced + Elite | — (has tables) |
 | Khitomer in Stasis | Normal + Advanced | — (has tables; the queue offers no Elite) |
 | Undine Infiltration | Advanced | Elite |
+| Infected: Manus | — (anchor only) | Normal + Advanced |
+| Cure Applied | — (anchor only) | Normal + Advanced |
+
+**Which pair a ground map needs depends on the queue.** Three of them top out
+below Elite — Khitomer in Stasis, Infected: Manus and Cure Applied all offer
+Normal and Advanced only (confirmed by Raman, who plays them; the wiki is
+unreachable, 403). For those the pair to measure is **Normal + Advanced**, and
+waiting for an Elite sample would mean waiting forever. Their expected spread is
+therefore the ~2.07-2.11x Normal→Advanced multiplier, not the ~4.4x space one.
 
 A second pair would also settle whether the 1.54x multiplier is a property of
 ground content or just of Bug Hunt — which is the one thing that would make the
