@@ -167,19 +167,20 @@ sample defensible.
 | Borg Cdr (Anchor) | 4,749 | 7,021 | 1.48x |
 | Borg Ens (Range) | 2,169 | 3,316 | 1.53x |
 
-A **third** pair followed within the hour — Pahvo Dissension, median **1.58x**
-across eleven entities. Three maps, three independent measurements: 1.54x, 1.53x,
-1.58x.
+Three more pairs followed the same day. Four independent measurements:
 
-| map | pair | median ratio |
+| map | median ratio | spread within the map |
 |---|---|---|
-| Bug Hunt | Advanced + Elite | 1.54x |
-| Devil's Heart | Advanced + Elite | 1.53x |
-| Pahvo Dissension | Advanced + Elite | 1.58x |
+| Bug Hunt | 1.54x | 1.33–2.06x |
+| Devil's Heart | 1.53x | 1.34–2.18x |
+| Pahvo Dissension | 1.58x | 1.42–2.04x |
+| Into the Hive | **1.67x** | 1.49–1.74x |
 
-All three now carry measured `hull_any` bands, so none of them needs
-extrapolation itself — but the agreement means the remaining ground maps could be
-given thresholds from their single sample if that is ever wanted.
+The multiplier is real, but **1.53–1.67x between maps is a ~9% spread**, and
+within a single map individual entities range 1.33–2.18x. So a threshold
+extrapolated from one sample would be roughly right, not exact — fine for telling
+two tiers 55% apart, but with less headroom than the space table's 4.4x. All four
+maps carry measured bands, so none relies on it.
 
 Note this does **not** revive the rank table: 1.53x describes *the same entity*
 across tiers, whereas the rank table compared *different maps' entities* of the
@@ -210,8 +211,8 @@ evidence to lean on.
 | Bug Hunt | Advanced + Elite | — (has tables) |
 | Devil's Heart | Advanced + Elite | — (has tables) |
 | Pahvo Dissension | Advanced + Elite | — (has tables) |
+| Into the Hive | Advanced + Elite | — (has tables) |
 | Brotherhood of the Sword | Advanced | Elite |
-| Into the Hive | Advanced | Elite |
 | Undine Infiltration | Advanced | Elite |
 | Khitomer in Stasis | Advanced | **Normal** — the queue offers no Elite (Raman) |
 

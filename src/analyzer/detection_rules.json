@@ -584,7 +584,23 @@
       "identifiers": [
         "Ground_Borg_Queen_Disembodied",
         "Ground_Borg_Queen"
-      ]
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Ground_Borg_Capt_Gorn": 18898,
+          "Ground_Borg_Capt_Melee": 13842,
+          "Ground_Borg_Cdr_Melee": 5113,
+          "Ground_Borg_Lt_Range": 2867,
+          "Ground_Borg_Ens_Melee": 2470
+        },
+        "Elite": {
+          "Ground_Borg_Capt_Gorn": 29528,
+          "Ground_Borg_Capt_Melee": 23064,
+          "Ground_Borg_Cdr_Melee": 8894,
+          "Ground_Borg_Lt_Range": 4280,
+          "Ground_Borg_Ens_Melee": 4256
+        }
+      }
     },
     "Iuppiter Iratus": {
       "category": "TFO",
