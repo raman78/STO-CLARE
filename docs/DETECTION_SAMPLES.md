@@ -167,8 +167,19 @@ sample defensible.
 | Borg Cdr (Anchor) | 4,749 | 7,021 | 1.48x |
 | Borg Ens (Range) | 2,169 | 3,316 | 1.53x |
 
-Devil's Heart now has measured `hull_any` bands from this pair, so it needs no
-extrapolation itself.
+A **third** pair followed within the hour — Pahvo Dissension, median **1.58x**
+across eleven entities. Three maps, three independent measurements: 1.54x, 1.53x,
+1.58x.
+
+| map | pair | median ratio |
+|---|---|---|
+| Bug Hunt | Advanced + Elite | 1.54x |
+| Devil's Heart | Advanced + Elite | 1.53x |
+| Pahvo Dissension | Advanced + Elite | 1.58x |
+
+All three now carry measured `hull_any` bands, so none of them needs
+extrapolation itself — but the agreement means the remaining ground maps could be
+given thresholds from their single sample if that is ever wanted.
 
 Note this does **not** revive the rank table: 1.53x describes *the same entity*
 across tiers, whereas the rank table compared *different maps' entities* of the
@@ -198,9 +209,9 @@ evidence to lean on.
 |---|---|---|
 | Bug Hunt | Advanced + Elite | — (has tables) |
 | Devil's Heart | Advanced + Elite | — (has tables) |
+| Pahvo Dissension | Advanced + Elite | — (has tables) |
 | Brotherhood of the Sword | Advanced | Elite |
 | Into the Hive | Advanced | Elite |
-| Pahvo Dissension | Advanced | Elite |
 | Undine Infiltration | Advanced | Elite |
 | Khitomer in Stasis | Advanced | **Normal** — the queue offers no Elite (Raman) |
 

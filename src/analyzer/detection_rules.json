@@ -855,7 +855,23 @@
         "Ground_Federation_Ens_Range_Tac_Mirror_Dsc",
         "Ground_Federation_Ens_Range_Eng_Mirror_Dsc",
         "Ground_Federation_Ens_Range_Sci_Mirror_Dsc"
-      ]
+      ],
+      "hull_any": {
+        "Advanced": {
+          "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss": 35027,
+          "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss": 27182,
+          "Ground_Federation_Cdr_Range_Eng_Mirror_Dsc": 4536,
+          "Ground_Federation_Lt_Range_Eng_Mirror_Dsc": 2511,
+          "Ground_Federation_Ens_Range_Eng_Mirror_Dsc": 2047
+        },
+        "Elite": {
+          "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss": 54732,
+          "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss": 42887,
+          "Ground_Federation_Cdr_Range_Eng_Mirror_Dsc": 6948,
+          "Ground_Federation_Lt_Range_Eng_Mirror_Dsc": 3895,
+          "Ground_Federation_Ens_Range_Eng_Mirror_Dsc": 2905
+        }
+      }
     },
     "Pansarka System Patrol": {
       "category": "Patrol",
