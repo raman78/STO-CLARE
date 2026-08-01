@@ -31,9 +31,9 @@ pub enum MainTab {
     Summary,
     DamageDealt,
     DamageTaken,
+    SelfHealing,
     HealingAlly,
     HealingReceived,
-    SelfHealing,
 }
 
 /// What each healing tab holds. Shown as tooltips, because the three pools are
@@ -49,8 +49,9 @@ const HEALING_RECEIVED_INFO: &str =
 const SELF_HEALING_INFO: &str =
     "Healing you did to yourself: self-buffs, your own trait and gear procs, and \
      your own consoles healing you.\n\
-     Grouped by ability, then by what it came from — there is no other party to\n\
-     group by, so that level is left out entirely.\n\
+     Always grouped by ability — there is nobody else involved, so there is\n\
+     nothing else to group by. A heal that came through a pet or a hologram\n\
+     shows it underneath the ability.\n\
      Counted here only — it is deliberately left out of the other two tabs, so \
      the three add up without counting anything twice.";
 
@@ -60,11 +61,12 @@ impl MainTabs {
             identifier: String::new(),
             damage_out_tab: DamageTab::empty(|p| &p.damage_out),
             damage_in_tab: DamageTab::empty(|p| &p.damage_in),
-            heal_ally_tab: HealTab::empty(|p| &p.heal_ally, "Person"),
-            heal_received_tab: HealTab::empty(|p| &p.heal_received, "Person"),
-            // Self healing has no other party; what varies is the console,
-            // trait or proc the heal came from.
-            heal_self_tab: HealTab::empty(|p| &p.heal_self, "Source"),
+            heal_ally_tab: HealTab::empty(|p| &p.heal_ally, Some("Person")),
+            heal_received_tab: HealTab::empty(|p| &p.heal_received, Some("Person")),
+            // Self healing has no other party, so there is nothing to group by:
+            // it is always the ability, with whatever pet or console carried the
+            // heal underneath it.
+            heal_self_tab: HealTab::empty(|p| &p.heal_self, None),
             active_tab: Default::default(),
             summary_tab: SummaryTab::empty(),
         }
@@ -80,7 +82,7 @@ impl MainTabs {
         self.heal_self_tab.update(settings, combat);
     }
 
-    pub fn show(&mut self, settings: &Settings, ui: &mut Ui) {
+    pub fn show(&mut self, settings: &mut Settings, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.active_tab, MainTab::Summary, "Summary");
 
@@ -89,6 +91,8 @@ impl MainTabs {
             ui.selectable_value(&mut self.active_tab, MainTab::DamageTaken, "Damage Taken")
                 .on_hover_text("Damage others dealt to you.");
 
+            ui.selectable_value(&mut self.active_tab, MainTab::SelfHealing, "Self Healing")
+                .on_hover_text(SELF_HEALING_INFO);
             ui.selectable_value(&mut self.active_tab, MainTab::HealingAlly, "Healing Ally")
                 .on_hover_text(HEALING_ALLY_INFO);
             ui.selectable_value(
@@ -97,17 +101,15 @@ impl MainTabs {
                 "Healing Received",
             )
             .on_hover_text(HEALING_RECEIVED_INFO);
-            ui.selectable_value(&mut self.active_tab, MainTab::SelfHealing, "Self Healing")
-                .on_hover_text(SELF_HEALING_INFO);
         });
 
         match self.active_tab {
             MainTab::Summary => self.summary_tab.show(settings, ui),
             MainTab::DamageDealt => self.damage_out_tab.show(settings, ui),
             MainTab::DamageTaken => self.damage_in_tab.show(settings, ui),
+            MainTab::SelfHealing => self.heal_self_tab.show(settings, ui),
             MainTab::HealingAlly => self.heal_ally_tab.show(settings, ui),
             MainTab::HealingReceived => self.heal_received_tab.show(settings, ui),
-            MainTab::SelfHealing => self.heal_self_tab.show(settings, ui),
         }
     }
 }

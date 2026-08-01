@@ -1,5 +1,23 @@
 # Change Log
 
+## unreleased
+
+## v1.8.1
+
+### Major Changes
+- every combat can carry a short note of your own, up to 50 characters, written in the Summary tab under the combat's name. The note then follows the combat everywhere it is listed — the combats dropdown in the main window, the pick list in Compare Combats and the legend above the comparison table — so four runs of the same map on the same evening stop looking alike. The search box in Compare finds combats by their note too. Notes are remembered between sessions. A note stays with the fight it was written for unless you change how long a pause splits one combat from the next, which re-cuts the log into different combats
+
+### Fixes
+- the combats list in the main window is wider, so a combat's name, date and note fit on one line without the entry being cut short
+- the list in Compare Combats now starts with the newest combat, like the dropdown in the main window does. It used to start with the oldest, so the runs just played sat at the very bottom of the whole log
+- Compare Combats now shows the runs you have just played. The list was the one read when the program last refreshed, and while comparing there is no Refresh button to be found, so combats finished in the meantime were missing. It is now re-read when the view opens and when you go back to picking combats. Combats added this way also arrive with their map, environment and level, so they are no longer dropped by an active filter
+
+### Other Changes
+- the healing tabs now start with Self Healing, followed by Healing Ally and Healing Received
+- the totals of a split value are now printed in a genuinely bold typeface, heading included. They were only a slightly brighter shade before, which next to the Hull and Shield numbers was easy to miss
+- Self Healing no longer offers a "Group by" choice. There is nobody else involved in a heal you did to yourself, so both settings listed the same abilities in the same order, and the only thing the switch could move was the odd heal that came through a pet or a hologram. The tab now always lists abilities, with that pet or hologram underneath the one it carried
+- scroll bars no longer cover the table when the pointer comes near them. They used to grow over the content, so the left-right bar hid the bottom row of the table above it; now they have a lane of their own just outside it
+
 ## v1.8.0
 
 ### Major Changes

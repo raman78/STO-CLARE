@@ -132,10 +132,29 @@ Two conventions worth knowing before changing a table or a chart:
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
+- **Bold text needs its own font.** egui's `RichText::strong()` only picks a
+  brighter colour, and the fonts epaint bundles have no bold face. `app/fonts`
+  embeds `assets/fonts/Ubuntu-Bold.ttf` — the matching weight of the Ubuntu-Light
+  epaint uses — as the family `FontFamily::Name("Ubuntu-Bold")` and binds it on
+  the main context in `App::new`; `main_tabs::common::bold_text` is how widgets
+  ask for it. epaint panics on a family that is not bound, so any further egui
+  context that wants bold text has to call `fonts::install` too (the overlay
+  context does not use it).
 
 Settings changes are gated by cost: only `analysis` invalidates the `Analyzer`
 and forces a re-read of the log; a `general` change just rebuilds the views,
 because formatting is baked into the row strings when a table is built.
+
+The `combat_notes` section (`app/settings/combat_notes.rs`) holds the user's own
+short description per combat, written in the Summary tab and repeated wherever a
+combat is listed: the main window's dropdown, the compare picker (whose search
+box reads it) and the compare legend. It is keyed by the combat's **start time**,
+which the refresh messages carry alongside the list (`start_times`, aligned with
+`combats`) because those views hold parallel arrays rather than whole combats.
+The start time is the only identifier the log itself fixes — `Combat::identifier` carries whatever the name rules or
+the map detection produced, so a rename would orphan the notes. Changing
+`combat_separation_time_seconds` re-cuts the log into different combats and does
+orphan them; there is no key that survives that.
 
 ## Log files on disk
 

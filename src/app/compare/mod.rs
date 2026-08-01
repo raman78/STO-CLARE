@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use chrono::NaiveDateTime;
 use eframe::egui::*;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +15,7 @@ use crate::{
     analyzer::{Combat, DamageGroup, Difficulty},
     app::{
         combat_filter::{CombatEntry, CombatFilter},
-        settings::Settings,
+        settings::{CombatNotes, Settings},
         state::AppState,
     },
 };
@@ -183,22 +184,40 @@ impl CompareView {
         difficulties: &[Option<Difficulty>],
         base_names: &[String],
         environments: &[Option<String>],
+        start_times: &[NaiveDateTime],
         ui: &mut Ui,
     ) {
         match &mut self.comparison {
             Some(comparison) => {
                 if ui.button("◀ Change selection").clicked() {
                     self.comparison = None;
+                    // Going back to the picker is the other moment the list can
+                    // be out of date — a run finished while the table was up.
+                    state.analysis_handler.refresh_combats_list();
                     ui.separator();
-                    self.show_selection(state, combats, difficulties, base_names, environments, ui);
+                    self.show_selection(
+                        state,
+                        combats,
+                        difficulties,
+                        base_names,
+                        environments,
+                        start_times,
+                        ui,
+                    );
                 } else {
                     ui.separator();
                     comparison.show(ui, &mut state.settings);
                 }
             }
-            None => {
-                self.show_selection(state, combats, difficulties, base_names, environments, ui)
-            }
+            None => self.show_selection(
+                state,
+                combats,
+                difficulties,
+                base_names,
+                environments,
+                start_times,
+                ui,
+            ),
         }
     }
 
@@ -209,6 +228,7 @@ impl CompareView {
         difficulties: &[Option<Difficulty>],
         base_names: &[String],
         environments: &[Option<String>],
+        start_times: &[NaiveDateTime],
         ui: &mut Ui,
     ) {
         let entries: Vec<CombatEntry> = (0..combats.len())
@@ -248,13 +268,26 @@ impl CompareView {
 
         ui.separator();
 
+        let notes = &state.settings.combat_notes;
         ScrollArea::vertical().show(ui, |ui| {
-            for (i, identifier) in combats.iter().enumerate() {
-                if !self.matches_filters(identifier, entries[i]) {
+            // Newest first, like the combats dropdown in the main window. The
+            // analyzer hands the list over oldest first, so a plain walk buried
+            // the runs just played at the bottom of a log's worth of combats.
+            for (i, identifier) in combats.iter().enumerate().rev() {
+                let note = start_times
+                    .get(i)
+                    .map(|&start| notes.get(&CombatNotes::key_at(start)))
+                    .unwrap_or("");
+                if !self.matches_filters(identifier, note, entries[i]) {
                     continue;
                 }
                 let mut checked = self.selected.contains(&i);
-                if ui.checkbox(&mut checked, identifier).clicked() {
+                let label = if note.is_empty() {
+                    identifier.clone()
+                } else {
+                    format!("{identifier} — {note}")
+                };
+                if ui.checkbox(&mut checked, label).clicked() {
                     self.toggle_selected(i, checked);
                 }
             }
@@ -271,11 +304,13 @@ impl CompareView {
         }
     }
 
-    fn matches_filters(&self, identifier: &str, entry: CombatEntry) -> bool {
-        if !self.name_filter.trim().is_empty()
-            && !identifier
-                .to_lowercase()
-                .contains(&self.name_filter.trim().to_lowercase())
+    /// The search box reads the note as well as the identifier, so a run can be
+    /// found by what the user called it.
+    fn matches_filters(&self, identifier: &str, note: &str, entry: CombatEntry) -> bool {
+        let needle = self.name_filter.trim().to_lowercase();
+        if !needle.is_empty()
+            && !identifier.to_lowercase().contains(&needle)
+            && !note.to_lowercase().contains(&needle)
         {
             return false;
         }
@@ -305,13 +340,25 @@ mod tests {
         let identifier = "Infected Space [Elite] | 2026-07-23 20:07:22 - 20:11:37";
 
         view.name_filter = "infected".to_string();
-        assert!(view.matches_filters(identifier, entry()));
+        assert!(view.matches_filters(identifier, "", entry()));
 
         view.name_filter = "20:07".to_string();
-        assert!(view.matches_filters(identifier, entry()));
+        assert!(view.matches_filters(identifier, "", entry()));
 
         view.name_filter = "hive".to_string();
-        assert!(!view.matches_filters(identifier, entry()));
+        assert!(!view.matches_filters(identifier, "", entry()));
+    }
+
+    /// A combat can also be found by the note the user wrote for it, which is
+    /// the point of writing one.
+    #[test]
+    fn the_search_box_matches_the_note() {
+        let mut view = CompareView::default();
+        let identifier = "Infected Space [Elite] | 2026-07-23 20:07:22 - 20:11:37";
+
+        view.name_filter = "cheops".to_string();
+        assert!(view.matches_filters(identifier, "Cheops build", entry()));
+        assert!(!view.matches_filters(identifier, "FAW build", entry()));
     }
 
     /// Search and pickers narrow together, not one or the other.
@@ -320,6 +367,6 @@ mod tests {
         let mut view = CompareView::default();
         view.name_filter = "infected".to_string();
         view.filter.environment = Some("Ground".to_string());
-        assert!(!view.matches_filters("Infected Space | t", entry()));
+        assert!(!view.matches_filters("Infected Space | t", "", entry()));
     }
 }

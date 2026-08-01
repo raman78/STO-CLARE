@@ -2,7 +2,7 @@ use eframe::egui::*;
 
 use crate::{
     analyzer::*,
-    app::settings::Settings,
+    app::settings::{CombatNotes, MAX_NOTE_CHARS, Settings},
     custom_widgets::{splitter::Splitter, table::*},
     helpers::{number_formatting::NumberFormatter, *},
 };
@@ -12,6 +12,11 @@ use super::{common::*, diagrams::SummaryChart, tables::SummaryTable};
 pub struct SummaryTab {
     identifier: String,
     name: String,
+    /// Key of the shown combat's note, and the text being edited. The text is
+    /// held here rather than edited straight in the settings so a keystroke
+    /// does not write the settings file.
+    note_key: String,
+    note: String,
 
     combat_duration: TextDuration,
     active_duration: TextDuration,
@@ -41,6 +46,8 @@ impl SummaryTab {
         Self {
             identifier: nothing_loaded.clone(),
             name: nothing_loaded,
+            note_key: String::new(),
+            note: String::new(),
             summary_table: SummaryTable::empty(),
             combat_duration: Default::default(),
             active_duration: Default::default(),
@@ -58,6 +65,8 @@ impl SummaryTab {
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
         self.identifier = combat.identifier();
         self.name = combat.name();
+        self.note_key = CombatNotes::key(combat);
+        self.note = settings.combat_notes.get(&self.note_key).to_owned();
 
         self.combat_duration =
             TextDuration::new(time_range_to_duration_or_zero(&combat.combat_time));
@@ -107,8 +116,56 @@ impl SummaryTab {
         );
     }
 
-    pub fn show(&mut self, settings: &Settings, top_ui: &mut Ui) {
+    /// The user's own one-line description of this combat, repeated in the
+    /// compare view's legend so a run can be told apart from the four others of
+    /// the same map on the same evening.
+    ///
+    /// The text is written into the settings on every keystroke but saved to
+    /// disk only once the field is left, so typing does not rewrite the
+    /// settings file per character.
+    fn show_note(&mut self, settings: &mut Settings, ui: &mut Ui) {
+        // No combat loaded yet: there is nothing to attach a note to.
+        if self.note_key.is_empty() {
+            return;
+        }
+
+        // Room for the whole note at once. Measured from the font in use rather
+        // than fixed, so it holds at any UI scale; the slack covers letters
+        // wider than a digit, since the face is proportional and no width can
+        // fit every possible fifty characters.
+        let note_width = ui.fonts_mut(|fonts| {
+            fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0')
+        }) * MAX_NOTE_CHARS as f32
+            * 1.2;
+
+        ui.horizontal(|ui| {
+            ui.label("Note:");
+            let response = ui.add(
+                TextEdit::singleline(&mut self.note)
+                    .desired_width(note_width)
+                    .hint_text("your own description of this combat"),
+            );
+            if response.changed() {
+                // A hard limit — the field takes nothing past it.
+                if self.note.chars().count() > MAX_NOTE_CHARS {
+                    self.note = self.note.chars().take(MAX_NOTE_CHARS).collect();
+                }
+                settings.combat_notes.set(&self.note_key, &self.note);
+            }
+            if response.lost_focus() {
+                self.note = self.note.trim().to_owned();
+                settings.combat_notes.set(&self.note_key, &self.note);
+                settings.save();
+            }
+            ui.label(
+                RichText::new(format!("{}/{}", self.note.chars().count(), MAX_NOTE_CHARS)).weak(),
+            );
+        });
+    }
+
+    pub fn show(&mut self, settings: &mut Settings, top_ui: &mut Ui) {
         top_ui.heading(&self.name);
+        self.show_note(settings, top_ui);
 
         Splitter::horizontal()
             .initial_ratio(0.7)
@@ -168,7 +225,12 @@ impl SummaryTab {
             Table::new(ui)
                 .header(HEADER_HEIGHT, |r| {
                     r.cell(|_| {});
-                    for name in ["All", "Hull", "Shield"] {
+                    // The All heading matches the totals under it (see
+                    // `ShieldAndHullTextValue::show`); the halves stay plain.
+                    r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(bold_text("All"));
+                    });
+                    for name in ["Hull", "Shield"] {
                         r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.label(name);
                         });

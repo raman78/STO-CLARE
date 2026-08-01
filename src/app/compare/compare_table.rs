@@ -18,7 +18,7 @@ use crate::{
     app::main_tabs::diagrams::{
         combat_duration_seconds, DamageDiagrams, DiagramType, PreparedDamageDataSet,
     },
-    app::settings::Settings,
+    app::settings::{CombatNotes, Settings},
     custom_widgets::{slider_text_edit::SliderTextEdit, splitter::Splitter, table::*},
     helpers::number_formatting::NumberFormatter,
 };
@@ -255,7 +255,14 @@ impl Comparison {
         let mut player_change: Option<(usize, NameHandle)> = None;
         for (slot_i, slot) in self.slots.iter().enumerate() {
             ui.horizontal(|ui| {
-                ui.label(format!("{}: {}", slot_i + 1, slot.combat.identifier()));
+                // The user's own note, where they wrote one, tells apart runs
+                // the identifier alone cannot.
+                let note = settings.combat_notes.get(&CombatNotes::key(&slot.combat));
+                ui.label(if note.is_empty() {
+                    format!("{}: {}", slot_i + 1, slot.combat.identifier())
+                } else {
+                    format!("{}: {} — {}", slot_i + 1, slot.combat.identifier(), note)
+                });
                 let current = slot.player.get(&slot.combat.name_manager).to_string();
                 ComboBox::new(("compare player", slot_i), "player")
                     .selected_text(current)

@@ -212,7 +212,10 @@ impl<T: 'static> MetricsTable<T> {
         // by the same (all-values) key.
         if split && !column.parts.is_empty() {
             show_group_separator(row);
-            self.show_header_cell(row, &format!("{}\n{}", column.name, "All"), column);
+            let name = column.name;
+            self.show_header_cell_with(row, column, |ui| {
+                ui.label(split_total_header_text(ui, name));
+            });
             for part in column.parts.iter() {
                 self.show_header_cell(row, &format!("\n{}", part.name), column);
             }
@@ -228,9 +231,20 @@ impl<T: 'static> MetricsTable<T> {
     }
 
     fn show_header_cell(&mut self, row: &mut TableRow, text: &str, column: &ColumnDescriptor<T>) {
-        let response = row.selectable_cell(false, |ui| {
+        self.show_header_cell_with(row, column, |ui| {
             ui.label(text);
         });
+    }
+
+    /// The header cell of `column` with its own contents — sorting on click and
+    /// the explanation on hover stay the same whatever is written in it.
+    fn show_header_cell_with(
+        &mut self,
+        row: &mut TableRow,
+        column: &ColumnDescriptor<T>,
+        contents: impl FnOnce(&mut Ui),
+    ) {
+        let response = row.selectable_cell(false, contents);
         if response.clicked() {
             (column.sort)(self);
         }
