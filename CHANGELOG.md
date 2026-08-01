@@ -2,6 +2,8 @@
 
 ## unreleased
 
+## v1.8.1
+
 ### Major Changes
 - every combat can carry a short note of your own, up to 50 characters, written in the Summary tab under the combat's name. The note then follows the combat everywhere it is listed — the combats dropdown in the main window, the pick list in Compare Combats and the legend above the comparison table — so four runs of the same map on the same evening stop looking alike. The search box in Compare finds combats by their note too. Notes are remembered between sessions. A note stays with the fight it was written for unless you change how long a pause splits one combat from the next, which re-cuts the log into different combats
 
