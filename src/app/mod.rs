@@ -280,16 +280,23 @@ impl eframe::App for App {
                     ui.horizontal_wrapped(|ui| {
                         ui.label("Show only:");
                         let before = self.combat_filter.clone();
-                        // The pickers only offer values the list actually holds,
-                        // so a choice can never empty it on its own.
-                        let environments = combat_filter::distinct_sorted(
-                            self.combat_environments.iter().filter_map(|e| e.as_deref()),
-                        );
-                        let maps = combat_filter::distinct_sorted(
-                            self.combat_base_names.iter().map(String::as_str),
-                        );
-                        self.combat_filter
-                            .show("combats", &environments, &maps, ui);
+                        // Each menu offers only what the other two leave
+                        // reachable, so no combination can empty the list.
+                        let entries: Vec<combat_filter::CombatEntry> = (0..self.combats.len())
+                            .map(|i| combat_filter::CombatEntry {
+                                environment: self
+                                    .combat_environments
+                                    .get(i)
+                                    .and_then(|e| e.as_deref()),
+                                difficulty: self.combat_difficulties.get(i).copied().flatten(),
+                                base_name: self
+                                    .combat_base_names
+                                    .get(i)
+                                    .map(String::as_str)
+                                    .unwrap_or(""),
+                            })
+                            .collect();
+                        self.combat_filter.show("combats", &entries, ui);
                         if self.combat_filter.is_active() && ui.button("Clear filter").clicked() {
                             self.combat_filter.clear();
                         }

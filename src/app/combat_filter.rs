@@ -87,10 +87,76 @@ impl CombatFilter {
         self.difficulty.matches(difficulty)
     }
 
-    /// Draws the three pickers inline. `environments` and `maps` are the values
-    /// actually present in the list, so the menus never offer a choice that
-    /// would empty it.
-    pub fn show(&mut self, id: &str, environments: &[String], maps: &[String], ui: &mut Ui) {
+    /// The values a menu may offer: those present among the combats that pass
+    /// the *other* two filters. Picking from a menu can then never produce an
+    /// empty list, because every option still has at least one combat behind it.
+    fn options(&self, combats: &[CombatEntry], dimension: Dimension) -> Options {
+        let mut without = self.clone();
+        match dimension {
+            Dimension::Environment => without.environment = None,
+            Dimension::Difficulty => without.difficulty = DifficultyFilter::Any,
+            Dimension::Map => without.map = None,
+        }
+        let matching = combats
+            .iter()
+            .filter(|c| without.matches(c.environment, c.difficulty, c.base_name));
+
+        let mut options = Options::default();
+        for combat in matching {
+            if let Some(environment) = combat.environment {
+                options.environments.push(environment.to_string());
+            }
+            options.maps.push(combat.base_name.to_string());
+            options.difficulties.push(combat.difficulty);
+        }
+        options.environments.sort_unstable();
+        options.environments.dedup();
+        options.maps.sort_unstable();
+        options.maps.dedup();
+        options
+    }
+
+    /// Drops a choice that the other filters have made impossible, so the list
+    /// can never end up empty through a combination nothing matches.
+    fn drop_impossible_choices(&mut self, combats: &[CombatEntry]) {
+        if let Some(environment) = &self.environment {
+            if !self
+                .options(combats, Dimension::Environment)
+                .environments
+                .iter()
+                .any(|e| e == environment)
+            {
+                self.environment = None;
+            }
+        }
+        if let Some(map) = &self.map {
+            if !self
+                .options(combats, Dimension::Map)
+                .maps
+                .iter()
+                .any(|m| m == map)
+            {
+                self.map = None;
+            }
+        }
+        if self.difficulty != DifficultyFilter::Any
+            && !self
+                .options(combats, Dimension::Difficulty)
+                .difficulties
+                .iter()
+                .any(|d| self.difficulty.matches(*d))
+        {
+            self.difficulty = DifficultyFilter::Any;
+        }
+    }
+
+    /// Draws the three pickers inline. Each menu offers only what the other two
+    /// leave reachable, so no combination can empty the list.
+    pub fn show(&mut self, id: &str, combats: &[CombatEntry], ui: &mut Ui) {
+        self.drop_impossible_choices(combats);
+        let environments = self.options(combats, Dimension::Environment).environments;
+        let maps = self.options(combats, Dimension::Map).maps;
+        let difficulties = self.options(combats, Dimension::Difficulty).difficulties;
         ComboBox::new((id, "environment"), "")
             .selected_text(self.environment.as_deref().unwrap_or("Any type"))
             .width(90.0)
@@ -119,6 +185,11 @@ impl CombatFilter {
             .width(100.0)
             .show_ui(ui, |ui| {
                 for &(filter, label) in DifficultyFilter::ALL {
+                    let reachable = filter == DifficultyFilter::Any
+                        || difficulties.iter().any(|d| filter.matches(*d));
+                    if !reachable {
+                        continue;
+                    }
                     let label = if filter == DifficultyFilter::Any {
                         "Any level"
                     } else {
@@ -140,12 +211,26 @@ impl CombatFilter {
     }
 }
 
-/// The distinct values present in a list, sorted, for a filter menu.
-pub fn distinct_sorted<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
-    let mut values: Vec<String> = values.filter(|v| !v.is_empty()).map(String::from).collect();
-    values.sort_unstable();
-    values.dedup();
-    values
+/// What the filter knows about one combat in the list.
+#[derive(Clone, Copy)]
+pub struct CombatEntry<'a> {
+    pub environment: Option<&'a str>,
+    pub difficulty: Option<Difficulty>,
+    pub base_name: &'a str,
+}
+
+#[derive(Clone, Copy)]
+enum Dimension {
+    Environment,
+    Difficulty,
+    Map,
+}
+
+#[derive(Default)]
+struct Options {
+    environments: Vec<String>,
+    maps: Vec<String>,
+    difficulties: Vec<Option<Difficulty>>,
 }
 
 #[cfg(test)]
@@ -180,12 +265,95 @@ mod tests {
         assert!(!filter.matches(None, Some(Difficulty::Normal), "x"));
     }
 
+    fn entries() -> Vec<CombatEntry<'static>> {
+        vec![
+            CombatEntry {
+                environment: Some("Space"),
+                difficulty: Some(Difficulty::Elite),
+                base_name: "Infected Space",
+            },
+            CombatEntry {
+                environment: Some("Space"),
+                difficulty: Some(Difficulty::Normal),
+                base_name: "Azure Nebula",
+            },
+            CombatEntry {
+                environment: Some("Ground"),
+                difficulty: Some(Difficulty::Advanced),
+                base_name: "Bug Hunt",
+            },
+            CombatEntry {
+                environment: None,
+                difficulty: None,
+                base_name: "Combat",
+            },
+        ]
+    }
+
+    /// Choosing an environment must leave only the maps and levels that still
+    /// have a combat behind them — otherwise the next pick empties the list.
     #[test]
-    fn distinct_sorted_drops_blanks_and_duplicates() {
-        let values = ["Space", "", "Ground", "Space"];
+    fn a_chosen_environment_narrows_the_other_menus() {
+        let entries = entries();
+        let mut filter = CombatFilter::default();
+        filter.environment = Some("Ground".to_string());
+
+        let maps = filter.options(&entries, Dimension::Map).maps;
+        assert_eq!(vec!["Bug Hunt".to_string()], maps);
+
+        let levels = filter.options(&entries, Dimension::Difficulty).difficulties;
+        assert!(levels.iter().any(|d| DifficultyFilter::Advanced.matches(*d)));
+        assert!(!levels.iter().any(|d| DifficultyFilter::Elite.matches(*d)));
+    }
+
+    /// The menu being opened is not narrowed by its own current value, or it
+    /// would offer nothing but what is already picked.
+    #[test]
+    fn a_menu_is_not_narrowed_by_its_own_choice() {
+        let entries = entries();
+        let mut filter = CombatFilter::default();
+        filter.environment = Some("Ground".to_string());
+
+        let environments = filter.options(&entries, Dimension::Environment).environments;
         assert_eq!(
             vec!["Ground".to_string(), "Space".to_string()],
-            distinct_sorted(values.into_iter())
+            environments
         );
+    }
+
+    /// The cascade stops a contradictory pair from being picked, but the list
+    /// itself can change under a filter that is already set — a refresh, or a
+    /// combat deleted. Whichever of the two is dropped then is arbitrary; what
+    /// has to hold is that the list does not come back empty.
+    #[test]
+    fn an_impossible_pair_is_resolved_rather_than_left_empty() {
+        let entries = entries();
+        for (environment, map) in [
+            ("Ground", "Infected Space"),
+            ("Space", "Bug Hunt"),
+        ] {
+            let mut filter = CombatFilter::default();
+            filter.environment = Some(environment.to_string());
+            filter.map = Some(map.to_string());
+            assert!(
+                !entries
+                    .iter()
+                    .any(|c| filter.matches(c.environment, c.difficulty, c.base_name)),
+                "the pair really is contradictory to begin with"
+            );
+
+            filter.drop_impossible_choices(&entries);
+
+            assert!(
+                entries
+                    .iter()
+                    .any(|c| filter.matches(c.environment, c.difficulty, c.base_name)),
+                "after resolving it, something matches again"
+            );
+            assert!(
+                filter.environment.is_some() || filter.map.is_some(),
+                "only the conflicting half is given up, not both"
+            );
+        }
     }
 }
