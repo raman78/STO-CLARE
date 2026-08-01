@@ -3,7 +3,7 @@
 How the program is put together: what runs on which thread, how a line of the
 combat log becomes a number in a table, and where each concern lives.
 
-This is the entry point for the technical docs. It stays at the level of
+This is the entry point for the technical docs; `docs/README.md` indexes them. It stays at the level of
 modules and data flow; each subsystem with real depth has its own document,
 linked from the relevant section.
 

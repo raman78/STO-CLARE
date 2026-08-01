@@ -1,6 +1,6 @@
 # Change Log
 
-# unreleased
+## v1.8.0
 
 ### Major Changes
 - the Compare view can break down each DPS difference into where it came from: the share that came from firing more often and the share that came from each hit landing harder. The two always add up to the whole difference, so a build that trades rate for hit size — or the other way round — stops looking like it changed nothing. Switched on in the Columns menu, alongside the other columns. Hovering either share shows both and their sum, because when the two point opposite ways each on its own can be far larger than the difference they add up to
