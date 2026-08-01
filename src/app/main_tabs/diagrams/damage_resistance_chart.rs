@@ -104,27 +104,19 @@ impl DamageResistanceBars {
     fn update(&mut self, time_slice: f64) {
         let bars = time_slices(&self.data, time_slice)
             .filter_map(|(time, s)| {
-                let (damage, shield_damage, hull_damage, drain_damage, base_damage) =
-                    s.iter().fold(
-                        Default::default(),
-                        |(damage, shield_damage, hull_damage, drain_damage, base_damage), h| {
-                            (
-                                damage + h.damage,
-                                shield_damage + h.shield_damage,
-                                hull_damage + h.hull_damage,
-                                drain_damage + h.drain_damage,
-                                base_damage + h.base_damage,
-                            )
-                        },
-                    );
+                let (hull_damage, prevented_to_hull, base_damage) = s.iter().fold(
+                    Default::default(),
+                    |(hull_damage, prevented_to_hull, base_damage), h| {
+                        (
+                            hull_damage + h.hull_damage,
+                            prevented_to_hull + h.damage_prevented_to_hull,
+                            base_damage + h.base_damage,
+                        )
+                    },
+                );
 
-                let total_damage = &ShieldHullValues {
-                    all: damage,
-                    shield: shield_damage,
-                    hull: hull_damage,
-                };
                 let resistance =
-                    damage_resistance_percentage(&total_damage, base_damage, drain_damage)?;
+                    damage_resistance_percentage(hull_damage, prevented_to_hull, base_damage)?;
 
                 Some(
                     Bar::new(time, resistance)

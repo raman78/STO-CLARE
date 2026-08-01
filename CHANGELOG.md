@@ -2,15 +2,21 @@
 
 # unreleased
 
-- new installs now split combats on a 60 second gap instead of 90, matching the value the OSCR server uses when it reads an uploaded log (existing settings are left alone)
-
-- ground Task Force Operations now show their difficulty too, including Normal — previously only space maps did
+### Major Changes
+- healing is now split into three tabs that no longer overlap: Healing Done (what you healed on others), Healing Received (what others healed on you) and Self Healing (what you healed on yourself, including your own trait and gear procs). Anything you healed on yourself used to be counted in both of the old healing tabs at once, which on a typical run meant a single shield proc accounted for almost all of the healing shown in both — hiding what your team actually did for you and what you did for them
 
 ### Fixes
+- attacks on an enemy's shields are no longer counted as healing. Some abilities — `Chain Conduit Capacitor` and plain beam arrays among them — write their shield hit in a form the game also uses for shield repairs, so they showed up as if you had been healing the enemies you were shooting. On a typical run over half of what the healing tab listed as done to others was really damage
+- the Resistance % column and chart now show what they claim to: the target's hull resistance. They used to mix in the damage dealt to the target's shields, which is stopped by a different stat entirely (shield hardness), so the figure came out far too favourable — on a typical run it read -36% where the real value was around -56%. Shield drains are left out as well, since those are resisted by yet another stat
 - the Upload button now always says what happened: it used to do nothing at all, without any message, when the combat could not be read back from the log file, and an upload that produced no ladder entries showed an empty window
 - uploads are now written to the log file (when logging is enabled in the settings), including the reason the server gave for rejecting one
 
 ### Other Changes
+- the hull and shield halves of a value now have their own columns instead of only showing when you hover: damage, hits, healing and heal ticks all show how much went into hull and how much into shields, for every ability. It can be turned off again under Settings → General
+- the healing tabs can now be grouped either way round, with a switch above the table: by person first (who healed you, then with what) or by ability first (what was used, then on whom)
+- the damage tabs are now called "Damage Dealt" and "Damage Taken" instead of "Outgoing" and "Incoming", and the summary uses the same wording
+- new installs now split combats on a 60 second gap instead of 90, matching the value the OSCR server uses when it reads an uploaded log (existing settings are left alone)
+- ground Task Force Operations now show their difficulty too, including Normal — previously only space maps did
 - rules can now be duplicated with the 🗐 button next to the bin, in both the rule lists and their conditions — the copy appears right below the original and is selected, ready to be renamed
 - the list of auto-detected maps grows with the window as well, sharing the height with the naming rules above it: each may take up to half, and whichever needs less gives the rest to the other
 - the rule tables in the Analysis settings now grow with the window: making it taller shows more rules instead of leaving empty space below them

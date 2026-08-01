@@ -38,6 +38,9 @@ pub struct PreparedHitValue {
     pub shield_damage: f64,
     pub base_damage: f64,
     pub drain_damage: f64,
+    /// How much hull damage the shield stopped. Needed for the damage
+    /// resistance chart, which uses the same formula as the table column.
+    pub damage_prevented_to_hull: f64,
     pub hits_count: u64,
 }
 
@@ -172,13 +175,16 @@ impl PreparedHealDataSet {
 impl<'a> From<&'a Hit> for PreparedHit {
     fn from(hit: &'a Hit) -> Self {
         match hit.specific {
-            SpecificHit::Shield { .. } => Self {
+            SpecificHit::Shield {
+                damage_prevented_to_hull,
+            } => Self {
                 value: PreparedHitValue {
                     damage: hit.damage,
                     shield_damage: hit.damage,
                     hull_damage: 0.0,
                     base_damage: 0.0,
                     drain_damage: 0.0,
+                    damage_prevented_to_hull,
                     hits_count: 1,
                 },
                 time_millis: hit.time_millis,
@@ -190,6 +196,7 @@ impl<'a> From<&'a Hit> for PreparedHit {
                     hull_damage: 0.0,
                     base_damage: 0.0,
                     drain_damage: hit.damage,
+                    damage_prevented_to_hull: 0.0,
                     hits_count: 1,
                 },
                 time_millis: hit.time_millis,
@@ -201,6 +208,7 @@ impl<'a> From<&'a Hit> for PreparedHit {
                     hull_damage: hit.damage,
                     base_damage,
                     drain_damage: 0.0,
+                    damage_prevented_to_hull: 0.0,
                     hits_count: 1,
                 },
                 time_millis: hit.time_millis,
@@ -216,6 +224,7 @@ impl PreparedValue for PreparedHitValue {
         self.hull_damage += other.hull_damage;
         self.base_damage += other.base_damage;
         self.drain_damage += other.drain_damage;
+        self.damage_prevented_to_hull += other.damage_prevented_to_hull;
         self.hits_count += other.hits_count;
     }
 

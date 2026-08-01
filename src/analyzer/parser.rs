@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     fmt::Write,
     fs::File,
     io::{BufReader, Seek},
@@ -54,6 +55,36 @@ pub enum RecordValue {
 pub struct Parser {
     line_parser: LineParser,
     scratch_pad: String,
+    /// Complete lines read past the current one while resolving an ambiguous
+    /// shield line, oldest first. Served before anything new is read.
+    lookahead: VecDeque<PeekedLine>,
+    /// Copy of the current line, used only when we had to read ahead — peeking
+    /// overwrites the shared line buffer.
+    current: PeekedLine,
+    /// Whether the current record's text lives in `current` rather than in the
+    /// line parser's buffer.
+    current_is_owned: bool,
+}
+
+/// A fully read line together with its byte range, so lines held in the
+/// lookahead keep the positions Save Combat and combat deletion rely on.
+#[derive(Default)]
+struct PeekedLine {
+    text: String,
+    start: Option<u64>,
+    end: Option<u64>,
+}
+
+/// What a shield line and the damage line of the same shot have in common.
+///
+/// Deliberately **not** including the source field: the reference notes that a
+/// shot's shield and hull lines may carry different sources (a pet credited on
+/// one of them), and real logs do exactly that.
+struct LineKey {
+    timestamp: String,
+    owner_id: String,
+    target_id: String,
+    ability: String,
 }
 
 pub enum RecordError<'a> {
@@ -85,29 +116,147 @@ impl Parser {
                 line_finished: Default::default(),
             },
             scratch_pad: String::new(),
+            lookahead: VecDeque::new(),
+            current: PeekedLine::default(),
+            current_is_owned: false,
         })
     }
 
     pub fn parse_next(&mut self) -> Result<Record<'_>, RecordError<'_>> {
-        if !self.line_parser.advance_line() {
-            return Err(RecordError::EndReached);
+        // Lines read past the current one during an earlier lookahead are served
+        // first, so nothing is parsed twice or skipped.
+        self.current_is_owned = match self.lookahead.pop_front() {
+            Some(peeked) => {
+                self.current = peeked;
+                true
+            }
+            None => {
+                if !self.line_parser.advance_line() {
+                    return Err(RecordError::EndReached);
+                }
+                false
+            }
+        };
+
+        let log_pos = if self.current_is_owned {
+            match (self.current.start, self.current.end) {
+                (Some(s), Some(e)) => Some(s..e),
+                _ => None,
+            }
+        } else {
+            match (
+                self.line_parser.line_start_in_file,
+                self.line_parser.line_end_in_file,
+            ) {
+                (Some(s), Some(e)) => Some(s..e),
+                _ => None,
+            }
+        };
+
+        // A shield line whose base magnitude is zero is shaped exactly like a
+        // shield heal, so the line alone cannot say which it is. Only the rest
+        // of the shot can: an attack also writes a damage line at the same
+        // timestamp, a heal does not.
+        let shield_line_is_damage = if Self::is_ambiguous_shield_line(self.current_line()) {
+            self.resolve_ambiguous_shield_line()
+        } else {
+            false
+        };
+
+        let line: &str = if self.current_is_owned {
+            &self.current.text
+        } else {
+            &self.line_parser.line
+        };
+        Self::parse_from_line(line, &mut self.scratch_pad, log_pos, shield_line_is_damage)
+            .ok_or(RecordError::InvalidRecord(line))
+    }
+
+    fn current_line(&self) -> &str {
+        if self.current_is_owned {
+            &self.current.text
+        } else {
+            &self.line_parser.line
+        }
+    }
+
+    /// Reads ahead over the rest of the current timestamp looking for the
+    /// damage line that belongs to the same shot. Returns whether one was
+    /// found, i.e. whether the shield line in hand is an attack rather than a
+    /// heal.
+    ///
+    /// Everything read is kept in `lookahead` and served by later calls, so the
+    /// stream is neither rewound nor lost. When the log ends mid-group nothing
+    /// is found and the line is treated as a heal; the remainder arrives on a
+    /// later refresh, by which time this record is already recorded. That is a
+    /// bounded inaccuracy at the very tail of a log that stops growing.
+    fn resolve_ambiguous_shield_line(&mut self) -> bool {
+        let Some(key) = LineKey::of(self.current_line()) else {
+            return false;
+        };
+
+        // Take a copy: peeking writes through the shared line buffer.
+        if !self.current_is_owned {
+            self.current.text.clear();
+            self.current.text.push_str(&self.line_parser.line);
+            self.current.start = self.line_parser.line_start_in_file;
+            self.current.end = self.line_parser.line_end_in_file;
+            self.current_is_owned = true;
         }
 
-        let log_pos = match (
-            self.line_parser.line_start_in_file,
-            self.line_parser.line_end_in_file,
-        ) {
-            (Some(s), Some(e)) => Some(s..e),
-            _ => None,
+        if self.lookahead.iter().any(|p| key.is_companion(&p.text)) {
+            return true;
+        }
+
+        while self.line_parser.advance_line() {
+            let peeked = PeekedLine {
+                text: self.line_parser.line.clone(),
+                start: self.line_parser.line_start_in_file,
+                end: self.line_parser.line_end_in_file,
+            };
+            let same_shot_window = key.is_same_timestamp(&peeked.text);
+            let is_companion = same_shot_window && key.is_companion(&peeked.text);
+            self.lookahead.push_back(peeked);
+            if is_companion {
+                return true;
+            }
+            if !same_shot_window {
+                break;
+            }
+        }
+
+        false
+    }
+
+    /// Whether a raw line is a shield line that could be either damage or a
+    /// heal: negative magnitude, zero base magnitude, no `ShieldBreak` (which
+    /// already marks it as an attack). Cheap checks first — this runs on every
+    /// line of the log.
+    fn is_ambiguous_shield_line(line: &str) -> bool {
+        if !line.contains(",Shield,") {
+            return false;
+        }
+        let Some(last_comma) = line.rfind(',') else {
+            return false;
         };
-        Self::parse_from_line(&self.line_parser.line, &mut self.scratch_pad, log_pos)
-            .ok_or_else(|| RecordError::InvalidRecord(&self.line_parser.line))
+        if line[last_comma + 1..].trim().parse::<f64>() != Ok(0.0) {
+            return false;
+        }
+
+        let Some(fields) = LineFields::of(line) else {
+            return false;
+        };
+        fields.value_type == "Shield"
+            && !fields.flags.contains("ShieldBreak")
+            && fields.value1 < 0.0
+            && fields.value2 == 0.0
     }
 
     fn parse_from_line<'a>(
         line: &'a str,
         scratch_pad: &mut String,
         log_pos: Option<Range<u64>>,
+        shield_line_is_damage: bool,
     ) -> Option<Record<'a>> {
         let (time, line) = line.split_once("::")?;
 
@@ -139,7 +288,13 @@ impl Parser {
         let value1 = fields.next()?;
         let value2 = fields.next()?;
 
-        let value = RecordValue::new(value_type.trim(), value1.trim(), value2.trim(), value_flags)?;
+        let value = RecordValue::new(
+            value_type.trim(),
+            value1.trim(),
+            value2.trim(),
+            value_flags,
+            shield_line_is_damage,
+        )?;
 
         let record = Record {
             time,
@@ -180,6 +335,82 @@ impl<'a> Record<'a> {
 
     pub fn is_direct_self_damage(&self) -> bool {
         self.is_self_directed() && self.value.is_damage()
+    }
+}
+
+/// The handful of fields needed to compare two raw lines, without building a
+/// whole [`Record`] (which would allocate and resolve entities).
+struct LineFields<'a> {
+    timestamp: &'a str,
+    owner_id: Cow<'a, str>,
+    target_id: Cow<'a, str>,
+    ability: Cow<'a, str>,
+    value_type: Cow<'a, str>,
+    flags: Cow<'a, str>,
+    value1: f64,
+    value2: f64,
+}
+
+impl<'a> LineFields<'a> {
+    fn of(line: &'a str) -> Option<Self> {
+        let (timestamp, rest) = line.split_once("::")?;
+        let mut fields = parse_csv_line(rest);
+        let _owner_name = fields.next()?;
+        let owner_id = fields.next()?;
+        let _source_name = fields.next()?;
+        let _source_id = fields.next()?;
+        let _target_name = fields.next()?;
+        let target_id = fields.next()?;
+        let ability = fields.next()?;
+        let _internal_ability = fields.next()?;
+        let value_type = fields.next()?;
+        let flags = fields.next()?;
+        let value1 = fields.next()?.trim().parse::<f64>().ok()?;
+        let value2 = fields.next()?.trim().parse::<f64>().ok()?;
+        Some(Self {
+            timestamp,
+            owner_id,
+            target_id,
+            ability,
+            value_type,
+            flags,
+            value1,
+            value2,
+        })
+    }
+}
+
+impl LineKey {
+    fn of(line: &str) -> Option<Self> {
+        let fields = LineFields::of(line)?;
+        Some(Self {
+            timestamp: fields.timestamp.to_string(),
+            owner_id: fields.owner_id.into_owned(),
+            target_id: fields.target_id.into_owned(),
+            ability: fields.ability.into_owned(),
+        })
+    }
+
+    fn is_same_timestamp(&self, line: &str) -> bool {
+        line.split_once("::")
+            .map(|(timestamp, _)| timestamp == self.timestamp)
+            .unwrap_or(false)
+    }
+
+    /// Whether `line` is the damage half of the same shot: same instant, owner,
+    /// target and ability, and an actual damage line — a negative `HitPoints`
+    /// line is another heal (abilities that restore hull and shields at once
+    /// write both), not the companion we are looking for.
+    fn is_companion(&self, line: &str) -> bool {
+        let Some(fields) = LineFields::of(line) else {
+            return false;
+        };
+        fields.timestamp == self.timestamp
+            && fields.owner_id == self.owner_id
+            && fields.target_id == self.target_id
+            && fields.ability == self.ability
+            && fields.value_type != "Shield"
+            && !(fields.value_type == "HitPoints" && fields.value1 < 0.0)
     }
 }
 
@@ -265,20 +496,35 @@ impl<'a> Entity<'a> {
 }
 
 impl RecordValue {
-    pub fn new(value_type: &str, value1: &str, value2: &str, flags: ValueFlags) -> Option<Self> {
+    /// `shield_line_is_damage` resolves the one case the numbers cannot: a
+    /// shield line with a negative magnitude and a zero base magnitude is
+    /// shaped identically whether it restored a shield or an attack took one
+    /// down. The parser decides it by looking for the shot's damage line and
+    /// passes the answer in here.
+    pub fn new(
+        value_type: &str,
+        value1: &str,
+        value2: &str,
+        flags: ValueFlags,
+        shield_line_is_damage: bool,
+    ) -> Option<Self> {
         let value1 = str::parse::<f64>(value1).ok()?;
         let value2 = str::parse::<f64>(value2).ok()?;
 
+        // A negative HitPoints value is healing; positive hull damage falls
+        // through to the generic hull branch at the bottom.
         if value1 < 0.0 && value_type == "HitPoints" {
-            if value1 < 0.0 {
-                return Some(Self::Heal(BaseHealTick::hull(value1, flags)));
-            }
-            return Some(Self::Damage(BaseHit::hull(value1, flags, value2)));
+            return Some(Self::Heal(BaseHealTick::hull(value1, flags)));
         }
 
         if value_type == "Shield" {
             if value2 == 0.0 && !flags.contains(ValueFlags::SHIELD_BREAK) {
                 if value1 < 0.0 {
+                    if shield_line_is_damage {
+                        // Shield damage that happens to record nothing kept off
+                        // the hull. Its "prevented" half is genuinely zero.
+                        return Some(Self::Damage(BaseHit::shield(value1, flags, 0.0)));
+                    }
                     return Some(Self::Heal(BaseHealTick::shield(value1, flags)));
                 }
 
@@ -490,10 +736,139 @@ mod tests {
         let record = Parser::parse_from_line(
             "23:01:07:10:12:56.3::Borg Queen Octahedron,C[25 Mission_Space_Borg_Queen_Diamond],Ayel,P[12793028@5473940 Ayel@greyblizzard],,*,Plasma Fire,Pn.Wujkxq,Plasma,Kill,2086.87,5300.66",
             &mut String::new(),
-            None)
+            None,
+            false)
             .unwrap();
 
         println!("{:?}", record)
+    }
+
+    /// Parses `lines` and reports, per record, whether it came out as damage or
+    /// as a heal, with the magnitude and the byte range it claims in the file.
+    fn parse_all(name: &str, lines: &str) -> Vec<(bool, f64, Option<Range<u64>>)> {
+        let path = std::env::temp_dir().join(format!("cla-parser-{name}.log"));
+        std::fs::write(&path, lines).unwrap();
+        let mut parser = Parser::new(&path).unwrap();
+        let mut out = Vec::new();
+        loop {
+            match parser.parse_next() {
+                Ok(record) => out.push(match record.value {
+                    RecordValue::Damage(hit) => (true, hit.damage, record.log_pos.clone()),
+                    RecordValue::Heal(tick) => (false, tick.amount, record.log_pos.clone()),
+                }),
+                Err(RecordError::EndReached) => break,
+                Err(RecordError::InvalidRecord(line)) => panic!("invalid record: {line}"),
+            }
+        }
+        std::fs::remove_file(&path).ok();
+        out
+    }
+
+    /// The shield half of an attack can record a zero base magnitude, which
+    /// makes it identical in shape to a shield heal. The shot's damage line, at
+    /// the same instant and on the same target, is what tells them apart.
+    /// Taken from a real log: Chain Conduit Capacitor on an Elite Tactical
+    /// Assimilated Gorn.
+    #[test]
+    fn a_shield_line_with_a_damage_line_beside_it_is_damage() {
+        let records = parse_all(
+            "shield-attack",
+            concat!(
+                "26:07:30:12:09:07.8::Kestrel,P[1@2 Kestrel@h],,*,Gorn,C[1758 Ground_Borg_Capt_Gorn],Chain Conduit Capacitor,Pn.M,Shield,,-856.734,0\n",
+                "26:07:30:12:09:07.8::Kestrel,P[1@2 Kestrel@h],,*,Gorn,C[1758 Ground_Borg_Capt_Gorn],Chain Conduit Capacitor,Pn.M,Electrical,,214.184,1070.92\n",
+            ),
+        );
+        assert_eq!(2, records.len());
+        assert!(records[0].0, "the shield line must be damage, not a heal");
+        assert_eq!(856.734, records[0].1);
+        assert!(records[1].0);
+    }
+
+    /// The same shape with nothing else at that instant is a genuine shield
+    /// heal — a self-directed proc, here Reflexive Emitters.
+    #[test]
+    fn a_lone_shield_line_is_a_heal() {
+        let records = parse_all(
+            "shield-heal",
+            "26:07:24:19:54:57.0::Kestrel,P[1@2 Kestrel@h],,*,,*,Reflexive Emitters,Pn.D,Shield,,-2000,0\n",
+        );
+        assert_eq!(1, records.len());
+        assert!(!records[0].0, "a lone shield line is a heal");
+        assert_eq!(2000.0, records[0].1);
+    }
+
+    /// Abilities that restore hull and shields in the same instant write a
+    /// negative `HitPoints` line beside the shield line. That is a second heal,
+    /// not the damage line of a shot, and must not flip the shield line.
+    /// Real case: Mudd's Time Bracelet.
+    #[test]
+    fn a_hull_heal_beside_a_shield_heal_keeps_both_heals() {
+        let records = parse_all(
+            "heal-pair",
+            concat!(
+                "26:07:26:12:59:32.5::Kestrel,P[1@2 Kestrel@h],,*,,*,Mudd's Time Bracelet,Pn.R,HitPoints,,-1099.16,0\n",
+                "26:07:26:12:59:32.5::Kestrel,P[1@2 Kestrel@h],,*,,*,Mudd's Time Bracelet,Pn.R,Shield,,-274.79,0\n",
+            ),
+        );
+        assert_eq!(2, records.len());
+        assert!(!records[0].0, "the hull line is a heal");
+        assert!(!records[1].0, "the shield line stays a heal");
+    }
+
+    /// A damage line for a *different* target at the same instant is not the
+    /// companion, so the shield heal stays a heal.
+    #[test]
+    fn a_damage_line_on_another_target_is_not_the_companion() {
+        let records = parse_all(
+            "other-target",
+            concat!(
+                "26:07:30:12:09:07.8::Kestrel,P[1@2 Kestrel@h],,*,,*,Reflexive Emitters,Pn.D,Shield,,-2000,0\n",
+                "26:07:30:12:09:07.8::Kestrel,P[1@2 Kestrel@h],,*,Gorn,C[1758 G],Chain Conduit Capacitor,Pn.M,Electrical,,214.184,1070.92\n",
+            ),
+        );
+        assert!(!records[0].0, "an unrelated attack must not flip the heal");
+        assert!(records[1].0);
+    }
+
+    /// A shield line that already carries a base magnitude was never ambiguous
+    /// and needs no lookahead.
+    #[test]
+    fn a_shield_line_with_a_base_magnitude_is_damage_on_its_own() {
+        let records = parse_all(
+            "shield-with-base",
+            "26:07:30:12:08:52.8::Kestrel,P[1@2 Kestrel@h],,*,Queen,C[48 G],Chain Conduit Capacitor,Pn.M,Shield,,-994.537,-1747.87\n",
+        );
+        assert!(records[0].0);
+        assert_eq!(994.537, records[0].1);
+    }
+
+    /// Reading ahead must not disturb the byte ranges: Save Combat and combat
+    /// deletion slice the log with them, so every record's range has to stay
+    /// exact and contiguous even across a lookahead.
+    #[test]
+    fn byte_ranges_survive_a_lookahead() {
+        let lines = concat!(
+            "26:07:30:12:09:07.8::Kestrel,P[1@2 Kestrel@h],,*,Gorn,C[1758 G],Chain Conduit Capacitor,Pn.M,Shield,,-856.734,0\n",
+            "26:07:30:12:09:07.8::Kestrel,P[1@2 Kestrel@h],,*,Gorn,C[1758 G],Chain Conduit Capacitor,Pn.M,Electrical,,214.184,1070.92\n",
+            "26:07:30:12:09:09.0::Kestrel,P[1@2 Kestrel@h],,*,Gorn,C[1758 G],Phaser Beam,Pn.P,Phaser,,10,10\n",
+        );
+        let records = parse_all("byte-ranges", lines);
+        assert_eq!(3, records.len());
+
+        let mut expected_start = 0u64;
+        for (index, (_, _, log_pos)) in records.iter().enumerate() {
+            let range = log_pos.clone().expect("every record has a byte range");
+            assert_eq!(
+                expected_start, range.start,
+                "record {index} must start where the previous one ended"
+            );
+            expected_start = range.end;
+        }
+        assert_eq!(
+            lines.len() as u64,
+            expected_start,
+            "the ranges together must cover the whole file"
+        );
     }
 
     #[test]

@@ -119,7 +119,10 @@ impl SummaryTab {
                         ui.add_space(20.0);
 
                         ui.push_id("combat summary table", |ui| {
-                            self.show_combat_summary_table(ui);
+                            self.show_combat_summary_table(
+                                settings.general.split_shield_hull_columns,
+                                ui,
+                            );
                         });
 
                         ui.add_space(20.0);
@@ -129,8 +132,8 @@ impl SummaryTab {
 
                 bottom_ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.chart_tab, ChartTab::Dps, "DPS");
-                    ui.selectable_value(&mut self.chart_tab, ChartTab::DamageOut, "Damage Out");
-                    ui.selectable_value(&mut self.chart_tab, ChartTab::DamageIn, "Damage In");
+                    ui.selectable_value(&mut self.chart_tab, ChartTab::DamageOut, "Damage Dealt");
+                    ui.selectable_value(&mut self.chart_tab, ChartTab::DamageIn, "Damage Taken");
                 });
 
                 match self.chart_tab {
@@ -141,30 +144,53 @@ impl SummaryTab {
             });
     }
 
-    fn show_combat_summary_table(&mut self, ui: &mut Ui) {
-        Table::new(ui).body(ROW_HEIGHT, |t| {
-            Self::simple_summary_row(t, "Combat Duration", &self.combat_duration.text);
+    fn show_combat_summary_table(&mut self, split: bool, ui: &mut Ui) {
+        let body = |t: &mut TableBody| {
+            Self::simple_summary_row(t, "Combat Duration", &self.combat_duration.text, split);
             Self::simple_summary_row(
                 t,
                 "Active Duration (duration of everything)",
                 &self.active_duration.text,
+                split,
             );
 
-            Self::hull_shield_summary_row(t, "Total Outgoing Damage", &self.total_damage_out);
+            Self::hull_shield_summary_row(t, "Total Damage Dealt", &self.total_damage_out, split);
 
-            Self::hull_shield_summary_row(t, "Total Incoming Damage", &self.total_damage_in);
+            Self::hull_shield_summary_row(t, "Total Damage Taken", &self.total_damage_in, split);
 
-            Self::simple_summary_row(t, "Total Kills", &self.total_kills.text);
-            Self::simple_summary_row(t, "Total Deaths", &self.total_deaths.text);
-        });
+            Self::simple_summary_row(t, "Total Kills", &self.total_kills.text, split);
+            Self::simple_summary_row(t, "Total Deaths", &self.total_deaths.text, split);
+        };
+
+        // Without split columns this is a plain description/value list and needs
+        // no header; with them the extra cells have to say what they are.
+        if split {
+            Table::new(ui)
+                .header(HEADER_HEIGHT, |r| {
+                    r.cell(|_| {});
+                    for name in ["All", "Hull", "Shield"] {
+                        r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(name);
+                        });
+                    }
+                })
+                .body(ROW_HEIGHT, |t| body(t));
+        } else {
+            Table::new(ui).body(ROW_HEIGHT, |t| body(t));
+        }
     }
 
-    fn simple_summary_row(table: &mut TableBody, description: &str, value: &str) {
+    fn simple_summary_row(table: &mut TableBody, description: &str, value: &str, split: bool) {
         table.row(|r| {
             Self::show_description(r, description);
             r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(value);
             });
+            // Keep the row as wide as the split ones so the columns line up.
+            if split {
+                r.cell(|_| {});
+                r.cell(|_| {});
+            }
         });
     }
 
@@ -172,10 +198,15 @@ impl SummaryTab {
         table: &mut TableBody,
         description: &str,
         value: &ShieldAndHullTextValue,
+        split: bool,
     ) {
         table.row(|r| {
             Self::show_description(r, description);
             value.show(r);
+            if split {
+                value.show_hull(r);
+                value.show_shield(r);
+            }
         });
     }
 

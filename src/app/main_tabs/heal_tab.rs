@@ -5,20 +5,27 @@ use crate::{analyzer::*, app::settings::Settings, custom_widgets::splitter::Spli
 use super::{common::*, diagrams::*, tables::*};
 
 pub struct HealTab {
-    table: HealTable,
+    /// The same healing, nested both ways. Both are built up front so the
+    /// grouping toggle is instant — the trees come from the analyzer, which
+    /// would otherwise have to re-read the log to re-nest them.
+    table_by_person: HealTable,
+    table_by_ability: HealTable,
+    grouping: HealGrouping,
     main_diagrams: HealDiagrams,
     selection_diagrams: Option<HealDiagrams>,
-    heal_group: fn(&Player) -> &HealGroup,
+    heal_pool: fn(&Player) -> &HealPool,
     filter: f64,
     diagram_time_slice: f64,
     active_diagram: DiagramType,
 }
 
 impl HealTab {
-    pub fn empty(heal_group: fn(&Player) -> &HealGroup) -> Self {
+    pub fn empty(heal_pool: fn(&Player) -> &HealPool) -> Self {
         Self {
-            table: HealTable::empty(),
-            heal_group,
+            table_by_person: HealTable::empty(),
+            table_by_ability: HealTable::empty(),
+            grouping: HealGrouping::ByAbility,
+            heal_pool,
             main_diagrams: HealDiagrams::empty(),
             selection_diagrams: None,
             filter: 0.4,
@@ -28,9 +35,13 @@ impl HealTab {
     }
 
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
-        self.table = HealTable::new(settings, combat, self.heal_group);
+        let pool = self.heal_pool;
+        self.table_by_person = HealTable::new(settings, combat, move |p| &pool(p).by_person);
+        self.table_by_ability = HealTable::new(settings, combat, move |p| &pool(p).by_ability);
+        // Either nesting holds the same ticks, so the per-player chart is the
+        // same; build it from one of them.
         self.main_diagrams = HealDiagrams::from_heal_groups(
-            combat.players.values().map(self.heal_group),
+            combat.players.values().map(move |p| &pool(p).by_person),
             combat,
             self.filter,
             self.diagram_time_slice,
@@ -43,7 +54,13 @@ impl HealTab {
             .initial_ratio(0.6)
             .ratio_bounds(0.1..=0.9)
             .show(ui, |top_ui, bottom_ui| {
-                self.table.show(top_ui, |p| {
+                self.show_grouping_picker(top_ui);
+
+                let table = match self.grouping {
+                    HealGrouping::ByPerson => &mut self.table_by_person,
+                    HealGrouping::ByAbility => &mut self.table_by_ability,
+                };
+                table.show(top_ui, |p| {
                     Self::process_diagram_change(
                         &mut self.selection_diagrams,
                         p,
@@ -54,6 +71,35 @@ impl HealTab {
 
                 self.show_diagrams(settings, bottom_ui);
             });
+    }
+
+    /// Switches how the tree is nested. Both nestings are already built, so this
+    /// only picks which one to draw — no rebuild, no lost data.
+    fn show_grouping_picker(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Group by:");
+            // "⏵" is the same glyph the tree rows use for their expander, so it
+            // is known to exist in the bundled font — "→" renders as a blank box.
+            let changed = ui
+                .selectable_value(&mut self.grouping, HealGrouping::ByPerson, "Person ⏵ Ability")
+                .on_hover_text("Top level is the other party, with the abilities underneath.")
+                .clicked()
+                | ui.selectable_value(
+                    &mut self.grouping,
+                    HealGrouping::ByAbility,
+                    "Ability ⏵ Person",
+                )
+                .on_hover_text(
+                    "Top level is the ability, with the people underneath — the way the damage \
+                     tabs are laid out.",
+                )
+                .clicked();
+            // The two tables track their own expanded rows and selection, so a
+            // chart built from the old one no longer matches what is on screen.
+            if changed {
+                self.selection_diagrams = None;
+            }
+        });
     }
 
     fn process_diagram_change(

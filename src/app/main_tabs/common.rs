@@ -9,6 +9,9 @@ use crate::{
 
 pub const ROW_HEIGHT: f32 = 25.0;
 pub const HEADER_HEIGHT: f32 = 15.0;
+/// Header height when Hull/Shield have their own columns: the metric name sits
+/// on the first line, the All/Hull/Shield label on the second.
+pub const SPLIT_HEADER_HEIGHT: f32 = 32.0;
 
 #[derive(Default)]
 pub struct TextValue {
@@ -78,6 +81,16 @@ impl ShieldAndHullTextValue {
             show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
         }
     }
+
+    /// The hull half as its own cell (split-columns mode).
+    pub fn show_hull(&self, row: &mut TableRow) {
+        show_value_text(row, &self.hull);
+    }
+
+    /// The shield half as its own cell (split-columns mode).
+    pub fn show_shield(&self, row: &mut TableRow) {
+        show_value_text(row, &self.shield);
+    }
 }
 
 impl TextValue {
@@ -142,6 +155,16 @@ impl ShieldAndHullTextCount {
         let response = self.all.show(row);
 
         show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+    }
+
+    /// The hull half as its own cell (split-columns mode).
+    pub fn show_hull(&self, row: &mut TableRow) {
+        show_value_text(row, &self.hull);
+    }
+
+    /// The shield half as its own cell (split-columns mode).
+    pub fn show_shield(&self, row: &mut TableRow) {
+        show_value_text(row, &self.shield);
     }
 }
 
