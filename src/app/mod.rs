@@ -219,6 +219,13 @@ impl eframe::App for App {
                                 ui.set_min_height(
                                     row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32,
                                 );
+                                // The scroll area takes its viewport from the
+                                // content size it measured last frame. After a
+                                // filter is cleared the first frame still has
+                                // the narrowed list's size, and nothing else
+                                // asks for another one — so the list would stay
+                                // as short as it was while filtered.
+                                ui.ctx().request_repaint();
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
                                     if !self.combat_matches_filter(i) {
                                         continue;
