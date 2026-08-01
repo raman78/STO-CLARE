@@ -192,12 +192,19 @@ impl eframe::App for App {
                             .show(self.state.analysis_handler.is_busy(), ui);
 
                         ComboBox::new("combat list", "Combats")
-                            .width(400.0)
+                            // Wide enough for a full identifier — map,
+                            // environment, level, date and time — on one line.
+                            .width(620.0)
                             // Show around 15 combats before the list starts to
                             // scroll (the default only fits a few).
                             .height(360.0)
                             .selected_text(self.main_tabs.identifier.as_str())
                             .show_ui(ui, |ui| {
+                                // One line per combat. Wrapped names turn each
+                                // entry into a two or three line block, and the
+                                // list then fits three of them instead of
+                                // fifteen.
+                                ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
                                     if !self.combat_matches_filter(i) {
                                         continue;
