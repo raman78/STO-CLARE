@@ -14,7 +14,10 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     analyzer::{AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager},
-    app::main_tabs::diagrams::{DamageDiagrams, DiagramType, PreparedDamageDataSet},
+    app::main_tabs::tables::show_group_separator,
+    app::main_tabs::diagrams::{
+        combat_duration_seconds, DamageDiagrams, DiagramType, PreparedDamageDataSet,
+    },
     app::settings::Settings,
     custom_widgets::{slider_text_edit::SliderTextEdit, splitter::Splitter, table::*},
     helpers::number_formatting::NumberFormatter,
@@ -28,6 +31,24 @@ const HEADER_HEIGHT: f32 = 34.0;
 
 /// Delta color when the metric moved in the better direction.
 const IMPROVE: Color32 = Color32::from_rgb(0x5c, 0xb8, 0x5c);
+/// Headers of the two breakdown column groups, with what each one means, in the
+/// order they are drawn.
+const BREAKDOWN_LABELS: [(&str, &str); 2] = [
+    (
+        "ΔDPS from rate",
+        "How much of the DPS difference came from landing more (or fewer) times per second. Added to the hit-size share this is the whole DPS difference — each share on its own can be far larger than that difference when the two point opposite ways",
+    ),
+    (
+        "ΔDPS from hit size",
+        "How much of the DPS difference came from each hit landing harder (or softer). Added to the rate share this is the whole DPS difference; hover a value to see the two and their sum",
+    ),
+];
+
+/// One cell of the header row: a label, or the rule that opens a column group.
+enum HeaderCell {
+    Separator,
+    Cell { text: String, tooltip: String },
+}
 /// Delta color when the metric moved in the worse direction.
 const WORSE: Color32 = Color32::from_rgb(0xd9, 0x53, 0x4f);
 
@@ -67,11 +88,35 @@ struct CompareNode {
 struct SeriesData {
     hits: Vec<Hit>,
     total: f64,
+    /// The slot combat's length, so each line spans its own whole fight even
+    /// when the compared combats are of different lengths.
+    combat_duration_s: f64,
 }
 
 struct SlotCell {
     /// One entry per configured column.
     metrics: Vec<MetricCell>,
+    /// How this slot's DPS difference against the reference splits up. `None`
+    /// on the reference itself, which has nothing to differ from.
+    breakdown: Option<DpsBreakdown>,
+}
+
+/// A DPS difference split into where it came from.
+///
+/// `DPS = hits per second x average hit`, so a change in DPS is a change in how
+/// often something landed, a change in how hard each one landed, or both. The
+/// two shares are taken at the midpoint of the pair:
+///
+/// ```text
+/// rate share = (r2 - r1) * (m1 + m2) / 2
+/// size share = (m2 - m1) * (r1 + r2) / 2
+/// ```
+///
+/// which add up to `r2*m2 - r1*m1` exactly — the whole difference, with no
+/// leftover cross term to attribute by hand.
+struct DpsBreakdown {
+    rate: f64,
+    size: f64,
 }
 
 struct MetricCell {
@@ -87,7 +132,7 @@ struct DeltaCell {
 
 impl Comparison {
     pub fn new(fetched: Vec<(usize, Arc<Combat>)>, columns: &[CompareMetric]) -> Self {
-        let slots: Vec<Slot> = fetched
+        let mut slots: Vec<Slot> = fetched
             .into_iter()
             .map(|(index, combat)| {
                 let player = top_dps_player(&combat);
@@ -98,6 +143,7 @@ impl Comparison {
                 }
             })
             .collect();
+        follow_the_reference_player(&mut slots);
         let mut comparison = Self {
             slots,
             nodes: Vec::new(),
@@ -122,6 +168,11 @@ impl Comparison {
             self.slots.iter().map(|s| &s.combat.name_manager).collect();
         let hits_managers: Vec<&HitsManager> =
             self.slots.iter().map(|s| &s.combat.hits_manger).collect();
+        let durations: Vec<f64> = self
+            .slots
+            .iter()
+            .map(|s| combat_duration_seconds(&s.combat))
+            .collect();
 
         let mut id_source = 0u32;
         let root_id = id_source;
@@ -130,11 +181,12 @@ impl Comparison {
         // Top row is the player's overall total (root of the damage tree); the
         // ability groups hang under it, expanded by default.
         let cells = build_cells(&parents, &self.columns);
-        let series = build_series(&parents, &hits_managers);
+        let series = build_series(&parents, &hits_managers, &durations);
         let sub_nodes = build_level(
             &parents,
             &name_managers,
             &hits_managers,
+            &durations,
             &self.columns,
             &mut id_source,
         );
@@ -178,6 +230,7 @@ impl Comparison {
                     &(slot_i + 1).to_string(),
                     series.total,
                     series.hits.iter(),
+                    series.combat_duration_s,
                 ))
             });
             DamageDiagrams::from_data(data, filter, time_slice)
@@ -214,13 +267,50 @@ impl Comparison {
                         }
                     });
                 if slot_i == 0 {
-                    ui.label(RichText::new("(reference — all deltas compare to this)").weak());
+                    ui.label(
+                        RichText::new(
+                            "(reference — every difference is measured against this combat, and \
+                             changing the player here moves the others to the same player)",
+                        )
+                        .weak(),
+                    );
                 }
             });
         }
         if let Some((slot_i, handle)) = player_change {
             self.slots[slot_i].player = handle;
+            // Changing who the reference is about moves the others with it,
+            // where that player took part: the deltas are all measured against
+            // the reference, so leaving them on somebody else would compare two
+            // different people again.
+            if slot_i == 0 {
+                follow_the_reference_player(&mut self.slots);
+            }
             self.rebuild();
+        }
+
+        ui.label(
+            RichText::new(
+                "Each column group holds one metric, one column per combat. The small coloured \
+                 number beside a value is its difference against combat #1 — green when it moved \
+                 the better way.",
+            )
+            .weak(),
+        );
+
+        // Comparing two different people's numbers looks like a build changed
+        // when nothing did, so say so rather than let it pass unnoticed.
+        let names = slot_player_names(&self.slots);
+        if names.iter().any(|n| n != &names[0]) {
+            ui.label(
+                RichText::new(format!(
+                    "⚠ The combats are showing different players ({}). The differences compare \
+                     those players against each other, not one player's runs — pick the same \
+                     player above to compare like with like.",
+                    names.join(", ")
+                ))
+                .color(WORSE),
+            );
         }
 
         ui.separator();
@@ -229,7 +319,7 @@ impl Comparison {
             .initial_ratio(0.6)
             .ratio_bounds(0.15..=0.9)
             .show(ui, |top_ui, bottom_ui| {
-                self.show_table(top_ui);
+                self.show_table(top_ui, settings.compare.show_dps_breakdown);
                 self.show_diagram(bottom_ui, settings);
             });
     }
@@ -248,6 +338,22 @@ impl Comparison {
                     }
                 }
             }
+
+            ui.separator();
+            // Not a metric of a single combat but a pair of columns all the
+            // same, so it belongs with the others rather than beside the menu.
+            changed |= ui
+                .checkbox(
+                    &mut settings.compare.show_dps_breakdown,
+                    "ΔDPS breakdown",
+                )
+                .on_hover_text(
+                    "Two more columns splitting each DPS difference against the reference: the \
+                     share that came from landing more often, and the share that came from each \
+                     hit landing harder. The two add up to the whole difference.",
+                )
+                .changed();
+
             if changed {
                 // Keep a stable column order regardless of toggle order.
                 settings.compare.columns.sort_by_key(|m| {
@@ -261,24 +367,53 @@ impl Comparison {
         });
     }
 
-    fn show_table(&mut self, ui: &mut Ui) {
+    fn show_table(&mut self, ui: &mut Ui, show_breakdown: bool) {
         let n_slots = self.slots.len();
         let n_metrics = self.columns.len();
         // Columns are grouped by metric: the metric name spans its group (shown
         // on the first column), with the combat number below each column.
-        let headers: Vec<String> = self
-            .columns
-            .iter()
-            .flat_map(|c| {
-                (0..n_slots).map(move |slot_i| {
-                    if slot_i == 0 {
-                        format!("{}\n{} (ref)", c.label(), slot_i + 1)
+        // A rule opens each group: without one, three combats' worth of the
+        // same-looking numbers run into the next metric.
+        let mut headers: Vec<HeaderCell> = Vec::new();
+        for column in self.columns.iter() {
+            headers.push(HeaderCell::Separator);
+            for slot_i in 0..n_slots {
+                headers.push(HeaderCell::Cell {
+                    text: if slot_i == 0 {
+                        format!("{}\n#{} (ref)", column.label(), slot_i + 1)
                     } else {
-                        format!("\n{}", slot_i + 1)
-                    }
-                })
-            })
-            .collect();
+                        format!("\n#{}", slot_i + 1)
+                    },
+                    tooltip: format!(
+                        "{} in combat #{}{}",
+                        column.label(),
+                        slot_i + 1,
+                        if slot_i == 0 {
+                            " — the reference every other column is compared against"
+                        } else {
+                            ", with its difference against combat #1 beside it"
+                        }
+                    ),
+                });
+            }
+        }
+        // The breakdown has nothing to say about the reference, so its groups
+        // start at the second combat.
+        if show_breakdown {
+            for (label, tooltip) in BREAKDOWN_LABELS {
+                headers.push(HeaderCell::Separator);
+                for slot_i in 1..n_slots {
+                    headers.push(HeaderCell::Cell {
+                        text: if slot_i == 1 {
+                            format!("{}\n#{}", label, slot_i + 1)
+                        } else {
+                            format!("\n#{}", slot_i + 1)
+                        },
+                        tooltip: format!("{} (combat #{} against #1)", tooltip, slot_i + 1),
+                    });
+                }
+            }
+        }
 
         let mut selected = self.selected;
         let mut selection_changed = false;
@@ -292,9 +427,14 @@ impl Comparison {
                             ui.label("Name");
                         });
                         for header in &headers {
-                            r.cell(|ui| {
-                                ui.label(header);
-                            });
+                            match header {
+                                HeaderCell::Separator => show_group_separator(r),
+                                HeaderCell::Cell { text, tooltip } => {
+                                    r.cell(|ui| {
+                                        ui.label(text).on_hover_text(tooltip);
+                                    });
+                                }
+                            }
                         }
                     })
                     .body(ROW_HEIGHT, |mut t| {
@@ -304,6 +444,7 @@ impl Comparison {
                                 0.0,
                                 n_slots,
                                 n_metrics,
+                                show_breakdown,
                                 &mut selected,
                                 &mut selection_changed,
                             );
@@ -360,6 +501,7 @@ impl CompareNode {
         indent: f32,
         n_slots: usize,
         n_metrics: usize,
+        show_breakdown: bool,
         selected: &mut Option<u32>,
         selection_changed: &mut bool,
     ) {
@@ -382,6 +524,7 @@ impl CompareNode {
 
             // Column groups by metric: for each metric, one cell per combat.
             for metric_i in 0..n_metrics {
+                show_group_separator(r);
                 for slot_i in 0..n_slots {
                     match self
                         .cells
@@ -404,6 +547,57 @@ impl CompareNode {
                     }
                 }
             }
+
+            // Where each DPS difference came from: firing more often, or each
+            // hit landing harder. Green when that share pushed DPS up.
+            if show_breakdown {
+                for pick in [
+                    (|b: &DpsBreakdown| b.rate) as fn(&DpsBreakdown) -> f64,
+                    |b: &DpsBreakdown| b.size,
+                ] {
+                    show_group_separator(r);
+                    for slot_i in 1..n_slots {
+                        match self
+                            .cells
+                            .get(slot_i)
+                            .and_then(|c| c.as_ref())
+                            .and_then(|c| c.breakdown.as_ref())
+                        {
+                            Some(breakdown) => {
+                                let share = pick(breakdown);
+                                let color = if share >= 0.0 { IMPROVE } else { WORSE };
+                                let mut formatter = NumberFormatter::new();
+                                let mut signed = |value: f64| {
+                                    format!(
+                                        "{}{}",
+                                        if value >= 0.0 { "+" } else { "-" },
+                                        formatter.format(value.abs(), 0)
+                                    )
+                                };
+                                let text = signed(share);
+                                // The two shares often point opposite ways, and
+                                // each can then dwarf their sum — so spell the
+                                // sum out rather than leave it to be noticed.
+                                let tooltip = format!(
+                                    "{} from landing more often\n{} from each hit landing harder\n= {} DPS against combat #1",
+                                    signed(breakdown.rate),
+                                    signed(breakdown.size),
+                                    signed(breakdown.rate + breakdown.size)
+                                );
+                                r.cell_with_layout(
+                                    Layout::right_to_left(Align::Center),
+                                    |ui| {
+                                        ui.colored_label(color, text).on_hover_text(tooltip);
+                                    },
+                                );
+                            }
+                            None => {
+                                r.cell(|_| {});
+                            }
+                        }
+                    }
+                }
+            }
         });
 
         if response.clicked() {
@@ -418,6 +612,7 @@ impl CompareNode {
                     indent + 1.0,
                     n_slots,
                     n_metrics,
+                    show_breakdown,
                     selected,
                     selection_changed,
                 );
@@ -436,6 +631,38 @@ fn find_node(nodes: &[CompareNode], id: u32) -> Option<&CompareNode> {
         }
     }
     None
+}
+
+/// Points every slot at the same player as the reference, where that player
+/// took part.
+///
+/// Each combat is otherwise opened on its own top-DPS player, and in a team
+/// those are rarely the same person — the deltas would then compare one player
+/// against another rather than one player's runs against each other, which
+/// makes them read as noise. A slot the reference player was not in keeps its
+/// own top player, and the picker in the legend says whose numbers it is
+/// showing.
+fn follow_the_reference_player(slots: &mut [Slot]) {
+    let Some(reference) = slots.first() else {
+        return;
+    };
+    let reference_name = reference.player.get(&reference.combat.name_manager).to_string();
+    for slot in slots.iter_mut().skip(1) {
+        if let Some(handle) = slot.combat.name_manager.get_handle(&reference_name) {
+            if slot.combat.players.contains_key(&handle) {
+                slot.player = handle;
+            }
+        }
+    }
+}
+
+/// The players a comparison is showing, one per slot, for the warning above the
+/// table.
+fn slot_player_names(slots: &[Slot]) -> Vec<String> {
+    slots
+        .iter()
+        .map(|s| s.player.get(&s.combat.name_manager).to_string())
+        .collect()
 }
 
 fn top_dps_player(combat: &Combat) -> NameHandle {
@@ -471,6 +698,7 @@ fn build_level(
     parents: &[Option<&DamageGroup>],
     name_managers: &[&NameManager],
     hits_managers: &[&HitsManager],
+    durations: &[f64],
     columns: &[CompareMetric],
     id_source: &mut u32,
 ) -> Vec<CompareNode> {
@@ -501,8 +729,15 @@ fn build_level(
             *id_source += 1;
             let sort_key = per_slot[0].map(|g| g.dps.all).unwrap_or(f64::NEG_INFINITY);
             let cells = build_cells(per_slot, columns);
-            let series = build_series(per_slot, hits_managers);
-            let sub_nodes = build_level(per_slot, name_managers, hits_managers, columns, id_source);
+            let series = build_series(per_slot, hits_managers, durations);
+            let sub_nodes = build_level(
+                per_slot,
+                name_managers,
+                hits_managers,
+                durations,
+                columns,
+                id_source,
+            );
             CompareNode {
                 name,
                 id,
@@ -526,6 +761,7 @@ fn build_level(
 fn build_series(
     per_slot: &[Option<&DamageGroup>],
     hits_managers: &[&HitsManager],
+    durations: &[f64],
 ) -> Vec<Option<SeriesData>> {
     per_slot
         .iter()
@@ -534,9 +770,32 @@ fn build_series(
             g.map(|g| SeriesData {
                 hits: g.hits.get(hits_managers[slot_i]).to_vec(),
                 total: g.total_damage.all,
+                combat_duration_s: durations[slot_i],
             })
         })
         .collect()
+}
+
+/// A group's hits per second and average hit, the two factors of its DPS. An
+/// absent group contributes nothing, which is what a zero pair means.
+fn dps_factors(group: Option<&DamageGroup>) -> (f64, f64) {
+    match group {
+        Some(group) => (group.hits_per_second.all, group.average_hit.all.unwrap_or(0.0)),
+        None => (0.0, 0.0),
+    }
+}
+
+fn dps_breakdown(reference: Option<&DamageGroup>, slot: Option<&DamageGroup>) -> DpsBreakdown {
+    let (r1, m1) = dps_factors(reference);
+    let (r2, m2) = dps_factors(slot);
+    split_dps_difference(r1, m1, r2, m2)
+}
+
+fn split_dps_difference(r1: f64, m1: f64, r2: f64, m2: f64) -> DpsBreakdown {
+    DpsBreakdown {
+        rate: (r2 - r1) * (m1 + m2) / 2.0,
+        size: (m2 - m1) * (r1 + r2) / 2.0,
+    }
 }
 
 fn build_cells(per_slot: &[Option<&DamageGroup>], columns: &[CompareMetric]) -> Vec<Option<SlotCell>> {
@@ -569,7 +828,11 @@ fn build_cells(per_slot: &[Option<&DamageGroup>], columns: &[CompareMetric]) -> 
                         MetricCell { text, delta }
                     })
                     .collect();
-                SlotCell { metrics }
+                SlotCell {
+                    metrics,
+                    breakdown: (slot_i > 0)
+                        .then(|| dps_breakdown(per_slot.first().copied().flatten(), per_slot[slot_i])),
+                }
             })
         })
         .collect()
@@ -639,6 +902,52 @@ fn show_time_filter_setting(filter: &mut f64, ui: &mut Ui) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two shares must add up to the whole DPS difference, whatever the
+    /// numbers — that is the point of taking them at the midpoint of the pair
+    /// rather than against one end, which leaves a cross term over.
+    #[test]
+    fn the_two_shares_add_up_to_the_whole_difference() {
+        for (r1, m1, r2, m2) in [
+            (10.0, 500.0, 12.0, 600.0), // fired more often and hit harder
+            (10.0, 500.0, 20.0, 250.0), // twice the rate, half the size
+            (10.0, 500.0, 4.0, 900.0),  // slower but much harder
+            (0.0, 0.0, 7.0, 300.0),     // the ability is new in this combat
+            (7.0, 300.0, 0.0, 0.0),     // ...and the other way round
+            (10.0, 500.0, 10.0, 500.0), // no change at all
+        ] {
+            let split = split_dps_difference(r1, m1, r2, m2);
+            let whole = r2 * m2 - r1 * m1;
+            assert!(
+                (split.rate + split.size - whole).abs() < 1e-9,
+                "{r1}x{m1} -> {r2}x{m2}: {} + {} != {whole}",
+                split.rate,
+                split.size
+            );
+        }
+    }
+
+    /// Each share is attributed to the factor that actually moved.
+    #[test]
+    fn a_change_in_one_factor_alone_lands_on_that_factor() {
+        let faster = split_dps_difference(10.0, 500.0, 15.0, 500.0);
+        assert_eq!(2500.0, faster.rate, "firing 5 more per second at 500 each");
+        assert_eq!(0.0, faster.size);
+
+        let harder = split_dps_difference(10.0, 500.0, 10.0, 700.0);
+        assert_eq!(0.0, harder.rate);
+        assert_eq!(2000.0, harder.size, "200 more per hit at 10 per second");
+    }
+
+    /// A trade — more hits, each weaker — shows up as one share up and the
+    /// other down, which is the case a single DPS number hides.
+    #[test]
+    fn a_trade_shows_up_as_opposite_shares() {
+        let split = split_dps_difference(10.0, 500.0, 20.0, 300.0);
+        assert!(split.rate > 0.0, "the extra hits helped");
+        assert!(split.size < 0.0, "each one landing softer cost");
+        assert!((split.rate + split.size - 1000.0).abs() < 1e-9);
+    }
 
     #[test]
     fn delta_direction_for_higher_is_better() {

@@ -10,7 +10,7 @@ use crate::{
     helpers::{number_formatting::NumberFormatter, *},
 };
 
-use super::common::Kills;
+use super::{common::Kills, metrics_table::show_group_separator};
 
 macro_rules! col {
     ($name:expr, $sort:expr, $show:expr $(,)?) => {
@@ -18,35 +18,59 @@ macro_rules! col {
             name: $name,
             sort: $sort,
             show: $show,
+            parts: &[],
+        }
+    };
+}
+
+/// A column whose value splits into a hull and a shield half. Renders as one
+/// cell with the halves in a tooltip, or as `all | Hull | Shield` under a shared
+/// header when `general.split_shield_hull_columns` is on.
+macro_rules! shield_hull_col {
+    ($name:expr, $sort:expr, $field:ident $(,)?) => {
+        ColumnDescriptor {
+            name: $name,
+            sort: $sort,
+            show: |p, r| p.$field.show(r, p.halves_in_tooltip),
+            parts: &[
+                ColumnPart {
+                    name: "Hull",
+                    show: |p, r| p.$field.show_hull(r),
+                },
+                ColumnPart {
+                    name: "Shield",
+                    show: |p, r| p.$field.show_shield(r),
+                },
+            ],
         }
     };
 }
 
 static COLUMNS: &[ColumnDescriptor] = &[
-    col!(
-        "Outgoing DPS",
+    shield_hull_col!(
+        "DPS Dealt",
         |t| t.sort_by_option_f64(|p| p.dps_out.all.value),
-        |p, r| p.dps_out.show(r),
+        dps_out,
     ),
-    col!(
-        "Total Outgoing Damage",
+    shield_hull_col!(
+        "Damage Dealt",
         |t| t.sort_by_option_f64(|p| p.total_out_damage.all.value),
-        |p, r| p.total_out_damage.show(r),
+        total_out_damage,
     ),
-    col!(
-        "Outgoing Damage %",
+    shield_hull_col!(
+        "Damage Dealt %",
         |t| t.sort_by_option_f64(|p| p.total_out_damage_percentage.all.value),
-        |p, r| p.total_out_damage_percentage.show(r),
+        total_out_damage_percentage,
     ),
-    col!(
-        "Total Incoming Damage",
+    shield_hull_col!(
+        "Damage Taken",
         |t| t.sort_by_option_f64(|p| p.total_in_damage.all.value),
-        |p, r| p.total_in_damage.show(r),
+        total_in_damage,
     ),
-    col!(
-        "Incoming Damage %",
+    shield_hull_col!(
+        "Damage Taken %",
         |t| t.sort_by_option_f64(|p| p.total_in_damage_percentage.all.value),
-        |p, r| p.total_in_damage_percentage.show(r),
+        total_in_damage_percentage,
     ),
     col!(
         "Combat Duration",
@@ -97,11 +121,31 @@ struct ColumnDescriptor {
     name: &'static str,
     sort: fn(&mut SummaryTable),
     show: fn(&Player, &mut TableRow),
+    /// Hull/Shield cells appended after `show` in split-columns mode.
+    parts: &'static [ColumnPart],
+}
+
+/// See `metrics_table::closes_group`.
+fn closes_summary_group(index: usize, split: bool) -> bool {
+    if !split || COLUMNS[index].parts.is_empty() {
+        return false;
+    }
+    COLUMNS
+        .get(index + 1)
+        .map(|next| next.parts.is_empty())
+        .unwrap_or(true)
+}
+
+struct ColumnPart {
+    name: &'static str,
+    show: fn(&Player, &mut TableRow),
 }
 
 pub struct SummaryTable {
     players: Vec<Player>,
     selected_player: Option<usize>,
+    /// See `MetricsTable::split_shield_hull`.
+    split_shield_hull: bool,
 }
 
 struct Player {
@@ -118,6 +162,8 @@ struct Player {
     npc_kills: TextCount,
     player_kills: TextCount,
     deaths: TextCount,
+    /// See `DamageTablePartData::halves_in_tooltip`.
+    halves_in_tooltip: bool,
 }
 
 impl SummaryTable {
@@ -125,6 +171,7 @@ impl SummaryTable {
         Self {
             players: Default::default(),
             selected_player: None,
+            split_shield_hull: false,
         }
     }
 
@@ -146,36 +193,65 @@ impl SummaryTable {
                 })
                 .collect(),
             selected_player: None,
+            split_shield_hull: settings.general.split_shield_hull_columns,
         };
         table.sort_by_option_f64(|p| p.total_out_damage.all.value);
         table
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
+        let split = self.split_shield_hull;
+        let header_height = if split {
+            SPLIT_HEADER_HEIGHT
+        } else {
+            HEADER_HEIGHT
+        };
         ScrollArea::new([true, false]).show(ui, |ui| {
             Table::new(ui)
-                .header(HEADER_HEIGHT, |r| {
+                .header(header_height, |r| {
                     r.cell(|ui| {
                         ui.horizontal(|ui| {
                             ui.label("Player");
                         });
                     });
 
-                    for column in COLUMNS.iter() {
-                        Self::show_column_header(r, column.name, || {
-                            (column.sort)(self);
-                        });
+                    for (index, column) in COLUMNS.iter().enumerate() {
+                        if split && !column.parts.is_empty() {
+                            show_group_separator(r);
+                        }
+                        for name in Self::header_names(column, split) {
+                            Self::show_column_header(r, &name, || {
+                                (column.sort)(self);
+                            });
+                        }
+                        if closes_summary_group(index, split) {
+                            show_group_separator(r);
+                        }
                     }
                 })
                 .body(ROW_HEIGHT, |t| {
                     for (i, player) in self.players.iter().enumerate() {
                         let player_selected = Some(i) == self.selected_player;
-                        if player.show(t, player_selected).clicked() {
+                        if player.show(t, player_selected, split).clicked() {
                             self.selected_player = if player_selected { None } else { Some(i) };
                         }
                     }
                 });
         });
+    }
+
+    /// Header text per cell of a column: one cell normally, or the metric name
+    /// plus an All/Hull/Shield line per cell when the column is split.
+    fn header_names(column: &ColumnDescriptor, split: bool) -> Vec<String> {
+        if split && !column.parts.is_empty() {
+            let mut names = vec![format!("{}\nAll", column.name)];
+            names.extend(column.parts.iter().map(|p| format!("\n{}", p.name)));
+            return names;
+        }
+        if split {
+            return vec![format!("{}\n", column.name)];
+        }
+        vec![column.name.to_string()]
     }
 
     fn show_column_header(row: &mut TableRow, column_name: &str, sort: impl FnOnce()) {
@@ -278,17 +354,29 @@ impl Player {
             deaths: TextCount::new(player.damage_in.kills.values().copied().sum::<u32>() as _),
             npc_kills: TextCount::new(npc_kills as _),
             player_kills: TextCount::new(player_kills as _),
+            halves_in_tooltip: !settings.general.split_shield_hull_columns,
         }
     }
 
-    pub fn show(&self, table: &mut TableBody, selected: bool) -> Response {
+    pub fn show(&self, table: &mut TableBody, selected: bool, split: bool) -> Response {
         table.selectable_row(selected, |r| {
             r.cell(|ui| {
                 ui.label(&self.name);
             });
 
-            for column in COLUMNS.iter() {
+            for (index, column) in COLUMNS.iter().enumerate() {
+                if split && !column.parts.is_empty() {
+                    show_group_separator(r);
+                }
                 (column.show)(self, r);
+                if split {
+                    for part in column.parts.iter() {
+                        (part.show)(self, r);
+                    }
+                }
+                if closes_summary_group(index, split) {
+                    show_group_separator(r);
+                }
             }
         })
     }

@@ -62,6 +62,16 @@ impl Upload {
             }
             UploadState::UploadComplete(result) => {
                 if let Some(true) = Self::window(ui, false, |ui| {
+                    // The server accepts the log but can return no ladder rows at
+                    // all — e.g. a solo-only ladder entered with a group. Without
+                    // this the window would just show an empty table.
+                    if result.is_empty() {
+                        ui.label(
+                            "The combat was uploaded, but it did not produce any ladder \
+                             entries.\n\nThis usually means the map and difficulty have no \
+                             ladder for this period, or the ladder only accepts solo runs.",
+                        );
+                    }
                     Table::new(ui)
                         .header(15.0, |r| {
                             r.cell(|ui| {
@@ -152,29 +162,70 @@ impl Upload {
         settings: &AnalysisSettings,
         url: &str,
     ) -> UploadState {
+        let combat_name = combat.name();
         let combat_data = combat.read_log_combat_data(settings.combatlog_file());
         let combat_data = match combat_data {
             Some(d) => d,
-            None => return UploadState::Idle,
+            // Used to return `Idle`, which made the button do nothing at all
+            // with no explanation. Happens when the combat's byte range is
+            // unknown, or the log file has since been moved, deleted or
+            // rewritten (e.g. by "Clear Log File" or log consolidation).
+            None => {
+                log::error!(
+                    "upload: cannot read combat data for {combat_name:?} from {}",
+                    settings.combatlog_file().display()
+                );
+                return UploadState::UploadError(format!(
+                    "Could not read this combat from the log file:\n{}\n\n\
+                     The log may have been moved, deleted or rewritten since it was \
+                     analyzed. Reload the log and try again.",
+                    settings.combatlog_file().display()
+                ));
+            }
         };
         let url = match Url::parse(url) {
             Ok(u) => u,
             Err(_) => {
-                return UploadState::UploadError("the provided upload URL is invalid".into());
+                log::error!("upload: invalid upload URL {url:?}");
+                return UploadState::UploadError(format!(
+                    "The upload URL is invalid:\n{url}\n\n\
+                     Check it in Settings (it should normally be \
+                     https://oscr.stobuilds.com/)."
+                ));
             }
         };
-        let combat_name = combat.name();
+        log::info!(
+            "upload: sending {:?} ({} bytes) to {url}",
+            combat_name,
+            combat_data.len()
+        );
         let join_handle = spawn_request(move || Self::upload(ctx, url, combat_data, combat_name));
         UploadState::Uploading(Some(join_handle))
     }
 
     fn upload(ctx: Context, url: Url, combat_data: Vec<u8>, combat_name: String) -> UploadState {
         let state = match Self::do_upload(url, combat_data, combat_name) {
-            Ok(r) => UploadState::UploadComplete(r),
-            Err(e) => UploadState::UploadError(format!(
-                "{}",
-                e.action_error("Failed to upload combat log.")
-            )),
+            Ok(r) => {
+                for entry in r.iter() {
+                    log::info!(
+                        "upload: {} — updated={} — {}",
+                        entry.name,
+                        entry.updated,
+                        entry.detail
+                    );
+                }
+                if r.is_empty() {
+                    log::info!("upload: accepted, but the server returned no ladder results");
+                }
+                UploadState::UploadComplete(r)
+            }
+            Err(e) => {
+                log::error!("upload: failed — {e}");
+                UploadState::UploadError(format!(
+                    "{}",
+                    e.action_error("Failed to upload combat log.")
+                ))
+            }
         };
         ctx.request_repaint_after_for(Duration::from_millis(10), ViewportId::ROOT);
         state

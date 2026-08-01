@@ -102,6 +102,13 @@ pub enum AnalysisInfo {
         /// Detected difficulty per combat, aligned with `combats`, for the
         /// compare view's difficulty filter.
         difficulties: Vec<Option<Difficulty>>,
+        /// Each combat's name without the environment and difficulty suffixes,
+        /// aligned with `combats`. The views group and filter by it instead of
+        /// picking it back out of the formatted identifier.
+        base_names: Vec<String>,
+        /// Each combat's environment ("Space" / "Ground" / …) where the map was
+        /// recognized, aligned with `combats`.
+        environments: Vec<Option<String>>,
         file_size: Option<u64>,
     },
     // Like `Refreshed`, but only carries the refreshed combats list (no combat
@@ -454,6 +461,12 @@ impl AnalysisContext {
                 .iter()
                 .map(|c| c.detected_difficulty)
                 .collect(),
+            base_names: analyzer.result().iter().map(|c| c.base_name()).collect(),
+            environments: analyzer
+                .result()
+                .iter()
+                .map(|c| c.detected_combat_type.clone())
+                .collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
                 .map(|m| m.len()),
@@ -789,7 +802,7 @@ mod tests {
         // separation is 90s); the target is the player so the combat has data.
         let combat = |hh: u32, mm: u32| {
             format!(
-                "26:07:23:{hh:02}:{mm:02}:00.0::Attacker,C[1 Npc_Foo],,*,Kestrel,P[1@2 Kestrel@handle],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+                "26:07:23:{hh:02}:{mm:02}:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n"
             )
         };
         std::fs::write(&log, format!("{}{}", combat(20, 0), combat(20, 5))).unwrap();
@@ -888,7 +901,7 @@ mod tests {
 
         let combat = |hh: u32, mm: u32| {
             format!(
-                "26:07:23:{hh:02}:{mm:02}:00.0::Attacker,C[1 Npc_Foo],,*,Kestrel,P[1@2 Kestrel@handle],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+                "26:07:23:{hh:02}:{mm:02}:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n"
             )
         };
         std::fs::write(&log, format!("{}{}", combat(20, 0), combat(20, 5))).unwrap();

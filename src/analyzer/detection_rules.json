@@ -121,16 +121,22 @@
       "category": "Patrol",
       "combat_type": "Space"
     },
-    "Battle At The Binary Stars": {
+    "Battle at the Binary Stars": {
       "category": "TFO",
       "combat_type": "Space",
       "identifiers": [
-        "Space_Klingon_Dreadnought_Dsc_Sarcophagus"
-      ]
+        "Space_Klingon_Dreadnought_Dsc_Sarcophagus",
+        "Space_Federation_Cruiser_Dsc_Shenzhou"
+      ],
+      "difficulty": "Normal"
     },
     "Battle of Korfez": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Dlt_Vaadwaur_Stf_System_Dreadnought_Boss"
+      ],
+      "difficulty": "Elite"
     },
     "Battle of Procyon V": {
       "category": "TFO",
@@ -221,7 +227,15 @@
     },
     "Breach": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Mission_Dys_Breach_Hard_Point",
+        "Msn_Dys_Event_Breach_Beam_Turret",
+        "Msn_Dys_Event_Breach_Cannon_Turret",
+        "Msn_Dys_Event_Breach_Beam_Turret_Boss",
+        "Msn_Space_Voth_Boss_Power_Core",
+        "Msn_Space_Voth_Shield_Core_3"
+      ]
     },
     "Bringers of War": {
       "category": "Patrol",
@@ -229,13 +243,46 @@
     },
     "Brotherhood of the Sword": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Msn_Ico_Qonos_Ground_02_Ferasan_Lt_Honor_Guard_02",
+        "Msn_Ico_Qonos_Ground_02_Klingon_Lt_Honor_Guard_01",
+        "Msn_Ico_Qonos_Ground_02_Nausicaan_Lt_Honor_Guard_03",
+        "Msn_Ico_Qonos_Ground_02_Andorian_Lt_Maco_03",
+        "Msn_Ico_Qonos_Ground_02_Tellarite_Lt_Maco_01",
+        "Msn_Ico_Qonos_Ground_02_Vulcan_Lt_Maco_02",
+        "Msn_Ico_Qonos_Ground_Orion_Pirates_Lt_Ally_01"
+      ],
+      "hull_any": {
+        "Normal": {
+          "Ground_Herald_Capt_Gravity": 11534,
+          "Ground_Herald_Cdr_Melee": 2384,
+          "Ground_Herald_Cdr_Ranged": 2376,
+          "Ground_Herald_Lieutenant": 1023,
+          "Ground_Herald_Ensign": 785
+        },
+        "Advanced": {
+          "Ground_Herald_Capt_Gravity": 24336,
+          "Ground_Herald_Cdr_Melee": 5030,
+          "Ground_Herald_Cdr_Ranged": 5014,
+          "Ground_Herald_Lieutenant": 2159,
+          "Ground_Herald_Ensign": 1657
+        },
+        "Elite": {
+          "Ground_Herald_Capt_Gravity": 42315,
+          "Ground_Herald_Cdr_Melee": 9218,
+          "Ground_Herald_Cdr_Ranged": 8745,
+          "Ground_Herald_Lieutenant": 3763,
+          "Ground_Herald_Ensign": 3354
+        }
+      }
     },
     "Bug Hunt": {
       "category": "TFO",
       "combat_type": "Ground",
       "identifiers": [
-        "Bluegills_Ground_Boss"
+        "Bluegills_Ground_Boss",
+        "Msn_Dlt_Bluegill_Hunt_Ground_Demolitions_Expert"
       ],
       "death_counts": {
         "Elite": {
@@ -243,6 +290,10 @@
         }
       },
       "hull_counts": {
+        "Normal": {
+          "Bluegills_Ground_Boss": 241116,
+          "Bluegills_Ground_Cdr": 3523
+        },
         "Advanced": {
           "Bluegills_Ground_Boss": 200000,
           "Bluegills_Ground_Cdr": 5000
@@ -361,7 +412,34 @@
     },
     "Devil's Heart": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss",
+        "Ground_Aetherian_Hacker_Vtx_Devils_Heart",
+        "Ground_Aetherian_Boss_Vtx_Devils_Heart",
+        "Vtx_Devils_Heart_Tfo_Boss_Explosive_Drone",
+        "Vtx_Devils_Heart_Tfo_Miniboss_Turret"
+      ],
+      "hull_any": {
+        "Normal": {
+          "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss": 6490,
+          "Ground_Aetherian_Hacker_Vtx_Devils_Heart": 2465,
+          "Ground_Borg_Cdr_Range_Control_Anchor": 2251,
+          "Ground_Borg_Ens_Range_Control": 1028
+        },
+        "Advanced": {
+          "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss": 13693,
+          "Ground_Aetherian_Hacker_Vtx_Devils_Heart": 5202,
+          "Ground_Borg_Cdr_Range_Control_Anchor": 4749,
+          "Ground_Borg_Ens_Range_Control": 2169
+        },
+        "Elite": {
+          "Ground_Borg_Capt_Range_Control_Vtx_Devils_Heart_Tfo_Miniboss": 22087,
+          "Ground_Aetherian_Hacker_Vtx_Devils_Heart": 8396,
+          "Ground_Borg_Cdr_Range_Control_Anchor": 7021,
+          "Ground_Borg_Ens_Range_Control": 3316
+        }
+      }
     },
     "Donia System Patrol": {
       "category": "Patrol",
@@ -535,11 +613,45 @@
     },
     "Into the Hive": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Ground_Borg_Queen_Disembodied",
+        "Ground_Borg_Queen"
+      ],
+      "hull_any": {
+        "Normal": {
+          "Ground_Borg_Capt_Gorn": 8956,
+          "Ground_Borg_Capt_Melee": 6560,
+          "Ground_Borg_Cdr_Melee": 2423,
+          "Ground_Borg_Lt_Range": 1359,
+          "Ground_Borg_Ens_Melee": 1171
+        },
+        "Advanced": {
+          "Ground_Borg_Capt_Gorn": 18898,
+          "Ground_Borg_Capt_Melee": 13842,
+          "Ground_Borg_Cdr_Melee": 5113,
+          "Ground_Borg_Lt_Range": 2867,
+          "Ground_Borg_Ens_Melee": 2470
+        },
+        "Elite": {
+          "Ground_Borg_Capt_Gorn": 29528,
+          "Ground_Borg_Capt_Melee": 23064,
+          "Ground_Borg_Cdr_Melee": 8894,
+          "Ground_Borg_Lt_Range": 4280,
+          "Ground_Borg_Ens_Melee": 4256
+        }
+      }
     },
     "Iuppiter Iratus": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Space_Holo_Projector_Jupiter_Tfo",
+        "Space_Federation_Voyager",
+        "Space_Federation_Mirror_Enterprise_S25_Tfo",
+        "Space_Federation_Mirror_Sci_Reskava_S25_Tfo",
+        "Space_Federation_Science_Escort_S25_Tfo"
+      ]
     },
     "Jailbreak at Rura Penthe": {
       "category": "Patrol",
@@ -616,7 +728,33 @@
     },
     "Khitomer in Stasis": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Mission_Borgraid03_Borg_Power_Node",
+        "Ground_Borg_Commander_Melee_Raidisode_Infected_Fed",
+        "Ground_Borg_Commander_Melee_Raidisode_Infected_Klingon",
+        "Ground_Borg_Commander_Melee_Raidisode_Infected_Romulan",
+        "Ground_Borg_Lt_Melee_Raidisode_Infected_Romulan",
+        "Ground_Borg_Ens_Melee_Raidisode",
+        "Ground_Borg_Lt_Melee_Raidisode_No_Loot",
+        "Ground_Borg_Ens_Melee_Wolf_359"
+      ],
+      "hull_any": {
+        "Normal": {
+          "Ground_Borg_Capt_Melee": 6541,
+          "Ground_Borg_Cdr_Melee": 2392,
+          "Ground_Borg_Lt_Melee_Raidisode_No_Loot": 1962,
+          "Ground_Borg_Lt_Range": 1542,
+          "Ground_Borg_Ens_Melee": 1457
+        },
+        "Advanced": {
+          "Ground_Borg_Capt_Melee": 14047,
+          "Ground_Borg_Cdr_Melee": 5325,
+          "Ground_Borg_Lt_Melee_Raidisode_No_Loot": 4048,
+          "Ground_Borg_Lt_Range": 3795,
+          "Ground_Borg_Ens_Melee": 3181
+        }
+      }
     },
     "Khonshu Khaibit": {
       "category": "Patrol",
@@ -782,7 +920,37 @@
     },
     "Pahvo Dissension": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss",
+        "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss",
+        "Ground_Federation_Ens_Range_Tac_Mirror_Dsc",
+        "Ground_Federation_Ens_Range_Eng_Mirror_Dsc",
+        "Ground_Federation_Ens_Range_Sci_Mirror_Dsc"
+      ],
+      "hull_any": {
+        "Normal": {
+          "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss": 16600,
+          "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss": 12882,
+          "Ground_Federation_Cdr_Range_Eng_Mirror_Dsc": 2150,
+          "Ground_Federation_Lt_Range_Eng_Mirror_Dsc": 1190,
+          "Ground_Federation_Ens_Range_Eng_Mirror_Dsc": 970
+        },
+        "Advanced": {
+          "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss": 35027,
+          "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss": 27182,
+          "Ground_Federation_Cdr_Range_Eng_Mirror_Dsc": 4536,
+          "Ground_Federation_Lt_Range_Eng_Mirror_Dsc": 2511,
+          "Ground_Federation_Ens_Range_Eng_Mirror_Dsc": 2047
+        },
+        "Elite": {
+          "Ground_Federation_Capt_Range_Eng_Mirror_Dsc_Pahvo_Boss": 54732,
+          "Ground_Federation_Capt_Range_Tac_Mirror_Dsc_Pahvo_Boss": 42887,
+          "Ground_Federation_Cdr_Range_Eng_Mirror_Dsc": 6948,
+          "Ground_Federation_Lt_Range_Eng_Mirror_Dsc": 3895,
+          "Ground_Federation_Ens_Range_Eng_Mirror_Dsc": 2905
+        }
+      }
     },
     "Pansarka System Patrol": {
       "category": "Patrol",
@@ -798,7 +966,11 @@
     },
     "Peril Over Pahvo": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite",
+        "Msn_Dsc_Pahvo_Defense_Queue_System_Planetary_Shield"
+      ]
     },
     "Pheben System Patrol": {
       "category": "Patrol",
@@ -880,7 +1052,9 @@
       "category": "Patrol",
       "combat_type": "Space",
       "identifiers": [
-        "Space_Klingon_Cruiser_Dsc_Mokai"
+        "Msn_Space_Lukari_Science_Vessel",
+        "Msn_Space_Lukari_Frigate",
+        "Msn_Space_Lukari_Escort"
       ],
       "hull_counts": {
         "Advanced": {
@@ -1141,7 +1315,8 @@
       "category": "Patrol",
       "combat_type": "Space",
       "identifiers": [
-        "Space_Elachi_Frigate"
+        "Space_Elachi_Frigate",
+        "Space_Romulan_Colony_Escort"
       ],
       "hull_counts": {
         "Advanced": {
@@ -1186,11 +1361,42 @@
     },
     "Undine Assault": {
       "category": "TFO",
-      "combat_type": "Space"
+      "combat_type": "Space",
+      "identifiers": [
+        "Missione_Event_Planetary_Invasion_Rift",
+        "Space_Undine_Planet_Killer_Massive"
+      ]
     },
     "Undine Infiltration": {
       "category": "TFO",
-      "combat_type": "Ground"
+      "combat_type": "Ground",
+      "identifiers": [
+        "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss",
+        "Event_Undine_Infiltration_Ground_Fire"
+      ],
+      "hull_any": {
+        "Normal": {
+          "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss": 14555,
+          "Ground_Undine_Capt_Range_Psi": 9230,
+          "Ground_Undine_Cdr_Range_Psi": 3381,
+          "Ground_Undine_Lt_Range_Psi": 1665,
+          "Ground_Undine_Lt_Mixed": 1844
+        },
+        "Advanced": {
+          "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss": 30710,
+          "Ground_Undine_Capt_Range_Psi": 19476,
+          "Ground_Undine_Cdr_Range_Psi": 7134,
+          "Ground_Undine_Lt_Range_Psi": 3513,
+          "Ground_Undine_Lt_Mixed": 3890
+        },
+        "Elite": {
+          "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss": 71916,
+          "Ground_Undine_Capt_Range_Psi": 31900,
+          "Ground_Undine_Cdr_Range_Psi": 11207,
+          "Ground_Undine_Lt_Range_Psi": 5695,
+          "Ground_Undine_Lt_Mixed": 5734
+        }
+      }
     },
     "Unity": {
       "category": "Patrol",

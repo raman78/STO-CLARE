@@ -12,7 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     analyzer::{Combat, DamageGroup, Difficulty},
-    app::{settings::Settings, state::AppState},
+    app::{
+        combat_filter::{CombatEntry, CombatFilter},
+        settings::Settings,
+        state::AppState,
+    },
 };
 
 mod compare_table;
@@ -116,6 +120,10 @@ impl CompareMetric {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CompareSettings {
     pub columns: Vec<CompareMetric>,
+    /// Whether to split each DPS difference into the part that came from
+    /// firing more often and the part that came from each hit landing harder.
+    #[serde(default)]
+    pub show_dps_breakdown: bool,
 }
 
 impl Default for CompareSettings {
@@ -127,23 +135,18 @@ impl Default for CompareSettings {
                 CompareMetric::Critical,
                 CompareMetric::Accuracy,
             ],
+            show_dps_breakdown: false,
         }
     }
-}
-
-#[derive(PartialEq, Clone, Copy)]
-enum DifficultyFilter {
-    Any,
-    Advanced,
-    Elite,
 }
 
 pub struct CompareView {
     open: bool,
     selected: Vec<usize>,
     name_filter: String,
-    type_filter: Option<String>,
-    difficulty_filter: DifficultyFilter,
+    /// The same environment/level/map pickers the main window uses, so both
+    /// lists are filtered the same way and mean the same by each choice.
+    filter: CombatFilter,
     comparison: Option<Comparison>,
 }
 
@@ -153,8 +156,7 @@ impl Default for CompareView {
             open: false,
             selected: Vec::new(),
             name_filter: String::new(),
-            type_filter: None,
-            difficulty_filter: DifficultyFilter::Any,
+            filter: CombatFilter::default(),
             comparison: None,
         }
     }
@@ -179,6 +181,8 @@ impl CompareView {
         state: &mut AppState,
         combats: &[String],
         difficulties: &[Option<Difficulty>],
+        base_names: &[String],
+        environments: &[Option<String>],
         ui: &mut Ui,
     ) {
         match &mut self.comparison {
@@ -186,13 +190,15 @@ impl CompareView {
                 if ui.button("◀ Change selection").clicked() {
                     self.comparison = None;
                     ui.separator();
-                    self.show_selection(state, combats, difficulties, ui);
+                    self.show_selection(state, combats, difficulties, base_names, environments, ui);
                 } else {
                     ui.separator();
                     comparison.show(ui, &mut state.settings);
                 }
             }
-            None => self.show_selection(state, combats, difficulties, ui),
+            None => {
+                self.show_selection(state, combats, difficulties, base_names, environments, ui)
+            }
         }
     }
 
@@ -201,34 +207,28 @@ impl CompareView {
         state: &mut AppState,
         combats: &[String],
         difficulties: &[Option<Difficulty>],
+        base_names: &[String],
+        environments: &[Option<String>],
         ui: &mut Ui,
     ) {
+        let entries: Vec<CombatEntry> = (0..combats.len())
+            .map(|i| CombatEntry {
+                environment: environments.get(i).and_then(|e| e.as_deref()),
+                difficulty: difficulties.get(i).copied().flatten(),
+                base_name: base_names.get(i).map(String::as_str).unwrap_or(""),
+            })
+            .collect();
+
         ui.horizontal_wrapped(|ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.name_filter);
-
-            let selected_type = self.type_filter.clone().unwrap_or_else(|| "All".to_string());
-            ComboBox::new("compare type filter", "Type")
-                .selected_text(selected_type)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.type_filter, None, "All");
-                    for combat_type in combat_types(combats) {
-                        ui.selectable_value(
-                            &mut self.type_filter,
-                            Some(combat_type.clone()),
-                            combat_type,
-                        );
-                    }
-                });
-
-            ui.label("Difficulty:");
-            ui.selectable_value(&mut self.difficulty_filter, DifficultyFilter::Any, "Any");
-            ui.selectable_value(
-                &mut self.difficulty_filter,
-                DifficultyFilter::Advanced,
-                "Advanced",
-            );
-            ui.selectable_value(&mut self.difficulty_filter, DifficultyFilter::Elite, "Elite");
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Show only:");
+            self.filter.show("compare", &entries, ui);
+            if self.filter.is_active() && ui.button("Clear filter").clicked() {
+                self.filter.clear();
+            }
         });
 
         ui.horizontal(|ui| {
@@ -250,8 +250,7 @@ impl CompareView {
 
         ScrollArea::vertical().show(ui, |ui| {
             for (i, identifier) in combats.iter().enumerate() {
-                let difficulty = difficulties.get(i).copied().flatten();
-                if !self.matches_filters(identifier, difficulty) {
+                if !self.matches_filters(identifier, entries[i]) {
                     continue;
                 }
                 let mut checked = self.selected.contains(&i);
@@ -272,7 +271,7 @@ impl CompareView {
         }
     }
 
-    fn matches_filters(&self, identifier: &str, difficulty: Option<Difficulty>) -> bool {
+    fn matches_filters(&self, identifier: &str, entry: CombatEntry) -> bool {
         if !self.name_filter.trim().is_empty()
             && !identifier
                 .to_lowercase()
@@ -281,58 +280,46 @@ impl CompareView {
             return false;
         }
 
-        if let Some(type_filter) = &self.type_filter {
-            if &combat_type_base(identifier) != type_filter {
-                return false;
-            }
-        }
-
-        match self.difficulty_filter {
-            DifficultyFilter::Any => true,
-            DifficultyFilter::Advanced => difficulty == Some(Difficulty::Advanced),
-            DifficultyFilter::Elite => difficulty == Some(Difficulty::Elite),
-        }
+        self.filter
+            .matches(entry.environment, entry.difficulty, entry.base_name)
     }
-}
-
-/// The combat "type" (mission name without difficulty), e.g.
-/// `"Trouble Over Terrh (Elite) | 2026-... - ..."` -> `"Trouble Over Terrh"`.
-fn combat_type_base(identifier: &str) -> String {
-    let prefix = identifier.split(" | ").next().unwrap_or(identifier);
-    match prefix.find(" (") {
-        Some(pos) => prefix[..pos].trim().to_string(),
-        None => prefix.trim().to_string(),
-    }
-}
-
-/// Distinct combat types across the list, sorted, for the type filter dropdown.
-fn combat_types(combats: &[String]) -> Vec<String> {
-    let mut types: Vec<String> = combats.iter().map(|c| combat_type_base(c)).collect();
-    types.sort_unstable();
-    types.dedup();
-    types
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn combat_type_base_strips_difficulty_and_time() {
-        assert_eq!(
-            combat_type_base("Trouble Over Terrh (Elite) | 2026-07-23 20:07:22 - 20:11:37"),
-            "Trouble Over Terrh"
-        );
-        assert_eq!(combat_type_base("Combat | 2026-07-23 01:12:24 - 01:16:42"), "Combat");
+    fn entry() -> CombatEntry<'static> {
+        CombatEntry {
+            environment: Some("Space"),
+            difficulty: Some(Difficulty::Elite),
+            base_name: "Infected Space",
+        }
     }
 
+    /// The search box matches the whole displayed identifier, so a date or a
+    /// time narrows the list as well as a name does.
     #[test]
-    fn combat_types_are_sorted_and_unique() {
-        let combats = vec![
-            "Trouble Over Terrh (Elite) | t".to_string(),
-            "Combat | t".to_string(),
-            "Trouble Over Terrh (Advanced) | t".to_string(),
-        ];
-        assert_eq!(combat_types(&combats), vec!["Combat", "Trouble Over Terrh"]);
+    fn the_search_box_matches_the_displayed_identifier() {
+        let mut view = CompareView::default();
+        let identifier = "Infected Space [Elite] | 2026-07-23 20:07:22 - 20:11:37";
+
+        view.name_filter = "infected".to_string();
+        assert!(view.matches_filters(identifier, entry()));
+
+        view.name_filter = "20:07".to_string();
+        assert!(view.matches_filters(identifier, entry()));
+
+        view.name_filter = "hive".to_string();
+        assert!(!view.matches_filters(identifier, entry()));
+    }
+
+    /// Search and pickers narrow together, not one or the other.
+    #[test]
+    fn the_search_box_and_the_pickers_both_apply() {
+        let mut view = CompareView::default();
+        view.name_filter = "infected".to_string();
+        view.filter.environment = Some("Ground".to_string());
+        assert!(!view.matches_filters("Infected Space | t", entry()));
     }
 }

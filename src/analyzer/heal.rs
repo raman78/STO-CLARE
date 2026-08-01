@@ -2,6 +2,63 @@ use educe::Educe;
 
 use super::*;
 
+/// One healing pool, kept in **both** grouping orders so the heal tabs can flip
+/// between them instantly instead of re-parsing the log.
+///
+/// - `by_person` — person → ability: who healed you (or who you healed), and
+///   with what. The order the heal tabs open in.
+/// - `by_ability` — ability → person: what was used, and on/from whom. The
+///   order the damage tabs use.
+///
+/// Both hold the same ticks, so any total is identical between them; only the
+/// nesting differs. Deref goes to `by_person`, so pool-level totals read as
+/// `pool.total_heal` regardless of the order shown.
+#[derive(Clone, Debug, Educe)]
+#[educe(Deref, DerefMut)]
+pub struct HealPool {
+    #[educe(Deref, DerefMut)]
+    pub by_person: HealGroup,
+    pub by_ability: HealGroup,
+}
+
+/// Which nesting a heal tab is showing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HealGrouping {
+    ByPerson,
+    ByAbility,
+}
+
+impl HealPool {
+    pub(super) fn new(name: NameHandle) -> Self {
+        Self {
+            by_person: HealGroup::new_branch(GroupPathSegment::Group(name)),
+            by_ability: HealGroup::new_branch(GroupPathSegment::Group(name)),
+        }
+    }
+
+    pub(super) fn recalculate_metrics(
+        &mut self,
+        duration: f64,
+        ticks_manager: &mut HealTicksManager,
+    ) {
+        self.by_person
+            .recalculate_metrics(duration, ticks_manager, &mut |_| {});
+        self.by_ability
+            .recalculate_metrics(duration, ticks_manager, &mut |_| {});
+    }
+
+    pub(super) fn recalculate_percentages(
+        &mut self,
+        total_heal: &ShieldHullValues,
+        parent_ticks: &ShieldHullCounts,
+    ) {
+        self.by_person
+            .recalculate_percentages(total_heal, parent_ticks);
+        self.by_ability
+            .recalculate_percentages(total_heal, parent_ticks);
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct BaseHealTick {
     pub amount: f64,

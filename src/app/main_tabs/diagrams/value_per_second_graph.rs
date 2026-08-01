@@ -16,6 +16,7 @@ pub struct ValuePerSecondGraph<T: PreparedValue> {
     newly_created: bool,
     updated_filter: Option<f64>,
     diagram_type: DiagramType,
+    components: HealComponents,
 }
 
 pub type DpsGraph = ValuePerSecondGraph<PreparedHitValue>;
@@ -36,6 +37,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
             newly_created: true,
             updated_filter: None,
             diagram_type,
+            components: HealComponents::ALL,
         }
     }
 
@@ -67,6 +69,12 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         }
     }
 
+    /// Which halves of a heal to draw. Only the heal charts offer the choice;
+    /// everything else stays on the default of both.
+    pub fn set_components(&mut self, components: HealComponents) {
+        self.components = components;
+    }
+
     pub fn update(&mut self, filter: f64) {
         self.updated_filter = Some(filter);
     }
@@ -75,7 +83,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         if let Some(filter) = self.updated_filter.take() {
             self.lines
                 .iter_mut()
-                .for_each(|l| l.update(filter, self.diagram_type));
+                .for_each(|l| l.update(filter, self.diagram_type, self.components));
             self.compute_largest_point();
         }
 
@@ -139,7 +147,7 @@ impl<T: PreparedValue> GraphLine<T> {
         }
     }
 
-    fn update(&mut self, filter: f64, diagram_type: DiagramType) {
+    fn update(&mut self, filter: f64, diagram_type: DiagramType, components: HealComponents) {
         let duration = self.data.duration_s.max(1.0);
         let points_count = (duration * SAMPLE_RATE).round().max(1.0) as _;
         let mut points = Vec::with_capacity(points_count);
@@ -148,7 +156,7 @@ impl<T: PreparedValue> GraphLine<T> {
             let time = self.data.start_time_s + duration * start_offset;
             let point = [
                 time,
-                Self::get_sample_gauss_filtered(&self.data.values, time, filter, diagram_type),
+                Self::get_sample_gauss_filtered(&self.data.values, time, filter, diagram_type, components),
             ];
             points.push(point);
         }
@@ -175,6 +183,7 @@ impl<T: PreparedValue> GraphLine<T> {
         time_seconds: f64,
         sigma_seconds: f64,
         diagram_type: DiagramType,
+        components: HealComponents,
     ) -> Option<f64> {
         let hit = points.get(index)?;
         let t = millis_to_seconds(hit.time_millis);
@@ -186,7 +195,7 @@ impl<T: PreparedValue> GraphLine<T> {
             return None;
         }
 
-        Some(weight * hit.value(diagram_type))
+        Some(weight * hit.value(diagram_type, components))
     }
 
     fn get_sample_gauss_filtered_half(
@@ -195,6 +204,7 @@ impl<T: PreparedValue> GraphLine<T> {
         sigma_seconds: f64,
         entry_index: usize,
         diagram_type: DiagramType,
+        components: HealComponents,
         mut index_change: impl FnMut(usize) -> Option<usize>,
     ) -> f64 {
         let mut value = 0.0;
@@ -206,6 +216,7 @@ impl<T: PreparedValue> GraphLine<T> {
                 time_seconds,
                 sigma_seconds,
                 diagram_type,
+                components,
             ) {
                 Some(v) => v,
                 None => break,
@@ -224,6 +235,7 @@ impl<T: PreparedValue> GraphLine<T> {
         time_seconds: f64,
         sigma_seconds: f64,
         diagram_type: DiagramType,
+        components: HealComponents,
     ) -> f64 {
         let time_millis = seconds_to_millis(time_seconds);
 
@@ -238,6 +250,7 @@ impl<T: PreparedValue> GraphLine<T> {
                     sigma_seconds,
                     i,
                     diagram_type,
+                    components,
                     |i| i.checked_sub(1),
                 )
             })
@@ -248,6 +261,7 @@ impl<T: PreparedValue> GraphLine<T> {
                 time_seconds,
                 sigma_seconds,
                 diagram_type,
+                components,
             )
             .unwrap_or(0.0)
             + Self::get_sample_gauss_filtered_half(
@@ -256,6 +270,7 @@ impl<T: PreparedValue> GraphLine<T> {
                 sigma_seconds,
                 entry_index + 1,
                 diagram_type,
+                components,
                 |i| Some(i + 1),
             )
     }

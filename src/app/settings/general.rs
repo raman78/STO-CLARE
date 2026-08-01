@@ -111,6 +111,16 @@ impl GeneralTab {
         .on_hover_text(
             "Shows more numbers after the decimal point in the tables of the different tabs and the overlay",
         );
+
+        ui.checkbox(
+            &mut modified_settings.general.split_shield_hull_columns,
+            "Show Hull and Shield as separate columns",
+        )
+        .on_hover_text(
+            "Metrics that split into a hull and a shield half (damage, hits, healing, ticks) get \
+             their own Hull and Shield columns next to the total, so you can see how much of each \
+             ability went where. When off, the halves only show in the hover tooltip.",
+        );
     }
 
     pub fn show_clear_log_dialog(

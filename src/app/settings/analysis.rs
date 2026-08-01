@@ -17,10 +17,23 @@ const WARN_COLOR: Color32 = Color32::from_rgb(0xd9, 0x95, 0x00);
 pub struct AnalysisTab {
     list_selected_combat_occurred_names: bool,
     occurred_combat_names_search_term: String,
+    selected_section: AnalysisSection,
     indirect_source_reversal_rules: IndirectSourceReversalRules,
     custom_grouping_rules: CustomGroupingRules,
     damage_out_exclusion_rules: DamageOutExclusionRules,
     combat_names_rules: CombatNameRules,
+}
+
+/// The Analysis tab holds four independent rule sets. Stacking them made each
+/// table compete for height inside one scroll area; as sub-tabs only one is on
+/// screen at a time, so it can use the window's full height.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum AnalysisSection {
+    #[default]
+    CombatNames,
+    SourceReversal,
+    CustomGrouping,
+    DamageExclusion,
 }
 
 #[derive(Default)]
@@ -47,7 +60,7 @@ struct CombatNameRules {
     selected_additional_info_rule: Option<usize>,
 }
 
-struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default> {
+struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
     group_rules: &'a mut Vec<T>,
     title: &'a str,
     name_header: &'a str,
@@ -56,6 +69,8 @@ struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default> {
     /// Optional per-row warning: returns a tooltip when the row's rule should be
     /// flagged (e.g. it shadows an auto-detected map). Adds a ⚠ cell per row.
     row_warning: Option<&'a dyn Fn(&RulesGroup) -> Option<String>>,
+    /// Explicit height cap; falls back to all available space.
+    max_height: Option<f32>,
 }
 
 struct RulesTable<'a> {
@@ -82,25 +97,38 @@ impl AnalysisTab {
             self.list_selected_combat_occurred_names = true;
         }
 
-        self.indirect_source_reversal_rules
-            .show(&mut modified_settings.analysis, ui);
-        ui.add_space(20.0);
-
-        ui.separator();
-        ui.push_id(line!(), |ui| {
-            self.custom_grouping_rules
-                .show(&mut modified_settings.analysis, ui);
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            use AnalysisSection::*;
+            for (section, label) in [
+                (CombatNames, "Combat Names"),
+                (SourceReversal, "Source Reversal"),
+                (CustomGrouping, "Custom Grouping"),
+                (DamageExclusion, "Damage Exclusion"),
+            ] {
+                ui.selectable_value(&mut self.selected_section, section, label);
+            }
         });
-        ui.add_space(20.0);
-
         ui.separator();
-        self.damage_out_exclusion_rules
-            .show(&mut modified_settings.analysis, ui);
-        ui.add_space(20.0);
 
-        ui.separator();
-        self.combat_names_rules
-            .show(&mut modified_settings.analysis, selected_combat, ui);
+        match self.selected_section {
+            AnalysisSection::CombatNames => {
+                self.combat_names_rules
+                    .show(&mut modified_settings.analysis, ui)
+            }
+            AnalysisSection::SourceReversal => self
+                .indirect_source_reversal_rules
+                .show(&mut modified_settings.analysis, ui),
+            AnalysisSection::CustomGrouping => {
+                ui.push_id(line!(), |ui| {
+                    self.custom_grouping_rules
+                        .show(&mut modified_settings.analysis, ui);
+                });
+            }
+            AnalysisSection::DamageExclusion => self
+                .damage_out_exclusion_rules
+                .show(&mut modified_settings.analysis, ui),
+        }
 
         self.show_occurred_names_window(selected_combat, ui);
     }
@@ -268,12 +296,7 @@ impl CustomGroupingRules {
 }
 
 impl CombatNameRules {
-    fn show(
-        &mut self,
-        modified_settings: &mut AnalysisSettings,
-        selected_combat: Option<&Combat>,
-        ui: &mut Ui,
-    ) {
+    fn show(&mut self, modified_settings: &mut AnalysisSettings, ui: &mut Ui) {
         // Flag rules that shadow an auto-detected map, as a ⚠ on the rule's row.
         let identifiers = curated_map_identifiers();
         let row_warning = |group: &RulesGroup| {
@@ -287,14 +310,34 @@ impl CombatNameRules {
             })
         };
 
-        CollapsingHeader::new("Combat Name Detection Rules").show_unindented(ui, |ui| {
+        {
+            // The rules table and the auto-detected map list below it share the
+            // window. Each may take up to half; whichever needs less than its
+            // half gives the remainder to the other, so neither is squeezed while
+            // the other shows empty space.
+            let text_row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
+            let available = ui.available_height();
+            let half = available / 2.0;
+            // What each would use if unconstrained.
+            let rules_need = HEADER_HEIGHT
+                + ROW_HEIGHT * modified_settings.combat_name_rules.len() as f32
+                + text_row * 2.0;
+            let maps_need = text_row * (curated_map_names().len() as f32 + 4.0);
+            let (rules_height, maps_height) = if rules_need <= half {
+                (rules_need, available - rules_need)
+            } else if maps_need <= half {
+                (available - maps_need, maps_need)
+            } else {
+                (half, half)
+            };
             GroupRulesTable::new(
                 &mut modified_settings.combat_name_rules,
-                "",
+                "Combat Name Detection Rules",
                 "Combat Name",
                 &mut self.selected_group,
                 200.0,
             )
+            .with_max_height(rules_height)
             .with_row_warning(&row_warning)
             .show(ui, |r, ui| {
                 RulesTable::new(
@@ -337,8 +380,8 @@ impl CombatNameRules {
                 });
             });
 
-            Self::show_auto_detected(selected_combat, ui);
-        });
+            Self::show_auto_detected(maps_height, ui);
+        }
     }
 
     /// Read-only view of the maps the analyzer auto-detects. These act as a
@@ -347,7 +390,7 @@ impl CombatNameRules {
     /// shadow a detected map are flagged with a ⚠ on their row (see
     /// `overlapping_maps`); this section additionally notes it for the selected
     /// combat and lists the detectable maps.
-    fn show_auto_detected(selected_combat: Option<&Combat>, ui: &mut Ui) {
+    fn show_auto_detected(max_height: f32, ui: &mut Ui) {
         // Legend for the per-row ⚠, directly under the rules frame above.
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -367,29 +410,12 @@ impl CombatNameRules {
             RichText::new("Auto-detected maps — used only when no rule above matches.").weak(),
         );
 
-        // Collision note for the currently selected combat, if a rule renamed it.
-        if let Some(combat) = selected_combat {
-            if let Some(detected) = combat.detected_name() {
-                if !combat.combat_names.is_empty() {
-                    ui.add_space(6.0);
-                    ui.colored_label(
-                        WARN_COLOR,
-                        format!(
-                            "⚠ Your rules name the selected combat \"{}\", shadowing the \
-                             detected \"{}\".",
-                            combat.name(),
-                            detected
-                        ),
-                    );
-                }
-            }
-        }
-
         ui.add_space(6.0);
         ui.label(RichText::new("Auto-detected maps:").weak());
+        let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
         ScrollArea::vertical()
             .id_salt("auto detected maps")
-            .max_height(150.0)
+            .max_height(ui.available_height().min(max_height).at_least(row * 4.0))
             .show(ui, |ui| {
                 for map in curated_map_names() {
                     ui.label(RichText::new(map).weak());
@@ -440,7 +466,7 @@ fn strip_category_prefix(name: &str) -> &str {
         .unwrap_or(name)
 }
 
-impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
+impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
     fn new(
         group_rules: &'a mut Vec<T>,
         title: &'a str,
@@ -455,10 +481,17 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
             selected_group,
             popup_extra_space,
             row_warning: None,
+            max_height: None,
         }
     }
 
     /// Show a ⚠ on the right of each row for which `warning` returns a tooltip.
+    /// Cap the table at `height`. `None` lets it use whatever is available.
+    fn with_max_height(mut self, height: f32) -> Self {
+        self.max_height = Some(height);
+        self
+    }
+
     fn with_row_warning(mut self, warning: &'a dyn Fn(&RulesGroup) -> Option<String>) -> Self {
         self.row_warning = Some(warning);
         self
@@ -467,16 +500,23 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
     fn show(&mut self, ui: &mut Ui, mut edit: impl FnMut(&mut T, &mut Ui)) {
         let row_warning = self.row_warning;
         ui.horizontal(|ui| {
-            ui.label(self.title);
+            ui.strong(self.title);
             if ui.button("Add ✚").clicked() {
                 self.group_rules.push(Default::default());
             }
 
             show_move_up_down(self.selected_group, self.group_rules, ui);
         });
+        // Fills whatever height the window offers, minus whatever the caller
+        // reserved for the content below it. The Settings window scrolls as a
+        // whole, so a short list still takes only the room it needs.
+        let height = self
+            .max_height
+            .unwrap_or_else(|| ui.available_height())
+            .at_least(ROW_HEIGHT * 4.0);
         Table::new(ui)
-            .min_scroll_height(200.0)
-            .max_scroll_height(200.0)
+            .min_scroll_height(0.0)
+            .max_scroll_height(height)
             .cell_spacing(10.0)
             .header(HEADER_HEIGHT, |r| {
                 r.cell(|ui| {
@@ -486,11 +526,17 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                     ui.label("Edit");
                 });
                 r.cell(|ui| {
+                    ui.label("Clone");
+                });
+                r.cell(|ui| {
                     ui.label(self.name_header);
                 });
             })
             .body(ROW_HEIGHT, |t| {
                 let mut to_remove = Vec::new();
+                // At most one row can be cloned per frame, so the index stays
+                // valid: removals are applied first, then this is bounds-checked.
+                let mut to_clone: Option<usize> = None;
                 for (id, rule) in self.group_rules.iter_mut().enumerate() {
                     let row_response = t.selectable_row(*self.selected_group == Some(id), |r| {
                         r.cell(|ui| {
@@ -503,6 +549,13 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                                 // HACK: so that the popup does not close when clicking the in one of the combo boxes
                                 ui.add_space(self.popup_extra_space);
                             });
+                        });
+
+                        r.cell(|ui| {
+                            // A framed button, to match the ✏ next to it.
+                            if ui.button("🗐").on_hover_text("Clone this rule").clicked() {
+                                to_clone = Some(id);
+                            }
                         });
 
                         r.cell(|ui| {
@@ -539,6 +592,15 @@ impl<'a, T: BorrowMut<RulesGroup> + Default> GroupRulesTable<'a, T> {
                 to_remove.into_iter().rev().for_each(|i| {
                     self.group_rules.remove(i);
                 });
+
+                // The clone goes to the end of the list and becomes the
+                // selection, so it can be renamed straight away without the rows
+                // around it shifting.
+                if let Some(index) = to_clone.filter(|i| *i < self.group_rules.len()) {
+                    let clone = self.group_rules[index].clone();
+                    self.group_rules.push(clone);
+                    *self.selected_group = Some(self.group_rules.len() - 1);
+                }
             });
     }
 }
@@ -568,13 +630,17 @@ impl<'a> RulesTable<'a> {
             show_move_up_down(self.selected_rule, self.rules, ui);
         });
         ui.push_id(self.title, |ui| {
+            let height = ui.available_height().at_least(ROW_HEIGHT * 4.0);
             Table::new(ui)
-                .min_scroll_height(100.0)
-                .max_scroll_height(200.0)
+                .min_scroll_height(0.0)
+                .max_scroll_height(height)
                 .cell_spacing(10.0)
                 .header(HEADER_HEIGHT, |r| {
                     r.cell(|ui| {
                         ui.label("On");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Clone");
                     });
                     r.cell(|ui| {
                         ui.label("Aspect to match");
@@ -588,10 +654,22 @@ impl<'a> RulesTable<'a> {
                 })
                 .body(ROW_HEIGHT, |t| {
                     let mut to_remove = Vec::new();
+                    // One clone per frame; see GroupRulesTable for the reasoning.
+                    let mut to_clone: Option<usize> = None;
                     for (id, rule) in self.rules.iter_mut().enumerate() {
                         let row_response = t.selectable_row(*self.selected_rule == Some(id), |r| {
                             r.cell(|ui| {
                                 ui.checkbox(&mut rule.enabled, "");
+                            });
+
+                            r.cell(|ui| {
+                                if ui
+                                    .button("🗐")
+                                    .on_hover_text("Clone this condition")
+                                    .clicked()
+                                {
+                                    to_clone = Some(id);
+                                }
                             });
 
                             r.cell(|ui| {
@@ -644,6 +722,12 @@ impl<'a> RulesTable<'a> {
                     to_remove.into_iter().rev().for_each(|i| {
                         self.rules.remove(i);
                     });
+
+                    if let Some(index) = to_clone.filter(|i| *i < self.rules.len()) {
+                        let clone = self.rules[index].clone();
+                        self.rules.push(clone);
+                        *self.selected_rule = Some(self.rules.len() - 1);
+                    }
                 });
         });
     }

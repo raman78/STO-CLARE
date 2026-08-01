@@ -331,10 +331,6 @@ impl DamageGroup {
             return;
         }
 
-        if self.damage_types.contains(&damage_type) {
-            return;
-        }
-
         if Some(damage_type) == shield_handle && !self.damage_types.is_empty() {
             return;
         }

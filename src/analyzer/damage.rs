@@ -193,9 +193,9 @@ impl DamageMetrics {
         self.accuracy_percentage = percentage_u64(self.misses, self.hits.hull).map(|m| 100.0 - m);
 
         self.damage_resistance_percentage = damage_resistance_percentage(
-            &self.total_damage,
+            self.total_damage.hull,
+            self.total_damage_prevented_to_hull_by_shields,
             self.total_base_damage,
-            self.total_shield_drain,
         );
     }
 
@@ -218,24 +218,123 @@ impl DamageMetrics {
     }
 }
 
+/// The target's **hull** damage resistance, as a percentage.
+///
+/// Formula from the community reference (r/stobuilds wiki `math/log_reading`):
+///
+/// ```text
+/// resistance = 1 - (damage prevented to hull + damage to hull) / base damage of shot
+/// ```
+///
+/// The two halves of the numerator are what the log gives per shot: the hull
+/// line carries the damage that landed plus the shot's base damage, and the
+/// shield line carries how much the shield stopped from reaching the hull.
+/// Together they are what the hull would have taken with no shields, so against
+/// the base damage they isolate the hull's own mitigation.
+///
+/// Negative values are normal and mean the target was debuffed (or hit with
+/// armor penetration) past zero resistance.
+///
+/// Deliberately **not** in the numerator:
+/// - *damage dealt to shields* — shields mitigate through shield hardness, a
+///   separate stat with its own formula and its own 75% cap, so folding it in
+///   mixes two unrelated mechanics. This is what the figure used to do, which
+///   understated resistance (measured on a real log: -35.9% instead of -56.6%).
+/// - *shield drains* — resisted by DrainX, a third channel again, and their
+///   records carry neither a hull component nor a base damage, so they cannot
+///   enter either side of the fraction. No correction term is needed for them.
 pub fn damage_resistance_percentage(
-    total_damage: &ShieldHullValues,
+    total_hull_damage: f64,
+    total_damage_prevented_to_hull_by_shields: f64,
     total_base_damage: f64,
-    total_shield_drain: f64,
 ) -> Option<f64> {
     if total_base_damage == 0.0 {
         return None;
     }
 
-    let total_damage_without_drain = total_damage.all - total_shield_drain;
+    let damage_the_hull_would_have_taken =
+        total_hull_damage + total_damage_prevented_to_hull_by_shields;
 
-    let res = 1.0 - total_damage_without_drain / total_base_damage;
+    let res = 1.0 - damage_the_hull_would_have_taken / total_base_damage;
     Some(res * 100.0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_close(actual: Option<f64>, expected: f64) {
+        let actual = actual.expect("a resistance value");
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    /// Resistance is the *hull's* mitigation: what reached the hull plus what
+    /// the shields kept off it, against the shot's base damage. The damage
+    /// dealt to the shields themselves is a different mechanic (shield
+    /// hardness) and must not enter the figure.
+    #[test]
+    fn resistance_counts_hull_damage_plus_what_shields_prevented() {
+        // One shot: base 1000, the shield stopped 600 of it and took 900 doing
+        // so, 200 landed on the hull. 1 - (200 + 600) / 1000 = 20%.
+        let hits = [
+            BaseHit::shield(900.0, ValueFlags::NONE, 600.0).to_hit(0),
+            BaseHit::hull(200.0, ValueFlags::NONE, 1000.0).to_hit(0),
+        ];
+        let mut metrics = DamageMetrics::default();
+        metrics.calc_and_apply_delta(&hits);
+
+        assert_close(metrics.damage_resistance_percentage, 20.0);
+        // The 900 dealt to the shields is deliberately absent: counting it (as
+        // the figure used to) would have given 1 - 1100/1000 = -10%.
+    }
+
+    /// A shield drain is resisted by DrainX, a third channel again, and its
+    /// record carries neither a hull component nor a base damage — so it can
+    /// move neither side of the fraction.
+    #[test]
+    fn a_shield_drain_leaves_the_resistance_alone() {
+        let shot = [
+            BaseHit::shield(900.0, ValueFlags::NONE, 600.0).to_hit(0),
+            BaseHit::hull(200.0, ValueFlags::NONE, 1000.0).to_hit(0),
+        ];
+        let mut without_drain = DamageMetrics::default();
+        without_drain.calc_and_apply_delta(&shot);
+
+        let mut with_drain = DamageMetrics::default();
+        with_drain.calc_and_apply_delta(&shot);
+        with_drain.calc_and_apply_delta(&[BaseHit::shield_drain(5000.0, ValueFlags::NONE).to_hit(0)]);
+
+        assert_eq!(
+            without_drain.damage_resistance_percentage, with_drain.damage_resistance_percentage,
+            "a drain must not change the hull resistance"
+        );
+        // It is still counted as damage everywhere else.
+        assert_eq!(5000.0, with_drain.total_shield_drain);
+        assert_eq!(
+            without_drain.total_damage.shield + 5000.0,
+            with_drain.total_damage.shield
+        );
+    }
+
+    /// With no shields in play the formula reduces to hull damage over base.
+    #[test]
+    fn resistance_without_shields_is_hull_damage_over_base() {
+        let mut metrics = DamageMetrics::default();
+        metrics.calc_and_apply_delta(&[BaseHit::hull(750.0, ValueFlags::NONE, 1000.0).to_hit(0)]);
+        assert_close(metrics.damage_resistance_percentage, 25.0);
+    }
+
+    /// A debuffed target takes more than the base damage, so the figure goes
+    /// negative. That is a normal reading, not an error.
+    #[test]
+    fn a_debuffed_target_reads_negative() {
+        let mut metrics = DamageMetrics::default();
+        metrics.calc_and_apply_delta(&[BaseHit::hull(1200.0, ValueFlags::NONE, 1000.0).to_hit(0)]);
+        assert_close(metrics.damage_resistance_percentage, -20.0);
+    }
 
     /// A critical hit on shields must not be counted as a hull crit: `crits`
     /// stays hull-only, so `hits.hull - crits` cannot underflow (regression test

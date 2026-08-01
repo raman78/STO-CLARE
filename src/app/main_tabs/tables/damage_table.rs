@@ -1,7 +1,7 @@
 use crate::{
     analyzer::*,
     app::{main_tabs::common::*, settings::Settings},
-    col,
+    col, shield_hull_col,
     custom_widgets::table::*,
     helpers::number_formatting::NumberFormatter,
 };
@@ -9,27 +9,25 @@ use crate::{
 use super::{common::Kills, metrics_table::*};
 
 static COLUMNS: &[ColumnDescriptor<DamageTablePartData>] = &[
-    col!(
+    shield_hull_col!(
         "DPS",
         "Damage Per Second\nCalculated from the first damage of the player to the last damage in the log",
         |t| t.sort_by_option_f64_desc(|p| p.dps.all.value),
-        |t, r| t.dps.show(r),
+        dps,
     ),
-    col!(
+    shield_hull_col!(
         "Total Damage",
         |t| t.sort_by_option_f64_desc(|p| p.total_damage.all.value),
-        |t, r| t.total_damage.show(r),
+        total_damage,
     ),
-    col!(
+    shield_hull_col!(
         "Damage %",
         |t| t.sort_by_option_f64_desc(|p| p.damage_percentage.all.value),
-        |t, r| {
-            t.damage_percentage.show(r);
-        },
+        damage_percentage,
     ),
     col!(
         "Resistance %",
-        "Damage Resistance % excluding any drain damage",
+        "The target's hull damage resistance.\nWorked out from the damage that reached the hull plus the damage its shields kept off the hull, against the shot's base damage.\nDamage dealt to the shields themselves is not part of it — shields mitigate through shield hardness, a separate stat — and neither are drains, which are resisted by DrainX.\nNegative means the target was debuffed past zero resistance.",
         |t| t.sort_by_option_f64_asc(|p| p.damage_resistance_percentage.value),
         |t, r| {
             t.damage_resistance_percentage.show(r);
@@ -40,10 +38,10 @@ static COLUMNS: &[ColumnDescriptor<DamageTablePartData>] = &[
         |t| t.sort_by_option_f64_desc(|p| p.max_one_hit.damage.value),
         |t, r| t.max_one_hit.show(r),
     ),
-    col!(
+    shield_hull_col!(
         "Average Hit",
         |t| t.sort_by_option_f64_desc(|p| p.average_hit.all.value),
-        |t, r| t.average_hit.show(r),
+        average_hit,
     ),
     col!(
         "Critical %",
@@ -59,28 +57,22 @@ static COLUMNS: &[ColumnDescriptor<DamageTablePartData>] = &[
             t.flanking.show(r);
         },
     ),
-    col!(
+    shield_hull_col!(
         "Hits",
-        "Every damage number that shows up, counts as one hit.\nThis means for an attack, that hits the shields of an enemy, 2 Hits will be counted. One for the shield Hit and one for the hull Hit.",
+        "Every damage number that shows up, counts as one hit.\nThis means for an attack, that hits the shields of an enemy, 2 Hits will be counted. One for the shield Hit and one for the hull Hit.\nThe Hull and Shield columns show how that split falls.",
         |t| t.sort_by_desc(|p| p.hits.all.count),
-        |t, r| {
-            t.hits.show(r);
-        },
+        hits,
     ),
-    col!(
+    shield_hull_col!(
         "Hits / s",
         "Hits Per Second\nCalculated from the first damage of the player to the last damage in the log",
         |t| t.sort_by_option_f64_desc(|p| p.hits_per_second.all.value),
-        |t, r| {
-            t.hits_per_second.show(r);
-        },
+        hits_per_second,
     ),
-    col!(
+    shield_hull_col!(
         "Hits %",
         |t| t.sort_by_option_f64_desc(|p| p.hits_percentage.all.value),
-        |t, r| {
-            t.hits_percentage.show(r);
-        },
+        hits_percentage,
     ),
     col!("Misses", |t| t.sort_by_asc(|p| p.misses.count), |t, r| {
         t.misses.show(r);
@@ -112,6 +104,14 @@ static COLUMNS: &[ColumnDescriptor<DamageTablePartData>] = &[
         |t| t.sort_by_option_f64_desc(|p| p.base_dps.value),
         |t, r| {
             t.base_dps.show(r);
+        },
+    ),
+    col!(
+        "Drain",
+        "Shield drain: damage that removes shields directly rather than through an attack.\nIt is part of Total Damage, and of the Shield column, but it is mitigated by neither shield hardness nor hull resistance — drains are resisted by DrainX — so it stays out of Resistance %.",
+        |t| t.sort_by_option_f64_desc(|p| p.total_shield_drain.value),
+        |t, r| {
+            t.total_shield_drain.show(r);
         },
     ),
     col!(
@@ -165,6 +165,7 @@ pub struct DamageTablePartData {
     damage_resistance_percentage: TextValue,
     base_damage: TextValue,
     base_dps: TextValue,
+    total_shield_drain: TextValue,
     hits: ShieldAndHullTextCount,
     hits_per_second: ShieldAndHullTextValue,
     hits_percentage: ShieldAndHullTextValue,
@@ -176,6 +177,9 @@ pub struct DamageTablePartData {
     total_non_crit_hull_damage: TextValue,
     average_crit_hit: TextValue,
     average_non_crit_hull_hit: TextValue,
+    /// Whether a hovered value should list its hull and shield halves. Only
+    /// when they have no columns of their own; see `shield_hull_col!`.
+    halves_in_tooltip: bool,
     pub source_hits: Vec<Hit>,
 }
 
@@ -269,6 +273,11 @@ impl DamageTablePartData {
                 if more_decimals { 2 } else { 0 },
                 number_formatter,
             ),
+            total_shield_drain: TextValue::new(
+                source.total_shield_drain,
+                if more_decimals { 2 } else { 0 },
+                number_formatter,
+            ),
             kills: Kills::new(source, &combat.name_manager),
             damage_types: DamageTypes::new(source, &combat.name_manager),
             hits: ShieldAndHullTextCount::new(&source.damage_metrics.hits),
@@ -308,6 +317,7 @@ impl DamageTablePartData {
                 if more_decimals { 2 } else { 0 },
                 number_formatter,
             ),
+            halves_in_tooltip: !settings.general.split_shield_hull_columns,
             source_hits: source.hits.get(&combat.hits_manger).to_vec(),
         }
     }

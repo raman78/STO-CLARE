@@ -9,6 +9,9 @@ use crate::{
 
 pub const ROW_HEIGHT: f32 = 25.0;
 pub const HEADER_HEIGHT: f32 = 15.0;
+/// Header height when Hull/Shield have their own columns: the metric name sits
+/// on the first line, the All/Hull/Shield label on the second.
+pub const SPLIT_HEADER_HEIGHT: f32 = 32.0;
 
 #[derive(Default)]
 pub struct TextValue {
@@ -72,11 +75,37 @@ impl ShieldAndHullTextValue {
         }
     }
 
-    pub fn show(&self, row: &mut TableRow) {
-        let response = self.all.show(row);
-        if let Some(response) = response {
-            show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+    /// `halves_in_tooltip` is on only when the halves have no columns of their
+    /// own. With the columns showing, a tooltip would repeat what is already
+    /// next to it and cover those numbers while it is open.
+    pub fn show(&self, row: &mut TableRow, halves_in_tooltip: bool) {
+        if halves_in_tooltip {
+            let response = self.all.show(row);
+            if let Some(response) = response {
+                show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+            }
+            return;
         }
+        // With the halves beside it, the total is the one to find first, so it
+        // carries the weight and they stay plain.
+        match &self.all.text {
+            Some(text) => {
+                show_value_text_strong(row, text);
+            }
+            None => {
+                row.cell(|_| {});
+            }
+        }
+    }
+
+    /// The hull half as its own cell (split-columns mode).
+    pub fn show_hull(&self, row: &mut TableRow) {
+        show_value_text(row, &self.hull);
+    }
+
+    /// The shield half as its own cell (split-columns mode).
+    pub fn show_shield(&self, row: &mut TableRow) {
+        show_value_text(row, &self.shield);
     }
 }
 
@@ -138,10 +167,24 @@ impl ShieldAndHullTextCount {
         }
     }
 
-    pub fn show(&self, row: &mut TableRow) {
-        let response = self.all.show(row);
+    /// See [`ShieldAndHullTextValue::show`].
+    pub fn show(&self, row: &mut TableRow, halves_in_tooltip: bool) {
+        if halves_in_tooltip {
+            let response = self.all.show(row);
+            show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+            return;
+        }
+        show_value_text_strong(row, &self.all.text);
+    }
 
-        show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+    /// The hull half as its own cell (split-columns mode).
+    pub fn show_hull(&self, row: &mut TableRow) {
+        show_value_text(row, &self.hull);
+    }
+
+    /// The shield half as its own cell (split-columns mode).
+    pub fn show_shield(&self, row: &mut TableRow) {
+        show_value_text(row, &self.shield);
     }
 }
 
@@ -158,12 +201,22 @@ impl TextDuration {
     }
 }
 
+/// The total of a split metric, set apart from the Hull and Shield cells that
+/// follow it.
+fn show_value_text_strong(row: &mut TableRow, value_text: &str) -> Response {
+    row.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.label(RichText::new(value_text).strong());
+    })
+}
+
 fn show_value_text(row: &mut TableRow, value_text: &str) -> Response {
     row.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.label(value_text);
     })
 }
 
+/// A hover tooltip listing the shield and hull halves of a value. Used only
+/// when those halves have no columns of their own.
 pub fn show_shield_hull_values_tool_tip(response: Response, shield_value: &str, hull_value: &str) {
     details_tooltip(response, |ui| {
         Table::new(ui).body(ROW_HEIGHT, |t| {

@@ -3,6 +3,62 @@
 How the analyzer figures out **which STO map** a combat is and **at what
 difficulty** (Advanced / Elite / …), independent of the combat's display name.
 
+## Archived hand-written name rules
+
+`legacy_combat_name_rules.json` holds the 41 Combat Name Rules Raman built by
+hand before detection existed, exported from his live settings on 2026-07-30 and
+kept purely as a safety net — they are not loaded by anything.
+
+Detection has been replacing them one map at a time, and the export records how
+far that got: **37 of the 41 are already switched off**, leaving four still doing
+work — Breach, Brotherhood of the Sword, Iuppiter Iratus and Peril Over Pahvo.
+Those four are exactly the maps still missing an anchor, so the file doubles as a
+to-do list: each still-enabled rule names a map worth adding, and its match
+expression is a hint at what to anchor on (though rules match *display* names,
+which the detection cannot use — it keys on unique names).
+
+To restore any of them, paste the entry back into the `analysis.combat_name_rules`
+array of the settings file. Note the format is the app's own settings schema, not
+`detection_rules.json`.
+
+## What the combat log does *not* contain (verified 2026-07-30)
+
+Checked against a real 765,692-line log, because "the log has no map marker" is
+the premise everything here rests on:
+
+- **Every single line has the same 12-field shape.** No header lines, no
+  differently-shaped records, nothing to mark a map load, a combat start, or a
+  combat end.
+- The type field only ever holds damage kinds (`Shield`, `Phaser`, `Kinetic`,
+  `HitPoints`, …) — there are no system events.
+- Not one occurrence of "map", "instance" or "loading". The only hits for "Zone"
+  are `Gravimetric Detonation Zone`, a player kit power.
+
+So there is **no map name and no map id anywhere in the log**, which is why
+entity anchors are the only route to a map name — and why OSCR does the same.
+
+### A map-boundary signal does exist, in another file
+
+`CLIENTSERVERCOMM.log`, written by the game next to `combatlog.log`, logs server
+transfers — i.e. actual map changes — with timestamps **in UTC**. Against the
+2026-07-30 combats these line up closely:
+
+| combat (combatlog, local time) | transfer logged |
+|---|---|
+| Into the Hive ends 12:10:02 | 12:10:22 |
+| Undine Assault 12:17:00–12:23:07 | 12:15:56 (in), **12:23:08** (out) |
+| Undine Infiltration ends 12:46:47 | 12:46:52 |
+
+It carries **no map names** — only "disconnected from our gameserver for
+transfer" — so it cannot help identify a map. What it could give is exact combat
+*boundaries*, replacing the `combat_separation_time_seconds` heuristic. That
+heuristic has a known failure: at 90 s a Defense of Starbase One run merged with
+a Rescue and Search run into one combat, which briefly made the Normal HP bands
+look like they overlapped (see `DETECTION_SAMPLES.md`).
+
+Not implemented. It would add a dependency on a second file whose presence and
+format we do not control (unverified on Windows), plus timezone conversion.
+
 ## Why this exists
 
 STO combat logs carry no explicit map or difficulty marker. Two separate
@@ -52,6 +108,7 @@ AnalysisHandler::latest_info() ─▶ AnalysisInfo::Refreshed { difficulties, ..
    ─▶ App.combat_difficulties ─▶ CompareView difficulty filter
 
 Combat::name() ─▶ base = user rules ? join names : detected_map ?? "Combat"
+                  append_detected_combat_type(base, detected_combat_type) ─▶ "... (Ground)"
                   append_detected_difficulty(base, detected_difficulty) ─▶ "... [Elite]"
 ```
 
@@ -79,8 +136,6 @@ curated maps read-only below the user rules and flags overlaps two ways:
   `SourceOrTargetName` (display name, e.g. "U.S.S. Birmingham") can only ever be
   flagged by the name check — the rules file carries no display names to compare
   against.
-- **Per-combat**: when the selected combat is auto-detected but a rule renamed it.
-
 The curated rules are never copied into the user's settings — they are rendered
 from `detection::curated_map_names()` / `curated_map_identifiers()` — so refreshing
 them is a JSON swap that leaves user rules untouched.
@@ -148,6 +203,22 @@ The two branches above answer different questions, and conflating them was a bug
 An entity that is present but never damaged therefore has an empty
 `hull_damage_per_instance`, so `median_hull_damage()` returns `0.0` and it matches
 no tier threshold. Presence is widened; tier resolution is unchanged.
+
+### Environment in the name (`combat_type`)
+
+Every catalogued map carries a curated `combat_type` — "Space" (156), "Ground"
+(44) or "Shuttle" (3) — taken from the STO wiki. The log states no such thing, so
+this is metadata, not detection. It rides along in `Detected::combat_type` and is
+appended in parentheses: `[TFO] Into the Hive (Ground) [Advanced]`.
+
+It is **not** folded into `MapDef::display_name`, even though that would be
+shorter. That string is what the settings editor matches user naming rules
+against (`overlapping_maps`), so appending an environment there would stop a rule
+named after the map from being recognized as overlapping it.
+
+`append_detected_combat_type` skips the suffix when the base name already
+mentions the environment, so a user rule called "Bug Hunt Ground" does not become
+"Bug Hunt Ground (Ground)".
 
 ## The rules (`detection_rules.json`)
 

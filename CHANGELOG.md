@@ -1,5 +1,46 @@
 # Change Log
 
+## v1.8.0
+
+### Major Changes
+- the Compare view can break down each DPS difference into where it came from: the share that came from firing more often and the share that came from each hit landing harder. The two always add up to the whole difference, so a build that trades rate for hit size — or the other way round — stops looking like it changed nothing. Switched on in the Columns menu, alongside the other columns. Hovering either share shows both and their sum, because when the two point opposite ways each on its own can be far larger than the difference they add up to
+- healing is now split into three tabs that no longer overlap: Healing Ally (what you healed on others), Healing Received (what others healed on you) and Self Healing (what you healed on yourself, including your own trait and gear procs). Anything you healed on yourself used to be counted in both of the old healing tabs at once, which on a typical run meant a single shield proc accounted for almost all of the healing shown in both — hiding what your team actually did for you and what you did for them
+
+### Fixes
+- the combats dropdown shows about fifteen entries again instead of three. Combat names grew when the map's environment and level were added to them, so they wrapped onto two or three lines each inside a list that was too narrow, and only a few of those blocks fitted
+- comparing combats now opens on the same player in each of them. Each combat used to be opened on its own highest-DPS player, and in a team that is rarely the same person, so the differences compared one player against another instead of one player's runs — which read as random. Changing the player on the reference combat moves the others to the same player too. If a combat did not include that player it keeps its own top one, and a warning above the table says the numbers are from different people
+- charts now cover the whole fight. Every line used to start at its own first event and stop at its last, so a healing chart began only at the first heal and several lines on one chart did not line up; bars were also offset by a fraction of a slice and preceded by a run of empty ones
+- attacks on an enemy's shields are no longer counted as healing. Some abilities — `Chain Conduit Capacitor` and plain beam arrays among them — write their shield hit in a form the game also uses for shield repairs, so they showed up as if you had been healing the enemies you were shooting. On a typical run over half of what the healing tab listed as done to others was really damage
+- the Resistance % column and chart now show what they claim to: the target's hull resistance. They used to mix in the damage dealt to the target's shields, which is stopped by a different stat entirely (shield hardness), so the figure came out far too favourable — on a typical run it read -36% where the real value was around -56%. Shield drains are left out as well, since those are resisted by yet another stat
+- the Upload button now always says what happened: it used to do nothing at all, without any message, when the combat could not be read back from the log file, and an upload that produced no ladder entries showed an empty window
+- uploads are now written to the log file (when logging is enabled in the settings), including the reason the server gave for rejecting one
+
+### Other Changes
+- hovering a damage or healing value no longer pops up a box repeating its hull and shield halves while those have columns of their own — the box covered the numbers next to it. Turn the columns off and the hover box comes back, since it is then the only way to see the split
+- the healing tabs group correctly when a heal came through a pet or a console: picking "Ability first" used to put the pet on top instead, so a team mate healed by your hangar pet appeared under the pet's name rather than the ability's
+- Self Healing no longer repeats your own name as a level of the tree — there is nobody else involved, so the abilities sit directly under you, and the switch above the table offers "Source" (the console, trait or proc it came from) instead of "Person"
+- the healing charts have Hull and Shield switches above them, both on by default, so healing can be looked at as one total or split into what restored hull and what restored shields
+- the "Healing Done" tab is now called "Healing Ally", which says what it holds without having to read the tooltip
+- the outgoing damage table has a Drain column: damage that strips shields directly rather than through an attack, which no stat that applies to the rest mitigates
+- the Compare table is easier to read across: a rule separates each metric's group of columns, the combat numbers are written "#1 (ref)", "#2" and so on to match the legend above, and every header explains what its column holds. A line above the table says what the small coloured number beside each value is
+- the Compare view now filters exactly like the main window: the same three pickers for type, level and map, narrowing each other the same way, with the search box above them. The level is a dropdown there too rather than a row of buttons, and it offers Normal and Unknown as well. The map filter uses the combat's own name instead of picking it back out of the displayed label, so a naming rule whose name contains brackets is no longer cut in half
+- the total of a split metric is now bold, so it stands out from the Hull and Shield columns beside it
+- the hull and shield halves of a value now have their own columns instead of only showing when you hover: damage, hits, healing and heal ticks all show how much went into hull and how much into shields, for every ability. It can be turned off again under Settings → General
+- the healing tabs can now be grouped either way round, with a switch above the table: by person first (who healed you, then with what) or by ability first (what was used, then on whom)
+- the damage tabs are now called "Damage Dealt" and "Damage Taken" instead of "Outgoing" and "Incoming", and the summary uses the same wording
+- new installs now split combats on a 60 second gap instead of 90, matching the value the OSCR server uses when it reads an uploaded log (existing settings are left alone)
+- ground Task Force Operations now show their difficulty too, including Normal — previously only space maps did
+- rules can now be duplicated with the 🗐 button next to the bin, in both the rule lists and their conditions — the copy appears right below the original and is selected, ready to be renamed
+- the list of auto-detected maps grows with the window as well, sharing the height with the naming rules above it: each may take up to half, and whichever needs less gives the rest to the other
+- the rule tables in the Analysis settings now grow with the window: making it taller shows more rules instead of leaving empty space below them
+- the Analysis settings are now split into sub-tabs (Combat Names, Source Reversal, Custom Grouping, Damage Exclusion) instead of four sections stacked one under another, so each rule table gets the window's full height and shows about twice as many rows
+- combats now show whether the map is a space or a ground map, in parentheses after the name (e.g. "[TFO] Into the Hive (Ground)")
+- the Task Force Operations "Into the Hive", "Undine Assault" and "Undine Infiltration" are now recognized automatically
+- combats in which nobody dealt any damage are no longer listed — standing around on a social map writes fall damage and self-buffs, and each burst of those used to show up as its own empty combat
+- the Task Force Operations "Pahvo Dissension", "Khitomer in Stasis", "Battle of Korfez", "Peril Over Pahvo", "Brotherhood of the Sword", "Breach", "Iuppiter Iratus" and "Devil's Heart" are now recognized automatically
+- "Peril Over Pahvo" is no longer reported as the patrol "Rescue and Search" — both send the same Mokai ships, so each is now recognized by its own mission objects instead, the last one always shown as Elite since that is the only level it offers
+- "Battle at the Binary Stars" now shows its level (Normal, the only one it offers), and its name is spelled the way the wiki does
+
 ## v1.7.0
 
 ### Major Changes

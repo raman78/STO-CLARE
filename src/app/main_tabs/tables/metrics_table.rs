@@ -19,6 +19,7 @@ macro_rules! col {
             name_info: None,
             sort: $sort,
             show: $show,
+            parts: &[],
         }
     };
 
@@ -28,12 +29,63 @@ macro_rules! col {
             name_info: Some($name_info),
             sort: $sort,
             show: $show,
+            parts: &[],
         }
+    };
+}
+
+/// A column whose value splits into a shield and a hull half, e.g. `Total
+/// Damage` or `Hits`. Renders as a single "all" column with the halves in a
+/// tooltip, or — when the split-columns setting is on — as `all | Hull |
+/// Shield` under one header. `$field` must be a `ShieldAndHullTextValue` or
+/// `ShieldAndHullTextCount` on the row data, which must also carry a
+/// `halves_in_tooltip` flag (the row data is built per settings, so the flag
+/// rides along with the formatting).
+#[macro_export]
+macro_rules! shield_hull_col {
+    ($name:expr, $sort:expr, $field:ident $(,)?) => {
+        ColumnDescriptor {
+            name: $name,
+            name_info: None,
+            sort: $sort,
+            show: |t, r| t.$field.show(r, t.halves_in_tooltip),
+            parts: $crate::shield_hull_parts!($field),
+        }
+    };
+
+    ($name:expr, $name_info:expr, $sort:expr, $field:ident $(,)?) => {
+        ColumnDescriptor {
+            name: $name,
+            name_info: Some($name_info),
+            sort: $sort,
+            show: |t, r| t.$field.show(r, t.halves_in_tooltip),
+            parts: $crate::shield_hull_parts!($field),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! shield_hull_parts {
+    ($field:ident) => {
+        &[
+            ColumnPart {
+                name: "Hull",
+                show: |t, r| t.$field.show_hull(r),
+            },
+            ColumnPart {
+                name: "Shield",
+                show: |t, r| t.$field.show_shield(r),
+            },
+        ]
     };
 }
 
 pub struct MetricsTable<T: 'static> {
     columns: &'static [ColumnDescriptor<T>],
+    /// Whether the Hull/Shield halves get their own columns (setting
+    /// `general.split_shield_hull_columns`). Baked in when the table is built,
+    /// like the other formatting settings.
+    split_shield_hull: bool,
     players: Vec<MetricsTablePart<T>>,
     selection: SelectionTracker,
 }
@@ -57,6 +109,16 @@ pub struct ColumnDescriptor<T: 'static> {
     pub name_info: Option<&'static str>,
     pub sort: fn(&mut MetricsTable<T>),
     pub show: fn(&mut MetricsTablePart<T>, &mut TableRow),
+    /// Extra cells appended after `show` when the split-columns setting is on
+    /// (the Hull and Shield halves). Empty for columns that have no such split.
+    pub parts: &'static [ColumnPart<T>],
+}
+
+/// One half of a split column.
+#[derive(Clone, Copy)]
+pub struct ColumnPart<T: 'static> {
+    pub name: &'static str,
+    pub show: fn(&mut MetricsTablePart<T>, &mut TableRow),
 }
 
 impl<T: 'static> MetricsTable<T> {
@@ -65,6 +127,7 @@ impl<T: 'static> MetricsTable<T> {
             players: Vec::new(),
             selection: Default::default(),
             columns,
+            split_shield_hull: false,
         }
     }
 
@@ -79,6 +142,7 @@ impl<T: 'static> MetricsTable<T> {
         let mut id_source = 0;
         let mut table = Self {
             columns,
+            split_shield_hull: settings.general.split_shield_hull_columns,
             players: combat
                 .players
                 .values()
@@ -102,16 +166,26 @@ impl<T: 'static> MetricsTable<T> {
 
     pub fn show(&mut self, ui: &mut Ui, mut on_selected: impl FnMut(TableSelectionEvent<T>)) {
         let modifiers = ui.input(|i| i.modifiers);
+        let split = self.split_shield_hull;
+        // Split columns need a second header line for the All/Hull/Shield labels.
+        let header_height = if split {
+            SPLIT_HEADER_HEIGHT
+        } else {
+            HEADER_HEIGHT
+        };
         ScrollArea::horizontal().show(ui, |ui| {
             Table::new(ui)
                 .cell_spacing(10.0)
-                .header(HEADER_HEIGHT, |mut r| {
+                .header(header_height, |mut r| {
                     r.cell(|ui| {
                         ui.label("Name");
                     });
 
-                    for column in self.columns.iter() {
-                        self.show_column_header(&mut r, column);
+                    for (index, column) in self.columns.iter().enumerate() {
+                        self.show_column_header(&mut r, column, split);
+                        if closes_group(self.columns, index, split) {
+                            show_group_separator(&mut r);
+                        }
                     }
                 })
                 .body(ROW_HEIGHT, |mut t| {
@@ -123,15 +197,39 @@ impl<T: 'static> MetricsTable<T> {
                             &mut self.selection,
                             &mut on_selected,
                             modifiers,
+                            split,
                         );
                     }
                 });
         });
     }
 
-    fn show_column_header(&mut self, row: &mut TableRow, column: &ColumnDescriptor<T>) {
+    fn show_column_header(&mut self, row: &mut TableRow, column: &ColumnDescriptor<T>, split: bool) {
+        // Unsplit: one cell holding the metric name. Split: a rule opens the
+        // group, the metric name sits above its first cell, and All/Hull/Shield
+        // label the second line. Without the rule, three same-looking numbers
+        // from neighbouring metrics run together. Every cell of the group sorts
+        // by the same (all-values) key.
+        if split && !column.parts.is_empty() {
+            show_group_separator(row);
+            self.show_header_cell(row, &format!("{}\n{}", column.name, "All"), column);
+            for part in column.parts.iter() {
+                self.show_header_cell(row, &format!("\n{}", part.name), column);
+            }
+            return;
+        }
+
+        let name = if split {
+            format!("{}\n", column.name)
+        } else {
+            column.name.to_string()
+        };
+        self.show_header_cell(row, &name, column);
+    }
+
+    fn show_header_cell(&mut self, row: &mut TableRow, text: &str, column: &ColumnDescriptor<T>) {
         let response = row.selectable_cell(false, |ui| {
-            ui.label(column.name);
+            ui.label(text);
         });
         if response.clicked() {
             (column.sort)(self);
@@ -204,6 +302,7 @@ impl<T> MetricsTablePart<T> {
         selection: &mut SelectionTracker,
         on_selected: &mut impl FnMut(TableSelectionEvent<T>),
         modifiers: Modifiers,
+        split: bool,
     ) {
         let response = table.selectable_row(selection.is_selected(self.id), |mut r| {
             r.cell(|ui| {
@@ -222,8 +321,19 @@ impl<T> MetricsTablePart<T> {
                 });
             });
 
-            for column in columns.iter() {
+            for (index, column) in columns.iter().enumerate() {
+                if split && !column.parts.is_empty() {
+                    show_group_separator(&mut r);
+                }
                 (column.show)(self, &mut r);
+                if split {
+                    for part in column.parts.iter() {
+                        (part.show)(self, &mut r);
+                    }
+                }
+                if closes_group(columns, index, split) {
+                    show_group_separator(&mut r);
+                }
             }
         });
 
@@ -263,6 +373,7 @@ impl<T> MetricsTablePart<T> {
                     selection,
                     on_selected,
                     modifiers,
+                    split,
                 );
             }
         }
@@ -279,6 +390,29 @@ impl<T> MetricsTablePart<T> {
 
         self.sub_parts.iter_mut().for_each(|p| p.sort_by_asc(key));
     }
+}
+
+/// Whether a closing rule belongs after the column at `index`: it ends a split
+/// group and what follows is not another one. Between two adjacent groups the
+/// next group's opening rule already separates them, so only the last of a run
+/// is closed.
+pub fn closes_group<T>(columns: &[ColumnDescriptor<T>], index: usize, split: bool) -> bool {
+    if !split || columns[index].parts.is_empty() {
+        return false;
+    }
+    columns
+        .get(index + 1)
+        .map(|next| next.parts.is_empty())
+        .unwrap_or(true)
+}
+
+/// A narrow cell holding a vertical rule, drawn where a split column group
+/// starts so the All/Hull/Shield triples do not read as one run of numbers.
+/// Used in the header and in every body row, so the rule is continuous.
+pub fn show_group_separator(row: &mut TableRow) {
+    row.cell(|ui| {
+        ui.add(Separator::default().vertical().spacing(0.0));
+    });
 }
 
 #[derive(Default)]

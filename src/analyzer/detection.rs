@@ -53,10 +53,18 @@ impl Difficulty {
     }
 }
 
-/// Difficulties tried during the death-count phase, ordered low to high. A
-/// higher tier that also matches overrides a lower one (mirrors OSCR, where the
-/// tables are ordered so Elite is checked after Advanced).
-const DIFFICULTY_ORDER: [Difficulty; 2] = [Difficulty::Advanced, Difficulty::Elite];
+/// Difficulties tried during the death-count and hull phases, ordered low to
+/// high. A higher tier that also matches overrides a lower one (mirrors OSCR,
+/// where the tables are ordered so Elite is checked after Advanced).
+///
+/// `Normal` is included so a map whose queue offers Normal and Advanced but no
+/// Elite — Khitomer in Stasis, for one — can carry per-map bands for it. Maps
+/// without a Normal table are unaffected: the lookup simply finds nothing.
+const DIFFICULTY_ORDER: [Difficulty; 3] = [
+    Difficulty::Normal,
+    Difficulty::Advanced,
+    Difficulty::Elite,
+];
 
 /// Per-NPC facts gathered from a combat, keyed elsewhere by the entity's
 /// internal unique name. Enough to run OSCR's detection.
@@ -98,9 +106,13 @@ struct MapDef {
     #[serde(default)]
     category: Option<String>,
     /// Combat environment ("Space" / "Ground" / "Shuttle"), from the STO wiki.
-    /// Curated reference only; not shown in the name.
+    /// Curated metadata — the log itself carries no such marker. Shown in
+    /// parentheses on the combat's name (e.g. `[TFO] Into the Hive (Ground)`).
+    ///
+    /// Kept out of `display_name` on purpose: that string is also what the
+    /// settings editor matches naming rules against, and appending the
+    /// environment there would stop a rule named after the map from matching it.
     #[serde(default)]
-    #[allow(dead_code)]
     combat_type: Option<String>,
     /// A difficulty the map pins outright (e.g. Winter Invasion ⇒ Normal); `Any`
     /// when the tier is resolved from the tables below (or cannot be resolved).
@@ -294,6 +306,8 @@ pub struct Detected {
     pub map: Option<String>,
     /// The resolved difficulty, or `None` when the map is unknown.
     pub difficulty: Option<Difficulty>,
+    /// The map's environment ("Space" / "Ground" / "Shuttle"), when curated.
+    pub combat_type: Option<String>,
 }
 
 lazy_static! {
@@ -377,6 +391,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
                 return Detected {
                     map: Some(def.display_name(name)),
                     difficulty: Some(def.difficulty),
+                    combat_type: def.combat_type.clone(),
                 };
             }
         }
@@ -416,6 +431,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
         return Detected {
             map: Some(def.display_name(name)),
             difficulty: Some(global.unwrap_or(Difficulty::Any)),
+            combat_type: def.combat_type.clone(),
         };
     }
 
@@ -459,6 +475,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     Detected {
         map: Some(def.display_name(name)),
         difficulty,
+        combat_type: def.combat_type.clone(),
     }
 }
 
@@ -468,7 +485,9 @@ fn hull_any_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &Crit
     table.iter().any(|(unique_name, threshold)| {
         critters
             .get(unique_name.as_str())
-            .is_some_and(|meta| threshold * (1.0 - HULL_VARIANCE) < meta.median_hull_damage())
+            .is_some_and(|meta| {
+                meta.deaths > 0 && threshold * (1.0 - HULL_VARIANCE) < meta.median_hull_damage()
+            })
     })
 }
 
@@ -480,7 +499,7 @@ fn hull_damage_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &C
             None => return false,
             Some(meta) => {
                 let low = threshold * (1.0 - HULL_VARIANCE);
-                if !(low < meta.median_hull_damage()) {
+                if meta.deaths == 0 || !(low < meta.median_hull_damage()) {
                     return false;
                 }
             }
@@ -538,16 +557,9 @@ mod tests {
     }
 
     /// Build a critter with a single instance carrying the given hull damage.
-    /// Note `deaths` stays 0, so the global ship-class tier ignores it — these
-    /// exercise the per-map tables only.
+    /// It died: a median hull figure only means the entity's HP for entities that
+    /// did, so every table — per-map and global alike — ignores the others.
     fn hull_critter(name: &'static str, hull_damage: f64) -> (&'static str, CritterMeta) {
-        let mut meta = CritterMeta::default();
-        meta.hull_damage_per_instance.insert(0, hull_damage);
-        (name, meta)
-    }
-
-    /// Like `hull_critter` but the entity died, so it votes in the global tier.
-    fn dead_hull_critter(name: &'static str, hull_damage: f64) -> (&'static str, CritterMeta) {
         let mut meta = CritterMeta::default();
         meta.hull_damage_per_instance.insert(0, hull_damage);
         meta.deaths = 1;
@@ -651,8 +663,11 @@ mod tests {
     #[test]
     fn rescue_and_search_tier_by_hull_damage() {
         // A patrol with no fixed death counts: only the median hull damage of
-        // the Mokai ships (~4x higher on Elite) tells the tiers apart.
+        // the Mokai ships (~4x higher on Elite) tells the tiers apart. The map
+        // itself is identified by the rescued Lukari ships — the Mokai are
+        // shared with Peril Over Pahvo and cannot identify anything.
         let advanced = vec![
+            hull_critter("Msn_Space_Lukari_Science_Vessel", 0.0),
             hull_critter("Space_Klingon_Cruiser_Dsc_Mokai", 363_000.0),
             hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 338_000.0),
         ];
@@ -661,11 +676,39 @@ mod tests {
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
 
         let elite = vec![
+            hull_critter("Msn_Space_Lukari_Science_Vessel", 0.0),
             hull_critter("Space_Klingon_Cruiser_Dsc_Mokai", 1_492_000.0),
             hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 1_540_000.0),
         ];
         let result = detect(&bundled_rules(), &view(&elite));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    /// Peril Over Pahvo fields the same Mokai ships as Rescue and Search, so
+    /// neither can be identified by them. Each keys on its own mission objects:
+    /// the rescued Lukari ships, and the Pahvo defence satellites.
+    #[test]
+    fn pahvo_and_rescue_are_told_apart_by_their_mission_objects() {
+        let rules = bundled_rules();
+        let shared = "Space_Klingon_Cruiser_Dsc_Mokai";
+
+        let pahvo = vec![
+            hull_critter("Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite", 0.0),
+            hull_critter(shared, 376_972.0),
+            hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 472_023.0),
+        ];
+        let result = detect(&rules, &view(&pahvo));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Peril Over Pahvo"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let rescue = vec![
+            hull_critter("Msn_Space_Lukari_Science_Vessel", 0.0),
+            hull_critter(shared, 363_000.0),
+            hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 338_000.0),
+        ];
+        let result = detect(&rules, &view(&rescue));
+        assert_eq!(result.map.as_deref(), Some("[Patrol] Rescue and Search"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
     }
 
     #[test]
@@ -742,16 +785,16 @@ mod tests {
     #[test]
     fn global_tier_resolves_a_map_without_its_own_tables() {
         let advanced = vec![
-            dead_hull_critter("Space_Tholian_Cruiser_Web", 355_249.0),
-            dead_hull_critter("Space_Tholian_Battleship", 652_603.0),
+            hull_critter("Space_Tholian_Cruiser_Web", 355_249.0),
+            hull_critter("Space_Tholian_Battleship", 652_603.0),
         ];
         let result = detect(&bundled_rules(), &view(&advanced));
         assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
 
         let elite = vec![
-            dead_hull_critter("Space_Tholian_Cruiser_Web", 1_700_205.0),
-            dead_hull_critter("Space_Tholian_Battleship", 2_888_013.0),
+            hull_critter("Space_Tholian_Cruiser_Web", 1_700_205.0),
+            hull_critter("Space_Tholian_Battleship", 2_888_013.0),
         ];
         let result = detect(&bundled_rules(), &view(&elite));
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
@@ -768,8 +811,8 @@ mod tests {
             "Space_Federation_Frigate_Nakuhl_Red_Alert",
         ] {
             let owned = vec![
-                dead_hull_critter(anchor, 8_464.0),
-                dead_hull_critter("Space_Nakuhl_Battleship", 224_627.0),
+                hull_critter(anchor, 8_464.0),
+                hull_critter("Space_Nakuhl_Battleship", 224_627.0),
             ];
             let result = detect(&rules, &view(&owned));
             assert_eq!(
@@ -791,18 +834,18 @@ mod tests {
     fn elachi_maps_are_told_apart_by_the_mission_prefix() {
         let rules = bundled_rules();
         let red_alert = vec![
-            dead_hull_critter("Mission_Space_Elachi_Frigate", 62_531.0),
-            dead_hull_critter("Space_Elachi_Battleship_V1", 217_336.0),
-            dead_hull_critter("Space_Elachi_Escort", 211_767.0),
+            hull_critter("Mission_Space_Elachi_Frigate", 62_531.0),
+            hull_critter("Space_Elachi_Battleship_V1", 217_336.0),
+            hull_critter("Space_Elachi_Escort", 211_767.0),
         ];
         let result = detect(&rules, &view(&red_alert));
         assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Elachi"));
         assert_eq!(result.difficulty, Some(Difficulty::Normal));
 
         let terrh = vec![
-            dead_hull_critter("Space_Elachi_Frigate", 111_565.0),
-            dead_hull_critter("Space_Elachi_Battleship_V1", 606_172.0),
-            dead_hull_critter("Space_Elachi_Escort", 486_256.0),
+            hull_critter("Space_Elachi_Frigate", 111_565.0),
+            hull_critter("Space_Elachi_Battleship_V1", 606_172.0),
+            hull_critter("Space_Elachi_Escort", 486_256.0),
         ];
         let result = detect(&rules, &view(&terrh));
         assert_eq!(result.map.as_deref(), Some("[Patrol] Trouble Over Terrh"));
@@ -821,18 +864,18 @@ mod tests {
         let shared = "Mission_Event_Tzenkethi_Red_Alert_Tzenkethi_Dreadnought";
 
         let red_alert = vec![
-            dead_hull_critter(shared, 1_052_092.0),
-            dead_hull_critter("Msn_Event_Tzenkethi_Alert_System_Satellite", 0.0),
-            dead_hull_critter("Space_Tzenkethi_Cruiser_Var1", 109_986.0),
+            hull_critter(shared, 1_052_092.0),
+            hull_critter("Msn_Event_Tzenkethi_Alert_System_Satellite", 0.0),
+            hull_critter("Space_Tzenkethi_Cruiser_Var1", 109_986.0),
         ];
         let result = detect(&rules, &view(&red_alert));
         assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Tzenkethi"));
         assert_eq!(result.difficulty, Some(Difficulty::Normal));
 
         let front = vec![
-            dead_hull_critter(shared, 1_682_031.0),
-            dead_hull_critter("Msn_Tzk_Tzenkethi_Assault_Ball", 0.0),
-            dead_hull_critter("Space_Tzenkethi_Cruiser_Var1", 227_332.0),
+            hull_critter(shared, 1_682_031.0),
+            hull_critter("Msn_Tzk_Tzenkethi_Assault_Ball", 0.0),
+            hull_critter("Space_Tzenkethi_Cruiser_Var1", 227_332.0),
         ];
         let result = detect(&rules, &view(&front));
         assert_eq!(result.map.as_deref(), Some("[TFO] Tzenkethi Front"));
@@ -846,16 +889,16 @@ mod tests {
     fn red_alert_borg_is_recognized_without_its_boss() {
         let rules = bundled_rules();
         let with_boss = vec![
-            dead_hull_critter("Mission_Space_Borg_Battleship_7_Of_10", 3_107_477.0),
-            dead_hull_critter("Space_Borg_Battleship_Dse", 211_201.0),
+            hull_critter("Mission_Space_Borg_Battleship_7_Of_10", 3_107_477.0),
+            hull_critter("Space_Borg_Battleship_Dse", 211_201.0),
         ];
         let result = detect(&rules, &view(&with_boss));
         assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Borg"));
         assert_eq!(result.difficulty, Some(Difficulty::Normal));
 
         let boss_missing = vec![
-            dead_hull_critter("Space_Borg_Cruiser_Dse", 187_210.0),
-            dead_hull_critter("Space_Borg_Frigate_Dse", 79_156.0),
+            hull_critter("Space_Borg_Cruiser_Dse", 187_210.0),
+            hull_critter("Space_Borg_Frigate_Dse", 79_156.0),
         ];
         let result = detect(&rules, &view(&boss_missing));
         assert_eq!(result.map.as_deref(), Some("[TFO] Red Alert: Borg"));
@@ -869,9 +912,9 @@ mod tests {
     #[test]
     fn red_alert_wins_over_azure_when_both_match() {
         let owned = vec![
-            dead_hull_critter("Space_Tholian_Dreadnought_Red_Alert", 1_619_134.0),
-            dead_hull_critter("Space_Tholian_Cruiser_Web", 198_722.0),
-            dead_hull_critter("Space_Tholian_Battleship", 230_750.0),
+            hull_critter("Space_Tholian_Dreadnought_Red_Alert", 1_619_134.0),
+            hull_critter("Space_Tholian_Cruiser_Web", 198_722.0),
+            hull_critter("Space_Tholian_Battleship", 230_750.0),
         ];
         for _ in 0..16 {
             let result = detect(&bundled_rules(), &view(&owned));
@@ -881,8 +924,8 @@ mod tests {
 
         // Azure on its own is unaffected.
         let azure = vec![
-            dead_hull_critter("Space_Tholian_Cruiser_Web", 355_249.0),
-            dead_hull_critter("Space_Tholian_Battleship", 652_603.0),
+            hull_critter("Space_Tholian_Cruiser_Web", 355_249.0),
+            hull_critter("Space_Tholian_Battleship", 652_603.0),
         ];
         let result = detect(&bundled_rules(), &view(&azure));
         assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
@@ -895,8 +938,8 @@ mod tests {
     #[test]
     fn global_tier_can_report_normal() {
         let owned = vec![
-            dead_hull_critter("Space_Tholian_Cruiser_Web", 175_000.0),
-            dead_hull_critter("Space_Tholian_Battleship", 220_000.0),
+            hull_critter("Space_Tholian_Cruiser_Web", 175_000.0),
+            hull_critter("Space_Tholian_Battleship", 220_000.0),
         ];
         let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
@@ -908,8 +951,8 @@ mod tests {
     #[test]
     fn global_tier_declines_a_tied_vote() {
         let owned = vec![
-            dead_hull_critter("Space_Tholian_Cruiser_Web", 175_000.0),
-            dead_hull_critter("Space_Tholian_Battleship", 400_000.0),
+            hull_critter("Space_Tholian_Cruiser_Web", 175_000.0),
+            hull_critter("Space_Tholian_Battleship", 400_000.0),
         ];
         let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
@@ -960,8 +1003,8 @@ mod tests {
     #[test]
     fn global_tier_matches_battlecruiser_before_cruiser() {
         let owned = vec![
-            dead_hull_critter("Space_Klingon_Dreadnought_Ktinga_Lrell", 0.0),
-            dead_hull_critter("Space_Klingon_Battlecruiser", 645_000.0),
+            hull_critter("Space_Klingon_Dreadnought_Ktinga_Lrell", 0.0),
+            hull_critter("Space_Klingon_Battlecruiser", 645_000.0),
         ];
         let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("[Patrol] To Die With Honor"));
@@ -970,6 +1013,81 @@ mod tests {
             Some(Difficulty::Advanced),
             "the battlecruiser band must win over the cruiser substring"
         );
+    }
+
+    /// Khitomer in Stasis offers Normal and Advanced but no Elite, so its bands
+    /// live under `Normal`. That tier is only reached because it was added to
+    /// `DIFFICULTY_ORDER`; before that the table was parsed and never consulted.
+    #[test]
+    fn ground_map_resolves_its_normal_band() {
+        let rules = bundled_rules();
+        let normal = vec![
+            hull_critter("Mission_Borgraid03_Borg_Power_Node", 5_947.0),
+            hull_critter("Ground_Borg_Capt_Melee", 6_541.0),
+            hull_critter("Ground_Borg_Cdr_Melee", 2_392.0),
+        ];
+        let result = detect(&rules, &view(&normal));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Khitomer in Stasis"));
+        assert_eq!(result.difficulty, Some(Difficulty::Normal));
+
+        let advanced = vec![
+            hull_critter("Mission_Borgraid03_Borg_Power_Node", 6_401.0),
+            hull_critter("Ground_Borg_Capt_Melee", 14_047.0),
+            hull_critter("Ground_Borg_Cdr_Melee", 5_325.0),
+        ];
+        let result = detect(&rules, &view(&advanced));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+    }
+
+    #[test]
+    fn undine_infiltration_tier_by_hull_damage() {
+        let rules = bundled_rules();
+        let advanced = vec![
+            hull_critter(
+                "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss",
+                30_710.0,
+            ),
+            hull_critter("Ground_Undine_Capt_Range_Psi", 19_476.0),
+            hull_critter("Ground_Undine_Lt_Range_Psi", 3_513.0),
+        ];
+        let result = detect(&rules, &view(&advanced));
+        assert_eq!(result.map.as_deref(), Some("[TFO] Undine Infiltration"));
+        assert_eq!(result.difficulty, Some(Difficulty::Advanced));
+
+        let elite = vec![
+            hull_critter(
+                "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss",
+                71_916.0,
+            ),
+            hull_critter("Ground_Undine_Capt_Range_Psi", 31_900.0),
+            hull_critter("Ground_Undine_Lt_Range_Psi", 5_695.0),
+        ];
+        let result = detect(&rules, &view(&elite));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+    }
+
+    #[test]
+    fn an_entity_that_survived_does_not_decide_the_tier() {
+        // Modelled on the opening fragment of the 2026-07-30 12:35 Undine
+        // Infiltration run: 47 lines, cut off by a 70s gap, holding the boss alone
+        // and *alive*. For an entity that did not die the median is the damage we
+        // happened to deal, not its HP, so it must not tier the combat - the same
+        // reason the global ship-class table skips `deaths == 0`.
+        //
+        // 30,000 is deliberately above the Advanced firing threshold
+        // (30,710 * 0.8 = 24,568): without the guard this fragment reads Advanced.
+        let mut alive = CritterMeta::default();
+        alive.hull_damage_per_instance.insert(0, 30_000.0);
+        assert_eq!(alive.deaths, 0);
+
+        let owned = vec![(
+            "Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss",
+            alive,
+        )];
+        let result = detect(&bundled_rules(), &view(&owned));
+        // The anchor still identifies the map - only the tier is withheld.
+        assert_eq!(result.map.as_deref(), Some("[TFO] Undine Infiltration"));
+        assert_eq!(result.difficulty, None);
     }
 
     #[test]

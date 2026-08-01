@@ -8,6 +8,7 @@ use super::common::*;
 
 pub struct ValuesChart<T: PreparedValue> {
     diagram_type: DiagramType,
+    components: HealComponents,
     newly_created: bool,
     bars: Vec<Bars<T>>,
     updated_time_slice: Option<f64>,
@@ -27,6 +28,7 @@ impl<T: PreparedValue> ValuesChart<T> {
     pub fn empty(diagram_type: DiagramType) -> Self {
         Self {
             diagram_type,
+            components: HealComponents::ALL,
             newly_created: true,
             bars: Vec::new(),
             updated_time_slice: None,
@@ -41,6 +43,7 @@ impl<T: PreparedValue> ValuesChart<T> {
         let bars: Vec<_> = bars.map(|d| Bars::new(d)).collect();
         let mut _self = Self {
             diagram_type,
+            components: HealComponents::ALL,
             newly_created: true,
             bars,
             updated_time_slice: Some(time_slice),
@@ -61,6 +64,11 @@ impl<T: PreparedValue> ValuesChart<T> {
         }
     }
 
+    /// Which halves of a heal to draw; see `ValuePerSecondGraph::set_components`.
+    pub fn set_components(&mut self, components: HealComponents) {
+        self.components = components;
+    }
+
     pub fn update(&mut self, time_slice: f64) {
         self.updated_time_slice = Some(time_slice);
     }
@@ -69,7 +77,7 @@ impl<T: PreparedValue> ValuesChart<T> {
         if let Some(time_slice) = self.updated_time_slice.take() {
             self.bars
                 .iter_mut()
-                .for_each(|b| b.update(time_slice, self.diagram_type));
+                .for_each(|b| b.update(time_slice, self.diagram_type, self.components));
         }
 
         let mut plot = Plot::new(["value chart", self.diagram_type.name()])
@@ -121,10 +129,10 @@ impl<T: PreparedValue> Bars<T> {
         }
     }
 
-    fn update(&mut self, time_slice: f64, diagram_type: DiagramType) {
+    fn update(&mut self, time_slice: f64, diagram_type: DiagramType, components: HealComponents) {
         let bars = time_slices(&self.data, time_slice)
             .filter_map(|(m, s)| {
-                let value = s.iter().map(|p| p.value(diagram_type)).sum();
+                let value = s.iter().map(|p| p.value(diagram_type, components)).sum();
                 if value == 0.0 {
                     return None;
                 }

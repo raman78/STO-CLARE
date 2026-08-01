@@ -32,9 +32,15 @@ pub struct WindowGeometry {
     pub maximized: bool,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct General {
+    #[serde(default)]
     pub more_decimals: bool,
+    /// Show the Hull and Shield halves of a metric as their own columns instead
+    /// of only in the hover tooltip. Defaults to on, including for settings
+    /// files written before the option existed.
+    #[serde(default = "default_true")]
+    pub split_shield_hull_columns: bool,
     // Last size of the Settings dialog (points), restored on the next open.
     #[serde(default)]
     pub settings_window_size: Option<[f32; 2]>,
@@ -142,6 +148,22 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         serde_json::from_str(DEFAULT_SETTINGS).unwrap()
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for General {
+    fn default() -> Self {
+        Self {
+            more_decimals: false,
+            split_shield_hull_columns: true,
+            settings_window_size: None,
+            overlay_position: None,
+            overlay_shown: false,
+        }
     }
 }
 

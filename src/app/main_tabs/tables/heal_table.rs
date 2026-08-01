@@ -1,64 +1,59 @@
 use crate::{
     analyzer::*,
     app::{main_tabs::common::*, settings::Settings},
-    col,
+    col, shield_hull_col,
     helpers::number_formatting::NumberFormatter,
 };
 
 use super::metrics_table::*;
 
 static COLUMNS: &[ColumnDescriptor<HealTablePartData>] = &[
-    col!(
+    shield_hull_col!(
         "HPS",
-        "Heals Per Second\nCalculated from the first action of the player to the last action in the log",
+        "Healing Per Second\nCalculated over the player's active duration (first to last action in the log), not over the combat time that DPS uses",
         |t| t.sort_by_option_f64_desc(|p| p.hps.all.value),
-        |t, r| t.hps.show(r),
+        hps,
     ),
-    col!(
+    shield_hull_col!(
         "Total Heal",
+        "The Hull and Shield columns show how much of it restored hull and how much restored shields",
         |t| t.sort_by_option_f64_desc(|p| p.total_heal.all.value),
-        |t, r| t.total_heal.show(r),
+        total_heal,
     ),
-    col!(
+    shield_hull_col!(
         "Heal %",
         |t| t.sort_by_option_f64_desc(|p| p.heal_percentage.all.value),
-        |t, r| {
-            t.heal_percentage.show(r);
-        },
+        heal_percentage,
     ),
-    col!(
+    shield_hull_col!(
         "Average Heal",
         |t| t.sort_by_option_f64_desc(|p| p.average_heal.all.value),
-        |t, r| t.average_heal.show(r),
+        average_heal,
     ),
     col!(
         "Critical %",
+        "Share of hull heal ticks that critted. Shield heals never crit in STO (verified: zero critical shield heals in a 212 MB log), so they are left out of the base",
         |t| t.sort_by_option_f64_desc(|p| p.critical_percentage.value),
         |t, r| {
             t.critical_percentage.show(r);
         },
     ),
-    col!(
+    shield_hull_col!(
         "Ticks",
+        "Every heal number that shows up counts as one tick.\nThe Hull and Shield columns show how many went into each",
         |t| t.sort_by_desc(|p| p.ticks.all.count),
-        |t, r| {
-            t.ticks.show(r);
-        },
+        ticks,
     ),
-    col!(
+    shield_hull_col!(
         "Ticks / s",
-        "Ticks Per Second\nCalculated from the first action of the player to the last action in the log",
+        "Ticks Per Second\nCalculated over the player's active duration (first to last action in the log)",
         |t| t.sort_by_option_f64_desc(|p| p.ticks_per_second.all.value),
-        |t, r| {
-            t.ticks_per_second.show(r);
-        },
+        ticks_per_second,
     ),
-    col!(
+    shield_hull_col!(
         "Ticks %",
         |t| t.sort_by_option_f64_desc(|p| p.ticks_percentage.all.value),
-        |t, r| {
-            t.ticks_percentage.show(r);
-        },
+        ticks_percentage,
     ),
 ];
 
@@ -71,6 +66,8 @@ pub struct HealTablePartData {
     ticks: ShieldAndHullTextCount,
     ticks_per_second: ShieldAndHullTextValue,
     ticks_percentage: ShieldAndHullTextValue,
+    /// See `DamageTablePartData::halves_in_tooltip`.
+    halves_in_tooltip: bool,
     pub source_ticks: Vec<HealTick>,
 }
 
@@ -148,6 +145,7 @@ impl HealTablePartData {
                 if more_decimals { 3 } else { 2 },
                 number_formatter,
             ),
+            halves_in_tooltip: !settings.general.split_shield_hull_columns,
             source_ticks: group.ticks.get(&combat.heal_ticks_manger).to_vec(),
         }
     }

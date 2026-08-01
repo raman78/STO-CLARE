@@ -1,7 +1,7 @@
 {
   "analysis": {
     "combatlog_file": "",
-    "combat_separation_time_seconds": 90.0,
+    "combat_separation_time_seconds": 60.0,
     "indirect_source_grouping_revers_rules": [
       {
         "aspect": "DamageOrHealName",

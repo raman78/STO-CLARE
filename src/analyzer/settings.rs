@@ -266,7 +266,10 @@ impl Default for AnalysisSettings {
     fn default() -> Self {
         Self {
             combatlog_file: Default::default(),
-            combat_separation_time_seconds: 1.5 * 60.0,
+            // Matches the OSCR server, which splits uploaded logs on a 60s gap
+            // with that value hard-coded. A longer window here would hand the
+            // ladder a slice containing more than it will actually read.
+            combat_separation_time_seconds: 60.0,
             indirect_source_grouping_revers_rules: Default::default(),
             custom_group_rules: Default::default(),
             damage_out_exclusion_rules: Default::default(),

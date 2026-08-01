@@ -14,6 +14,10 @@ use self::{
 };
 
 mod analysis_handling;
+mod combat_filter;
+
+/// How many combats the picker shows before it starts to scroll.
+const COMBATS_SHOWN_AT_ONCE: usize = 15;
 mod compare;
 pub mod desktop_install;
 #[cfg(target_os = "linux")]
@@ -49,6 +53,19 @@ pub struct App {
     combats: Vec<String>,
     /// Detected difficulty per combat, aligned with `combats` (compare filter).
     combat_difficulties: Vec<Option<Difficulty>>,
+    /// Each combat's name without the environment and difficulty suffixes, for
+    /// the type filters.
+    combat_base_names: Vec<String>,
+    /// Each combat's environment ("Space" / "Ground" / …), for the same.
+    combat_environments: Vec<Option<String>>,
+    /// Narrows the combat picker to one environment, level and/or map.
+    combat_filter: combat_filter::CombatFilter,
+    /// Bumped whenever the filter changes, and mixed into the picker's id.
+    ///
+    /// egui keeps a scroll area's measured size under that id, so the list kept
+    /// opening at the height it had while filtered however much it then held.
+    /// A new id makes it a new scroll area, measured from scratch.
+    combat_filter_generation: u64,
     selected_combat_index: Option<usize>,
     selected_combat: Option<Arc<Combat>>,
     status_indicator: StatusIndicator,
@@ -95,6 +112,10 @@ impl App {
             settings_window,
             combats: Default::default(),
             combat_difficulties: Default::default(),
+            combat_base_names: Default::default(),
+            combat_environments: Default::default(),
+            combat_filter: Default::default(),
+            combat_filter_generation: 0,
             selected_combat_index: None,
             selected_combat: None,
             status_indicator: StatusIndicator::new(),
@@ -180,14 +201,45 @@ impl eframe::App for App {
                         self.status_indicator
                             .show(self.state.analysis_handler.is_busy(), ui);
 
-                        ComboBox::new("combat list", "Combats")
-                            .width(400.0)
-                            // Show around 15 combats before the list starts to
-                            // scroll (the default only fits a few).
-                            .height(360.0)
+                        // One row of the popup, used both for its height cap
+                        // and for the room reserved inside it, so the two agree
+                        // whatever the UI scale is.
+                        let row =
+                            ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+                        ComboBox::new(
+                            ("combat list", self.combat_filter_generation),
+                            "Combats",
+                        )
+                            // Wide enough for a full identifier — map,
+                            // environment, level, date and time — on one line.
+                            .width(620.0)
+                            .height(row * COMBATS_SHOWN_AT_ONCE as f32)
                             .selected_text(self.main_tabs.identifier.as_str())
                             .show_ui(ui, |ui| {
+                                // Reserve the room here. The popup reports only
+                                // about three rows of available height, and
+                                // egui's scroll area sizes its viewport to that,
+                                // so without a minimum the list opens three tall
+                                // however many combats it holds. Clamping the
+                                // minimum to the reported height puts the same
+                                // three rows straight back.
+                                let visible = (0..self.combats.len())
+                                    .filter(|&i| self.combat_matches_filter(i))
+                                    .count();
+                                ui.set_min_height(
+                                    row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32,
+                                );
+                                // The scroll area takes its viewport from the
+                                // content size it measured last frame. After a
+                                // filter is cleared the first frame still has
+                                // the narrowed list's size, and nothing else
+                                // asks for another one — so the list would stay
+                                // as short as it was while filtered.
+                                ui.ctx().request_repaint();
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
+                                    if !self.combat_matches_filter(i) {
+                                        continue;
+                                    }
                                     if ui
                                         .selectable_value(
                                             &mut self.selected_combat_index,
@@ -260,6 +312,38 @@ impl eframe::App for App {
                         ui.separator();
                         self.state.overlay.show(ui);
                     });
+
+                    // Own row: a "Clear filter" button appearing next to the
+                    // pickers would otherwise shove the toolbar buttons sideways.
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Show only:");
+                        let before = self.combat_filter.clone();
+                        // Each menu offers only what the other two leave
+                        // reachable, so no combination can empty the list.
+                        let entries: Vec<combat_filter::CombatEntry> = (0..self.combats.len())
+                            .map(|i| combat_filter::CombatEntry {
+                                environment: self
+                                    .combat_environments
+                                    .get(i)
+                                    .and_then(|e| e.as_deref()),
+                                difficulty: self.combat_difficulties.get(i).copied().flatten(),
+                                base_name: self
+                                    .combat_base_names
+                                    .get(i)
+                                    .map(String::as_str)
+                                    .unwrap_or(""),
+                            })
+                            .collect();
+                        self.combat_filter.show("combats", &entries, ui);
+                        if self.combat_filter.is_active() && ui.button("Clear filter").clicked() {
+                            self.combat_filter.clear();
+                        }
+                        if self.combat_filter != before {
+                            self.combat_filter_generation =
+                                self.combat_filter_generation.wrapping_add(1);
+                            self.follow_filter_change();
+                        }
+                    });
                 }
 
                 if self.compare.is_open() {
@@ -267,6 +351,8 @@ impl eframe::App for App {
                         &mut self.state,
                         &self.combats,
                         &self.combat_difficulties,
+                        &self.combat_base_names,
+                        &self.combat_environments,
                         ui,
                     );
                 } else {
@@ -367,6 +453,43 @@ impl App {
         self.window_geometry_dirty = false;
     }
 
+    /// Whether the combat at `index` passes the combat picker's filter.
+    fn combat_matches_filter(&self, index: usize) -> bool {
+        self.combat_filter.matches(
+            self.combat_environments
+                .get(index)
+                .and_then(|e| e.as_deref()),
+            self.combat_difficulties.get(index).copied().flatten(),
+            self.combat_base_names
+                .get(index)
+                .map(String::as_str)
+                .unwrap_or(""),
+        )
+    }
+
+    /// After the filter changed, move to the newest combat that still passes it.
+    ///
+    /// Without this the window keeps showing a combat the list no longer offers,
+    /// which reads as the filter having done nothing. A selection that still
+    /// passes is left alone, so narrowing around the combat being looked at does
+    /// not jump away from it.
+    fn follow_filter_change(&mut self) {
+        if self
+            .selected_combat_index
+            .is_some_and(|index| self.combat_matches_filter(index))
+        {
+            return;
+        }
+        let Some(index) = (0..self.combats.len())
+            .rev()
+            .find(|&index| self.combat_matches_filter(index))
+        else {
+            return;
+        };
+        self.selected_combat_index = Some(index);
+        self.state.analysis_handler.get_combat(index);
+    }
+
     fn handle_analysis_infos(&mut self) {
         let combatlog_file = &self.state.settings.analysis.combatlog_file;
         for info in self.state.analysis_handler.check_for_info() {
@@ -382,11 +505,15 @@ impl App {
                     latest_combat,
                     combats,
                     difficulties,
+                    base_names,
+                    environments,
                     file_size,
                 } => {
                     self.main_tabs.update(&self.state.settings, &latest_combat);
                     self.combats = combats;
                     self.combat_difficulties = difficulties;
+                    self.combat_base_names = base_names;
+                    self.combat_environments = environments;
                     self.selected_combat_index = Some(self.combats.len() - 1);
                     self.selected_combat = Some(latest_combat);
                     self.status_indicator.status = Status::Loaded {
