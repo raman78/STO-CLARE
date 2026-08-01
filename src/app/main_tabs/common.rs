@@ -76,10 +76,9 @@ impl ShieldAndHullTextValue {
     }
 
     pub fn show(&self, row: &mut TableRow) {
-        let response = self.all.show(row);
-        if let Some(response) = response {
-            show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
-        }
+        // No hover tooltip: the halves are columns of their own now, so a
+        // tooltip repeating them only covers the numbers next to it.
+        self.all.show(row);
     }
 
     /// The hull half as its own cell (split-columns mode).
@@ -152,9 +151,9 @@ impl ShieldAndHullTextCount {
     }
 
     pub fn show(&self, row: &mut TableRow) {
-        let response = self.all.show(row);
-
-        show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+        // See `ShieldAndHullTextValue::show` — no tooltip, the halves have
+        // columns of their own.
+        self.all.show(row);
     }
 
     /// The hull half as its own cell (split-columns mode).
@@ -187,6 +186,13 @@ fn show_value_text(row: &mut TableRow, value_text: &str) -> Response {
     })
 }
 
+/// A hover tooltip listing the shield and hull halves of a value.
+///
+/// Nothing calls it: the halves are shown as their own columns instead, and a
+/// tooltip repeating them covered the numbers beside it. Kept because it is the
+/// one place that knows how to render a two-row detail popup over a table cell,
+/// which the next metric that needs a breakdown can reuse.
+#[allow(dead_code)]
 pub fn show_shield_hull_values_tool_tip(response: Response, shield_value: &str, hull_value: &str) {
     details_tooltip(response, |ui| {
         Table::new(ui).body(ROW_HEIGHT, |t| {

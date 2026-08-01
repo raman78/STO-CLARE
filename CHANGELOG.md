@@ -13,6 +13,7 @@
 - uploads are now written to the log file (when logging is enabled in the settings), including the reason the server gave for rejecting one
 
 ### Other Changes
+- hovering a damage or healing value no longer pops up a box repeating its hull and shield halves — those are columns of their own now, and the box covered the numbers next to it
 - the healing tabs group correctly when a heal came through a pet or a console: picking "Ability first" used to put the pet on top instead, so a team mate healed by your hangar pet appeared under the pet's name rather than the ability's
 - Self Healing no longer repeats your own name as a level of the tree — there is nobody else involved, so the abilities sit directly under you, and the switch above the table offers "Source" (the console, trait or proc it came from) instead of "Person"
 - the healing charts have Hull and Shield switches above them, both on by default, so healing can be looked at as one total or split into what restored hull and what restored shields
