@@ -145,6 +145,17 @@ Settings changes are gated by cost: only `analysis` invalidates the `Analyzer`
 and forces a re-read of the log; a `general` change just rebuilds the views,
 because formatting is baked into the row strings when a table is built.
 
+The `combat_notes` section (`app/settings/combat_notes.rs`) holds the user's own
+short description per combat, written in the Summary tab and repeated wherever a
+combat is listed: the main window's dropdown, the compare picker (whose search
+box reads it) and the compare legend. It is keyed by the combat's **start time**,
+which the refresh messages carry alongside the list (`start_times`, aligned with
+`combats`) because those views hold parallel arrays rather than whole combats.
+The start time is the only identifier the log itself fixes — `Combat::identifier` carries whatever the name rules or
+the map detection produced, so a rename would orphan the notes. Changing
+`combat_separation_time_seconds` re-cuts the log into different combats and does
+orphan them; there is no key that survives that.
+
 ## Log files on disk
 
 STO under Proton rotates its combat log. On Linux `app/log_consolidation` merges

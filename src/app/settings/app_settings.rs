@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{analyzer::settings::AnalysisSettings, app::compare::CompareSettings};
+use crate::{
+    analyzer::settings::AnalysisSettings,
+    app::{compare::CompareSettings, settings::CombatNotes},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
@@ -18,6 +21,11 @@ pub struct Settings {
     pub compare: CompareSettings,
     #[serde(default)]
     pub window: WindowGeometry,
+    /// The user's own short note per combat. Its own section rather than part
+    /// of `analysis`, so writing one does not count as an analysis change and
+    /// re-read the whole log.
+    #[serde(default)]
+    pub combat_notes: CombatNotes,
 }
 
 /// Size and maximized state of the main window, remembered between runs.
@@ -223,6 +231,14 @@ mod tests {
 
     /// Existing settings files have no `overlay_shown`; they must keep loading,
     /// with the overlay staying closed as before.
+    /// A file written before combat notes existed — or by the stock program,
+    /// which has no such section — must load with no notes rather than fail.
+    #[test]
+    fn settings_file_without_notes_still_loads() {
+        let settings: Settings = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
+        assert_eq!(CombatNotes::default(), settings.combat_notes);
+    }
+
     #[test]
     fn settings_file_without_overlay_shown_still_loads() {
         let json = r#"{"more_decimals": false, "overlay_position": [19, 1920]}"#;

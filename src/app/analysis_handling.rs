@@ -9,7 +9,7 @@ use std::{
     time::SystemTime,
 };
 
-use chrono::Duration;
+use chrono::{Duration, NaiveDateTime};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use eframe::egui::{Context, ViewportId};
 use log::info;
@@ -109,13 +109,22 @@ pub enum AnalysisInfo {
         /// Each combat's environment ("Space" / "Ground" / …) where the map was
         /// recognized, aligned with `combats`.
         environments: Vec<Option<String>>,
+        /// Each combat's start time, aligned with `combats`. The views key the
+        /// user's own note by it.
+        start_times: Vec<NaiveDateTime>,
         file_size: Option<u64>,
     },
-    // Like `Refreshed`, but only carries the refreshed combats list (no combat
-    // to switch the main view to). Used by the "Clear Log File" dialog so
-    // opening it refreshes the list without moving off the combat being viewed.
+    // Like `Refreshed`, but without a combat to switch the main view to. Used
+    // by the "Clear Log File" dialog and by the compare view, so both refresh
+    // the list without moving off the combat being viewed. Carries the same
+    // per-combat metadata as `Refreshed`, because the filters read it by index
+    // and a list that grew past it would leave the new combats unlabelled.
     CombatsListRefreshed {
         combats: Vec<String>,
+        difficulties: Vec<Option<Difficulty>>,
+        base_names: Vec<String>,
+        environments: Vec<Option<String>>,
+        start_times: Vec<NaiveDateTime>,
         file_size: Option<u64>,
     },
     RefreshError,
@@ -399,8 +408,21 @@ impl AnalysisContext {
         if let Some(info) = self.try_refresh(false) {
             let info = match info {
                 AnalysisInfo::Refreshed {
-                    combats, file_size, ..
-                } => AnalysisInfo::CombatsListRefreshed { combats, file_size },
+                    combats,
+                    difficulties,
+                    base_names,
+                    environments,
+                    start_times,
+                    file_size,
+                    ..
+                } => AnalysisInfo::CombatsListRefreshed {
+                    combats,
+                    difficulties,
+                    base_names,
+                    environments,
+                    start_times,
+                    file_size,
+                },
                 other => other,
             };
             self.send_info(info, handler);
@@ -466,6 +488,11 @@ impl AnalysisContext {
                 .result()
                 .iter()
                 .map(|c| c.detected_combat_type.clone())
+                .collect(),
+            start_times: analyzer
+                .result()
+                .iter()
+                .map(|c| c.active_time.start)
                 .collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
@@ -941,8 +968,21 @@ mod tests {
         let main_infos: Vec<_> = main_rx.try_iter().collect();
         assert_eq!(main_infos.len(), 1, "main window gets exactly one message");
         match &main_infos[0] {
-            AnalysisInfo::CombatsListRefreshed { combats, .. } => {
+            AnalysisInfo::CombatsListRefreshed {
+                combats,
+                difficulties,
+                base_names,
+                environments,
+                ..
+            } => {
                 assert_eq!(combats.len(), 2, "the refreshed list holds every combat");
+                // The views index these three alongside `combats`; a list-only
+                // refresh that left them behind would leave every combat added
+                // since the last full refresh without an environment, a level
+                // or a map name, and so out of a filtered list.
+                assert_eq!(difficulties.len(), combats.len());
+                assert_eq!(base_names.len(), combats.len());
+                assert_eq!(environments.len(), combats.len());
             }
             AnalysisInfo::Refreshed { .. } => {
                 panic!("list-only refresh must not send Refreshed (it switches the main view)")

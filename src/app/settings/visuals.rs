@@ -83,6 +83,12 @@ impl VisualsTab {
         style.visuals = visuals;
         style.interaction.selectable_labels = false;
         style.interaction.tooltip_delay = 0.0;
+        // Floating scroll bars grow when the pointer comes near them and would
+        // then be drawn on top of the content — the horizontal bar of a table
+        // covering its last row. Reserve a strip as wide as the fully grown bar,
+        // so it sits next to the content instead of over it. The strip is only
+        // taken while the bar is actually shown.
+        style.spacing.scroll.floating_allocated_width = style.spacing.scroll.bar_width;
         ctx.set_style_of(eframe::egui::Theme::Dark, style.clone());
         ctx.set_style_of(eframe::egui::Theme::Light, style);
         Overlay::request_repaint(ctx);

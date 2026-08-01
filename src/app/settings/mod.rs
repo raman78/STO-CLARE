@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 
 pub use app_settings::{Settings, WindowGeometry};
+pub use combat_notes::{CombatNotes, MAX_NOTE_CHARS};
 use eframe::{Frame, egui::*};
 
 use crate::analyzer::Combat;
@@ -14,6 +15,7 @@ use super::{analysis_handling::AnalysisHandler, state::AppState};
 
 mod analysis;
 mod app_settings;
+mod combat_notes;
 mod debug;
 mod general;
 mod upload;

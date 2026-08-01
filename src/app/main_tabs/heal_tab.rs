@@ -7,17 +7,18 @@ use super::{common::*, diagrams::*, tables::*};
 pub struct HealTab {
     /// The same healing, nested both ways. Both are built up front so the
     /// grouping toggle is instant — the trees come from the analyzer, which
-    /// would otherwise have to re-read the log to re-nest them.
+    /// would otherwise have to re-read the log to re-nest them. A tab without a
+    /// grouping toggle leaves `table_by_person` empty; it can never be shown.
     table_by_person: HealTable,
     table_by_ability: HealTable,
     grouping: HealGrouping,
     main_diagrams: HealDiagrams,
     selection_diagrams: Option<HealDiagrams>,
     heal_pool: fn(&Player) -> &HealPool,
-    /// What the non-ability level of the tree is called in this tab: the other
-    /// party for the directional pools, the console or proc it came from for
-    /// self healing, which has no other party.
-    other_level: &'static str,
+    /// What the non-ability level of the tree is called in this tab — the other
+    /// party. `None` for self healing: there is nobody else involved, so the
+    /// tree is only ever nested by ability and the toggle is left out.
+    other_level: Option<&'static str>,
     filter: f64,
     diagram_time_slice: f64,
     active_diagram: DiagramType,
@@ -30,7 +31,7 @@ pub struct HealTab {
 }
 
 impl HealTab {
-    pub fn empty(heal_pool: fn(&Player) -> &HealPool, other_level: &'static str) -> Self {
+    pub fn empty(heal_pool: fn(&Player) -> &HealPool, other_level: Option<&'static str>) -> Self {
         Self {
             table_by_person: HealTable::empty(),
             table_by_ability: HealTable::empty(),
@@ -50,7 +51,10 @@ impl HealTab {
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
         self.combat_duration_s = combat_duration_seconds(combat);
         let pool = self.heal_pool;
-        self.table_by_person = HealTable::new(settings, combat, move |p| &pool(p).by_person);
+        self.table_by_person = match self.other_level {
+            Some(_) => HealTable::new(settings, combat, move |p| &pool(p).by_person),
+            None => HealTable::empty(),
+        };
         self.table_by_ability = HealTable::new(settings, combat, move |p| &pool(p).by_ability);
         // Either nesting holds the same ticks, so the per-player chart is the
         // same; build it from one of them.
@@ -93,8 +97,12 @@ impl HealTab {
     }
 
     /// Switches how the tree is nested. Both nestings are already built, so this
-    /// only picks which one to draw — no rebuild, no lost data.
+    /// only picks which one to draw — no rebuild, no lost data. Tabs without a
+    /// second level to group by (self healing) show nothing here.
     fn show_grouping_picker(&mut self, ui: &mut Ui) {
+        let Some(other_level) = self.other_level else {
+            return;
+        };
         ui.horizontal(|ui| {
             ui.label("Group by:");
             // "⏵" is the same glyph the tree rows use for their expander, so it
@@ -103,21 +111,21 @@ impl HealTab {
                 .selectable_value(
                     &mut self.grouping,
                     HealGrouping::ByPerson,
-                    format!("{} ⏵ Ability", self.other_level),
+                    format!("{} ⏵ Ability", other_level),
                 )
                 .on_hover_text(format!(
                     "Top level is the {}, with the abilities underneath.",
-                    self.other_level.to_lowercase()
+                    other_level.to_lowercase()
                 ))
                 .clicked()
                 | ui.selectable_value(
                     &mut self.grouping,
                     HealGrouping::ByAbility,
-                    format!("Ability ⏵ {}", self.other_level),
+                    format!("Ability ⏵ {}", other_level),
                 )
                 .on_hover_text(format!(
                     "Top level is the ability, with the {} underneath.",
-                    self.other_level.to_lowercase()
+                    other_level.to_lowercase()
                 ))
                 .clicked();
             // The two tables track their own expanded rows and selection, so a

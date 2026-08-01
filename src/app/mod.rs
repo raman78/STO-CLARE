@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::NaiveDateTime;
 use eframe::egui::*;
 use rfd::FileDialog;
 
@@ -18,6 +19,12 @@ mod combat_filter;
 
 /// How many combats the picker shows before it starts to scroll.
 const COMBATS_SHOWN_AT_ONCE: usize = 15;
+
+/// Width of the combats picker, in points. Holds a full identifier — map,
+/// environment, level, date and time — followed by a note of the full 50
+/// characters. Entries longer than this are cut with an ellipsis rather than
+/// wrapped, so a row stays one row tall.
+const COMBATS_LIST_WIDTH: f32 = 900.0;
 mod compare;
 pub mod desktop_install;
 mod fonts;
@@ -59,6 +66,9 @@ pub struct App {
     combat_base_names: Vec<String>,
     /// Each combat's environment ("Space" / "Ground" / …), for the same.
     combat_environments: Vec<Option<String>>,
+    /// Each combat's start time, aligned with `combats`. It is what a user note
+    /// is keyed by, and the only per-combat value the log itself fixes.
+    combat_start_times: Vec<NaiveDateTime>,
     /// Narrows the combat picker to one environment, level and/or map.
     combat_filter: combat_filter::CombatFilter,
     /// Bumped whenever the filter changes, and mixed into the picker's id.
@@ -117,6 +127,7 @@ impl App {
             combat_difficulties: Default::default(),
             combat_base_names: Default::default(),
             combat_environments: Default::default(),
+            combat_start_times: Default::default(),
             combat_filter: Default::default(),
             combat_filter_generation: 0,
             selected_combat_index: None,
@@ -195,6 +206,13 @@ impl eframe::App for App {
                         .clicked()
                     {
                         self.compare.toggle();
+                        // The toolbar below carries "Refresh Now" and is hidden
+                        // while comparing, so opening the view is the moment to
+                        // pick up combats logged since the list was last read.
+                        // Only the list is refreshed; the viewed combat stays.
+                        if self.compare.is_open() {
+                            self.state.analysis_handler.refresh_combats_list();
+                        }
                     }
                 });
 
@@ -209,15 +227,36 @@ impl eframe::App for App {
                         // whatever the UI scale is.
                         let row =
                             ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+                        // The combat on show, with its note where there is one,
+                        // so the closed box says the same as the list entry it
+                        // came from.
+                        let selected = {
+                            let note = self
+                                .selected_combat
+                                .as_deref()
+                                .map(|combat| {
+                                    self.state
+                                        .settings
+                                        .combat_notes
+                                        .get(&CombatNotes::key(combat))
+                                })
+                                .unwrap_or("");
+                            if note.is_empty() {
+                                self.main_tabs.identifier.clone()
+                            } else {
+                                format!("{} — {}", self.main_tabs.identifier, note)
+                            }
+                        };
                         ComboBox::new(
                             ("combat list", self.combat_filter_generation),
                             "Combats",
                         )
-                            // Wide enough for a full identifier — map,
-                            // environment, level, date and time — on one line.
-                            .width(620.0)
+                            // Room for a full identifier — map, environment,
+                            // level, date and time — plus a note of the full 50
+                            // characters, on one line.
+                            .width(COMBATS_LIST_WIDTH)
                             .height(row * COMBATS_SHOWN_AT_ONCE as f32)
-                            .selected_text(self.main_tabs.identifier.as_str())
+                            .selected_text(selected)
                             .show_ui(ui, |ui| {
                                 // Reserve the room here. The popup reports only
                                 // about three rows of available height, and
@@ -239,15 +278,38 @@ impl eframe::App for App {
                                 // asks for another one — so the list would stay
                                 // as short as it was while filtered.
                                 ui.ctx().request_repaint();
+                                // An entry that is too long is cut with an
+                                // ellipsis rather than wrapped onto a second
+                                // line: a wrapped row is twice as tall, and the
+                                // height reserved above counts single rows.
+                                ui.style_mut().wrap_mode = Some(TextWrapMode::Truncate);
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
                                     if !self.combat_matches_filter(i) {
                                         continue;
                                     }
+                                    // The user's own note, where there is one,
+                                    // is what tells two runs of the same map
+                                    // apart at a glance.
+                                    let note = self
+                                        .combat_start_times
+                                        .get(i)
+                                        .map(|&start| {
+                                            self.state
+                                                .settings
+                                                .combat_notes
+                                                .get(&CombatNotes::key_at(start))
+                                        })
+                                        .unwrap_or("");
+                                    let entry = if note.is_empty() {
+                                        combat.clone()
+                                    } else {
+                                        format!("{combat} — {note}")
+                                    };
                                     if ui
                                         .selectable_value(
                                             &mut self.selected_combat_index,
                                             Some(i),
-                                            combat.as_str(),
+                                            entry,
                                         )
                                         .changed()
                                     {
@@ -356,10 +418,11 @@ impl eframe::App for App {
                         &self.combat_difficulties,
                         &self.combat_base_names,
                         &self.combat_environments,
+                        &self.combat_start_times,
                         ui,
                     );
                 } else {
-                    self.main_tabs.show(&self.state.settings, ui);
+                    self.main_tabs.show(&mut self.state.settings, ui);
                 }
             });
         });
@@ -510,6 +573,7 @@ impl App {
                     difficulties,
                     base_names,
                     environments,
+                    start_times,
                     file_size,
                 } => {
                     self.main_tabs.update(&self.state.settings, &latest_combat);
@@ -517,6 +581,7 @@ impl App {
                     self.combat_difficulties = difficulties;
                     self.combat_base_names = base_names;
                     self.combat_environments = environments;
+                    self.combat_start_times = start_times;
                     self.selected_combat_index = Some(self.combats.len() - 1);
                     self.selected_combat = Some(latest_combat);
                     self.status_indicator.status = Status::Loaded {
@@ -524,11 +589,25 @@ impl App {
                         file_size,
                     };
                 }
-                AnalysisInfo::CombatsListRefreshed { combats, file_size } => {
-                    // Only the combats list is refreshed here (e.g. the "Clear
-                    // Log File" dialog opening); the currently-viewed combat in
-                    // the main view is deliberately left untouched.
+                AnalysisInfo::CombatsListRefreshed {
+                    combats,
+                    difficulties,
+                    base_names,
+                    environments,
+                    start_times,
+                    file_size,
+                } => {
+                    // Only the combats list is refreshed here (the "Clear Log
+                    // File" dialog opening, or the compare view being opened);
+                    // the currently-viewed combat in the main view is
+                    // deliberately left untouched. The three metadata lists are
+                    // indexed alongside `combats` and must move with it, or the
+                    // filters read the wrong entry for every new combat.
                     self.combats = combats;
+                    self.combat_difficulties = difficulties;
+                    self.combat_base_names = base_names;
+                    self.combat_environments = environments;
+                    self.combat_start_times = start_times;
                     self.status_indicator.status = Status::Loaded {
                         combatlog_file: combatlog_file.clone(),
                         file_size,
