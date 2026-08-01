@@ -199,21 +199,7 @@ impl eframe::App for App {
                             .selected_text(self.main_tabs.identifier.as_str())
                             .show_ui(ui, |ui| {
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
-                                    let environment = self
-                                        .combat_environments
-                                        .get(i)
-                                        .and_then(|e| e.as_deref());
-                                    let difficulty =
-                                        self.combat_difficulties.get(i).copied().flatten();
-                                    let base_name = self
-                                        .combat_base_names
-                                        .get(i)
-                                        .map(String::as_str)
-                                        .unwrap_or("");
-                                    if !self
-                                        .combat_filter
-                                        .matches(environment, difficulty, base_name)
-                                    {
+                                    if !self.combat_matches_filter(i) {
                                         continue;
                                     }
                                     if ui
@@ -230,22 +216,6 @@ impl eframe::App for App {
                                     }
                                 }
                             });
-
-                        // The pickers only offer values the list actually holds,
-                        // so a choice can never empty it on its own.
-                        let environments = combat_filter::distinct_sorted(
-                            self.combat_environments
-                                .iter()
-                                .filter_map(|e| e.as_deref()),
-                        );
-                        let maps = combat_filter::distinct_sorted(
-                            self.combat_base_names.iter().map(String::as_str),
-                        );
-                        self.combat_filter
-                            .show("combats", &environments, &maps, ui);
-                        if self.combat_filter.is_active() && ui.button("Clear filter").clicked() {
-                            self.combat_filter.clear();
-                        }
 
                         if ui.button("Refresh Now ⟲").clicked() {
                             self.state.analysis_handler.refresh();
@@ -303,6 +273,29 @@ impl eframe::App for App {
                         self.summary_copy.show(self.selected_combat.as_deref(), ui);
                         ui.separator();
                         self.state.overlay.show(ui);
+                    });
+
+                    // Own row: a "Clear filter" button appearing next to the
+                    // pickers would otherwise shove the toolbar buttons sideways.
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Show only:");
+                        let before = self.combat_filter.clone();
+                        // The pickers only offer values the list actually holds,
+                        // so a choice can never empty it on its own.
+                        let environments = combat_filter::distinct_sorted(
+                            self.combat_environments.iter().filter_map(|e| e.as_deref()),
+                        );
+                        let maps = combat_filter::distinct_sorted(
+                            self.combat_base_names.iter().map(String::as_str),
+                        );
+                        self.combat_filter
+                            .show("combats", &environments, &maps, ui);
+                        if self.combat_filter.is_active() && ui.button("Clear filter").clicked() {
+                            self.combat_filter.clear();
+                        }
+                        if self.combat_filter != before {
+                            self.follow_filter_change();
+                        }
                     });
                 }
 
@@ -410,6 +403,43 @@ impl App {
         self.state.settings.window = self.window_geometry;
         self.state.settings.save();
         self.window_geometry_dirty = false;
+    }
+
+    /// Whether the combat at `index` passes the combat picker's filter.
+    fn combat_matches_filter(&self, index: usize) -> bool {
+        self.combat_filter.matches(
+            self.combat_environments
+                .get(index)
+                .and_then(|e| e.as_deref()),
+            self.combat_difficulties.get(index).copied().flatten(),
+            self.combat_base_names
+                .get(index)
+                .map(String::as_str)
+                .unwrap_or(""),
+        )
+    }
+
+    /// After the filter changed, move to the newest combat that still passes it.
+    ///
+    /// Without this the window keeps showing a combat the list no longer offers,
+    /// which reads as the filter having done nothing. A selection that still
+    /// passes is left alone, so narrowing around the combat being looked at does
+    /// not jump away from it.
+    fn follow_filter_change(&mut self) {
+        if self
+            .selected_combat_index
+            .is_some_and(|index| self.combat_matches_filter(index))
+        {
+            return;
+        }
+        let Some(index) = (0..self.combats.len())
+            .rev()
+            .find(|&index| self.combat_matches_filter(index))
+        else {
+            return;
+        };
+        self.selected_combat_index = Some(index);
+        self.state.analysis_handler.get_combat(index);
     }
 
     fn handle_analysis_infos(&mut self) {

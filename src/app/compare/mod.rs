@@ -116,6 +116,10 @@ impl CompareMetric {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CompareSettings {
     pub columns: Vec<CompareMetric>,
+    /// Whether to split each DPS difference into the part that came from
+    /// firing more often and the part that came from each hit landing harder.
+    #[serde(default)]
+    pub show_dps_breakdown: bool,
 }
 
 impl Default for CompareSettings {
@@ -127,6 +131,7 @@ impl Default for CompareSettings {
                 CompareMetric::Critical,
                 CompareMetric::Accuracy,
             ],
+            show_dps_breakdown: false,
         }
     }
 }

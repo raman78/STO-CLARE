@@ -30,6 +30,8 @@ const HEADER_HEIGHT: f32 = 34.0;
 
 /// Delta color when the metric moved in the better direction.
 const IMPROVE: Color32 = Color32::from_rgb(0x5c, 0xb8, 0x5c);
+/// Headers of the two breakdown column groups, in the order they are drawn.
+const BREAKDOWN_LABELS: [&str; 2] = ["ΔDPS: rate", "ΔDPS: hit size"];
 /// Delta color when the metric moved in the worse direction.
 const WORSE: Color32 = Color32::from_rgb(0xd9, 0x53, 0x4f);
 
@@ -77,6 +79,27 @@ struct SeriesData {
 struct SlotCell {
     /// One entry per configured column.
     metrics: Vec<MetricCell>,
+    /// How this slot's DPS difference against the reference splits up. `None`
+    /// on the reference itself, which has nothing to differ from.
+    breakdown: Option<DpsBreakdown>,
+}
+
+/// A DPS difference split into where it came from.
+///
+/// `DPS = hits per second x average hit`, so a change in DPS is a change in how
+/// often something landed, a change in how hard each one landed, or both. The
+/// two shares are taken at the midpoint of the pair:
+///
+/// ```text
+/// rate share = (r2 - r1) * (m1 + m2) / 2
+/// size share = (m2 - m1) * (r1 + r2) / 2
+/// ```
+///
+/// which add up to `r2*m2 - r1*m1` exactly — the whole difference, with no
+/// leftover cross term to attribute by hand.
+struct DpsBreakdown {
+    rate: f64,
+    size: f64,
 }
 
 struct MetricCell {
@@ -241,12 +264,27 @@ impl Comparison {
             .initial_ratio(0.6)
             .ratio_bounds(0.15..=0.9)
             .show(ui, |top_ui, bottom_ui| {
-                self.show_table(top_ui);
+                self.show_table(top_ui, settings.compare.show_dps_breakdown);
                 self.show_diagram(bottom_ui, settings);
             });
     }
 
     fn show_column_picker(&self, ui: &mut Ui, settings: &mut Settings) {
+        if ui
+            .checkbox(
+                &mut settings.compare.show_dps_breakdown,
+                "Break down ΔDPS",
+            )
+            .on_hover_text(
+                "Splits each DPS difference against the reference into the share that came from \
+                 firing more often and the share that came from each hit landing harder. The two \
+                 always add up to the whole difference.",
+            )
+            .changed()
+        {
+            settings.save();
+        }
+
         ui.menu_button("Columns ▾", |ui| {
             let mut changed = false;
             for &metric in CompareMetric::ALL {
@@ -273,12 +311,12 @@ impl Comparison {
         });
     }
 
-    fn show_table(&mut self, ui: &mut Ui) {
+    fn show_table(&mut self, ui: &mut Ui, show_breakdown: bool) {
         let n_slots = self.slots.len();
         let n_metrics = self.columns.len();
         // Columns are grouped by metric: the metric name spans its group (shown
         // on the first column), with the combat number below each column.
-        let headers: Vec<String> = self
+        let mut headers: Vec<String> = self
             .columns
             .iter()
             .flat_map(|c| {
@@ -291,6 +329,19 @@ impl Comparison {
                 })
             })
             .collect();
+        // The breakdown has nothing to say about the reference, so its groups
+        // start at the second combat.
+        if show_breakdown {
+            for label in BREAKDOWN_LABELS {
+                for slot_i in 1..n_slots {
+                    headers.push(if slot_i == 1 {
+                        format!("{}\n{}", label, slot_i + 1)
+                    } else {
+                        format!("\n{}", slot_i + 1)
+                    });
+                }
+            }
+        }
 
         let mut selected = self.selected;
         let mut selection_changed = false;
@@ -316,6 +367,7 @@ impl Comparison {
                                 0.0,
                                 n_slots,
                                 n_metrics,
+                                show_breakdown,
                                 &mut selected,
                                 &mut selection_changed,
                             );
@@ -372,6 +424,7 @@ impl CompareNode {
         indent: f32,
         n_slots: usize,
         n_metrics: usize,
+        show_breakdown: bool,
         selected: &mut Option<u32>,
         selection_changed: &mut bool,
     ) {
@@ -416,6 +469,44 @@ impl CompareNode {
                     }
                 }
             }
+
+            // Where each DPS difference came from: firing more often, or each
+            // hit landing harder. Green when that share pushed DPS up.
+            if show_breakdown {
+                for pick in [
+                    (|b: &DpsBreakdown| b.rate) as fn(&DpsBreakdown) -> f64,
+                    |b: &DpsBreakdown| b.size,
+                ] {
+                    for slot_i in 1..n_slots {
+                        match self
+                            .cells
+                            .get(slot_i)
+                            .and_then(|c| c.as_ref())
+                            .and_then(|c| c.breakdown.as_ref())
+                        {
+                            Some(breakdown) => {
+                                let share = pick(breakdown);
+                                let color = if share >= 0.0 { IMPROVE } else { WORSE };
+                                let mut formatter = NumberFormatter::new();
+                                let text = format!(
+                                    "{}{}",
+                                    if share >= 0.0 { "+" } else { "-" },
+                                    formatter.format(share.abs(), 0)
+                                );
+                                r.cell_with_layout(
+                                    Layout::right_to_left(Align::Center),
+                                    |ui| {
+                                        ui.colored_label(color, text);
+                                    },
+                                );
+                            }
+                            None => {
+                                r.cell(|_| {});
+                            }
+                        }
+                    }
+                }
+            }
         });
 
         if response.clicked() {
@@ -430,6 +521,7 @@ impl CompareNode {
                     indent + 1.0,
                     n_slots,
                     n_metrics,
+                    show_breakdown,
                     selected,
                     selection_changed,
                 );
@@ -561,6 +653,28 @@ fn build_series(
         .collect()
 }
 
+/// A group's hits per second and average hit, the two factors of its DPS. An
+/// absent group contributes nothing, which is what a zero pair means.
+fn dps_factors(group: Option<&DamageGroup>) -> (f64, f64) {
+    match group {
+        Some(group) => (group.hits_per_second.all, group.average_hit.all.unwrap_or(0.0)),
+        None => (0.0, 0.0),
+    }
+}
+
+fn dps_breakdown(reference: Option<&DamageGroup>, slot: Option<&DamageGroup>) -> DpsBreakdown {
+    let (r1, m1) = dps_factors(reference);
+    let (r2, m2) = dps_factors(slot);
+    split_dps_difference(r1, m1, r2, m2)
+}
+
+fn split_dps_difference(r1: f64, m1: f64, r2: f64, m2: f64) -> DpsBreakdown {
+    DpsBreakdown {
+        rate: (r2 - r1) * (m1 + m2) / 2.0,
+        size: (m2 - m1) * (r1 + r2) / 2.0,
+    }
+}
+
 fn build_cells(per_slot: &[Option<&DamageGroup>], columns: &[CompareMetric]) -> Vec<Option<SlotCell>> {
     let mut formatter = NumberFormatter::new();
 
@@ -591,7 +705,11 @@ fn build_cells(per_slot: &[Option<&DamageGroup>], columns: &[CompareMetric]) -> 
                         MetricCell { text, delta }
                     })
                     .collect();
-                SlotCell { metrics }
+                SlotCell {
+                    metrics,
+                    breakdown: (slot_i > 0)
+                        .then(|| dps_breakdown(per_slot.first().copied().flatten(), per_slot[slot_i])),
+                }
             })
         })
         .collect()
@@ -661,6 +779,52 @@ fn show_time_filter_setting(filter: &mut f64, ui: &mut Ui) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two shares must add up to the whole DPS difference, whatever the
+    /// numbers — that is the point of taking them at the midpoint of the pair
+    /// rather than against one end, which leaves a cross term over.
+    #[test]
+    fn the_two_shares_add_up_to_the_whole_difference() {
+        for (r1, m1, r2, m2) in [
+            (10.0, 500.0, 12.0, 600.0), // fired more often and hit harder
+            (10.0, 500.0, 20.0, 250.0), // twice the rate, half the size
+            (10.0, 500.0, 4.0, 900.0),  // slower but much harder
+            (0.0, 0.0, 7.0, 300.0),     // the ability is new in this combat
+            (7.0, 300.0, 0.0, 0.0),     // ...and the other way round
+            (10.0, 500.0, 10.0, 500.0), // no change at all
+        ] {
+            let split = split_dps_difference(r1, m1, r2, m2);
+            let whole = r2 * m2 - r1 * m1;
+            assert!(
+                (split.rate + split.size - whole).abs() < 1e-9,
+                "{r1}x{m1} -> {r2}x{m2}: {} + {} != {whole}",
+                split.rate,
+                split.size
+            );
+        }
+    }
+
+    /// Each share is attributed to the factor that actually moved.
+    #[test]
+    fn a_change_in_one_factor_alone_lands_on_that_factor() {
+        let faster = split_dps_difference(10.0, 500.0, 15.0, 500.0);
+        assert_eq!(2500.0, faster.rate, "firing 5 more per second at 500 each");
+        assert_eq!(0.0, faster.size);
+
+        let harder = split_dps_difference(10.0, 500.0, 10.0, 700.0);
+        assert_eq!(0.0, harder.rate);
+        assert_eq!(2000.0, harder.size, "200 more per hit at 10 per second");
+    }
+
+    /// A trade — more hits, each weaker — shows up as one share up and the
+    /// other down, which is the case a single DPS number hides.
+    #[test]
+    fn a_trade_shows_up_as_opposite_shares() {
+        let split = split_dps_difference(10.0, 500.0, 20.0, 300.0);
+        assert!(split.rate > 0.0, "the extra hits helped");
+        assert!(split.size < 0.0, "each one landing softer cost");
+        assert!((split.rate + split.size - 1000.0).abs() < 1e-9);
+    }
 
     #[test]
     fn delta_direction_for_higher_is_better() {

@@ -12,7 +12,7 @@ use crate::analyzer::Difficulty;
 /// The difficulty picker. `Any` matches everything; `Unknown` catches combats
 /// whose tier could not be worked out, which would otherwise be invisible under
 /// every other setting.
-#[derive(PartialEq, Clone, Copy, Default)]
+#[derive(PartialEq, Eq, Clone, Copy, Default)]
 pub enum DifficultyFilter {
     #[default]
     Any,
@@ -47,7 +47,7 @@ impl DifficultyFilter {
 }
 
 /// What a combat has to match to stay in the list. Every part defaults to "all".
-#[derive(Default)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct CombatFilter {
     /// "Space", "Ground", … — the curated environment of the detected map.
     /// `None` means any.
