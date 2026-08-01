@@ -517,6 +517,7 @@ impl OverlayInner {
                 combats: _,
                 difficulties: _,
                 base_names: _,
+                environments: _,
                 file_size: _,
             }) => latest_combat,
             _ => return,

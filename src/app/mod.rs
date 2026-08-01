@@ -14,6 +14,7 @@ use self::{
 };
 
 mod analysis_handling;
+mod combat_filter;
 mod compare;
 pub mod desktop_install;
 #[cfg(target_os = "linux")]
@@ -50,8 +51,12 @@ pub struct App {
     /// Detected difficulty per combat, aligned with `combats` (compare filter).
     combat_difficulties: Vec<Option<Difficulty>>,
     /// Each combat's name without the environment and difficulty suffixes, for
-    /// the compare view's type filter.
+    /// the type filters.
     combat_base_names: Vec<String>,
+    /// Each combat's environment ("Space" / "Ground" / …), for the same.
+    combat_environments: Vec<Option<String>>,
+    /// Narrows the combat picker to one environment, level and/or map.
+    combat_filter: combat_filter::CombatFilter,
     selected_combat_index: Option<usize>,
     selected_combat: Option<Arc<Combat>>,
     status_indicator: StatusIndicator,
@@ -99,6 +104,8 @@ impl App {
             combats: Default::default(),
             combat_difficulties: Default::default(),
             combat_base_names: Default::default(),
+            combat_environments: Default::default(),
+            combat_filter: Default::default(),
             selected_combat_index: None,
             selected_combat: None,
             status_indicator: StatusIndicator::new(),
@@ -192,6 +199,23 @@ impl eframe::App for App {
                             .selected_text(self.main_tabs.identifier.as_str())
                             .show_ui(ui, |ui| {
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
+                                    let environment = self
+                                        .combat_environments
+                                        .get(i)
+                                        .and_then(|e| e.as_deref());
+                                    let difficulty =
+                                        self.combat_difficulties.get(i).copied().flatten();
+                                    let base_name = self
+                                        .combat_base_names
+                                        .get(i)
+                                        .map(String::as_str)
+                                        .unwrap_or("");
+                                    if !self
+                                        .combat_filter
+                                        .matches(environment, difficulty, base_name)
+                                    {
+                                        continue;
+                                    }
                                     if ui
                                         .selectable_value(
                                             &mut self.selected_combat_index,
@@ -206,6 +230,22 @@ impl eframe::App for App {
                                     }
                                 }
                             });
+
+                        // The pickers only offer values the list actually holds,
+                        // so a choice can never empty it on its own.
+                        let environments = combat_filter::distinct_sorted(
+                            self.combat_environments
+                                .iter()
+                                .filter_map(|e| e.as_deref()),
+                        );
+                        let maps = combat_filter::distinct_sorted(
+                            self.combat_base_names.iter().map(String::as_str),
+                        );
+                        self.combat_filter
+                            .show("combats", &environments, &maps, ui);
+                        if self.combat_filter.is_active() && ui.button("Clear filter").clicked() {
+                            self.combat_filter.clear();
+                        }
 
                         if ui.button("Refresh Now ⟲").clicked() {
                             self.state.analysis_handler.refresh();
@@ -388,12 +428,14 @@ impl App {
                     combats,
                     difficulties,
                     base_names,
+                    environments,
                     file_size,
                 } => {
                     self.main_tabs.update(&self.state.settings, &latest_combat);
                     self.combats = combats;
                     self.combat_difficulties = difficulties;
                     self.combat_base_names = base_names;
+                    self.combat_environments = environments;
                     self.selected_combat_index = Some(self.combats.len() - 1);
                     self.selected_combat = Some(latest_combat);
                     self.status_indicator.status = Status::Loaded {

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     analyzer::{Combat, DamageGroup, Difficulty},
-    app::{settings::Settings, state::AppState},
+    app::{combat_filter::DifficultyFilter, settings::Settings, state::AppState},
 };
 
 mod compare_table;
@@ -127,42 +127,6 @@ impl Default for CompareSettings {
                 CompareMetric::Critical,
                 CompareMetric::Accuracy,
             ],
-        }
-    }
-}
-
-/// The difficulty picker above the combat list. `Any` matches everything;
-/// `Unknown` catches combats whose tier could not be worked out, which would
-/// otherwise be invisible under every other setting.
-#[derive(PartialEq, Clone, Copy)]
-enum DifficultyFilter {
-    Any,
-    Normal,
-    Advanced,
-    Elite,
-    Unknown,
-}
-
-impl DifficultyFilter {
-    const ALL: &'static [(DifficultyFilter, &'static str)] = &[
-        (DifficultyFilter::Any, "Any"),
-        (DifficultyFilter::Normal, "Normal"),
-        (DifficultyFilter::Advanced, "Advanced"),
-        (DifficultyFilter::Elite, "Elite"),
-        (DifficultyFilter::Unknown, "Unknown"),
-    ];
-
-    fn matches(self, difficulty: Option<Difficulty>) -> bool {
-        match self {
-            DifficultyFilter::Any => true,
-            DifficultyFilter::Normal => difficulty == Some(Difficulty::Normal),
-            DifficultyFilter::Advanced => difficulty == Some(Difficulty::Advanced),
-            DifficultyFilter::Elite => difficulty == Some(Difficulty::Elite),
-            // `Difficulty::Any` means a known map whose tier was not resolved,
-            // so it reads as unknown here just like a missing value.
-            DifficultyFilter::Unknown => {
-                difficulty.is_none() || difficulty == Some(Difficulty::Any)
-            }
         }
     }
 }
@@ -354,12 +318,4 @@ mod tests {
         assert_eq!(combat_types(&base_names), vec!["Bug Hunt (Ground) practice"]);
     }
 
-    #[test]
-    fn unknown_matches_both_a_missing_tier_and_an_unresolved_one() {
-        assert!(DifficultyFilter::Unknown.matches(None));
-        assert!(DifficultyFilter::Unknown.matches(Some(Difficulty::Any)));
-        assert!(!DifficultyFilter::Unknown.matches(Some(Difficulty::Normal)));
-        assert!(DifficultyFilter::Normal.matches(Some(Difficulty::Normal)));
-        assert!(DifficultyFilter::Any.matches(None));
-    }
 }
