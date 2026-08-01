@@ -15,6 +15,9 @@ use self::{
 
 mod analysis_handling;
 mod combat_filter;
+
+/// How many combats the picker shows before it starts to scroll.
+const COMBATS_SHOWN_AT_ONCE: usize = 15;
 mod compare;
 pub mod desktop_install;
 #[cfg(target_os = "linux")]
@@ -205,6 +208,20 @@ impl eframe::App for App {
                                 // list then fits three of them instead of
                                 // fifteen.
                                 ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+                                // Reserve room for the entries up front rather
+                                // than letting the popup size itself: it took
+                                // its height from whatever it held last time,
+                                // so clearing a filter left a three-row list
+                                // with everything else behind a scrollbar.
+                                let visible = (0..self.combats.len())
+                                    .filter(|&i| self.combat_matches_filter(i))
+                                    .count();
+                                let row = ui.spacing().interact_size.y
+                                    + ui.spacing().item_spacing.y;
+                                let wanted = row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32;
+                                // Never reserve more than there is room for, or
+                                // the list would run past the window.
+                                ui.set_min_height(wanted.min(ui.available_height()));
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
                                     if !self.combat_matches_filter(i) {
                                         continue;
