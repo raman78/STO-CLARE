@@ -177,6 +177,9 @@ pub struct DamageTablePartData {
     total_non_crit_hull_damage: TextValue,
     average_crit_hit: TextValue,
     average_non_crit_hull_hit: TextValue,
+    /// Whether a hovered value should list its hull and shield halves. Only
+    /// when they have no columns of their own; see `shield_hull_col!`.
+    halves_in_tooltip: bool,
     pub source_hits: Vec<Hit>,
 }
 
@@ -314,6 +317,7 @@ impl DamageTablePartData {
                 if more_decimals { 2 } else { 0 },
                 number_formatter,
             ),
+            halves_in_tooltip: !settings.general.split_shield_hull_columns,
             source_hits: source.hits.get(&combat.hits_manger).to_vec(),
         }
     }

@@ -31,7 +31,7 @@ macro_rules! shield_hull_col {
         ColumnDescriptor {
             name: $name,
             sort: $sort,
-            show: |p, r| p.$field.show(r),
+            show: |p, r| p.$field.show(r, p.halves_in_tooltip),
             parts: &[
                 ColumnPart {
                     name: "Hull",
@@ -151,6 +151,8 @@ struct Player {
     npc_kills: TextCount,
     player_kills: TextCount,
     deaths: TextCount,
+    /// See `DamageTablePartData::halves_in_tooltip`.
+    halves_in_tooltip: bool,
 }
 
 impl SummaryTable {
@@ -338,6 +340,7 @@ impl Player {
             deaths: TextCount::new(player.damage_in.kills.values().copied().sum::<u32>() as _),
             npc_kills: TextCount::new(npc_kills as _),
             player_kills: TextCount::new(player_kills as _),
+            halves_in_tooltip: !settings.general.split_shield_hull_columns,
         }
     }
 

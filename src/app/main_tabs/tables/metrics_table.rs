@@ -38,7 +38,9 @@ macro_rules! col {
 /// Damage` or `Hits`. Renders as a single "all" column with the halves in a
 /// tooltip, or — when the split-columns setting is on — as `all | Hull |
 /// Shield` under one header. `$field` must be a `ShieldAndHullTextValue` or
-/// `ShieldAndHullTextCount` on the row data.
+/// `ShieldAndHullTextCount` on the row data, which must also carry a
+/// `halves_in_tooltip` flag (the row data is built per settings, so the flag
+/// rides along with the formatting).
 #[macro_export]
 macro_rules! shield_hull_col {
     ($name:expr, $sort:expr, $field:ident $(,)?) => {
@@ -46,7 +48,7 @@ macro_rules! shield_hull_col {
             name: $name,
             name_info: None,
             sort: $sort,
-            show: |t, r| t.$field.show(r),
+            show: |t, r| t.$field.show(r, t.halves_in_tooltip),
             parts: $crate::shield_hull_parts!($field),
         }
     };
@@ -56,7 +58,7 @@ macro_rules! shield_hull_col {
             name: $name,
             name_info: Some($name_info),
             sort: $sort,
-            show: |t, r| t.$field.show(r),
+            show: |t, r| t.$field.show(r, t.halves_in_tooltip),
             parts: $crate::shield_hull_parts!($field),
         }
     };

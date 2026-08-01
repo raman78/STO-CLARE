@@ -202,7 +202,9 @@ impl SummaryTab {
     ) {
         table.row(|r| {
             Self::show_description(r, description);
-            value.show(r);
+            // Without the extra columns the tooltip is the only way to the
+            // halves, so it comes back exactly then.
+            value.show(r, !split);
             if split {
                 value.show_hull(r);
                 value.show_shield(r);

@@ -66,6 +66,8 @@ pub struct HealTablePartData {
     ticks: ShieldAndHullTextCount,
     ticks_per_second: ShieldAndHullTextValue,
     ticks_percentage: ShieldAndHullTextValue,
+    /// See `DamageTablePartData::halves_in_tooltip`.
+    halves_in_tooltip: bool,
     pub source_ticks: Vec<HealTick>,
 }
 
@@ -143,6 +145,7 @@ impl HealTablePartData {
                 if more_decimals { 3 } else { 2 },
                 number_formatter,
             ),
+            halves_in_tooltip: !settings.general.split_shield_hull_columns,
             source_ticks: group.ticks.get(&combat.heal_ticks_manger).to_vec(),
         }
     }
