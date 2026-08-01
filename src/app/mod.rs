@@ -60,6 +60,12 @@ pub struct App {
     combat_environments: Vec<Option<String>>,
     /// Narrows the combat picker to one environment, level and/or map.
     combat_filter: combat_filter::CombatFilter,
+    /// Bumped whenever the filter changes, and mixed into the picker's id.
+    ///
+    /// egui keeps a scroll area's measured size under that id, so the list kept
+    /// opening at the height it had while filtered however much it then held.
+    /// A new id makes it a new scroll area, measured from scratch.
+    combat_filter_generation: u64,
     selected_combat_index: Option<usize>,
     selected_combat: Option<Arc<Combat>>,
     status_indicator: StatusIndicator,
@@ -109,6 +115,7 @@ impl App {
             combat_base_names: Default::default(),
             combat_environments: Default::default(),
             combat_filter: Default::default(),
+            combat_filter_generation: 0,
             selected_combat_index: None,
             selected_combat: None,
             status_indicator: StatusIndicator::new(),
@@ -199,7 +206,10 @@ impl eframe::App for App {
                         // whatever the UI scale is.
                         let row =
                             ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
-                        ComboBox::new("combat list", "Combats")
+                        ComboBox::new(
+                            ("combat list", self.combat_filter_generation),
+                            "Combats",
+                        )
                             // Wide enough for a full identifier — map,
                             // environment, level, date and time — on one line.
                             .width(620.0)
@@ -329,6 +339,8 @@ impl eframe::App for App {
                             self.combat_filter.clear();
                         }
                         if self.combat_filter != before {
+                            self.combat_filter_generation =
+                                self.combat_filter_generation.wrapping_add(1);
                             self.follow_filter_change();
                         }
                     });
