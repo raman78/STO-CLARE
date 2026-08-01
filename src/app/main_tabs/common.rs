@@ -3,6 +3,7 @@ use eframe::egui::*;
 
 use crate::{
     analyzer::*,
+    app::fonts::bold_family,
     custom_widgets::{slider_text_edit::SliderTextEdit, table::*},
     helpers::{format_duration, number_formatting::NumberFormatter},
 };
@@ -205,8 +206,44 @@ impl TextDuration {
 /// follow it.
 fn show_value_text_strong(row: &mut TableRow, value_text: &str) -> Response {
     row.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-        ui.label(RichText::new(value_text).strong());
+        ui.label(bold_text(value_text));
     })
+}
+
+/// Text in the bold face, for the All column: its values and its heading. The
+/// brighter `strong` color comes along with it, since the two are the same
+/// emphasis.
+pub fn bold_text(text: impl Into<String>) -> RichText {
+    RichText::new(text).family(bold_family()).strong()
+}
+
+/// The heading of a split column's total cell: the metric name on the first
+/// line as usual, and a bold `All` on the second, so the heading is as heavy as
+/// the values under it. One galley, so the cell keeps sorting on a single click.
+pub fn split_total_header_text(ui: &Ui, name: &str) -> text::LayoutJob {
+    let font_id = TextStyle::Body.resolve(ui.style());
+    let mut job = text::LayoutJob::default();
+    job.append(
+        &format!("{}\n", name),
+        0.0,
+        TextFormat {
+            font_id: font_id.clone(),
+            // Replaced with the label's own color, so the heading follows the
+            // theme and the hover/selection visuals like any other cell.
+            color: Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
+    job.append(
+        "All",
+        0.0,
+        TextFormat {
+            font_id: FontId::new(font_id.size, bold_family()),
+            color: ui.visuals().strong_text_color(),
+            ..Default::default()
+        },
+    );
+    job
 }
 
 fn show_value_text(row: &mut TableRow, value_text: &str) -> Response {

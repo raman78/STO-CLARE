@@ -20,6 +20,7 @@ mod combat_filter;
 const COMBATS_SHOWN_AT_ONCE: usize = 15;
 mod compare;
 pub mod desktop_install;
+mod fonts;
 #[cfg(target_os = "linux")]
 mod log_consolidation;
 pub mod logging;
@@ -105,6 +106,8 @@ impl App {
     ) -> Self {
         cc.egui_ctx
             .memory_mut(|m| m.options.repaint_on_widget_change = false);
+        // The tables ask for the bold family, which only exists once installed.
+        fonts::install(&cc.egui_ctx);
         let state = AppState::new(&cc.egui_ctx);
         let settings_window =
             SettingsWindow::new(&cc.egui_ctx, cc.egui_ctx.native_pixels_per_point());

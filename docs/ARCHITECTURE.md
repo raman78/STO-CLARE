@@ -132,6 +132,14 @@ Two conventions worth knowing before changing a table or a chart:
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
+- **Bold text needs its own font.** egui's `RichText::strong()` only picks a
+  brighter colour, and the fonts epaint bundles have no bold face. `app/fonts`
+  embeds `assets/fonts/Ubuntu-Bold.ttf` — the matching weight of the Ubuntu-Light
+  epaint uses — as the family `FontFamily::Name("Ubuntu-Bold")` and binds it on
+  the main context in `App::new`; `main_tabs::common::bold_text` is how widgets
+  ask for it. epaint panics on a family that is not bound, so any further egui
+  context that wants bold text has to call `fonts::install` too (the overlay
+  context does not use it).
 
 Settings changes are gated by cost: only `analysis` invalidates the `Analyzer`
 and forces a re-read of the log; a `general` change just rebuilds the views,

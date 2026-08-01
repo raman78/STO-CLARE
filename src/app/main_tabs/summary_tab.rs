@@ -168,7 +168,12 @@ impl SummaryTab {
             Table::new(ui)
                 .header(HEADER_HEIGHT, |r| {
                     r.cell(|_| {});
-                    for name in ["All", "Hull", "Shield"] {
+                    // The All heading matches the totals under it (see
+                    // `ShieldAndHullTextValue::show`); the halves stay plain.
+                    r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(bold_text("All"));
+                    });
+                    for name in ["Hull", "Shield"] {
                         r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.label(name);
                         });

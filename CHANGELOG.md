@@ -1,5 +1,10 @@
 # Change Log
 
+## unreleased
+
+### Other Changes
+- the totals of a split value are now printed in a genuinely bold typeface, heading included. They were only a slightly brighter shade before, which next to the Hull and Shield numbers was easy to miss
+
 ## v1.8.0
 
 ### Major Changes
