@@ -203,16 +203,14 @@ impl eframe::App for App {
                             .height(360.0)
                             .selected_text(self.main_tabs.identifier.as_str())
                             .show_ui(ui, |ui| {
-                                // One line per combat. Wrapped names turn each
-                                // entry into a two or three line block, and the
-                                // list then fits three of them instead of
-                                // fifteen.
-                                ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
                                 // Reserve room for the entries up front rather
-                                // than letting the popup size itself: it took
-                                // its height from whatever it held last time,
-                                // so clearing a filter left a three-row list
-                                // with everything else behind a scrollbar.
+                                // than leaving the height to the scroll area:
+                                // after a filter was cleared the list opened
+                                // three rows tall with the rest behind a
+                                // scrollbar, and egui's own sizing was not
+                                // giving the fifteen the cap is set for.
+                                // (Wrapping is not the cause — egui already
+                                // sets TextWrapMode::Extend inside the popup.)
                                 let visible = (0..self.combats.len())
                                     .filter(|&i| self.combat_matches_filter(i))
                                     .count();
