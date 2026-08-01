@@ -14,6 +14,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     analyzer::{AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager},
+    app::main_tabs::tables::show_group_separator,
     app::main_tabs::diagrams::{
         combat_duration_seconds, DamageDiagrams, DiagramType, PreparedDamageDataSet,
     },
@@ -30,8 +31,24 @@ const HEADER_HEIGHT: f32 = 34.0;
 
 /// Delta color when the metric moved in the better direction.
 const IMPROVE: Color32 = Color32::from_rgb(0x5c, 0xb8, 0x5c);
-/// Headers of the two breakdown column groups, in the order they are drawn.
-const BREAKDOWN_LABELS: [&str; 2] = ["ΔDPS: rate", "ΔDPS: hit size"];
+/// Headers of the two breakdown column groups, with what each one means, in the
+/// order they are drawn.
+const BREAKDOWN_LABELS: [(&str, &str); 2] = [
+    (
+        "ΔDPS: rate",
+        "How much of the DPS difference came from the ability landing more (or fewer) times per second",
+    ),
+    (
+        "ΔDPS: hit size",
+        "How much of the DPS difference came from each hit landing harder (or softer). Added to the rate share, this is the whole difference",
+    ),
+];
+
+/// One cell of the header row: a label, or the rule that opens a column group.
+enum HeaderCell {
+    Separator,
+    Cell { text: String, tooltip: String },
+}
 /// Delta color when the metric moved in the worse direction.
 const WORSE: Color32 = Color32::from_rgb(0xd9, 0x53, 0x4f);
 
@@ -258,6 +275,15 @@ impl Comparison {
             self.rebuild();
         }
 
+        ui.label(
+            RichText::new(
+                "Each column group holds one metric, one column per combat. The small coloured \
+                 number beside a value is its difference against combat #1 — green when it moved \
+                 the better way.",
+            )
+            .weak(),
+        );
+
         ui.separator();
 
         Splitter::horizontal()
@@ -270,21 +296,6 @@ impl Comparison {
     }
 
     fn show_column_picker(&self, ui: &mut Ui, settings: &mut Settings) {
-        if ui
-            .checkbox(
-                &mut settings.compare.show_dps_breakdown,
-                "Break down ΔDPS",
-            )
-            .on_hover_text(
-                "Splits each DPS difference against the reference into the share that came from \
-                 firing more often and the share that came from each hit landing harder. The two \
-                 always add up to the whole difference.",
-            )
-            .changed()
-        {
-            settings.save();
-        }
-
         ui.menu_button("Columns ▾", |ui| {
             let mut changed = false;
             for &metric in CompareMetric::ALL {
@@ -298,6 +309,22 @@ impl Comparison {
                     }
                 }
             }
+
+            ui.separator();
+            // Not a metric of a single combat but a pair of columns all the
+            // same, so it belongs with the others rather than beside the menu.
+            changed |= ui
+                .checkbox(
+                    &mut settings.compare.show_dps_breakdown,
+                    "ΔDPS breakdown",
+                )
+                .on_hover_text(
+                    "Two more columns splitting each DPS difference against the reference: the \
+                     share that came from landing more often, and the share that came from each \
+                     hit landing harder. The two add up to the whole difference.",
+                )
+                .changed();
+
             if changed {
                 // Keep a stable column order regardless of toggle order.
                 settings.compare.columns.sort_by_key(|m| {
@@ -316,28 +343,44 @@ impl Comparison {
         let n_metrics = self.columns.len();
         // Columns are grouped by metric: the metric name spans its group (shown
         // on the first column), with the combat number below each column.
-        let mut headers: Vec<String> = self
-            .columns
-            .iter()
-            .flat_map(|c| {
-                (0..n_slots).map(move |slot_i| {
-                    if slot_i == 0 {
-                        format!("{}\n{} (ref)", c.label(), slot_i + 1)
+        // A rule opens each group: without one, three combats' worth of the
+        // same-looking numbers run into the next metric.
+        let mut headers: Vec<HeaderCell> = Vec::new();
+        for column in self.columns.iter() {
+            headers.push(HeaderCell::Separator);
+            for slot_i in 0..n_slots {
+                headers.push(HeaderCell::Cell {
+                    text: if slot_i == 0 {
+                        format!("{}\n#{} (ref)", column.label(), slot_i + 1)
                     } else {
-                        format!("\n{}", slot_i + 1)
-                    }
-                })
-            })
-            .collect();
+                        format!("\n#{}", slot_i + 1)
+                    },
+                    tooltip: format!(
+                        "{} in combat #{}{}",
+                        column.label(),
+                        slot_i + 1,
+                        if slot_i == 0 {
+                            " — the reference every other column is compared against"
+                        } else {
+                            ", with its difference against combat #1 beside it"
+                        }
+                    ),
+                });
+            }
+        }
         // The breakdown has nothing to say about the reference, so its groups
         // start at the second combat.
         if show_breakdown {
-            for label in BREAKDOWN_LABELS {
+            for (label, tooltip) in BREAKDOWN_LABELS {
+                headers.push(HeaderCell::Separator);
                 for slot_i in 1..n_slots {
-                    headers.push(if slot_i == 1 {
-                        format!("{}\n{}", label, slot_i + 1)
-                    } else {
-                        format!("\n{}", slot_i + 1)
+                    headers.push(HeaderCell::Cell {
+                        text: if slot_i == 1 {
+                            format!("{}\n#{}", label, slot_i + 1)
+                        } else {
+                            format!("\n#{}", slot_i + 1)
+                        },
+                        tooltip: format!("{} (combat #{} against #1)", tooltip, slot_i + 1),
                     });
                 }
             }
@@ -355,9 +398,14 @@ impl Comparison {
                             ui.label("Name");
                         });
                         for header in &headers {
-                            r.cell(|ui| {
-                                ui.label(header);
-                            });
+                            match header {
+                                HeaderCell::Separator => show_group_separator(r),
+                                HeaderCell::Cell { text, tooltip } => {
+                                    r.cell(|ui| {
+                                        ui.label(text).on_hover_text(tooltip);
+                                    });
+                                }
+                            }
                         }
                     })
                     .body(ROW_HEIGHT, |mut t| {
@@ -447,6 +495,7 @@ impl CompareNode {
 
             // Column groups by metric: for each metric, one cell per combat.
             for metric_i in 0..n_metrics {
+                show_group_separator(r);
                 for slot_i in 0..n_slots {
                     match self
                         .cells
@@ -477,6 +526,7 @@ impl CompareNode {
                     (|b: &DpsBreakdown| b.rate) as fn(&DpsBreakdown) -> f64,
                     |b: &DpsBreakdown| b.size,
                 ] {
+                    show_group_separator(r);
                     for slot_i in 1..n_slots {
                         match self
                             .cells

@@ -10,7 +10,8 @@ mod damage_tab;
 pub(crate) mod diagrams;
 mod heal_tab;
 mod summary_tab;
-mod tables;
+// Exposed so the compare view can reuse the tables' column separator.
+pub(crate) mod tables;
 
 pub struct MainTabs {
     pub identifier: String,
