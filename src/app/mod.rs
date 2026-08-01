@@ -312,6 +312,7 @@ impl eframe::App for App {
                         &self.combats,
                         &self.combat_difficulties,
                         &self.combat_base_names,
+                        &self.combat_environments,
                         ui,
                     );
                 } else {

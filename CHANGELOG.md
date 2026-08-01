@@ -20,8 +20,7 @@
 - the healing charts have Hull and Shield switches above them, both on by default, so healing can be looked at as one total or split into what restored hull and what restored shields
 - the "Healing Done" tab is now called "Healing Ally", which says what it holds without having to read the tooltip
 - the outgoing damage table has a Drain column: damage that strips shields directly rather than through an attack, which no stat that applies to the rest mitigates
-- the Compare view's Difficulty filter now offers Normal and Unknown as well, so combats at those levels can be found at all
-- the Compare view's Type filter now uses the combat's own name instead of picking it back out of the displayed label, so a naming rule whose name contains brackets is no longer cut in half
+- the Compare view now filters exactly like the main window: the same three pickers for type, level and map, narrowing each other the same way, with the search box above them. The level is a dropdown there too rather than a row of buttons, and it offers Normal and Unknown as well. The map filter uses the combat's own name instead of picking it back out of the displayed label, so a naming rule whose name contains brackets is no longer cut in half
 - the hull and shield halves of a value now have their own columns instead of only showing when you hover: damage, hits, healing and heal ticks all show how much went into hull and how much into shields, for every ability. It can be turned off again under Settings → General
 - the healing tabs can now be grouped either way round, with a switch above the table: by person first (who healed you, then with what) or by ability first (what was used, then on whom)
 - the damage tabs are now called "Damage Dealt" and "Damage Taken" instead of "Outgoing" and "Incoming", and the summary uses the same wording
