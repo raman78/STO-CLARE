@@ -194,32 +194,31 @@ impl eframe::App for App {
                         self.status_indicator
                             .show(self.state.analysis_handler.is_busy(), ui);
 
+                        // One row of the popup, used both for its height cap
+                        // and for the room reserved inside it, so the two agree
+                        // whatever the UI scale is.
+                        let row =
+                            ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
                         ComboBox::new("combat list", "Combats")
                             // Wide enough for a full identifier — map,
                             // environment, level, date and time — on one line.
                             .width(620.0)
-                            // Show around 15 combats before the list starts to
-                            // scroll (the default only fits a few).
-                            .height(360.0)
+                            .height(row * COMBATS_SHOWN_AT_ONCE as f32)
                             .selected_text(self.main_tabs.identifier.as_str())
                             .show_ui(ui, |ui| {
-                                // Reserve room for the entries up front rather
-                                // than leaving the height to the scroll area:
-                                // after a filter was cleared the list opened
-                                // three rows tall with the rest behind a
-                                // scrollbar, and egui's own sizing was not
-                                // giving the fifteen the cap is set for.
-                                // (Wrapping is not the cause — egui already
-                                // sets TextWrapMode::Extend inside the popup.)
+                                // Reserve the room here. The popup reports only
+                                // about three rows of available height, and
+                                // egui's scroll area sizes its viewport to that,
+                                // so without a minimum the list opens three tall
+                                // however many combats it holds. Clamping the
+                                // minimum to the reported height puts the same
+                                // three rows straight back.
                                 let visible = (0..self.combats.len())
                                     .filter(|&i| self.combat_matches_filter(i))
                                     .count();
-                                let row = ui.spacing().interact_size.y
-                                    + ui.spacing().item_spacing.y;
-                                let wanted = row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32;
-                                // Never reserve more than there is room for, or
-                                // the list would run past the window.
-                                ui.set_min_height(wanted.min(ui.available_height()));
+                                ui.set_min_height(
+                                    row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32,
+                                );
                                 for (i, combat) in self.combats.iter().enumerate().rev() {
                                     if !self.combat_matches_filter(i) {
                                         continue;

@@ -1524,6 +1524,7 @@ mod tests {
 
 
 
+
     /// Real-data check for the three healing pools: totals the split across a
     /// whole log, per player, so the numbers can be compared against an
     /// independent count of the raw records. Point `CLA_TEST_COMBATLOG` at a
