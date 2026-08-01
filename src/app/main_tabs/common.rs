@@ -79,9 +79,22 @@ impl ShieldAndHullTextValue {
     /// own. With the columns showing, a tooltip would repeat what is already
     /// next to it and cover those numbers while it is open.
     pub fn show(&self, row: &mut TableRow, halves_in_tooltip: bool) {
-        let response = self.all.show(row);
-        if let (true, Some(response)) = (halves_in_tooltip, response) {
-            show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+        if halves_in_tooltip {
+            let response = self.all.show(row);
+            if let Some(response) = response {
+                show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+            }
+            return;
+        }
+        // With the halves beside it, the total is the one to find first, so it
+        // carries the weight and they stay plain.
+        match &self.all.text {
+            Some(text) => {
+                show_value_text_strong(row, text);
+            }
+            None => {
+                row.cell(|_| {});
+            }
         }
     }
 
@@ -156,10 +169,12 @@ impl ShieldAndHullTextCount {
 
     /// See [`ShieldAndHullTextValue::show`].
     pub fn show(&self, row: &mut TableRow, halves_in_tooltip: bool) {
-        let response = self.all.show(row);
         if halves_in_tooltip {
+            let response = self.all.show(row);
             show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+            return;
         }
+        show_value_text_strong(row, &self.all.text);
     }
 
     /// The hull half as its own cell (split-columns mode).
@@ -184,6 +199,14 @@ impl TextDuration {
     pub fn show(&self, row: &mut TableRow) -> Response {
         show_value_text(row, &self.text)
     }
+}
+
+/// The total of a split metric, set apart from the Hull and Shield cells that
+/// follow it.
+fn show_value_text_strong(row: &mut TableRow, value_text: &str) -> Response {
+    row.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.label(RichText::new(value_text).strong());
+    })
 }
 
 fn show_value_text(row: &mut TableRow, value_text: &str) -> Response {
