@@ -17,7 +17,7 @@ pub struct MainTabs {
     pub summary_tab: SummaryTab,
     pub damage_out_tab: DamageTab,
     pub damage_in_tab: DamageTab,
-    pub heal_done_tab: HealTab,
+    pub heal_ally_tab: HealTab,
     pub heal_received_tab: HealTab,
     pub heal_self_tab: HealTab,
 
@@ -30,14 +30,14 @@ pub enum MainTab {
     Summary,
     DamageDealt,
     DamageTaken,
-    HealingDone,
+    HealingAlly,
     HealingReceived,
     SelfHealing,
 }
 
 /// What each healing tab holds. Shown as tooltips, because the three pools are
 /// only unambiguous once you know that they are disjoint.
-const HEALING_DONE_INFO: &str =
+const HEALING_ALLY_INFO: &str =
     "Healing you did to somebody else — teammates, allied NPCs and your own pets.\n\
      Grouped by ability, then by who received it.\n\
      Healing you did to yourself is not in here; it is under Self Healing.";
@@ -58,7 +58,7 @@ impl MainTabs {
             identifier: String::new(),
             damage_out_tab: DamageTab::empty(|p| &p.damage_out),
             damage_in_tab: DamageTab::empty(|p| &p.damage_in),
-            heal_done_tab: HealTab::empty(|p| &p.heal_done),
+            heal_ally_tab: HealTab::empty(|p| &p.heal_ally),
             heal_received_tab: HealTab::empty(|p| &p.heal_received),
             heal_self_tab: HealTab::empty(|p| &p.heal_self),
             active_tab: Default::default(),
@@ -71,7 +71,7 @@ impl MainTabs {
         self.summary_tab.update(settings, combat);
         self.damage_out_tab.update(settings, combat);
         self.damage_in_tab.update(settings, combat);
-        self.heal_done_tab.update(settings, combat);
+        self.heal_ally_tab.update(settings, combat);
         self.heal_received_tab.update(settings, combat);
         self.heal_self_tab.update(settings, combat);
     }
@@ -85,8 +85,8 @@ impl MainTabs {
             ui.selectable_value(&mut self.active_tab, MainTab::DamageTaken, "Damage Taken")
                 .on_hover_text("Damage others dealt to you.");
 
-            ui.selectable_value(&mut self.active_tab, MainTab::HealingDone, "Healing Done")
-                .on_hover_text(HEALING_DONE_INFO);
+            ui.selectable_value(&mut self.active_tab, MainTab::HealingAlly, "Healing Ally")
+                .on_hover_text(HEALING_ALLY_INFO);
             ui.selectable_value(
                 &mut self.active_tab,
                 MainTab::HealingReceived,
@@ -101,7 +101,7 @@ impl MainTabs {
             MainTab::Summary => self.summary_tab.show(settings, ui),
             MainTab::DamageDealt => self.damage_out_tab.show(settings, ui),
             MainTab::DamageTaken => self.damage_in_tab.show(settings, ui),
-            MainTab::HealingDone => self.heal_done_tab.show(settings, ui),
+            MainTab::HealingAlly => self.heal_ally_tab.show(settings, ui),
             MainTab::HealingReceived => self.heal_received_tab.show(settings, ui),
             MainTab::SelfHealing => self.heal_self_tab.show(settings, ui),
         }

@@ -14,7 +14,9 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     analyzer::{AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager},
-    app::main_tabs::diagrams::{DamageDiagrams, DiagramType, PreparedDamageDataSet},
+    app::main_tabs::diagrams::{
+        combat_duration_seconds, DamageDiagrams, DiagramType, PreparedDamageDataSet,
+    },
     app::settings::Settings,
     custom_widgets::{slider_text_edit::SliderTextEdit, splitter::Splitter, table::*},
     helpers::number_formatting::NumberFormatter,
@@ -67,6 +69,9 @@ struct CompareNode {
 struct SeriesData {
     hits: Vec<Hit>,
     total: f64,
+    /// The slot combat's length, so each line spans its own whole fight even
+    /// when the compared combats are of different lengths.
+    combat_duration_s: f64,
 }
 
 struct SlotCell {
@@ -122,6 +127,11 @@ impl Comparison {
             self.slots.iter().map(|s| &s.combat.name_manager).collect();
         let hits_managers: Vec<&HitsManager> =
             self.slots.iter().map(|s| &s.combat.hits_manger).collect();
+        let durations: Vec<f64> = self
+            .slots
+            .iter()
+            .map(|s| combat_duration_seconds(&s.combat))
+            .collect();
 
         let mut id_source = 0u32;
         let root_id = id_source;
@@ -130,11 +140,12 @@ impl Comparison {
         // Top row is the player's overall total (root of the damage tree); the
         // ability groups hang under it, expanded by default.
         let cells = build_cells(&parents, &self.columns);
-        let series = build_series(&parents, &hits_managers);
+        let series = build_series(&parents, &hits_managers, &durations);
         let sub_nodes = build_level(
             &parents,
             &name_managers,
             &hits_managers,
+            &durations,
             &self.columns,
             &mut id_source,
         );
@@ -178,6 +189,7 @@ impl Comparison {
                     &(slot_i + 1).to_string(),
                     series.total,
                     series.hits.iter(),
+                    series.combat_duration_s,
                 ))
             });
             DamageDiagrams::from_data(data, filter, time_slice)
@@ -471,6 +483,7 @@ fn build_level(
     parents: &[Option<&DamageGroup>],
     name_managers: &[&NameManager],
     hits_managers: &[&HitsManager],
+    durations: &[f64],
     columns: &[CompareMetric],
     id_source: &mut u32,
 ) -> Vec<CompareNode> {
@@ -501,8 +514,15 @@ fn build_level(
             *id_source += 1;
             let sort_key = per_slot[0].map(|g| g.dps.all).unwrap_or(f64::NEG_INFINITY);
             let cells = build_cells(per_slot, columns);
-            let series = build_series(per_slot, hits_managers);
-            let sub_nodes = build_level(per_slot, name_managers, hits_managers, columns, id_source);
+            let series = build_series(per_slot, hits_managers, durations);
+            let sub_nodes = build_level(
+                per_slot,
+                name_managers,
+                hits_managers,
+                durations,
+                columns,
+                id_source,
+            );
             CompareNode {
                 name,
                 id,
@@ -526,6 +546,7 @@ fn build_level(
 fn build_series(
     per_slot: &[Option<&DamageGroup>],
     hits_managers: &[&HitsManager],
+    durations: &[f64],
 ) -> Vec<Option<SeriesData>> {
     per_slot
         .iter()
@@ -534,6 +555,7 @@ fn build_series(
             g.map(|g| SeriesData {
                 hits: g.hits.get(hits_managers[slot_i]).to_vec(),
                 total: g.total_damage.all,
+                combat_duration_s: durations[slot_i],
             })
         })
         .collect()

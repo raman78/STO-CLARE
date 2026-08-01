@@ -12,6 +12,9 @@ pub struct DamageTab {
     filter: f64,
     diagram_time_slice: f64,
     active_diagram: DiagramType,
+    /// The open combat's length, so a charted selection spans the whole fight
+    /// rather than only the part where the selected ability was firing.
+    combat_duration_s: f64,
 }
 
 impl DamageTab {
@@ -24,10 +27,12 @@ impl DamageTab {
             diagram_time_slice: 1.0,
             dmg_selection_diagrams: None,
             active_diagram: DiagramType::Dps,
+            combat_duration_s: 0.0,
         }
     }
 
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
+        self.combat_duration_s = combat_duration_seconds(combat);
         self.table = DamageTable::new(settings, combat, self.damage_group);
         self.dmg_main_diagrams = DamageDiagrams::from_damage_groups(
             combat.players.values().map(self.damage_group),
@@ -49,6 +54,7 @@ impl DamageTab {
                         p,
                         self.filter,
                         self.diagram_time_slice,
+                        self.combat_duration_s,
                     );
                 });
 
@@ -61,6 +67,7 @@ impl DamageTab {
         selection: TableSelectionEvent<DamageTablePartData>,
         filter: f64,
         damage_time_slice: f64,
+        combat_duration_s: f64,
     ) {
         match selection {
             TableSelectionEvent::Clear => *diagram = None,
@@ -69,6 +76,7 @@ impl DamageTab {
                     part,
                     filter,
                     damage_time_slice,
+                    combat_duration_s,
                 ))
             }
             TableSelectionEvent::Single(part) => {
@@ -76,17 +84,23 @@ impl DamageTab {
                     part,
                     filter,
                     damage_time_slice,
+                    combat_duration_s,
                 ))
             }
             TableSelectionEvent::AddSingle(part) => match diagram.as_mut() {
                 Some(diagram) => {
-                    diagram.add_data(Self::make_single_data_set(part), filter, damage_time_slice);
+                    diagram.add_data(
+                        Self::make_single_data_set(part, combat_duration_s),
+                        filter,
+                        damage_time_slice,
+                    );
                 }
                 None => {
                     *diagram = Some(Self::make_single_diagram_selection(
                         part,
                         filter,
                         damage_time_slice,
+                        combat_duration_s,
                     ))
                 }
             },
@@ -102,10 +116,16 @@ impl DamageTab {
         part: &DamageTablePart,
         filter: f64,
         damage_time_slice: f64,
+        combat_duration_s: f64,
     ) -> DamageDiagrams {
         DamageDiagrams::from_data(
             part.sub_parts.iter().map(|p| {
-                PreparedDamageDataSet::new(&p.name, part.total_damage(), p.source_hits.iter())
+                PreparedDamageDataSet::new(
+                    &p.name,
+                    part.total_damage(),
+                    p.source_hits.iter(),
+                    combat_duration_s,
+                )
             }),
             filter,
             damage_time_slice,
@@ -116,16 +136,25 @@ impl DamageTab {
         part: &DamageTablePart,
         filter: f64,
         damage_time_slice: f64,
+        combat_duration_s: f64,
     ) -> DamageDiagrams {
         return DamageDiagrams::from_data(
-            [Self::make_single_data_set(part)].into_iter(),
+            [Self::make_single_data_set(part, combat_duration_s)].into_iter(),
             filter,
             damage_time_slice,
         );
     }
 
-    fn make_single_data_set(part: &DamageTablePart) -> PreparedDamageDataSet {
-        PreparedDamageDataSet::new(&part.name, part.total_damage(), part.source_hits.iter())
+    fn make_single_data_set(
+        part: &DamageTablePart,
+        combat_duration_s: f64,
+    ) -> PreparedDamageDataSet {
+        PreparedDamageDataSet::new(
+            &part.name,
+            part.total_damage(),
+            part.source_hits.iter(),
+            combat_duration_s,
+        )
     }
 
     fn update_diagrams(&mut self) {

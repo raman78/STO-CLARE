@@ -54,8 +54,9 @@ pub struct Combat {
     pub total_damage_in: ShieldHullValues,
     /// Healing the players received *from someone else*.
     pub total_heal_received: ShieldHullValues,
-    /// Healing the players did *to someone else*.
-    pub total_heal_done: ShieldHullValues,
+    /// Healing the players did to *someone else* — team mates, allied
+    /// NPCs and their own pets.
+    pub total_heal_ally: ShieldHullValues,
     /// Healing the players did to themselves (including their own gear procs).
     pub total_heal_self: ShieldHullValues,
     pub players: Players,
@@ -89,7 +90,7 @@ pub struct CombatName {
 ///
 /// | pool | records it holds |
 /// |---|---|
-/// | `heal_done` | this player healed *somebody else* (directly, or through a console/pet) |
+/// | `heal_ally` | this player healed *somebody else* — team mate, allied NPC or own pet (directly, or through a console) |
 /// | `heal_received` | *somebody else* healed this player |
 /// | `heal_self` | this player healed themselves — self-buffs, own trait and gear procs, own consoles targeting them |
 ///
@@ -106,7 +107,7 @@ pub struct Player {
     pub active_time: Option<Range<NaiveDateTime>>,
     pub damage_out: DamageGroup,
     pub damage_in: DamageGroup,
-    pub heal_done: HealPool,
+    pub heal_ally: HealPool,
     pub heal_received: HealPool,
     pub heal_self: HealPool,
 }
@@ -284,7 +285,7 @@ impl Combat {
             total_damage_out: Default::default(),
             total_damage_in: Default::default(),
             total_heal_received: Default::default(),
-            total_heal_done: Default::default(),
+            total_heal_ally: Default::default(),
             total_heal_self: Default::default(),
             total_kills: 0,
             total_deaths: 0,
@@ -317,21 +318,29 @@ impl Combat {
         format!("{} | {}", name, date_times)
     }
 
-    pub fn name(&self) -> String {
-        // The base name comes from the user's Combat Name Rules (they take
-        // priority), else the auto-detected map, else "Combat". The detected
-        // difficulty is always appended on top — it is computed from the log's
-        // entities, independent of naming, so the tier shows even when a rule
-        // provides the name.
-        let base = if !self.combat_names.is_empty() {
+    /// The combat's name without the environment and difficulty that
+    /// [`Self::name`] appends: the user's Combat Name Rules if any match (they
+    /// take priority), else the auto-detected map, else "Combat".
+    ///
+    /// This is what identifies "the same kind of fight" — the compare view
+    /// groups by it. Reading it back out of a formatted name by string surgery
+    /// used to be the only option and broke on any rule whose own name contains
+    /// a bracket.
+    pub fn base_name(&self) -> String {
+        if !self.combat_names.is_empty() {
             self.combat_names.values().map(|n| n.format()).join(", ")
         } else {
             self.detected_map
                 .clone()
                 .unwrap_or_else(|| "Combat".to_string())
-        };
+        }
+    }
 
-        let base = append_detected_combat_type(base, self.detected_combat_type.as_deref());
+    pub fn name(&self) -> String {
+        // The detected difficulty is always appended on top of the base name —
+        // it is computed from the log's entities, independent of naming, so the
+        // tier shows even when a rule provides the name.
+        let base = append_detected_combat_type(self.base_name(), self.detected_combat_type.as_deref());
         append_detected_difficulty(base, self.detected_difficulty)
     }
 
@@ -360,7 +369,7 @@ impl Combat {
 
         self.total_damage_out = players.clone().map(|p| p.damage_out.total_damage).sum();
         self.total_damage_in = players.clone().map(|p| p.damage_in.total_damage).sum();
-        self.total_heal_done = players.clone().map(|p| p.heal_done.total_heal).sum();
+        self.total_heal_ally = players.clone().map(|p| p.heal_ally.total_heal).sum();
         self.total_heal_received = players.clone().map(|p| p.heal_received.total_heal).sum();
         self.total_heal_self = players.clone().map(|p| p.heal_self.total_heal).sum();
         self.total_kills = players
@@ -379,7 +388,7 @@ impl Combat {
             .clone()
             .map(|p| p.damage_in.damage_metrics.hits)
             .sum();
-        let total_heal_ticks_done = players.clone().map(|p| p.heal_done.heal_metrics.ticks).sum();
+        let total_heal_ticks_done = players.clone().map(|p| p.heal_ally.heal_metrics.ticks).sum();
         let total_heal_ticks_received = players
             .clone()
             .map(|p| p.heal_received.heal_metrics.ticks)
@@ -391,8 +400,8 @@ impl Combat {
         self.recalculate_damage_group_percentage(self.total_damage_in, total_hits_in, |p| {
             &mut p.damage_in
         });
-        self.recalculate_heal_group_percentage(self.total_heal_done, total_heal_ticks_done, |p| {
-            &mut p.heal_done
+        self.recalculate_heal_group_percentage(self.total_heal_ally, total_heal_ticks_done, |p| {
+            &mut p.heal_ally
         });
         self.recalculate_heal_group_percentage(
             self.total_heal_received,
@@ -560,7 +569,7 @@ impl Player {
             active_time: None,
             damage_out: DamageGroup::new_branch(GroupPathSegment::Group(full_name)),
             damage_in: DamageGroup::new_branch(GroupPathSegment::Group(full_name)),
-            heal_done: HealPool::new(full_name),
+            heal_ally: HealPool::new(full_name),
             heal_received: HealPool::new(full_name),
             heal_self: HealPool::new(full_name),
         }
@@ -637,7 +646,7 @@ impl Player {
                 let pool = if self.heal_lands_on_self(record, name_manager) {
                     &mut self.heal_self
                 } else {
-                    &mut self.heal_done
+                    &mut self.heal_ally
                 };
                 Self::add_heal_to_pool(
                     pool,
@@ -684,7 +693,7 @@ impl Player {
             }
             RecordValue::Heal(heal) => {
                 // Healing this player is the source of is already tracked by
-                // `add_out_value`, as either Healing Done or Self Healing.
+                // `add_out_value`, as either Healing Ally or Self Healing.
                 // Counting it here too is what used to make every self heal show
                 // up in both the outgoing and the incoming pool.
                 if source_is_self {
@@ -813,7 +822,7 @@ impl Player {
             .recalculate_metrics(combat_duration, hits_manager, &mut |_, _| {});
         self.damage_in
             .recalculate_metrics(active_duration, hits_manager, &mut |_, _| {});
-        self.heal_done
+        self.heal_ally
             .recalculate_metrics(active_duration, heal_ticks_manager);
         self.heal_received
             .recalculate_metrics(active_duration, heal_ticks_manager);
@@ -1007,7 +1016,7 @@ mod tests {
         assert_eq!(200.0, player.heal_self.total_heal.shield);
 
         assert_eq!(
-            30.0, player.heal_done.total_heal.all,
+            30.0, player.heal_ally.total_heal.all,
             "healing done holds only what went to somebody else"
         );
         assert_eq!(
@@ -1019,7 +1028,7 @@ mod tests {
         assert_eq!(
             1237.0,
             player.heal_self.total_heal.all
-                + player.heal_done.total_heal.all
+                + player.heal_ally.total_heal.all
                 + player.heal_received.total_heal.all,
             "every heal tick lands in exactly one pool"
         );
@@ -1028,7 +1037,7 @@ mod tests {
     }
 
     /// The teammate's side of the same log: what they gave must show up as their
-    /// Healing Done, and what they got as their Healing Received — never as self
+    /// Healing Ally, and what they got as their Healing Received — never as self
     /// healing.
     #[test]
     fn a_heal_between_two_players_lands_in_opposite_pools() {
@@ -1062,7 +1071,7 @@ mod tests {
             .get(&combat.name_manager.get_handle("Kestrel@handle").unwrap())
             .unwrap();
 
-        assert_eq!(50.0, healer.heal_done.total_heal.all);
+        assert_eq!(50.0, healer.heal_ally.total_heal.all);
         assert_eq!(0.0, healer.heal_self.total_heal.all);
         assert_eq!(50.0, healed.heal_received.total_heal.all);
         assert_eq!(0.0, healed.heal_self.total_heal.all);
@@ -1426,7 +1435,7 @@ mod tests {
                 let name = player.name().get(&combat.name_manager).to_string();
                 let totals = per_player.entry(name).or_default();
                 totals[0] += player.heal_received.total_heal;
-                totals[1] += player.heal_done.total_heal;
+                totals[1] += player.heal_ally.total_heal;
                 totals[2] += player.heal_self.total_heal;
             }
         }

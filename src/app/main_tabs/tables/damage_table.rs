@@ -107,6 +107,14 @@ static COLUMNS: &[ColumnDescriptor<DamageTablePartData>] = &[
         },
     ),
     col!(
+        "Drain",
+        "Shield drain: damage that removes shields directly rather than through an attack.\nIt is part of Total Damage, and of the Shield column, but it is mitigated by neither shield hardness nor hull resistance — drains are resisted by DrainX — so it stays out of Resistance %.",
+        |t| t.sort_by_option_f64_desc(|p| p.total_shield_drain.value),
+        |t, r| {
+            t.total_shield_drain.show(r);
+        },
+    ),
+    col!(
         "Base Damage",
         "Damage If there were no shields and no damage resistances\nThis excludes any drain damage",
         |t| t.sort_by_option_f64_desc(|p| p.base_damage.value),
@@ -157,6 +165,7 @@ pub struct DamageTablePartData {
     damage_resistance_percentage: TextValue,
     base_damage: TextValue,
     base_dps: TextValue,
+    total_shield_drain: TextValue,
     hits: ShieldAndHullTextCount,
     hits_per_second: ShieldAndHullTextValue,
     hits_percentage: ShieldAndHullTextValue,
@@ -258,6 +267,11 @@ impl DamageTablePartData {
             ),
             base_dps: TextValue::new(
                 source.base_dps,
+                if more_decimals { 2 } else { 0 },
+                number_formatter,
+            ),
+            total_shield_drain: TextValue::new(
+                source.total_shield_drain,
                 if more_decimals { 2 } else { 0 },
                 number_formatter,
             ),

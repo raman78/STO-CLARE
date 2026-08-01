@@ -6,6 +6,8 @@ mod values_chart;
 
 pub use crate::app::main_tabs::diagrams::common::DiagramType;
 use crate::app::settings::Settings;
+pub use common::combat_duration_seconds;
+pub use common::HealComponents;
 pub use common::PreparedDamageDataSet;
 pub use common::PreparedHealDataSet;
 use eframe::egui::Ui;
@@ -49,11 +51,13 @@ impl DamageDiagrams {
         filter: f64,
         damage_time_slice: f64,
     ) -> Self {
+        let combat_duration_s = combat_duration_seconds(combat);
         let data = groups.map(|g| {
             PreparedDamageDataSet::new(
                 g.name().get(&combat.name_manager),
                 g.total_damage.all,
                 g.hits.get(&combat.hits_manger).iter(),
+                combat_duration_s,
             )
         });
 
@@ -143,11 +147,13 @@ impl HealDiagrams {
         filter: f64,
         damage_time_slice: f64,
     ) -> Self {
+        let combat_duration_s = combat_duration_seconds(combat);
         let data = groups.map(|g| {
             PreparedHealDataSet::new(
                 g.name().get(&combat.name_manager),
                 g.total_heal.all,
                 g.ticks.get(&combat.heal_ticks_manger).iter(),
+                combat_duration_s,
             )
         });
 
@@ -194,7 +200,14 @@ impl HealDiagrams {
         self.ticks_count_chart.remove_bars(data);
     }
 
-    pub fn update(&mut self, filter: f64, time_slice: f64) {
+    /// `components` selects which halves of a heal the lines add up. Applied
+    /// here rather than by filtering the data, so toggling redraws without
+    /// rebuilding anything.
+    pub fn update(&mut self, filter: f64, time_slice: f64, components: HealComponents) {
+        self.hps_graph.set_components(components);
+        self.heal_chart.set_components(components);
+        self.ticks_per_second.set_components(components);
+        self.ticks_count_chart.set_components(components);
         self.hps_graph.update(filter);
         self.heal_chart.update(time_slice);
         self.ticks_per_second.update(filter);

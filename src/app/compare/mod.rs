@@ -131,11 +131,40 @@ impl Default for CompareSettings {
     }
 }
 
+/// The difficulty picker above the combat list. `Any` matches everything;
+/// `Unknown` catches combats whose tier could not be worked out, which would
+/// otherwise be invisible under every other setting.
 #[derive(PartialEq, Clone, Copy)]
 enum DifficultyFilter {
     Any,
+    Normal,
     Advanced,
     Elite,
+    Unknown,
+}
+
+impl DifficultyFilter {
+    const ALL: &'static [(DifficultyFilter, &'static str)] = &[
+        (DifficultyFilter::Any, "Any"),
+        (DifficultyFilter::Normal, "Normal"),
+        (DifficultyFilter::Advanced, "Advanced"),
+        (DifficultyFilter::Elite, "Elite"),
+        (DifficultyFilter::Unknown, "Unknown"),
+    ];
+
+    fn matches(self, difficulty: Option<Difficulty>) -> bool {
+        match self {
+            DifficultyFilter::Any => true,
+            DifficultyFilter::Normal => difficulty == Some(Difficulty::Normal),
+            DifficultyFilter::Advanced => difficulty == Some(Difficulty::Advanced),
+            DifficultyFilter::Elite => difficulty == Some(Difficulty::Elite),
+            // `Difficulty::Any` means a known map whose tier was not resolved,
+            // so it reads as unknown here just like a missing value.
+            DifficultyFilter::Unknown => {
+                difficulty.is_none() || difficulty == Some(Difficulty::Any)
+            }
+        }
+    }
 }
 
 pub struct CompareView {
@@ -179,6 +208,7 @@ impl CompareView {
         state: &mut AppState,
         combats: &[String],
         difficulties: &[Option<Difficulty>],
+        base_names: &[String],
         ui: &mut Ui,
     ) {
         match &mut self.comparison {
@@ -186,13 +216,13 @@ impl CompareView {
                 if ui.button("◀ Change selection").clicked() {
                     self.comparison = None;
                     ui.separator();
-                    self.show_selection(state, combats, difficulties, ui);
+                    self.show_selection(state, combats, difficulties, base_names, ui);
                 } else {
                     ui.separator();
                     comparison.show(ui, &mut state.settings);
                 }
             }
-            None => self.show_selection(state, combats, difficulties, ui),
+            None => self.show_selection(state, combats, difficulties, base_names, ui),
         }
     }
 
@@ -201,6 +231,7 @@ impl CompareView {
         state: &mut AppState,
         combats: &[String],
         difficulties: &[Option<Difficulty>],
+        base_names: &[String],
         ui: &mut Ui,
     ) {
         ui.horizontal_wrapped(|ui| {
@@ -212,7 +243,7 @@ impl CompareView {
                 .selected_text(selected_type)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.type_filter, None, "All");
-                    for combat_type in combat_types(combats) {
+                    for combat_type in combat_types(base_names) {
                         ui.selectable_value(
                             &mut self.type_filter,
                             Some(combat_type.clone()),
@@ -222,13 +253,9 @@ impl CompareView {
                 });
 
             ui.label("Difficulty:");
-            ui.selectable_value(&mut self.difficulty_filter, DifficultyFilter::Any, "Any");
-            ui.selectable_value(
-                &mut self.difficulty_filter,
-                DifficultyFilter::Advanced,
-                "Advanced",
-            );
-            ui.selectable_value(&mut self.difficulty_filter, DifficultyFilter::Elite, "Elite");
+            for &(filter, label) in DifficultyFilter::ALL {
+                ui.selectable_value(&mut self.difficulty_filter, filter, label);
+            }
         });
 
         ui.horizontal(|ui| {
@@ -251,7 +278,8 @@ impl CompareView {
         ScrollArea::vertical().show(ui, |ui| {
             for (i, identifier) in combats.iter().enumerate() {
                 let difficulty = difficulties.get(i).copied().flatten();
-                if !self.matches_filters(identifier, difficulty) {
+                let base_name = base_names.get(i).map(String::as_str).unwrap_or("");
+                if !self.matches_filters(identifier, base_name, difficulty) {
                     continue;
                 }
                 let mut checked = self.selected.contains(&i);
@@ -272,7 +300,12 @@ impl CompareView {
         }
     }
 
-    fn matches_filters(&self, identifier: &str, difficulty: Option<Difficulty>) -> bool {
+    fn matches_filters(
+        &self,
+        identifier: &str,
+        base_name: &str,
+        difficulty: Option<Difficulty>,
+    ) -> bool {
         if !self.name_filter.trim().is_empty()
             && !identifier
                 .to_lowercase()
@@ -282,32 +315,18 @@ impl CompareView {
         }
 
         if let Some(type_filter) = &self.type_filter {
-            if &combat_type_base(identifier) != type_filter {
+            if base_name != type_filter {
                 return false;
             }
         }
 
-        match self.difficulty_filter {
-            DifficultyFilter::Any => true,
-            DifficultyFilter::Advanced => difficulty == Some(Difficulty::Advanced),
-            DifficultyFilter::Elite => difficulty == Some(Difficulty::Elite),
-        }
-    }
-}
-
-/// The combat "type" (mission name without difficulty), e.g.
-/// `"Trouble Over Terrh (Elite) | 2026-... - ..."` -> `"Trouble Over Terrh"`.
-fn combat_type_base(identifier: &str) -> String {
-    let prefix = identifier.split(" | ").next().unwrap_or(identifier);
-    match prefix.find(" (") {
-        Some(pos) => prefix[..pos].trim().to_string(),
-        None => prefix.trim().to_string(),
+        self.difficulty_filter.matches(difficulty)
     }
 }
 
 /// Distinct combat types across the list, sorted, for the type filter dropdown.
-fn combat_types(combats: &[String]) -> Vec<String> {
-    let mut types: Vec<String> = combats.iter().map(|c| combat_type_base(c)).collect();
+fn combat_types(base_names: &[String]) -> Vec<String> {
+    let mut types: Vec<String> = base_names.to_vec();
     types.sort_unstable();
     types.dedup();
     types
@@ -318,21 +337,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn combat_type_base_strips_difficulty_and_time() {
-        assert_eq!(
-            combat_type_base("Trouble Over Terrh (Elite) | 2026-07-23 20:07:22 - 20:11:37"),
-            "Trouble Over Terrh"
-        );
-        assert_eq!(combat_type_base("Combat | 2026-07-23 01:12:24 - 01:16:42"), "Combat");
+    fn combat_types_are_sorted_and_unique() {
+        let base_names = vec![
+            "Trouble Over Terrh".to_string(),
+            "Combat".to_string(),
+            "Trouble Over Terrh".to_string(),
+        ];
+        assert_eq!(combat_types(&base_names), vec!["Combat", "Trouble Over Terrh"]);
+    }
+
+    /// A rule whose own name carries a bracket used to be cut in half by the
+    /// string surgery that reconstructed the type from the display name.
+    #[test]
+    fn a_bracket_in_the_name_no_longer_splits_the_type() {
+        let base_names = vec!["Bug Hunt (Ground) practice".to_string()];
+        assert_eq!(combat_types(&base_names), vec!["Bug Hunt (Ground) practice"]);
     }
 
     #[test]
-    fn combat_types_are_sorted_and_unique() {
-        let combats = vec![
-            "Trouble Over Terrh (Elite) | t".to_string(),
-            "Combat | t".to_string(),
-            "Trouble Over Terrh (Advanced) | t".to_string(),
-        ];
-        assert_eq!(combat_types(&combats), vec!["Combat", "Trouble Over Terrh"]);
+    fn unknown_matches_both_a_missing_tier_and_an_unresolved_one() {
+        assert!(DifficultyFilter::Unknown.matches(None));
+        assert!(DifficultyFilter::Unknown.matches(Some(Difficulty::Any)));
+        assert!(!DifficultyFilter::Unknown.matches(Some(Difficulty::Normal)));
+        assert!(DifficultyFilter::Normal.matches(Some(Difficulty::Normal)));
+        assert!(DifficultyFilter::Any.matches(None));
     }
 }

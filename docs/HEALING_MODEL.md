@@ -57,7 +57,7 @@ over the remainder of the timestamp to look for it, and passes the answer into
 `RecordValue::new`. Details and the caveats in `docs/COMBATLOG_FORMAT.md`.
 
 On the reference log this moves **2 348** records out of healing and into shield
-damage — over half of one player's Healing Done, which is why abilities like
+damage — over half of one player's Healing Ally, which is why abilities like
 `Chain Conduit Capacitor` used to show up as "healing" enemy drones.
 
 The converse rule would be wrong and is not applied: a shield line with *no*
@@ -68,7 +68,7 @@ a zero base magnitude are ever in question.
 
 ## Invariants
 
-- **H1 — disjoint.** Every heal tick lands in exactly one of `heal_done`,
+- **H1 — disjoint.** Every heal tick lands in exactly one of `heal_ally`,
   `heal_received`, `heal_self`. Summing all three double counts nothing.
 - **H2 — order-equivalent.** `HealPool::by_person` and `HealPool::by_ability`
   hold the same ticks. Any aggregate (total, tick count, HPS) is identical
@@ -93,7 +93,7 @@ gated:
         │           │                  │           │
        yes          no                yes          no
         │           │                  │           │
-   heal_self    heal_done          (dropped —     heal_received
+   heal_self    heal_ally          (dropped —    heal_received
                                  already counted
                                   by the source
                                      branch)
@@ -113,9 +113,9 @@ being filled.
 | me | — | — | `Reflexive Emitters`, `Brace for Impact III` | `heal_self` |
 | me | my console | me | `Bio-Molecular Shield Generator Fabrication` | `heal_self` |
 | me | — | me | explicit self-target | `heal_self` |
-| me | — / console | other player | `Rally Cry V` → `Sirak` | `heal_done` |
-| me | — / console | NPC | → `U.S.S. Birmingham`, `Security Escort III` | `heal_done` |
-| me | my pet | — | `Motivated Strikes` through `Security Escort III` | `heal_done`, credited to the pet |
+| me | — / console | other player | `Rally Cry V` → `Sirak` | `heal_ally` |
+| me | — / console | NPC | → `U.S.S. Birmingham`, `Security Escort III` | `heal_ally` |
+| me | my pet | — | `Motivated Strikes` through `Security Escort III` | `heal_ally`, credited to the pet |
 | other player | — / console | me | `Shield Generator Energy Matrix` from `Bor'ar` | `heal_received` |
 | NPC | — | me | ally (or oddly-signed enemy) ability | `heal_received` |
 

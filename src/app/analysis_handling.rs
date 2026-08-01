@@ -102,6 +102,10 @@ pub enum AnalysisInfo {
         /// Detected difficulty per combat, aligned with `combats`, for the
         /// compare view's difficulty filter.
         difficulties: Vec<Option<Difficulty>>,
+        /// Each combat's name without the environment and difficulty suffixes,
+        /// aligned with `combats`. The compare view groups by it instead of
+        /// picking it back out of the formatted identifier.
+        base_names: Vec<String>,
         file_size: Option<u64>,
     },
     // Like `Refreshed`, but only carries the refreshed combats list (no combat
@@ -454,6 +458,7 @@ impl AnalysisContext {
                 .iter()
                 .map(|c| c.detected_difficulty)
                 .collect(),
+            base_names: analyzer.result().iter().map(|c| c.base_name()).collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
                 .map(|m| m.len()),
