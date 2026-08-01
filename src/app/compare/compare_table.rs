@@ -267,12 +267,25 @@ impl Comparison {
                         }
                     });
                 if slot_i == 0 {
-                    ui.label(RichText::new("(reference — all deltas compare to this)").weak());
+                    ui.label(
+                        RichText::new(
+                            "(reference — every difference is measured against this combat, and \
+                             changing the player here moves the others to the same player)",
+                        )
+                        .weak(),
+                    );
                 }
             });
         }
         if let Some((slot_i, handle)) = player_change {
             self.slots[slot_i].player = handle;
+            // Changing who the reference is about moves the others with it,
+            // where that player took part: the deltas are all measured against
+            // the reference, so leaving them on somebody else would compare two
+            // different people again.
+            if slot_i == 0 {
+                follow_the_reference_player(&mut self.slots);
+            }
             self.rebuild();
         }
 
