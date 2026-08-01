@@ -48,7 +48,8 @@ const HEALING_RECEIVED_INFO: &str =
 const SELF_HEALING_INFO: &str =
     "Healing you did to yourself: self-buffs, your own trait and gear procs, and \
      your own consoles healing you.\n\
-     Grouped by ability, then by what it came from.\n\
+     Grouped by ability, then by what it came from — there is no other party to\n\
+     group by, so that level is left out entirely.\n\
      Counted here only — it is deliberately left out of the other two tabs, so \
      the three add up without counting anything twice.";
 
@@ -58,9 +59,11 @@ impl MainTabs {
             identifier: String::new(),
             damage_out_tab: DamageTab::empty(|p| &p.damage_out),
             damage_in_tab: DamageTab::empty(|p| &p.damage_in),
-            heal_ally_tab: HealTab::empty(|p| &p.heal_ally),
-            heal_received_tab: HealTab::empty(|p| &p.heal_received),
-            heal_self_tab: HealTab::empty(|p| &p.heal_self),
+            heal_ally_tab: HealTab::empty(|p| &p.heal_ally, "Person"),
+            heal_received_tab: HealTab::empty(|p| &p.heal_received, "Person"),
+            // Self healing has no other party; what varies is the console,
+            // trait or proc the heal came from.
+            heal_self_tab: HealTab::empty(|p| &p.heal_self, "Source"),
             active_tab: Default::default(),
             summary_tab: SummaryTab::empty(),
         }

@@ -643,7 +643,8 @@ impl Player {
             RecordValue::Heal(heal) => {
                 // A self heal is grouped under this player's own name; healing
                 // somebody else is grouped under the recipient.
-                let pool = if self.heal_lands_on_self(record, name_manager) {
+                let lands_on_self = self.heal_lands_on_self(record, name_manager);
+                let pool = if lands_on_self {
                     &mut self.heal_self
                 } else {
                     &mut self.heal_ally
@@ -651,7 +652,7 @@ impl Player {
                 Self::add_heal_to_pool(
                     pool,
                     path,
-                    target_name,
+                    (!lands_on_self).then_some(target_name),
                     heal,
                     record.value_flags,
                     combat_start_offset_millis,
@@ -705,7 +706,7 @@ impl Player {
                 Self::add_heal_to_pool(
                     &mut self.heal_received,
                     path,
-                    source_name,
+                    Some(source_name),
                     heal,
                     record.value_flags,
                     combat_start_offset_millis,
@@ -725,18 +726,26 @@ impl Player {
     fn add_heal_to_pool(
         pool: &mut HealPool,
         path: GroupingPath,
-        person: NameHandle,
+        person: Option<NameHandle>,
         heal: BaseHealTick,
         flags: ValueFlags,
         combat_start_offset_millis: u32,
     ) {
-        let mut by_person = path.clone();
-        by_person.push(GroupPathSegment::Group(person));
+        let mut by_person = path;
+        // Self healing leaves the person out: it is always the player whose
+        // pool this is, so a level naming them again carries nothing.
+        if let Some(person) = person {
+            by_person.push(GroupPathSegment::Group(person));
+        }
         pool.by_person
             .add_heal(&by_person, heal, flags, combat_start_offset_millis);
 
-        let mut by_ability = path;
-        by_ability.insert(0, GroupPathSegment::Group(person));
+        // The other order is the same path read the other way round. Moving the
+        // person to the front instead would leave whatever `build_grouping_path`
+        // put last on top — the pet or console for a heal routed through one,
+        // rather than the ability the order is named after.
+        let mut by_ability = by_person;
+        by_ability.reverse();
         pool.by_ability
             .add_heal(&by_ability, heal, flags, combat_start_offset_millis);
     }
@@ -1151,6 +1160,110 @@ mod tests {
             .expect("the Shield Gen branch");
         assert_eq!(30.0, shield_gen.total_heal.all);
         assert_eq!(2, shield_gen.sub_groups.len(), "one branch per healer");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A heal routed through a pet or console must still nest ability first
+    /// under the ability order. Taken from a real log: Wren's Jem'hadar
+    /// Wingman casting Engineering Team III on Rook, which used to put the
+    /// pet on top because it was the last segment of the grouping path.
+    #[test]
+    fn the_ability_order_puts_the_ability_on_top_even_through_a_pet() {
+        let dir = std::env::temp_dir().join("cla-heal-pet-order-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        std::fs::write(
+            &log,
+            concat!(
+                "26:07:30:17:22:00.0::Wren,P[1@2 Wren@g],,*,Target,C[9 Npc_Foo],Phaser Beam,Pn.a,Phaser,,100,100\n",
+                "26:07:30:17:22:19.1::Wren,P[1@2 Wren@g],Jem'hadar Wingman,C[10 Space_Jemhadar_Wingman_1],Rook,P[3@4 Rook@k],Engineering Team III,Pn.4,HitPoints,,-7087.5,-6750\n",
+            ),
+        )
+        .unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+        let combat = analyzer.result().first().unwrap();
+        let player = combat
+            .players
+            .get(&combat.name_manager.get_handle("Wren@g").unwrap())
+            .unwrap();
+
+        let only_child = |group: &HealGroup| -> (String, HealGroup) {
+            assert_eq!(1, group.sub_groups.len(), "expected a single branch");
+            let child = group.sub_groups.values().next().unwrap();
+            (
+                child.name().get(&combat.name_manager).to_string(),
+                child.clone(),
+            )
+        };
+
+        let (top, rest) = only_child(&player.heal_ally.by_ability);
+        assert_eq!("Engineering Team III", top, "ability first, not the pet");
+        let (middle, rest) = only_child(&rest);
+        assert_eq!("Jem'hadar Wingman", middle, "then what it was cast through");
+        let (leaf, _) = only_child(&rest);
+        assert_eq!("Rook@k", leaf, "and the recipient at the bottom");
+
+        // The other order is the same three levels upside down.
+        let (top, rest) = only_child(&player.heal_ally.by_person);
+        assert_eq!("Rook@k", top);
+        let (middle, rest) = only_child(&rest);
+        assert_eq!("Jem'hadar Wingman", middle);
+        let (leaf, _) = only_child(&rest);
+        assert_eq!("Engineering Team III", leaf);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Self healing leaves the person out. It is always the player whose pool
+    /// it is, so a level repeating their name would only cost a click.
+    #[test]
+    fn self_healing_has_no_person_level() {
+        let dir = std::env::temp_dir().join("cla-heal-self-level-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        std::fs::write(
+            &log,
+            concat!(
+                "26:07:23:20:00:00.0::Kestrel,P[1@2 Kestrel@h],,*,Target,C[9 Npc_Foo],Phaser Beam,Pn.a,Phaser,,100,100\n",
+                "26:07:23:20:00:01.0::Kestrel,P[1@2 Kestrel@h],,*,,*,Reflexive Emitters,Pn.b,Shield,,-2000,0\n",
+            ),
+        )
+        .unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+        let combat = analyzer.result().first().unwrap();
+        let player = combat
+            .players
+            .get(&combat.name_manager.get_handle("Kestrel@h").unwrap())
+            .unwrap();
+
+        let names: Vec<String> = player
+            .heal_self
+            .by_ability
+            .sub_groups
+            .values()
+            .map(|g| g.name().get(&combat.name_manager).to_string())
+            .collect();
+        assert_eq!(
+            vec!["Reflexive Emitters"],
+            names,
+            "the ability sits directly under the player, with no name level between"
+        );
+        assert_eq!(2000.0, player.heal_self.total_heal.all);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

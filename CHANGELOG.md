@@ -13,6 +13,8 @@
 - uploads are now written to the log file (when logging is enabled in the settings), including the reason the server gave for rejecting one
 
 ### Other Changes
+- the healing tabs group correctly when a heal came through a pet or a console: picking "Ability first" used to put the pet on top instead, so a team mate healed by your hangar pet appeared under the pet's name rather than the ability's
+- Self Healing no longer repeats your own name as a level of the tree — there is nobody else involved, so the abilities sit directly under you, and the switch above the table offers "Source" (the console, trait or proc it came from) instead of "Person"
 - the healing charts have Hull and Shield switches above them, both on by default, so healing can be looked at as one total or split into what restored hull and what restored shields
 - the "Healing Done" tab is now called "Healing Ally", which says what it holds without having to read the tooltip
 - the outgoing damage table has a Drain column: damage that strips shields directly rather than through an attack, which no stat that applies to the rest mitigates

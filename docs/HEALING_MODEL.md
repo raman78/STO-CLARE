@@ -138,15 +138,27 @@ file each tick twice from one path:
 ```
 build_grouping_path() ──► [ Value(ability), Group(indirect)?, Group(custom)? ]
                                         │
+                            push(person), unless self
+                                        │
                     ┌───────────────────┴───────────────────┐
-              push(person)                            insert(0, person)
+              as built                                  reversed
                     │                                       │
-            person → ability                        ability → person
-           (HealPool::by_person)                 (HealPool::by_ability)
+      person → indirect → ability            ability → indirect → person
+       (HealPool::by_person)                    (HealPool::by_ability)
 ```
 
-`insert(0, ..)` mirrors what the damage tree already does for its target
-(`add_out_value`), so the second order matches the layout of the damage tabs.
+The second order is the first one read backwards, which is what makes the
+nesting an exact mirror. Moving the person to the front of the path instead
+would leave whatever `build_grouping_path` put last on top — the pet or console
+for a heal routed through one, not the ability the order is named after. That
+was the original construction, and on a real log it showed
+`Wren ⏵ Jem'hadar Wingman ⏵ Engineering Team III` under the ability order.
+
+**Self healing carries no person segment.** The other party is always the player
+whose pool it is, so a level naming them again adds a click and no information.
+The two orders there differ only by whether the ability or the console the heal
+came from sits on top, which is why that tab labels the picker "Source" rather
+than "Person".
 
 Both orders are built during analysis rather than pivoted in the UI, because the
 tree carries per-node metrics and percentages computed by

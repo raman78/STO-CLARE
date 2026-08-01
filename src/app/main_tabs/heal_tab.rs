@@ -14,6 +14,10 @@ pub struct HealTab {
     main_diagrams: HealDiagrams,
     selection_diagrams: Option<HealDiagrams>,
     heal_pool: fn(&Player) -> &HealPool,
+    /// What the non-ability level of the tree is called in this tab: the other
+    /// party for the directional pools, the console or proc it came from for
+    /// self healing, which has no other party.
+    other_level: &'static str,
     filter: f64,
     diagram_time_slice: f64,
     active_diagram: DiagramType,
@@ -26,12 +30,13 @@ pub struct HealTab {
 }
 
 impl HealTab {
-    pub fn empty(heal_pool: fn(&Player) -> &HealPool) -> Self {
+    pub fn empty(heal_pool: fn(&Player) -> &HealPool, other_level: &'static str) -> Self {
         Self {
             table_by_person: HealTable::empty(),
             table_by_ability: HealTable::empty(),
             grouping: HealGrouping::ByAbility,
             heal_pool,
+            other_level,
             main_diagrams: HealDiagrams::empty(),
             selection_diagrams: None,
             filter: 0.4,
@@ -95,18 +100,25 @@ impl HealTab {
             // "⏵" is the same glyph the tree rows use for their expander, so it
             // is known to exist in the bundled font — "→" renders as a blank box.
             let changed = ui
-                .selectable_value(&mut self.grouping, HealGrouping::ByPerson, "Person ⏵ Ability")
-                .on_hover_text("Top level is the other party, with the abilities underneath.")
+                .selectable_value(
+                    &mut self.grouping,
+                    HealGrouping::ByPerson,
+                    format!("{} ⏵ Ability", self.other_level),
+                )
+                .on_hover_text(format!(
+                    "Top level is the {}, with the abilities underneath.",
+                    self.other_level.to_lowercase()
+                ))
                 .clicked()
                 | ui.selectable_value(
                     &mut self.grouping,
                     HealGrouping::ByAbility,
-                    "Ability ⏵ Person",
+                    format!("Ability ⏵ {}", self.other_level),
                 )
-                .on_hover_text(
-                    "Top level is the ability, with the people underneath — the way the damage \
-                     tabs are laid out.",
-                )
+                .on_hover_text(format!(
+                    "Top level is the ability, with the {} underneath.",
+                    self.other_level.to_lowercase()
+                ))
                 .clicked();
             // The two tables track their own expanded rows and selection, so a
             // chart built from the old one no longer matches what is on screen.
