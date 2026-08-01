@@ -3,7 +3,7 @@
 # unreleased
 
 ### Major Changes
-- the Compare view can break down each DPS difference into where it came from: the share that came from firing more often and the share that came from each hit landing harder. The two always add up to the whole difference, so a build that trades rate for hit size — or the other way round — stops looking like it changed nothing. Switched on in the Columns menu, alongside the other columns
+- the Compare view can break down each DPS difference into where it came from: the share that came from firing more often and the share that came from each hit landing harder. The two always add up to the whole difference, so a build that trades rate for hit size — or the other way round — stops looking like it changed nothing. Switched on in the Columns menu, alongside the other columns. Hovering either share shows both and their sum, because when the two point opposite ways each on its own can be far larger than the difference they add up to
 - healing is now split into three tabs that no longer overlap: Healing Ally (what you healed on others), Healing Received (what others healed on you) and Self Healing (what you healed on yourself, including your own trait and gear procs). Anything you healed on yourself used to be counted in both of the old healing tabs at once, which on a typical run meant a single shield proc accounted for almost all of the healing shown in both — hiding what your team actually did for you and what you did for them
 
 ### Fixes

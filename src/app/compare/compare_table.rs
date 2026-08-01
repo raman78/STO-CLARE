@@ -35,12 +35,12 @@ const IMPROVE: Color32 = Color32::from_rgb(0x5c, 0xb8, 0x5c);
 /// order they are drawn.
 const BREAKDOWN_LABELS: [(&str, &str); 2] = [
     (
-        "ΔDPS: rate",
-        "How much of the DPS difference came from the ability landing more (or fewer) times per second",
+        "ΔDPS from rate",
+        "How much of the DPS difference came from landing more (or fewer) times per second. Added to the hit-size share this is the whole DPS difference — each share on its own can be far larger than that difference when the two point opposite ways",
     ),
     (
-        "ΔDPS: hit size",
-        "How much of the DPS difference came from each hit landing harder (or softer). Added to the rate share, this is the whole difference",
+        "ΔDPS from hit size",
+        "How much of the DPS difference came from each hit landing harder (or softer). Added to the rate share this is the whole DPS difference; hover a value to see the two and their sum",
     ),
 ];
 
@@ -567,15 +567,27 @@ impl CompareNode {
                                 let share = pick(breakdown);
                                 let color = if share >= 0.0 { IMPROVE } else { WORSE };
                                 let mut formatter = NumberFormatter::new();
-                                let text = format!(
-                                    "{}{}",
-                                    if share >= 0.0 { "+" } else { "-" },
-                                    formatter.format(share.abs(), 0)
+                                let mut signed = |value: f64| {
+                                    format!(
+                                        "{}{}",
+                                        if value >= 0.0 { "+" } else { "-" },
+                                        formatter.format(value.abs(), 0)
+                                    )
+                                };
+                                let text = signed(share);
+                                // The two shares often point opposite ways, and
+                                // each can then dwarf their sum — so spell the
+                                // sum out rather than leave it to be noticed.
+                                let tooltip = format!(
+                                    "{} from landing more often\n{} from each hit landing harder\n= {} DPS against combat #1",
+                                    signed(breakdown.rate),
+                                    signed(breakdown.size),
+                                    signed(breakdown.rate + breakdown.size)
                                 );
                                 r.cell_with_layout(
                                     Layout::right_to_left(Align::Center),
                                     |ui| {
-                                        ui.colored_label(color, text);
+                                        ui.colored_label(color, text).on_hover_text(tooltip);
                                     },
                                 );
                             }
