@@ -125,6 +125,17 @@ struct ColumnDescriptor {
     parts: &'static [ColumnPart],
 }
 
+/// See `metrics_table::closes_group`.
+fn closes_summary_group(index: usize, split: bool) -> bool {
+    if !split || COLUMNS[index].parts.is_empty() {
+        return false;
+    }
+    COLUMNS
+        .get(index + 1)
+        .map(|next| next.parts.is_empty())
+        .unwrap_or(true)
+}
+
 struct ColumnPart {
     name: &'static str,
     show: fn(&Player, &mut TableRow),
@@ -204,7 +215,7 @@ impl SummaryTable {
                         });
                     });
 
-                    for column in COLUMNS.iter() {
+                    for (index, column) in COLUMNS.iter().enumerate() {
                         if split && !column.parts.is_empty() {
                             show_group_separator(r);
                         }
@@ -212,6 +223,9 @@ impl SummaryTable {
                             Self::show_column_header(r, &name, || {
                                 (column.sort)(self);
                             });
+                        }
+                        if closes_summary_group(index, split) {
+                            show_group_separator(r);
                         }
                     }
                 })
@@ -350,7 +364,7 @@ impl Player {
                 ui.label(&self.name);
             });
 
-            for column in COLUMNS.iter() {
+            for (index, column) in COLUMNS.iter().enumerate() {
                 if split && !column.parts.is_empty() {
                     show_group_separator(r);
                 }
@@ -359,6 +373,9 @@ impl Player {
                     for part in column.parts.iter() {
                         (part.show)(self, r);
                     }
+                }
+                if closes_summary_group(index, split) {
+                    show_group_separator(r);
                 }
             }
         })

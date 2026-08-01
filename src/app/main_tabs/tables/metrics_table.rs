@@ -181,8 +181,11 @@ impl<T: 'static> MetricsTable<T> {
                         ui.label("Name");
                     });
 
-                    for column in self.columns.iter() {
+                    for (index, column) in self.columns.iter().enumerate() {
                         self.show_column_header(&mut r, column, split);
+                        if closes_group(self.columns, index, split) {
+                            show_group_separator(&mut r);
+                        }
                     }
                 })
                 .body(ROW_HEIGHT, |mut t| {
@@ -318,7 +321,7 @@ impl<T> MetricsTablePart<T> {
                 });
             });
 
-            for column in columns.iter() {
+            for (index, column) in columns.iter().enumerate() {
                 if split && !column.parts.is_empty() {
                     show_group_separator(&mut r);
                 }
@@ -327,6 +330,9 @@ impl<T> MetricsTablePart<T> {
                     for part in column.parts.iter() {
                         (part.show)(self, &mut r);
                     }
+                }
+                if closes_group(columns, index, split) {
+                    show_group_separator(&mut r);
                 }
             }
         });
@@ -384,6 +390,20 @@ impl<T> MetricsTablePart<T> {
 
         self.sub_parts.iter_mut().for_each(|p| p.sort_by_asc(key));
     }
+}
+
+/// Whether a closing rule belongs after the column at `index`: it ends a split
+/// group and what follows is not another one. Between two adjacent groups the
+/// next group's opening rule already separates them, so only the last of a run
+/// is closed.
+pub fn closes_group<T>(columns: &[ColumnDescriptor<T>], index: usize, split: bool) -> bool {
+    if !split || columns[index].parts.is_empty() {
+        return false;
+    }
+    columns
+        .get(index + 1)
+        .map(|next| next.parts.is_empty())
+        .unwrap_or(true)
 }
 
 /// A narrow cell holding a vertical rule, drawn where a split column group
