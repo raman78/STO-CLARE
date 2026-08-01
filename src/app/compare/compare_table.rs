@@ -132,7 +132,7 @@ struct DeltaCell {
 
 impl Comparison {
     pub fn new(fetched: Vec<(usize, Arc<Combat>)>, columns: &[CompareMetric]) -> Self {
-        let slots: Vec<Slot> = fetched
+        let mut slots: Vec<Slot> = fetched
             .into_iter()
             .map(|(index, combat)| {
                 let player = top_dps_player(&combat);
@@ -143,6 +143,7 @@ impl Comparison {
                 }
             })
             .collect();
+        follow_the_reference_player(&mut slots);
         let mut comparison = Self {
             slots,
             nodes: Vec::new(),
@@ -283,6 +284,21 @@ impl Comparison {
             )
             .weak(),
         );
+
+        // Comparing two different people's numbers looks like a build changed
+        // when nothing did, so say so rather than let it pass unnoticed.
+        let names = slot_player_names(&self.slots);
+        if names.iter().any(|n| n != &names[0]) {
+            ui.label(
+                RichText::new(format!(
+                    "⚠ The combats are showing different players ({}). The differences compare \
+                     those players against each other, not one player's runs — pick the same \
+                     player above to compare like with like.",
+                    names.join(", ")
+                ))
+                .color(WORSE),
+            );
+        }
 
         ui.separator();
 
@@ -590,6 +606,38 @@ fn find_node(nodes: &[CompareNode], id: u32) -> Option<&CompareNode> {
         }
     }
     None
+}
+
+/// Points every slot at the same player as the reference, where that player
+/// took part.
+///
+/// Each combat is otherwise opened on its own top-DPS player, and in a team
+/// those are rarely the same person — the deltas would then compare one player
+/// against another rather than one player's runs against each other, which
+/// makes them read as noise. A slot the reference player was not in keeps its
+/// own top player, and the picker in the legend says whose numbers it is
+/// showing.
+fn follow_the_reference_player(slots: &mut [Slot]) {
+    let Some(reference) = slots.first() else {
+        return;
+    };
+    let reference_name = reference.player.get(&reference.combat.name_manager).to_string();
+    for slot in slots.iter_mut().skip(1) {
+        if let Some(handle) = slot.combat.name_manager.get_handle(&reference_name) {
+            if slot.combat.players.contains_key(&handle) {
+                slot.player = handle;
+            }
+        }
+    }
+}
+
+/// The players a comparison is showing, one per slot, for the warning above the
+/// table.
+fn slot_player_names(slots: &[Slot]) -> Vec<String> {
+    slots
+        .iter()
+        .map(|s| s.player.get(&s.combat.name_manager).to_string())
+        .collect()
 }
 
 fn top_dps_player(combat: &Combat) -> NameHandle {
