@@ -18,21 +18,26 @@ no PyPI/pipx — those are Python-only).
 The app registers its own menu entry/shortcut on every platform, so there is a
 single source of truth:
 
-- **Linux** → `~/.local/share/applications/sto-clare-<id>.desktop` + icon in
+- **Linux** → `~/.local/share/applications/sto-clare.desktop` + icon in
   `~/.local/share/icons/sto-clare.png`.
 - **Windows** → Start Menu `.lnk` (via the `mslnk` crate).
 - **macOS** → `~/Applications/STO-CLARE.app` bundle. **Untested.**
 
-`<id>` is an 8-char hash of `std::env::current_exe()`. Consequences:
+**The entry is named after the app id, and so is the window** (`app_id`
+`sto-clare`, set on the viewport in `main.rs`). That is not cosmetic: a Wayland
+compositor is handed the app id and nothing else, and finds the icon by looking
+for `<app id>.desktop` — which is what the xdg-shell spec asks for. Name them
+differently and KWin draws the generic "unknown Wayland application" mark in the
+title bar and the task switcher, however good the icon compiled into the binary
+is. `with_icon` does not help there: it feeds `_NET_WM_ICON` on X11 and the
+Windows window class, neither of which exists on Wayland.
 
-- Updating a binary **in place** keeps the same id → the entry is overwritten,
-  never duplicated.
-- Installing to a **different location** yields a different id → its own entry
-  (as requested — duplicates only across distinct install locations).
-- On Linux, sibling `sto-clare-*.desktop` files are swept on launch when they
-  point at the *same* binary, or at one that no longer exists. The pre-2.0
-  prefix `sto-cla-` is swept the same way, which is what removes the menu entry
-  of the old name after the rename.
+One consequence: there is one entry per user, not one per install location.
+Installing to a second location overwrites it, and the last install to run owns
+the menu entry. Entries from the older per-location scheme
+(`sto-clare-<hash>.desktop`, and `sto-cla-<hash>.desktop` from before the
+rename) are swept on launch when they are dead — pointing at the binary being
+installed for, or at one that is gone.
 
 Triggers:
 

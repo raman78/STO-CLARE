@@ -9,15 +9,16 @@
 //!   - macOS   → `~/Applications/STO-CLARE.app` bundle (UNTESTED)
 //!
 //! Idempotent: re-runs are a no-op once the entry exists (unless `force`).
-//! The Linux entry is keyed by an 8-char hash of the executable path, so
-//! installs in *different* locations get their own menu entry while updating
-//! in place overwrites rather than piling up duplicates. Stale entries left
-//! by an old location that points at the *same* binary are swept on launch.
+//!
+//! The Linux entry is named after the app id, and so is the window: a Wayland
+//! compositor is handed nothing but that id and finds the icon by looking for
+//! `<app id>.desktop`, which is what the xdg-shell spec asks for. Entries from
+//! before that — one per install location, keyed by a hash of the executable
+//! path — are swept on launch when they are dead.
 //!
 //! Every failure is best-effort and non-fatal — desktop integration must never
 //! stop the app from starting.
 
-use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 /// Human-facing application name (menu label, .app / .lnk basename).
@@ -35,17 +36,6 @@ const LEGACY_APP_NAME: &str = "STO Combat Log Analyzer";
 const LEGACY_APP_ID: &str = "sto-cla";
 /// Icon shipped with the binary (same asset as the window icon).
 use super::app_icon::PNG as ICON_PNG;
-
-/// 8-char stable hash of the current executable's path. Stable across runs of
-/// the same binary; differs when the binary lives in a different location.
-fn install_id() -> String {
-    let exe = std::env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    exe.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())[..8].to_string()
-}
 
 /// Register the app with the host OS. Returns the path written (or the existing
 /// entry). Best-effort: logs and returns `None` on any failure.
@@ -88,7 +78,7 @@ fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
     let apps_dir = data_home.join("applications");
     let icons_dir = data_home.join("icons");
 
-    let entry_name = format!("{APP_ID}-{}.desktop", install_id());
+    let entry_name = format!("{APP_ID}.desktop");
     let entry_path = apps_dir.join(&entry_name);
 
     // Tidy up entries left behind after moving/upgrading the binary.
@@ -138,12 +128,11 @@ fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
     Ok(Some(entry_path))
 }
 
-/// Remove sibling `sto-clare-*.desktop` / `sto-cla-*.desktop` entries that are
-/// stale: they point at the same binary as the current install (a different
-/// `install_id` from an old location), or at a binary that is no longer there —
-/// which is what the pre-rename entries of *this* install become. An entry
-/// targeting a different, existing Exec (a genuinely parallel install) is left
-/// alone.
+/// Remove entries left by the two older naming schemes — one file per install
+/// location (`sto-clare-<hash>.desktop`) and the same under the pre-2.0 name
+/// (`sto-cla-<hash>.desktop`) — when they are dead: pointing at the binary we
+/// are installing for, or at one that is no longer there. An entry targeting a
+/// different, existing executable is a live parallel install and is left alone.
 #[cfg(target_os = "linux")]
 fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &str) {
     let our_exec = our_exec.trim().trim_matches('"');
@@ -153,7 +142,7 @@ fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &st
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name == our_name || !is_our_entry_name(&name) {
+        if name == our_name || !is_legacy_entry_name(&name) {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(entry.path()) else {
@@ -173,9 +162,10 @@ fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &st
     }
 }
 
-/// Whether a file name is a desktop entry this app wrote, under either name.
+/// Whether a file name is a desktop entry from one of the older schemes, which
+/// suffixed the id with a hash of the install location.
 #[cfg(target_os = "linux")]
-fn is_our_entry_name(name: &str) -> bool {
+fn is_legacy_entry_name(name: &str) -> bool {
     name.ends_with(".desktop")
         && [APP_ID, LEGACY_APP_ID]
             .iter()
@@ -201,7 +191,7 @@ fn uninstall_impl() -> std::io::Result<()> {
         return Ok(());
     };
     let apps_dir = data_home.join("applications");
-    let entry_path = apps_dir.join(format!("{APP_ID}-{}.desktop", install_id()));
+    let entry_path = apps_dir.join(format!("{APP_ID}.desktop"));
     if entry_path.is_file() {
         std::fs::remove_file(&entry_path)?;
         log::info!("desktop uninstaller: removed {}", entry_path.display());
@@ -348,9 +338,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn our_entries_are_recognized_under_both_names() {
-        assert!(is_our_entry_name("sto-clare-1a2b3c4d.desktop"));
-        assert!(is_our_entry_name("sto-cla-1a2b3c4d.desktop"));
+    fn entries_of_the_older_schemes_are_recognized() {
+        assert!(is_legacy_entry_name("sto-clare-1a2b3c4d.desktop"));
+        assert!(is_legacy_entry_name("sto-cla-1a2b3c4d.desktop"));
+    }
+
+    /// The entry written today is named after the app id, which is what lets a
+    /// Wayland compositor find the icon for the window.
+    #[test]
+    fn the_entry_is_named_after_the_app_id() {
+        assert_eq!("sto-clare.desktop", format!("{APP_ID}.desktop"));
+        assert!(
+            !is_legacy_entry_name("sto-clare.desktop"),
+            "the current entry is not one of the leftovers to sweep"
+        );
     }
 
     /// The current name is not a match for the old prefix, and vice versa —
@@ -363,7 +364,7 @@ mod tests {
 
     #[test]
     fn other_applications_are_left_alone() {
-        assert!(!is_our_entry_name("sto-warp.desktop"));
-        assert!(!is_our_entry_name("sto-clare-1a2b3c4d.png"));
+        assert!(!is_legacy_entry_name("sto-warp.desktop"));
+        assert!(!is_legacy_entry_name("sto-clare-1a2b3c4d.png"));
     }
 }

@@ -3,6 +3,7 @@
 ## unreleased
 
 ### Other Changes
+- the icon shows up where the desktop puts it too: in the window's own frame, in the task switcher and on the taskbar. On a Wayland desktop it was a generic "unknown application" mark, because the entry the desktop keeps for the program was filed under a different name than the one the window gives — the two agree now
 - the program shows its own mark at the left of the top bar. Pointing at it tells you which version you are running, which the title bar says but a maximised window on some desktops hides
 - the lettering on the icon is black, and the mark itself is no longer partly see-through — against a dark desktop it used to take on the colour behind it instead of standing on its own tile
 
