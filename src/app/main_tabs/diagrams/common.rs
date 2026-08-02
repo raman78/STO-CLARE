@@ -1,5 +1,6 @@
 use std::{ops::RangeInclusive, sync::Arc};
 
+use eframe::egui::{TextStyle, Ui};
 use educe::Educe;
 use egui_plot::*;
 
@@ -363,6 +364,23 @@ pub fn seconds_to_millis(seconds: f64) -> u32 {
 
 pub fn millis_to_seconds(millis: u32) -> f64 {
     millis as f64 * (1.0 / 1e3)
+}
+
+/// Widest y axis label a chart reserves room for: `1'000'000`, nine characters
+/// with the thousands marks. A per-second or per-slice figure does not
+/// realistically go past a few million.
+const WIDEST_Y_LABEL_CHARS: f32 = 9.0;
+
+/// Room to keep for the y axis labels, so the plot area starts at the same
+/// place on every chart and stops sliding sideways when the numbers change
+/// magnitude — switching a healing chart between hull and shield moves them by
+/// an order of magnitude, and the whole plot used to jump with them.
+///
+/// Measured from the font in use rather than fixed, so it holds at any UI
+/// scale. It is a *minimum*: a label that needs more still gets it.
+pub fn y_axis_width(ui: &Ui) -> f32 {
+    let digit = ui.fonts_mut(|fonts| fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0'));
+    digit * WIDEST_Y_LABEL_CHARS + ui.spacing().item_spacing.x * 2.0
 }
 
 pub fn format_axis(mark: GridMark, _: &RangeInclusive<f64>) -> String {

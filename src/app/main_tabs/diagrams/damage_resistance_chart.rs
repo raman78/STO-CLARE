@@ -30,16 +30,31 @@ impl DamageResistanceChart {
 
     pub fn from_data(bars: impl Iterator<Item = PreparedDamageDataSet>, time_slice: f64) -> Self {
         let bars: Vec<_> = bars.map(|d| DamageResistanceBars::new(d)).collect();
-        Self {
+        let mut _self = Self {
             newly_created: true,
             bars,
             updated_time_slice: Some(time_slice),
-        }
+        };
+        _self.sort();
+        _self
     }
 
     pub fn add_bars(&mut self, bars: PreparedDamageDataSet, time_slice: f64) {
         self.bars.push(DamageResistanceBars::new(bars));
+        self.sort();
         self.update(time_slice);
+    }
+
+    /// By total damage, largest first — the same order as the other charts, so
+    /// one series keeps one colour across all of them. The bars themselves show
+    /// resistance; the order only decides colour and legend position.
+    fn sort(&mut self) {
+        self.bars.sort_unstable_by(|b1, b2| {
+            b1.data
+                .total_value
+                .total_cmp(&b2.data.total_value)
+                .reverse()
+        });
     }
 
     pub fn remove_bars(&mut self, bars: &str) {
@@ -59,6 +74,7 @@ impl DamageResistanceChart {
 
         let mut plot = Plot::new("damage resistance chart")
             .auto_bounds(true)
+            .y_axis_min_width(y_axis_width(ui))
             .y_axis_formatter(Self::format_axis)
             .x_axis_formatter(Self::format_axis)
             .label_formatter(|_, p| {

@@ -2,6 +2,20 @@
 
 ## unreleased
 
+### Other Changes
+- pointing at a bar in the Summary chart shows the same framed box the other charts show, which turns over at the edge of the window instead of being cut off. The old label always grew upwards from the bar, so on the topmost bar it crossed the top of the chart and half of it was lost
+- charts no longer slide left and right when the numbers beside them change size. Room is kept for a figure up to a million, so switching a healing chart between Hull and Shield — an order of magnitude apart — leaves the graph where it was
+- the smoothing slider now stops where smoothing still tells you something about the fight: a sixteenth of its length, never less than the 6 seconds it offered before and never more than 60. A long TFO can therefore be smoothed across whole phases from the slider, while on a one-minute patrol a setting that would flatten the whole line into its own edges is out of reach
+- the Hull and Shield switches above the healing charts are buttons that stay lit while on, matching the chart and tab switches around them, instead of check boxes
+
+### Fixes
+- the DPS, HPS and per-second hit charts now draw at their true height. The smoothing setting used to pull the whole line down as well as smooth it — a little at the default, several percent at the widest the slider offers, and by more than half at the widest value the box accepts — so the chart disagreed with the DPS in the table
+- a player keeps one colour and one place in the legend across every chart of a tab. The bar charts sorted them by size while the line charts left them in whatever order the analysis happened to produce, so the same person could be blue on one chart and red on the next
+- the two damage charts in Summary no longer call their value "DPS" when it is a damage total. They say Damage Dealt and Damage Taken
+- the healing charts follow the Hull and Shield switches when a row is picked in the table. A chart drawn for a selection always started with both halves added together, whatever the switches said, until something else was touched
+- taking a series off a per-second chart lets it shrink back. The chart kept room for the line that was removed
+- expanding a row now orders its parts on the chart by their own size. Every part carried the total of the row above it instead, so their order was arbitrary
+
 ## v1.8.1
 
 ### Major Changes

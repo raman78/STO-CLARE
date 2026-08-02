@@ -122,7 +122,9 @@ impl DamageTab {
             part.sub_parts.iter().map(|p| {
                 PreparedDamageDataSet::new(
                     &p.name,
-                    part.total_damage(),
+                    // Each sub-part's own total: it is the sort key, and the
+                    // parent's total made every one of them compare equal.
+                    p.total_damage(),
                     p.source_hits.iter(),
                     combat_duration_s,
                 )
@@ -204,7 +206,7 @@ impl DamageTab {
                 show_time_slice_setting(&mut self.diagram_time_slice, ui)
             }
             DiagramType::Dps | DiagramType::HitsPerSecond => {
-                show_time_filter_setting(&mut self.filter, ui)
+                show_time_filter_setting(&mut self.filter, self.combat_duration_s, ui)
             }
             _ => unreachable!(),
         };

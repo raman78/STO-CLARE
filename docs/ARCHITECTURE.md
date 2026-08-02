@@ -132,6 +132,17 @@ Two conventions worth knowing before changing a table or a chart:
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
+- **Every chart orders its series the same way** — by `PreparedDataSet::
+  total_value`, largest first (`ValuesChart::sort`, `ValuePerSecondGraph::sort`,
+  `DamageResistanceChart::sort`). egui hands out colours by the order items are
+  added, so any chart that ordered its series differently gave the same player a
+  different colour and a different place in the legend.
+- **The per-second charts are a kernel density estimate, so the kernel has to
+  integrate to one.** It is cut at `KERNEL_CUTOFF_SIGMAS` (4 σ) and divided by
+  the mass inside that cut, which makes the line's height independent of the
+  smoothing setting. The line still dips where the kernel hangs over the start
+  or the end of the fight — that is inherent to smoothing a finite record, and
+  it shows up at smoothing widths comparable to the length of the fight.
 - **Bold text needs its own font.** egui's `RichText::strong()` only picks a
   brighter colour, and the fonts epaint bundles have no bold face. `app/fonts`
   embeds `assets/fonts/Ubuntu-Bold.ttf` — the matching weight of the Ubuntu-Light

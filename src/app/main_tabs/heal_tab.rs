@@ -63,11 +63,9 @@ impl HealTab {
             combat,
             self.filter,
             self.diagram_time_slice,
+            self.components,
         );
         self.selection_diagrams = None;
-        // The freshly built diagrams default to both halves; re-apply whatever
-        // the picker is set to.
-        self.update_diagrams();
     }
 
     pub fn show(&mut self, settings: &Settings, ui: &mut Ui) {
@@ -82,6 +80,7 @@ impl HealTab {
                     HealGrouping::ByAbility => &mut self.table_by_ability,
                 };
                 let combat_duration_s = self.combat_duration_s;
+                let components = self.components;
                 table.show(top_ui, |p| {
                     Self::process_diagram_change(
                         &mut self.selection_diagrams,
@@ -89,6 +88,7 @@ impl HealTab {
                         self.filter,
                         self.diagram_time_slice,
                         combat_duration_s,
+                        components,
                     );
                 });
 
@@ -142,6 +142,7 @@ impl HealTab {
         filter: f64,
         heal_time_slice: f64,
         combat_duration_s: f64,
+        components: HealComponents,
     ) {
         match selection {
             TableSelectionEvent::Clear => *diagram = None,
@@ -151,6 +152,7 @@ impl HealTab {
                     filter,
                     heal_time_slice,
                     combat_duration_s,
+                    components,
                 ))
             }
             TableSelectionEvent::Single(part) => {
@@ -159,6 +161,7 @@ impl HealTab {
                     filter,
                     heal_time_slice,
                     combat_duration_s,
+                    components,
                 ))
             }
             TableSelectionEvent::AddSingle(part) => match diagram.as_mut() {
@@ -175,6 +178,7 @@ impl HealTab {
                         filter,
                         heal_time_slice,
                         combat_duration_s,
+                        components,
                     ))
                 }
             },
@@ -191,18 +195,22 @@ impl HealTab {
         filter: f64,
         heal_time_slice: f64,
         combat_duration_s: f64,
+        components: HealComponents,
     ) -> HealDiagrams {
         HealDiagrams::from_data(
             part.sub_parts.iter().map(|p| {
                 PreparedHealDataSet::new(
                     &p.name,
-                    part.total_heal(),
+                    // Each sub-part's own total: it is the sort key, and the
+                    // parent's total made every one of them compare equal.
+                    p.total_heal(),
                     p.source_ticks.iter(),
                     combat_duration_s,
                 )
             }),
             filter,
             heal_time_slice,
+            components,
         )
     }
 
@@ -211,11 +219,13 @@ impl HealTab {
         filter: f64,
         heal_time_slice: f64,
         combat_duration_s: f64,
+        components: HealComponents,
     ) -> HealDiagrams {
         return HealDiagrams::from_data(
             [Self::make_single_data_set(part, combat_duration_s)].into_iter(),
             filter,
             heal_time_slice,
+            components,
         );
     }
 
@@ -242,6 +252,9 @@ impl HealTab {
     /// Hull and shield healing on their own or added together. Both on draws
     /// the plain total, which is what the chart shows unless it is changed.
     /// Turning both off would draw nothing, so the last one on stays on.
+    ///
+    /// Drawn as two toggle buttons that stay lit while on, the same shape as
+    /// the diagram and tab switches above them, rather than as check boxes.
     fn show_component_picker(&mut self, ui: &mut Ui) -> bool {
         let mut changed = false;
         ui.horizontal(|ui| {
@@ -249,11 +262,11 @@ impl HealTab {
             let mut hull = self.components.hull;
             let mut shield = self.components.shield;
             changed |= ui
-                .checkbox(&mut hull, "Hull")
+                .toggle_value(&mut hull, "Hull")
                 .on_hover_text("Include healing that restored hull.")
                 .changed();
             changed |= ui
-                .checkbox(&mut shield, "Shield")
+                .toggle_value(&mut shield, "Shield")
                 .on_hover_text("Include healing that restored shields.")
                 .changed();
             if !hull && !shield {
@@ -303,7 +316,7 @@ impl HealTab {
                 show_time_slice_setting(&mut self.diagram_time_slice, ui)
             }
             DiagramType::Hps | DiagramType::HealTicksPerSecond => {
-                show_time_filter_setting(&mut self.filter, ui)
+                show_time_filter_setting(&mut self.filter, self.combat_duration_s, ui)
             }
             _ => unreachable!(),
         };
