@@ -2,6 +2,8 @@
 
 ## unreleased
 
+## v2.0.0
+
 ### Major Changes
 - the program is now called **STO-CLARE** — Combat Log Analyzer ReMastered. It reads the same logs and does everything it did before; what changes is the name it goes by, the icon it shows and the fact that it is developed on its own from here on. It began as a fork of AnotherNathan's Combat Log Analyzer, which is said plainly in the readme and in both licence files, and that credit is not going anywhere
 - your settings come with you. The first time the renamed program starts it copies everything it used to keep — the log path, your naming and grouping rules, window size, the lot — into its own folder. The old installation is left exactly as it was, so it still runs if you want to go back to it
