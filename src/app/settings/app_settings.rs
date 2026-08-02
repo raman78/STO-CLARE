@@ -8,6 +8,10 @@ use crate::{
     helpers::paths,
 };
 
+// How each theme looks lives in `crate::app::theme`; the settings only store
+// which one is picked, so a theme is added in one file.
+pub use crate::app::theme::Theme;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
     pub analysis: AnalysisSettings,
@@ -76,14 +80,6 @@ pub struct AutoRefresh {
 pub struct Visuals {
     pub ui_scale: f64,
     pub theme: Theme,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
-pub enum Theme {
-    Dark,
-    #[default]
-    LightDark,
-    Light,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -176,16 +172,6 @@ impl Default for AutoRefresh {
         Self {
             enable: false,
             interval_seconds: 1.0,
-        }
-    }
-}
-
-impl Theme {
-    pub const fn display(&self) -> &'static str {
-        match self {
-            Theme::Dark => "Dark",
-            Theme::LightDark => "Light Dark",
-            Theme::Light => "Light",
         }
     }
 }

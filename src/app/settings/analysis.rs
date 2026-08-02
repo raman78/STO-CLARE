@@ -4,14 +4,13 @@ use eframe::egui::*;
 
 use super::Settings;
 use crate::analyzer::{Combat, curated_map_identifiers, curated_map_names};
+use crate::app::theme;
 use crate::custom_widgets::table::Table;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
 const HEADER_HEIGHT: f32 = 15.0;
 const ROW_HEIGHT: f32 = 25.0;
-/// Amber used for shadow/overlap warnings.
-const WARN_COLOR: Color32 = Color32::from_rgb(0xd9, 0x95, 0x00);
 
 #[derive(Default)]
 pub struct AnalysisTab {
@@ -394,7 +393,7 @@ impl CombatNameRules {
         // Legend for the per-row ⚠, directly under the rules frame above.
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.colored_label(WARN_COLOR, "⚠");
+            ui.colored_label(theme::palette().warn, "⚠");
             ui.label(
                 RichText::new(
                     "= this rule overlaps an auto-detected map (your rule takes priority \
@@ -567,7 +566,8 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         if let Some(row_warning) = row_warning {
                             r.cell(|ui| match row_warning(rule.borrow()) {
                                 Some(tooltip) => {
-                                    ui.colored_label(WARN_COLOR, "⚠").on_hover_text(tooltip);
+                                    ui.colored_label(theme::palette().warn, "⚠")
+                                        .on_hover_text(tooltip);
                                 }
                                 // Keep the column width constant whether or not a
                                 // warning shows, so toggling rules doesn't shift the row.

@@ -1,7 +1,10 @@
 use eframe::egui::Ui;
 use egui_plot::*;
 
-use crate::{app::settings::Settings, helpers::number_formatting::NumberFormatter};
+use crate::{
+    app::{settings::Settings, theme},
+    helpers::number_formatting::NumberFormatter,
+};
 
 use super::common::*;
 
@@ -85,8 +88,9 @@ impl SummaryChart {
             .legend(Legend::default())
             .include_y(0.0)
             .show(ui, |p| {
-                for player in self.players.iter() {
+                for (index, player) in self.players.iter().enumerate() {
                     let chart = BarChart::new(&player.name, vec![player.clone()])
+                        .color(theme::series_color(index))
                         // Hovering a bar would make egui_plot paint its own
                         // label instead — the one that grows upwards out of
                         // the frame. Leaving the bars out of hover testing

@@ -121,6 +121,7 @@ name next to the settings overrides it without a rebuild. See
 | charts | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts |
 | compare | `app/compare` | several combats side by side with coloured deltas |
 | settings | `app/settings` | split into analysis settings (invalidate the parse) and the rest |
+| how it looks | `app/theme.rs` | the themes on offer, the app's own colours, the text sizes |
 | overlay | `app/overlay` | separate always-on-top window; see `docs/OVERLAY.md` |
 
 Two conventions worth knowing before changing a table or a chart:
@@ -134,9 +135,9 @@ Two conventions worth knowing before changing a table or a chart:
   from the start and several series share bucket boundaries.
 - **Every chart orders its series the same way** — by `PreparedDataSet::
   total_value`, largest first (`ValuesChart::sort`, `ValuePerSecondGraph::sort`,
-  `DamageResistanceChart::sort`). egui hands out colours by the order items are
-  added, so any chart that ordered its series differently gave the same player a
-  different colour and a different place in the legend.
+  `DamageResistanceChart::sort`). Series colours are handed out by that order
+  (`theme::series_color`), so any chart that ordered its series differently gave
+  the same player a different colour and a different place in the legend.
 - **The per-second charts are a kernel density estimate, so the kernel has to
   integrate to one.** It is cut at `KERNEL_CUTOFF_SIGMAS` (4 σ) and divided by
   the mass inside that cut, which makes the line's height independent of the
@@ -166,6 +167,34 @@ The start time is the only identifier the log itself fixes — `Combat::identifi
 the map detection produced, so a rename would orphan the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
+
+### One place for the look — `app/theme.rs`
+
+Everything about how the app looks is declared in that one module and reaches
+the screen through `theme::apply`, which the settings window calls at startup
+and whenever the choice changes.
+
+| what | where | note |
+|---|---|---|
+| the themes on offer | `THEMES` | one entry per theme: the `Theme` variant, its label, its `Visuals`, its `Palette`. The settings tab lists the registry, so adding a theme is a variant plus an entry — both in this file |
+| widget colours | `Visuals` per entry | egui's own: backgrounds, strokes, selection |
+| the app's colours | `Palette` | what egui does not know about: the compare deltas, the warning mark, the status/upload marks, and the chart series |
+| text sizes | `TEXT_SIZES` | spelled out rather than inherited from egui, so the sizes are one table |
+
+Two things follow from `Theme` being stored in the settings file by variant
+name: a variant may be **added but never renamed**, and both of egui's
+light/dark slots get the same style — the app follows its own setting, not the
+desktop's preference.
+
+Which theme is active is a process-wide value (`ACTIVE`), so `theme::palette()`
+works from any call site, including the overlay's separate egui context.
+
+The series palette is eight hues validated as a set — lightness band, chroma
+floor, and separation between neighbouring hues under normal vision and under
+protanopia, deuteranopia and tritanopia — with a step for a dark surface and a
+step for a light one. Past eight the order starts again: how many series a chart
+holds is the user's choice, and every chart names its series in the legend and
+on hover, so colour is never the only thing telling two apart.
 
 ## Log files on disk
 

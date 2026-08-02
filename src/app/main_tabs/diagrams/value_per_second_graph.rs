@@ -4,7 +4,10 @@ use eframe::egui::*;
 use egui_plot::*;
 use itertools::Itertools;
 
-use crate::{app::settings::Settings, helpers::number_formatting::NumberFormatter};
+use crate::{
+    app::{settings::Settings, theme},
+    helpers::number_formatting::NumberFormatter,
+};
 
 use super::common::*;
 
@@ -141,8 +144,10 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         }
 
         plot.show(ui, |p| {
-            for line in self.lines.iter() {
-                p.line(line.to_line());
+            // Series are sorted largest first, so the colour a series gets is
+            // the same on every chart it appears on.
+            for (index, line) in self.lines.iter().enumerate() {
+                p.line(line.to_line().color(theme::series_color(index)));
             }
         });
     }

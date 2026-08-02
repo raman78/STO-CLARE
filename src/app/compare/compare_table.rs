@@ -19,6 +19,7 @@ use crate::{
         combat_duration_seconds, DamageDiagrams, DiagramType, PreparedDamageDataSet,
     },
     app::settings::{CombatNotes, Settings},
+    app::theme,
     custom_widgets::{slider_text_edit::SliderTextEdit, splitter::Splitter, table::*},
     helpers::number_formatting::NumberFormatter,
 };
@@ -29,8 +30,6 @@ const ROW_HEIGHT: f32 = 25.0;
 // Two lines: the metric name on top, the combat number below.
 const HEADER_HEIGHT: f32 = 34.0;
 
-/// Delta color when the metric moved in the better direction.
-const IMPROVE: Color32 = Color32::from_rgb(0x5c, 0xb8, 0x5c);
 /// Headers of the two breakdown column groups, with what each one means, in the
 /// order they are drawn.
 const BREAKDOWN_LABELS: [(&str, &str); 2] = [
@@ -49,8 +48,6 @@ enum HeaderCell {
     Separator,
     Cell { text: String, tooltip: String },
 }
-/// Delta color when the metric moved in the worse direction.
-const WORSE: Color32 = Color32::from_rgb(0xd9, 0x53, 0x4f);
 
 struct Slot {
     /// Index in the combats list (shown in the legend as combat 1/2/3).
@@ -316,7 +313,7 @@ impl Comparison {
                      player above to compare like with like.",
                     names.join(", ")
                 ))
-                .color(WORSE),
+                .color(theme::palette().worse),
             );
         }
 
@@ -542,7 +539,12 @@ impl CompareNode {
                         Some(metric) => {
                             r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 if let Some(delta) = &metric.delta {
-                                    let color = if delta.improvement { IMPROVE } else { WORSE };
+                                    let palette = theme::palette();
+                                    let color = if delta.improvement {
+                                        palette.improve
+                                    } else {
+                                        palette.worse
+                                    };
                                     ui.colored_label(color, &delta.text);
                                 }
                                 ui.label(&metric.text);
@@ -572,7 +574,12 @@ impl CompareNode {
                         {
                             Some(breakdown) => {
                                 let share = pick(breakdown);
-                                let color = if share >= 0.0 { IMPROVE } else { WORSE };
+                                let palette = theme::palette();
+                                let color = if share >= 0.0 {
+                                    palette.improve
+                                } else {
+                                    palette.worse
+                                };
                                 let mut formatter = NumberFormatter::new();
                                 let mut signed = |value: f64| {
                                     format!(

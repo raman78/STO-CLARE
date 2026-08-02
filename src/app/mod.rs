@@ -38,6 +38,7 @@ mod settings;
 mod state;
 mod status;
 mod summary_copy;
+pub mod theme;
 
 // The layer-shell overlay backend lives under `overlay::layer_shell`; re-export
 // the startup helper so main.rs can build the shared wgpu stack (see main.rs).

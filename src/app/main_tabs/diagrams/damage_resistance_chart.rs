@@ -4,7 +4,11 @@ use eframe::egui::*;
 use egui_plot::*;
 use itertools::Itertools;
 
-use crate::{analyzer::*, app::settings::Settings, helpers::number_formatting::NumberFormatter};
+use crate::{
+    analyzer::*,
+    app::{settings::Settings, theme},
+    helpers::number_formatting::NumberFormatter,
+};
 
 use super::common::*;
 
@@ -97,8 +101,8 @@ impl DamageResistanceChart {
         }
 
         plot.show(ui, |p| {
-            for bars in self.bars.iter() {
-                p.bar_chart(bars.chart(settings));
+            for (index, bars) in self.bars.iter().enumerate() {
+                p.bar_chart(bars.chart(settings).color(theme::series_color(index)));
             }
         });
     }

@@ -12,6 +12,7 @@ use serde::Deserialize;
 
 use crate::{
     analyzer::{settings::AnalysisSettings, Combat},
+    app::theme,
     custom_widgets::table::Table,
     helpers::number_formatting::NumberFormatter,
 };
@@ -55,7 +56,7 @@ impl Upload {
                         ui.add_space(20.0);
                         ui.label("uploading...");
                         ui.add_space(40.0);
-                        ui.label(WidgetText::from("⏳").color(Color32::YELLOW));
+                        ui.label(WidgetText::from("⏳").color(theme::palette().busy));
                         ui.add_space(20.0);
                     });
                 });
@@ -98,8 +99,11 @@ impl Upload {
                                             .with_cross_align(Align::Center),
                                         |ui| {
                                             let text = match result.updated {
-                                                true => WidgetText::from("✔").color(Color32::GREEN),
-                                                false => WidgetText::from("✖").color(Color32::RED),
+                                                true => {
+                                                    WidgetText::from("✔").color(theme::palette().ok)
+                                                }
+                                                false => WidgetText::from("✖")
+                                                    .color(theme::palette().error),
                                             };
                                             ui.label(text);
                                         },
