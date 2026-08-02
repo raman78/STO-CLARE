@@ -2,7 +2,7 @@ use eframe::egui::*;
 
 use crate::{
     analyzer::*,
-    app::main_tabs::common::{details_tooltip, ROW_HEIGHT},
+    app::main_tabs::common::{ROW_HEIGHT, details_tooltip},
     custom_widgets::table::*,
 };
 

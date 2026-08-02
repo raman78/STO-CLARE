@@ -13,6 +13,11 @@ use egui_wgpu::wgpu;
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
+use smithay_client_toolkit::reexports::client::{
+    Connection, Proxy, QueueHandle,
+    globals::registry_queue_init,
+    protocol::{wl_output, wl_surface},
+};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -20,18 +25,13 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
+        WaylandSurface,
         wlr_layer::{
             Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
             LayerSurfaceConfigure,
         },
-        WaylandSurface,
     },
     shm::{Shm, ShmHandler},
-};
-use smithay_client_toolkit::reexports::client::{
-    globals::registry_queue_init,
-    protocol::{wl_output, wl_surface},
-    Connection, Proxy, QueueHandle,
 };
 
 const WIDTH: u32 = 440;
@@ -67,8 +67,13 @@ fn main() {
     let shm = Shm::bind(&globals, &qh).unwrap();
 
     let surface = compositor.create_surface(&qh);
-    let layer =
-        layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("sto-clare-overlay"), None);
+    let layer = layer_shell.create_layer_surface(
+        &qh,
+        surface,
+        Layer::Overlay,
+        Some("sto-clare-overlay"),
+        None,
+    );
     layer.set_anchor(Anchor::TOP | Anchor::RIGHT);
     layer.set_size(WIDTH, HEIGHT);
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
@@ -97,8 +102,8 @@ impl App {
 
         let display_ptr =
             NonNull::new(self.conn.backend().display_ptr() as *mut _).expect("null wl_display");
-        let surface_ptr = NonNull::new(self.layer.wl_surface().id().as_ptr() as *mut _)
-            .expect("null wl_surface");
+        let surface_ptr =
+            NonNull::new(self.layer.wl_surface().id().as_ptr() as *mut _).expect("null wl_surface");
         let raw_display = RawDisplayHandle::Wayland(WaylandDisplayHandle::new(display_ptr));
         let raw_window = RawWindowHandle::Wayland(WaylandWindowHandle::new(surface_ptr));
 
@@ -186,7 +191,11 @@ impl App {
                     ui.label("Player");
                     ui.label("DPS");
                     ui.end_row();
-                    for (name, dps) in [("Alpha", "184.2k"), ("Bravo", "141.9k"), ("Charlie", "97.5k")] {
+                    for (name, dps) in [
+                        ("Alpha", "184.2k"),
+                        ("Bravo", "141.9k"),
+                        ("Charlie", "97.5k"),
+                    ] {
                         ui.label(name);
                         ui.label(dps);
                         ui.end_row();
@@ -197,17 +206,21 @@ impl App {
 
         let clipped = gpu.egui_ctx.tessellate(full.shapes, ppp);
         for (id, delta) in &full.textures_delta.set {
-            gpu.egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, delta);
+            gpu.egui_renderer
+                .update_texture(&gpu.device, &gpu.queue, *id, delta);
         }
 
         let frame = match gpu.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+            wgpu::CurrentSurfaceTexture::Success(f)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {
                 gpu.surface.configure(&gpu.device, &gpu.config);
                 return;
             }
         };
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [w, h],
             pixels_per_point: ppp,
@@ -216,9 +229,13 @@ impl App {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let user_buffers =
-            gpu.egui_renderer
-                .update_buffers(&gpu.device, &gpu.queue, &mut encoder, &clipped, &screen);
+        let user_buffers = gpu.egui_renderer.update_buffers(
+            &gpu.device,
+            &gpu.queue,
+            &mut encoder,
+            &clipped,
+            &screen,
+        );
 
         {
             let mut rpass = encoder
@@ -247,8 +264,11 @@ impl App {
             gpu.egui_renderer.render(&mut rpass, &clipped, &screen);
         }
 
-        gpu.queue
-            .submit(user_buffers.into_iter().chain(std::iter::once(encoder.finish())));
+        gpu.queue.submit(
+            user_buffers
+                .into_iter()
+                .chain(std::iter::once(encoder.finish())),
+        );
         frame.present();
 
         for id in &full.textures_delta.free {
@@ -281,11 +301,39 @@ impl LayerShellHandler for App {
 }
 
 impl CompositorHandler for App {
-    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
-    fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
+    fn scale_factor_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: i32,
+    ) {
+    }
+    fn transform_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: wl_output::Transform,
+    ) {
+    }
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
-    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
-    fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
+    fn surface_leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
 }
 
 impl OutputHandler for App {

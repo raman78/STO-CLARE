@@ -233,7 +233,11 @@ fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
     // there is ours and dead — the pre-rename entry of this very install.
     if let Some(dir) = link_path.parent() {
         let legacy = dir.join(format!("{LEGACY_APP_NAME}.lnk"));
-        if legacy.is_file() && !exec_path.with_file_name("STO_CombatLogAnalyzer.exe").exists() {
+        if legacy.is_file()
+            && !exec_path
+                .with_file_name("STO_CombatLogAnalyzer.exe")
+                .exists()
+        {
             let _ = std::fs::remove_file(&legacy);
         }
     }

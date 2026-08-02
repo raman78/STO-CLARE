@@ -1,8 +1,9 @@
 use crate::{
     analyzer::*,
     app::{main_tabs::common::*, settings::Settings},
-    col, shield_hull_col,
+    col,
     helpers::number_formatting::NumberFormatter,
+    shield_hull_col,
 };
 
 use super::metrics_table::*;

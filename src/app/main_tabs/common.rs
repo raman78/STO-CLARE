@@ -304,10 +304,8 @@ const MAX_FILTER_SHARE_OF_COMBAT: f64 = 1.0 / 16.0;
 const FILTER_LIMITS: RangeInclusive<f64> = 6.0..=60.0;
 
 pub fn show_time_filter_setting(filter: &mut f64, combat_duration_s: f64, ui: &mut Ui) -> bool {
-    let max = (combat_duration_s * MAX_FILTER_SHARE_OF_COMBAT).clamp(
-        *FILTER_LIMITS.start(),
-        *FILTER_LIMITS.end(),
-    );
+    let max = (combat_duration_s * MAX_FILTER_SHARE_OF_COMBAT)
+        .clamp(*FILTER_LIMITS.start(), *FILTER_LIMITS.end());
 
     ui.horizontal(|ui| {
         // A value carried over from a longer fight has to come down with the

@@ -111,10 +111,9 @@ impl AnalysisTab {
         ui.separator();
 
         match self.selected_section {
-            AnalysisSection::CombatNames => {
-                self.combat_names_rules
-                    .show(&mut modified_settings.analysis, ui)
-            }
+            AnalysisSection::CombatNames => self
+                .combat_names_rules
+                .show(&mut modified_settings.analysis, ui),
             AnalysisSection::SourceReversal => self
                 .indirect_source_reversal_rules
                 .show(&mut modified_settings.analysis, ui),
@@ -802,8 +801,14 @@ mod tests {
 
     #[test]
     fn strip_category_prefix_removes_only_a_leading_bracket_tag() {
-        assert_eq!(strip_category_prefix("[Patrol] Trouble Over Terrh"), "Trouble Over Terrh");
-        assert_eq!(strip_category_prefix("[TFO] Azure Nebula Rescue"), "Azure Nebula Rescue");
+        assert_eq!(
+            strip_category_prefix("[Patrol] Trouble Over Terrh"),
+            "Trouble Over Terrh"
+        );
+        assert_eq!(
+            strip_category_prefix("[TFO] Azure Nebula Rescue"),
+            "Azure Nebula Rescue"
+        );
         assert_eq!(strip_category_prefix("Infected Space"), "Infected Space");
         // A bracket that is not a leading category tag is left alone.
         assert_eq!(strip_category_prefix("Nukara [x]"), "Nukara [x]");
@@ -874,8 +879,6 @@ mod tests {
         }
 
         // A rule that merely mentions an unrelated name is still not flagged.
-        assert!(
-            CombatNameRules::overlapping_maps(&rule("My Own Thing"), &identifiers).is_empty()
-        );
+        assert!(CombatNameRules::overlapping_maps(&rule("My Own Thing"), &identifiers).is_empty());
     }
 }

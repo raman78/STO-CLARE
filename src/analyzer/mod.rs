@@ -25,8 +25,8 @@ pub mod settings;
 mod values_manager;
 pub use common::*;
 pub use damage::*;
-pub use detection::{Difficulty, curated_map_identifiers, curated_map_names};
 use detection::{CritterMeta, DETECTION_RULES};
+pub use detection::{Difficulty, curated_map_identifiers, curated_map_names};
 use groups::*;
 pub use groups::{AnalysisGroup, DamageGroup, HealGroup};
 pub use heal::*;
@@ -340,10 +340,10 @@ impl Combat {
         // The detected difficulty is always appended on top of the base name —
         // it is computed from the log's entities, independent of naming, so the
         // tier shows even when a rule provides the name.
-        let base = append_detected_combat_type(self.base_name(), self.detected_combat_type.as_deref());
+        let base =
+            append_detected_combat_type(self.base_name(), self.detected_combat_type.as_deref());
         append_detected_difficulty(base, self.detected_difficulty)
     }
-
 
     pub fn file_identifier(&self) -> String {
         let date_times = format!(
@@ -388,12 +388,18 @@ impl Combat {
             .clone()
             .map(|p| p.damage_in.damage_metrics.hits)
             .sum();
-        let total_heal_ticks_done = players.clone().map(|p| p.heal_ally.heal_metrics.ticks).sum();
+        let total_heal_ticks_done = players
+            .clone()
+            .map(|p| p.heal_ally.heal_metrics.ticks)
+            .sum();
         let total_heal_ticks_received = players
             .clone()
             .map(|p| p.heal_received.heal_metrics.ticks)
             .sum();
-        let total_heal_ticks_self = players.clone().map(|p| p.heal_self.heal_metrics.ticks).sum();
+        let total_heal_ticks_self = players
+            .clone()
+            .map(|p| p.heal_self.heal_metrics.ticks)
+            .sum();
         self.recalculate_damage_group_percentage(self.total_damage_out, total_hits_out, |p| {
             &mut p.damage_out
         });
@@ -1489,8 +1495,7 @@ mod tests {
 
         println!("combat\tmap\tdifficulty\tentity\tdeaths\tinstances\tmedian_hull");
         for (combat_index, combat) in analyzer.result().iter().enumerate() {
-            let (Some(map), Some(difficulty)) =
-                (&combat.detected_map, combat.detected_difficulty)
+            let (Some(map), Some(difficulty)) = (&combat.detected_map, combat.detected_difficulty)
             else {
                 continue;
             };
@@ -1520,10 +1525,6 @@ mod tests {
             }
         }
     }
-
-
-
-
 
     /// Real-data check for the three healing pools: totals the split across a
     /// whole log, per player, so the numbers can be compared against an
@@ -1626,9 +1627,3 @@ mod tests {
         println!("combats: {:?}", combats);
     }
 }
-
-
-
-
-
-

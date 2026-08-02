@@ -3,7 +3,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use reqwest::{blocking::Response, Error, StatusCode};
+use reqwest::{Error, StatusCode, blocking::Response};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Debug)]

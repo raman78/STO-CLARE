@@ -195,7 +195,13 @@ impl<T: PreparedValue> GraphLine<T> {
             let time = self.data.start_time_s + duration * start_offset;
             let point = [
                 time,
-                Self::get_sample_gauss_filtered(&self.data.values, time, filter, diagram_type, components),
+                Self::get_sample_gauss_filtered(
+                    &self.data.values,
+                    time,
+                    filter,
+                    diagram_type,
+                    components,
+                ),
             ];
             points.push(point);
         }

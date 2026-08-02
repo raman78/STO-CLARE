@@ -58,11 +58,8 @@ impl Difficulty {
 /// `Normal` is included so a map whose queue offers Normal and Advanced but no
 /// Elite — Khitomer in Stasis, for one — can carry per-map bands for it. Maps
 /// without a Normal table are unaffected: the lookup simply finds nothing.
-const DIFFICULTY_ORDER: [Difficulty; 3] = [
-    Difficulty::Normal,
-    Difficulty::Advanced,
-    Difficulty::Elite,
-];
+const DIFFICULTY_ORDER: [Difficulty; 3] =
+    [Difficulty::Normal, Difficulty::Advanced, Difficulty::Elite];
 
 /// Per-NPC facts gathered from a combat, keyed elsewhere by the entity's
 /// internal unique name. Enough to run OSCR's detection.
@@ -416,11 +413,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     // Report `Any` and skip the hull tie-break (as OSCR does) — unless the map also
     // has hull tables, in which case a death marker is only one signal (e.g. Bug
     // Hunt: an Elite-only entity plus hull bands) and we fall through to hull.
-    if had_tables
-        && difficulty.is_none()
-        && def.hull_counts.is_empty()
-        && def.hull_any.is_empty()
-    {
+    if had_tables && difficulty.is_none() && def.hull_counts.is_empty() && def.hull_any.is_empty() {
         return Detected {
             map: Some(def.display_name(name)),
             difficulty: Some(global.unwrap_or(Difficulty::Any)),
@@ -476,17 +469,18 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
 /// hull damage exceeds `threshold * (1 - VAR)`. See `MapDef::hull_any`.
 fn hull_any_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
     table.iter().any(|(unique_name, threshold)| {
-        critters
-            .get(unique_name.as_str())
-            .is_some_and(|meta| {
-                meta.deaths > 0 && threshold * (1.0 - HULL_VARIANCE) < meta.median_hull_damage()
-            })
+        critters.get(unique_name.as_str()).is_some_and(|meta| {
+            meta.deaths > 0 && threshold * (1.0 - HULL_VARIANCE) < meta.median_hull_damage()
+        })
     })
 }
 
 /// A tier matches when every listed entity is present and its median hull damage
 /// suffered exceeds `threshold * (1 - VAR)`.
-fn hull_damage_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
+fn hull_damage_match(
+    table: &HashMap<String, f64>,
+    critters: &FxHashMap<&str, &CritterMeta>,
+) -> bool {
     for (unique_name, threshold) in table.iter() {
         match critters.get(unique_name.as_str()) {
             None => return false,
@@ -503,7 +497,10 @@ fn hull_damage_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &C
 
 /// A tier matches when every listed entity is present and, for entries with a
 /// required count > 0, died exactly that many times.
-fn death_counts_match(table: &HashMap<String, u32>, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
+fn death_counts_match(
+    table: &HashMap<String, u32>,
+    critters: &FxHashMap<&str, &CritterMeta>,
+) -> bool {
     for (unique_name, required) in table.iter() {
         match critters.get(unique_name.as_str()) {
             None => return false,
@@ -604,10 +601,7 @@ mod tests {
     #[test]
     fn known_map_but_wrong_counts_stays_any() {
         // The map identifier is present, but no tier's counts match.
-        let owned = critters(&[(
-            "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss",
-            1,
-        )]);
+        let owned = critters(&[("Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss", 1)]);
         let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("[TFO] Infected: The Conduit"));
         assert_eq!(result.difficulty, Some(Difficulty::Any));
@@ -635,7 +629,10 @@ mod tests {
                 )
             })
             .collect();
-        owned.push(hull_critter("Space_Borg_Dreadnought_Hive_Intro", 1_707_034.0));
+        owned.push(hull_critter(
+            "Space_Borg_Dreadnought_Hive_Intro",
+            1_707_034.0,
+        ));
         owned.push(hull_critter("Space_Borg_Cruiser_Hive_Intro1", 461_582.0));
         owned.push(hull_critter("Space_Borg_Cruiser_Hive_Intro2", 461_582.0));
         owned.push(hull_critter("Space_Borg_Battleship_Hive_Intro", 576_977.0));
@@ -686,7 +683,10 @@ mod tests {
         let shared = "Space_Klingon_Cruiser_Dsc_Mokai";
 
         let pahvo = vec![
-            hull_critter("Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite", 0.0),
+            hull_critter(
+                "Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite",
+                0.0,
+            ),
             hull_critter(shared, 376_972.0),
             hull_critter("Space_Klingon_Battleship_Dsc_Mokai", 472_023.0),
         ];
@@ -949,10 +949,7 @@ mod tests {
         ];
         let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("[TFO] Azure Nebula Rescue"));
-        assert_eq!(
-            result.difficulty, None,
-            "a tie must not resolve to a tier"
-        );
+        assert_eq!(result.difficulty, None, "a tie must not resolve to a tier");
     }
 
     /// Ground maps scale ~1.54x, not ~4.4x, so ground entities must never vote —
@@ -1153,9 +1150,15 @@ mod tests {
             "[TFO] Azure Nebula Rescue"
         );
         // No category -> bare name.
-        assert_eq!(parse("{}").display_name("Infected: The Conduit"), "Infected: The Conduit");
+        assert_eq!(
+            parse("{}").display_name("Infected: The Conduit"),
+            "Infected: The Conduit"
+        );
         // A whitespace-only category adds no brackets.
-        assert_eq!(parse(r#"{"category": "  "}"#).display_name("Bug Hunt"), "Bug Hunt");
+        assert_eq!(
+            parse(r#"{"category": "  "}"#).display_name("Bug Hunt"),
+            "Bug Hunt"
+        );
     }
 
     #[test]
@@ -1261,7 +1264,10 @@ mod tests {
         // (Dsc / Discovery vs Vtx), so anchoring each on its own ship keeps them
         // apart. Defense is single-difficulty Normal (in-game queue offers only
         // Normal; the wiki's N/A/E is out of date).
-        let defense = vec![hull_critter("Space_Federation_Cruiser_Dsc_Tfo_Evacuation_Ship", 0.0)];
+        let defense = vec![hull_critter(
+            "Space_Federation_Cruiser_Dsc_Tfo_Evacuation_Ship",
+            0.0,
+        )];
         let result = detect(&bundled_rules(), &view(&defense));
         assert_eq!(result.map.as_deref(), Some("[TFO] Defense of Starbase One"));
         assert_eq!(result.difficulty, Some(Difficulty::Normal));
@@ -1278,7 +1284,10 @@ mod tests {
             hull_critter("Space_Borg_Dreadnought_Mirror", 1_909_801.0),
         ];
         let result = detect(&bundled_rules(), &view(&advanced));
-        assert_eq!(result.map.as_deref(), Some("[TFO] Resistance of Starbase One"));
+        assert_eq!(
+            result.map.as_deref(),
+            Some("[TFO] Resistance of Starbase One")
+        );
         assert_eq!(result.difficulty, Some(Difficulty::Advanced));
 
         let elite = vec![
@@ -1328,7 +1337,10 @@ mod tests {
             ),
         ]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("[Patrol] Jupiter Station Showdown"));
+        assert_eq!(
+            result.map.as_deref(),
+            Some("[Patrol] Jupiter Station Showdown")
+        );
         assert_eq!(result.difficulty, Some(Difficulty::Elite));
     }
 
@@ -1339,7 +1351,10 @@ mod tests {
             ("Msn_Assimilated_Fed_Odyssey_Ground_Borg_Ens_Melee", 20),
         ]);
         let result = detect(&bundled_rules(), &view(&owned));
-        assert_eq!(result.map.as_deref(), Some("[Patrol] Jupiter Station Showdown"));
+        assert_eq!(
+            result.map.as_deref(),
+            Some("[Patrol] Jupiter Station Showdown")
+        );
         assert_eq!(result.difficulty, Some(Difficulty::Any));
     }
 

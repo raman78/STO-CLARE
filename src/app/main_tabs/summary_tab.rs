@@ -136,9 +136,9 @@ impl SummaryTab {
         // than fixed, so it holds at any UI scale; the slack covers letters
         // wider than a digit, since the face is proportional and no width can
         // fit every possible fifty characters.
-        let note_width = ui.fonts_mut(|fonts| {
-            fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0')
-        }) * MAX_NOTE_CHARS as f32
+        let note_width = ui
+            .fonts_mut(|fonts| fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0'))
+            * MAX_NOTE_CHARS as f32
             * 1.2;
 
         ui.horizontal(|ui| {

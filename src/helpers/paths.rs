@@ -118,7 +118,10 @@ mod tests {
         std::fs::write(from.join("detection_rules.json"), "[]").unwrap();
 
         assert_eq!(1, migrate_dir(&from, &to).unwrap());
-        assert_eq!("[]", std::fs::read_to_string(to.join("detection_rules.json")).unwrap());
+        assert_eq!(
+            "[]",
+            std::fs::read_to_string(to.join("detection_rules.json")).unwrap()
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -136,7 +139,10 @@ mod tests {
         std::fs::write(to.join(SETTINGS_FILE_NAME), "new").unwrap();
 
         assert_eq!(0, migrate_dir(&from, &to).unwrap());
-        assert_eq!("new", std::fs::read_to_string(to.join(SETTINGS_FILE_NAME)).unwrap());
+        assert_eq!(
+            "new",
+            std::fs::read_to_string(to.join(SETTINGS_FILE_NAME)).unwrap()
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }

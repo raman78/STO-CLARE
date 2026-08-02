@@ -59,9 +59,7 @@ pub struct CombatFilter {
 
 impl CombatFilter {
     pub fn is_active(&self) -> bool {
-        self.environment.is_some()
-            || self.map.is_some()
-            || self.difficulty != DifficultyFilter::Any
+        self.environment.is_some() || self.map.is_some() || self.difficulty != DifficultyFilter::Any
     }
 
     pub fn clear(&mut self) {
@@ -174,13 +172,11 @@ impl CombatFilter {
         ComboBox::new((id, "difficulty"), "")
             .selected_text(match self.difficulty {
                 DifficultyFilter::Any => "Any level",
-                other => {
-                    DifficultyFilter::ALL
-                        .iter()
-                        .find(|(f, _)| *f == other)
-                        .map(|(_, label)| *label)
-                        .unwrap_or("Any level")
-                }
+                other => DifficultyFilter::ALL
+                    .iter()
+                    .find(|(f, _)| *f == other)
+                    .map(|(_, label)| *label)
+                    .unwrap_or("Any level"),
             })
             .width(100.0)
             .show_ui(ui, |ui| {
@@ -302,7 +298,11 @@ mod tests {
         assert_eq!(vec!["Bug Hunt".to_string()], maps);
 
         let levels = filter.options(&entries, Dimension::Difficulty).difficulties;
-        assert!(levels.iter().any(|d| DifficultyFilter::Advanced.matches(*d)));
+        assert!(
+            levels
+                .iter()
+                .any(|d| DifficultyFilter::Advanced.matches(*d))
+        );
         assert!(!levels.iter().any(|d| DifficultyFilter::Elite.matches(*d)));
     }
 
@@ -314,7 +314,9 @@ mod tests {
         let mut filter = CombatFilter::default();
         filter.environment = Some("Ground".to_string());
 
-        let environments = filter.options(&entries, Dimension::Environment).environments;
+        let environments = filter
+            .options(&entries, Dimension::Environment)
+            .environments;
         assert_eq!(
             vec!["Ground".to_string(), "Space".to_string()],
             environments
@@ -328,10 +330,7 @@ mod tests {
     #[test]
     fn an_impossible_pair_is_resolved_rather_than_left_empty() {
         let entries = entries();
-        for (environment, map) in [
-            ("Ground", "Infected Space"),
-            ("Space", "Bug Hunt"),
-        ] {
+        for (environment, map) in [("Ground", "Infected Space"), ("Space", "Bug Hunt")] {
             let mut filter = CombatFilter::default();
             filter.environment = Some(environment.to_string());
             filter.map = Some(map.to_string());

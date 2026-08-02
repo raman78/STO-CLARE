@@ -91,8 +91,8 @@ impl SettingsWindow {
         // `Window::max_size` caps the *content*, while the title bar and frame
         // sit outside it — so the chrome has to come off here too, or the whole
         // window ends up taller than the viewport.
-        let max_size =
-            (ui.ctx().content_rect().size() - vec2(16.0, 16.0) - self.window_chrome).at_least(vec2(200.0, 150.0));
+        let max_size = (ui.ctx().content_rect().size() - vec2(16.0, 16.0) - self.window_chrome)
+            .at_least(vec2(200.0, 150.0));
         let window_response = Window::new("Settings")
             .collapsible(false)
             .resizable(true)
@@ -120,21 +120,25 @@ impl SettingsWindow {
                     .auto_shrink([false, false])
                     .max_height((ui.available_height() - bottom_bar).at_least(80.0))
                     .show(ui, |ui| match self.selected_tab {
-                    SettingsTab::General => self.general_tab.show(
-                        &state.analysis_handler,
-                        &mut self.modified_settings,
-                        combats,
-                        ui,
-                        frame,
-                    ),
-                    SettingsTab::Analysis => {
-                        self.analysis_tab
-                            .show(&mut self.modified_settings, selected_combat, ui)
-                    }
-                    SettingsTab::Visuals => self.visuals_tab.show(&mut self.modified_settings, ui),
-                    SettingsTab::Upload => self.upload_tab.show(&mut self.modified_settings, ui),
-                    SettingsTab::Debug => self.debug_tab.show(&mut self.modified_settings, ui),
-                });
+                        SettingsTab::General => self.general_tab.show(
+                            &state.analysis_handler,
+                            &mut self.modified_settings,
+                            combats,
+                            ui,
+                            frame,
+                        ),
+                        SettingsTab::Analysis => {
+                            self.analysis_tab
+                                .show(&mut self.modified_settings, selected_combat, ui)
+                        }
+                        SettingsTab::Visuals => {
+                            self.visuals_tab.show(&mut self.modified_settings, ui)
+                        }
+                        SettingsTab::Upload => {
+                            self.upload_tab.show(&mut self.modified_settings, ui)
+                        }
+                        SettingsTab::Debug => self.debug_tab.show(&mut self.modified_settings, ui),
+                    });
 
                 ui.separator();
 

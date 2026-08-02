@@ -72,14 +72,17 @@ impl SummaryChart {
             .label_formatter(move |_, point| {
                 let mut formatter = NumberFormatter::new();
                 let precision = if more_decimals { 2 } else { 0 };
-                match bars
-                    .iter()
-                    .find(|(_, argument, value)| {
-                        (point.y - argument).abs() <= BAR_WIDTH / 2.0
-                            && (0.0..=*value).contains(&point.x)
-                    }) {
+                match bars.iter().find(|(_, argument, value)| {
+                    (point.y - argument).abs() <= BAR_WIDTH / 2.0
+                        && (0.0..=*value).contains(&point.x)
+                }) {
                     Some((name, _, value)) => {
-                        format!("{}\n{}: {}", name, value_name, formatter.format(*value, precision))
+                        format!(
+                            "{}\n{}: {}",
+                            name,
+                            value_name,
+                            formatter.format(*value, precision)
+                        )
                     }
                     None => format!("{}: {}", value_name, formatter.format(point.x, precision)),
                 }

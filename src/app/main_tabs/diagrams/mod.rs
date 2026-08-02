@@ -6,10 +6,10 @@ mod values_chart;
 
 pub use crate::app::main_tabs::diagrams::common::DiagramType;
 use crate::app::settings::Settings;
-pub use common::combat_duration_seconds;
 pub use common::HealComponents;
 pub use common::PreparedDamageDataSet;
 pub use common::PreparedHealDataSet;
+pub use common::combat_duration_seconds;
 use eframe::egui::Ui;
 use itertools::Itertools;
 pub use summary_chart::SummaryChart;

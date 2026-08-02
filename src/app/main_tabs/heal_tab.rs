@@ -229,10 +229,7 @@ impl HealTab {
         );
     }
 
-    fn make_single_data_set(
-        part: &HealTablePart,
-        combat_duration_s: f64,
-    ) -> PreparedHealDataSet {
+    fn make_single_data_set(part: &HealTablePart, combat_duration_s: f64) -> PreparedHealDataSet {
         PreparedHealDataSet::new(
             &part.name,
             part.total_heal(),

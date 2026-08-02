@@ -38,16 +38,13 @@ pub enum MainTab {
 
 /// What each healing tab holds. Shown as tooltips, because the three pools are
 /// only unambiguous once you know that they are disjoint.
-const HEALING_ALLY_INFO: &str =
-    "Healing you did to somebody else — teammates, allied NPCs and your own pets.\n\
+const HEALING_ALLY_INFO: &str = "Healing you did to somebody else — teammates, allied NPCs and your own pets.\n\
      Grouped by ability, then by who received it.\n\
      Healing you did to yourself is not in here; it is under Self Healing.";
-const HEALING_RECEIVED_INFO: &str =
-    "Healing somebody else did to you.\n\
+const HEALING_RECEIVED_INFO: &str = "Healing somebody else did to you.\n\
      Grouped by ability, then by who healed you.\n\
      Your own self heals are not in here; they are under Self Healing.";
-const SELF_HEALING_INFO: &str =
-    "Healing you did to yourself: self-buffs, your own trait and gear procs, and \
+const SELF_HEALING_INFO: &str = "Healing you did to yourself: self-buffs, your own trait and gear procs, and \
      your own consoles healing you.\n\
      Always grouped by ability — there is nobody else involved, so there is\n\
      nothing else to group by. A heal that came through a pet or a hologram\n\

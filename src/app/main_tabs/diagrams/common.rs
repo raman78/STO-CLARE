@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, sync::Arc};
 
-use eframe::egui::{TextStyle, Ui};
 use educe::Educe;
+use eframe::egui::{TextStyle, Ui};
 use egui_plot::*;
 
 use crate::{
@@ -439,7 +439,6 @@ pub fn time_slices<'a, T: PreparedValue>(
     sliced_values
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,7 +458,12 @@ mod tests {
                 time_millis: s * 1000,
             })
             .collect();
-        PreparedDataSet::base_new("test", 100.0 * times_s.len() as f64, values.into_iter(), combat_duration_s)
+        PreparedDataSet::base_new(
+            "test",
+            100.0 * times_s.len() as f64,
+            values.into_iter(),
+            combat_duration_s,
+        )
     }
 
     /// A series whose first value lands well into the fight still starts at the
@@ -498,9 +502,18 @@ mod tests {
             hull_heals_count: 2,
             shield_heals_count: 1,
         };
-        let both = HealComponents { hull: true, shield: true };
-        let hull = HealComponents { hull: true, shield: false };
-        let shield = HealComponents { hull: false, shield: true };
+        let both = HealComponents {
+            hull: true,
+            shield: true,
+        };
+        let hull = HealComponents {
+            hull: true,
+            shield: false,
+        };
+        let shield = HealComponents {
+            hull: false,
+            shield: true,
+        };
 
         assert_eq!(300.0, value.value(DiagramType::Hps, both));
         assert_eq!(200.0, value.value(DiagramType::Hps, hull));
@@ -544,7 +557,8 @@ mod tests {
     #[test]
     fn buckets_are_aligned_to_the_slice_and_cover_the_fight() {
         let data = heal_series(&[3, 4], 6.0);
-        let slices: Vec<(f64, usize)> = time_slices(&data, 1.0).map(|(c, s)| (c, s.len())).collect();
+        let slices: Vec<(f64, usize)> =
+            time_slices(&data, 1.0).map(|(c, s)| (c, s.len())).collect();
 
         assert_eq!(
             vec![0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5],
