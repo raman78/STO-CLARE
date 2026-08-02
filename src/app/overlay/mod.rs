@@ -340,7 +340,7 @@ impl Overlay {
         {
             let mut builder = ViewportBuilder::default()
                 .with_title("CLA Overlay")
-                .with_app_id("sto-cla-overlay")
+                .with_app_id("sto-clare-overlay")
                 .with_decorations(inner.move_around)
                 .with_minimize_button(false)
                 .with_maximize_button(false)

@@ -3,6 +3,7 @@ use std::ops::Range;
 use chrono::*;
 
 pub mod number_formatting;
+pub mod paths;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct F64TotalOrd(pub f64);

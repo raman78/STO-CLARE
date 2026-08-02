@@ -1,16 +1,22 @@
-# STO_CombatLogAnalyzer — Claude Code Context
+# STO-CLARE — Claude Code Context
 
 ## Project overview
 
-**STO_CombatLogAnalyzer** is a desktop app that parses and analyzes Star Trek
-Online combat logs (DPS, healing, hits, kills, per-combat breakdowns, live
-overlay, OSCR upload). It is a native GUI application built with **egui/eframe**.
+**STO-CLARE** (Combat Log Analyzer ReMastered) is a desktop app that parses and
+analyzes Star Trek Online combat logs (DPS, healing, hits, kills, per-combat
+breakdowns, live overlay, OSCR upload). It is a native GUI application built
+with **egui/eframe**.
 
-This checkout is a **fork** of the upstream project by AnotherNathan. We work
-here to contribute fixes back upstream via pull requests.
+The project began as a fork of **AnotherNathan/STO_CombatLogAnalyzer** and was
+renamed to STO-CLARE in 2.0.0, when it went its own way. The attribution stays:
+both licence files carry the original copyright, and the README says plainly
+what it is a fork of. Binary/package name: `sto-clare`.
 
-- **`origin`** → `raman78/STO_CombatLogAnalyzer` (our fork — push here)
-- **`upstream`** → `AnotherNathan/STO_CombatLogAnalyzer` (original — pull from here)
+- **`origin`** → `raman78/STO-CLARE` (ours — push here)
+- **`upstream`** → `AnotherNathan/STO_CombatLogAnalyzer` (the original)
+
+Two pull requests are still open upstream (#6 overlay, #7 combats/logs). Unless
+a change is meant for one of them, it does not need to be upstream-shaped.
 
 **Stack:** Rust (edition 2024), eframe/egui `0.34` with the `wgpu` renderer,
 egui_plot `0.35`, `log` + `simplelog`, serde/serde_json.
@@ -48,14 +54,14 @@ stay English.)
 
 ---
 
-## Fork workflow
+## Branch workflow
 
-- Do fixes on a dedicated feature branch (e.g. `fix/overlay-wayland-crash`),
-  never directly on `master`.
-- `master` tracks `origin/master` (our fork). Keep it in sync with `upstream`
-  when needed via `git fetch upstream && git merge upstream/master`.
-- Open pull requests from a fork branch. A PR aimed at the upstream maintainer
-  targets `AnotherNathan/STO_CombatLogAnalyzer`.
+- Do work on a dedicated feature branch (e.g. `fix/overlay-wayland-crash`),
+  never directly on `main`.
+- `main` is the default branch; `develop` collects work between releases.
+- A change meant for the original project is opened as a PR against
+  `AnotherNathan/STO_CombatLogAnalyzer` and must not depend on anything
+  STO-CLARE renamed.
 - Commit or push only when the user asks.
 
 ---
@@ -68,11 +74,12 @@ cargo run              # build + launch the GUI
 cargo build --release  # release build
 ```
 
-Settings and the log file are written **next to the executable**
-(`STO_CombatLogAnalyzer_Settings.json`, `STO_CombatLogAnalyzer.log`), not to
-the XDG config dir — see `src/app/settings/app_settings.rs` and
-`src/app/logging.rs`. The process therefore needs write access to its own
-directory.
+Settings, the log file and any rule overrides live in the per-user config
+directory — `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows.
+**Every name written there is declared in `src/helpers/paths.rs`** and nowhere
+else; that module also carries settings over from the pre-2.0 directory on the
+first start. A settings file next to the executable is still read as a
+last-resort fallback (that is where versions before 1.6 kept it).
 
 ---
 
@@ -95,8 +102,7 @@ Prefer `cargo check` / `cargo clippy` for fast feedback while iterating.
 
 Uses the `log` crate through `simplelog` (`src/app/logging.rs`). Logging is
 **opt-in** via the Debug settings (`settings.debug.enable_log`) and, when
-enabled, writes to **both** stderr and `STO_CombatLogAnalyzer.log` next to the
-executable.
+enabled, writes to **both** stderr and `STO-CLARE.log` in the config directory.
 
 ```rust
 log::info!("message");

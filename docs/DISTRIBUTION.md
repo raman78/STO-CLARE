@@ -1,6 +1,6 @@
 # Distribution & desktop integration
 
-How STO Combat Log Analyzer is built, released, and registered with the host
+How STO-CLARE is built, released, and registered with the host
 OS. Modeled on the sto-warp project, adapted for a Rust/eframe binary (there is
 no PyPI/pipx — those are Python-only).
 
@@ -18,10 +18,10 @@ no PyPI/pipx — those are Python-only).
 The app registers its own menu entry/shortcut on every platform, so there is a
 single source of truth:
 
-- **Linux** → `~/.local/share/applications/sto-cla-<id>.desktop` + icon in
-  `~/.local/share/icons/sto-cla.png`.
+- **Linux** → `~/.local/share/applications/sto-clare-<id>.desktop` + icon in
+  `~/.local/share/icons/sto-clare.png`.
 - **Windows** → Start Menu `.lnk` (via the `mslnk` crate).
-- **macOS** → `~/Applications/STO Combat Log Analyzer.app` bundle. **Untested.**
+- **macOS** → `~/Applications/STO-CLARE.app` bundle. **Untested.**
 
 `<id>` is an 8-char hash of `std::env::current_exe()`. Consequences:
 
@@ -29,15 +29,17 @@ single source of truth:
   never duplicated.
 - Installing to a **different location** yields a different id → its own entry
   (as requested — duplicates only across distinct install locations).
-- On Linux, sibling `sto-cla-*.desktop` files pointing at the *same* binary are
-  swept on launch (safety net if the hash scheme ever changes).
+- On Linux, sibling `sto-clare-*.desktop` files are swept on launch when they
+  point at the *same* binary, or at one that no longer exists. The pre-2.0
+  prefix `sto-cla-` is swept the same way, which is what removes the menu entry
+  of the old name after the rename.
 
 Triggers:
 
 - Normal launch → `install_desktop_entry(false)` (best-effort, non-fatal).
 - `--install-desktop` / `--uninstall-desktop` → explicit, headless, then exit.
 
-The main window's `app_id` is set to `sto-cla` so the runtime WM class matches
+The main window's `app_id` is set to `sto-clare` so the runtime WM class matches
 the `StartupWMClass` written into the `.desktop` entry.
 
 ## Local dev ("editable") — `scripts/dev-install.sh`
@@ -46,10 +48,10 @@ Rust compiles to a native binary; there is no true editable install. The script
 approximates it:
 
 1. `cargo build --release`
-2. symlink `~/.local/bin/sto-cla` → `target/release/STO_CombatLogAnalyzer`
+2. symlink `~/.local/bin/sto-clare` → `target/release/sto-clare`
 3. `--install-desktop` for that build
 
-After a code change, `cargo build --release` alone refreshes what `sto-cla`
+After a code change, `cargo build --release` alone refreshes what `sto-clare`
 (and the menu entry, which resolves to the same real path) runs.
 
 ## Releases — `.github/workflows/release.yml`
@@ -58,20 +60,20 @@ Triggered on `release: published` (tag `vX.Y.Z`) and `workflow_dispatch`.
 
 - **linux** job: apt build deps (winit libs — rfd uses the XDG portal via
   `zbus`, so no GTK needed), `cargo build --release`, package
-  `STO_CombatLogAnalyzer-<ver>-linux-x86_64.tar.gz`, attach to the release.
+  `STO-CLARE-<ver>-linux-x86_64.tar.gz`, attach to the release.
 - **windows** job: `cargo build --release`, `choco install innosetup`, compile
-  `packaging/windows/STO_CombatLogAnalyzer.iss` with `/DAppVersion=<ver>`,
-  attach `STO_CombatLogAnalyzer-<ver>-setup.exe` **and** a bare
-  `STO_CombatLogAnalyzer-<ver>-windows-x86_64.zip` (used by `--upgrade`).
+  `packaging/windows/STO-CLARE.iss` with `/DAppVersion=<ver>`,
+  attach `STO-CLARE-<ver>-setup.exe` **and** a bare
+  `STO-CLARE-<ver>-windows-x86_64.zip` (used by `--upgrade`).
 
 Asset names must contain the platform tag (`linux-x86_64`, `windows-x86_64`)
 and hold the binary at the archive root — that is what `--upgrade` matches on.
 
 ## Upgrading — `--upgrade` (`src/app/self_upgrade.rs`)
 
-The analogue of `pipx upgrade`. `sto-cla --upgrade` uses the `self_update` crate
+The analogue of `pipx upgrade`. `sto-clare --upgrade` uses the `self_update` crate
 to query the latest GitHub Release, download this platform's asset, and replace
-the running executable in place (atomic swap). `sto-cla --version` prints the
+the running executable in place (atomic swap). `sto-clare --version` prints the
 current version. Both are headless and exit without opening the GUI.
 
 Requires write access to the installed binary — fine for the `install.sh` /
@@ -81,7 +83,9 @@ instead.
 
 The Inno installer creates **no** `[Icons]` of its own — it runs the exe with
 `--install-desktop` (and `--uninstall-desktop` on removal), reusing the app's
-shortcut logic. Its stable `AppId` makes upgrades replace in place.
+shortcut logic. Its stable `AppId` makes upgrades replace in place — kept
+unchanged across the 2.0 rename, with an `[InstallDelete]` entry that removes
+the old `STO_CombatLogAnalyzer.exe` from the install folder.
 
 > Not yet exercised end-to-end: the Windows installer and the CI workflow can
 > only be verified on a real Windows runner / a tagged release. The macOS `.app`

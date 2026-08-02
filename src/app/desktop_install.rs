@@ -4,9 +4,9 @@
 //! register the app with the host OS so it shows up alongside other GUI
 //! applications, and expose it explicitly via the `--install-desktop` flag.
 //!
-//!   - Linux   → `~/.local/share/applications/sto-cla-<id>.desktop` + icon
+//!   - Linux   → `~/.local/share/applications/sto-clare-<id>.desktop` + icon
 //!   - Windows → Start Menu `.lnk` shortcut
-//!   - macOS   → `~/Applications/STO Combat Log Analyzer.app` bundle (UNTESTED)
+//!   - macOS   → `~/Applications/STO-CLARE.app` bundle (UNTESTED)
 //!
 //! Idempotent: re-runs are a no-op once the entry exists (unless `force`).
 //! The Linux entry is keyed by an 8-char hash of the executable path, so
@@ -21,9 +21,18 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 /// Human-facing application name (menu label, .app / .lnk basename).
-const APP_NAME: &str = "STO Combat Log Analyzer";
+const APP_NAME: &str = "STO-CLARE";
 /// Short id used for the desktop-entry / icon basename and the WM class.
-pub const APP_ID: &str = "sto-cla";
+pub const APP_ID: &str = "sto-clare";
+// What the app called itself up to 1.8.1. Entries left behind under these names
+// are cleaned up when a renamed build registers itself — but only when they are
+// dead (see `sweep_stale_entries`), so a 1.8.x that is still installed elsewhere
+// keeps its menu entry.
+/// Display name of the old Start Menu shortcut (Windows keys its link by name).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const LEGACY_APP_NAME: &str = "STO Combat Log Analyzer";
+/// Old desktop-entry / icon basename.
+const LEGACY_APP_ID: &str = "sto-cla";
 /// Icon shipped with the binary (same asset as the window icon).
 const ICON_PNG: &[u8] = include_bytes!("../../icon/icon.png");
 
@@ -95,6 +104,13 @@ fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
     let icon_path = icons_dir.join(format!("{APP_ID}.png"));
     std::fs::write(&icon_path, ICON_PNG)?;
 
+    // The icon of the old name is ours too. It goes once no entry is left that
+    // could still be pointing at it.
+    let legacy_icon = icons_dir.join(format!("{LEGACY_APP_ID}.png"));
+    if legacy_icon.is_file() && !has_entry_with_prefix(&apps_dir, LEGACY_APP_ID) {
+        let _ = std::fs::remove_file(&legacy_icon);
+    }
+
     std::fs::create_dir_all(&apps_dir)?;
     let contents = format!(
         "[Desktop Entry]\n\
@@ -122,20 +138,22 @@ fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
     Ok(Some(entry_path))
 }
 
-/// Remove sibling `sto-cla-*.desktop` entries that point at the same binary as
-/// the current install (a different `install_id` from an old location). Entries
-/// targeting a *different* Exec (a genuinely parallel install) are left alone.
+/// Remove sibling `sto-clare-*.desktop` / `sto-cla-*.desktop` entries that are
+/// stale: they point at the same binary as the current install (a different
+/// `install_id` from an old location), or at a binary that is no longer there —
+/// which is what the pre-rename entries of *this* install become. An entry
+/// targeting a different, existing Exec (a genuinely parallel install) is left
+/// alone.
 #[cfg(target_os = "linux")]
 fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &str) {
     let our_exec = our_exec.trim().trim_matches('"');
-    let prefix = format!("{APP_ID}-");
     let Ok(entries) = std::fs::read_dir(apps_dir) else {
         return;
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name == our_name || !name.starts_with(&prefix) || !name.ends_with(".desktop") {
+        if name == our_name || !is_our_entry_name(&name) {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(entry.path()) else {
@@ -143,7 +161,8 @@ fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &st
         };
         for line in text.lines() {
             if let Some(rest) = line.strip_prefix("Exec=") {
-                if rest.trim().trim_matches('"') == our_exec {
+                let exec = rest.trim().trim_matches('"');
+                if exec == our_exec || !std::path::Path::new(exec).exists() {
                     if std::fs::remove_file(entry.path()).is_ok() {
                         log::info!("desktop installer: removed stale entry {name}");
                     }
@@ -152,6 +171,28 @@ fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &st
             }
         }
     }
+}
+
+/// Whether a file name is a desktop entry this app wrote, under either name.
+#[cfg(target_os = "linux")]
+fn is_our_entry_name(name: &str) -> bool {
+    name.ends_with(".desktop")
+        && [APP_ID, LEGACY_APP_ID]
+            .iter()
+            .any(|id| name.starts_with(&format!("{id}-")))
+}
+
+/// Whether any entry of `id` is still installed.
+#[cfg(target_os = "linux")]
+fn has_entry_with_prefix(apps_dir: &std::path::Path, id: &str) -> bool {
+    let prefix = format!("{id}-");
+    std::fs::read_dir(apps_dir).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(&prefix) && name.ends_with(".desktop")
+        })
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -187,6 +228,16 @@ fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
 
     let exec_path = std::env::current_exe()?;
     let link_path = start_menu_link()?;
+
+    // A shortcut of the old name that points at a binary which is no longer
+    // there is ours and dead — the pre-rename entry of this very install.
+    if let Some(dir) = link_path.parent() {
+        let legacy = dir.join(format!("{LEGACY_APP_NAME}.lnk"));
+        if legacy.is_file() && !exec_path.with_file_name("STO_CombatLogAnalyzer.exe").exists() {
+            let _ = std::fs::remove_file(&legacy);
+        }
+    }
+
     if link_path.is_file() && !force {
         return Ok(Some(link_path));
     }
@@ -254,7 +305,7 @@ fn install_impl(force: bool) -> std::io::Result<Option<PathBuf>> {
          \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
          <plist version=\"1.0\">\n<dict>\n\
          \t<key>CFBundleName</key><string>{APP_NAME}</string>\n\
-         \t<key>CFBundleIdentifier</key><string>com.github.stocla</string>\n\
+         \t<key>CFBundleIdentifier</key><string>com.github.stoclare</string>\n\
          \t<key>CFBundleExecutable</key><string>{APP_ID}</string>\n\
          \t<key>CFBundleIconFile</key><string>icon.png</string>\n\
          \t<key>CFBundlePackageType</key><string>APPL</string>\n\
@@ -286,4 +337,29 @@ fn install_impl(_force: bool) -> std::io::Result<Option<PathBuf>> {
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 fn uninstall_impl() -> std::io::Result<()> {
     Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn our_entries_are_recognized_under_both_names() {
+        assert!(is_our_entry_name("sto-clare-1a2b3c4d.desktop"));
+        assert!(is_our_entry_name("sto-cla-1a2b3c4d.desktop"));
+    }
+
+    /// The current name is not a match for the old prefix, and vice versa —
+    /// otherwise the sweep would treat live entries as leftovers.
+    #[test]
+    fn the_two_names_do_not_match_each_other() {
+        assert!(!"sto-clare-1a2b3c4d.desktop".starts_with(&format!("{LEGACY_APP_ID}-")));
+        assert!(!"sto-cla-1a2b3c4d.desktop".starts_with(&format!("{APP_ID}-")));
+    }
+
+    #[test]
+    fn other_applications_are_left_alone() {
+        assert!(!is_our_entry_name("sto-warp.desktop"));
+        assert!(!is_our_entry_name("sto-clare-1a2b3c4d.png"));
+    }
 }

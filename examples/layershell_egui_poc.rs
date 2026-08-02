@@ -68,7 +68,7 @@ fn main() {
 
     let surface = compositor.create_surface(&qh);
     let layer =
-        layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("sto-cla-overlay"), None);
+        layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("sto-clare-overlay"), None);
     layer.set_anchor(Anchor::TOP | Anchor::RIGHT);
     layer.set_size(WIDTH, HEIGHT);
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);

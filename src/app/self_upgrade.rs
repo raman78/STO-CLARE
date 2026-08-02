@@ -21,14 +21,14 @@ fn platform_target() -> Option<&'static str> {
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let target = platform_target().ok_or("self-update is not supported on this platform")?;
     let bin_name = if cfg!(windows) {
-        "STO_CombatLogAnalyzer.exe"
+        "sto-clare.exe"
     } else {
-        "STO_CombatLogAnalyzer"
+        "sto-clare"
     };
 
     let status = self_update::backends::github::Update::configure()
         .repo_owner("raman78")
-        .repo_name("STO_CombatLogAnalyzer")
+        .repo_name("STO-CLARE")
         .bin_name(bin_name)
         .target(target)
         .show_download_progress(true)

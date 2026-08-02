@@ -9,7 +9,7 @@ linked from the relevant section.
 
 ## Purpose
 
-`STO_CombatLogAnalyzer` reads the combat log Star Trek Online writes, splits it
+`STO-CLARE` reads the combat log Star Trek Online writes, splits it
 into fights, and reports what happened in each — damage, healing, hits, kills,
 per-ability breakdowns, charts, a live overlay, and upload to the OSCR ladder.
 It is a native desktop application; there is no server component of its own.
@@ -179,7 +179,7 @@ touches line reading has to keep those ranges exact.
 ## Where things are written
 
 Settings and the log file go to the per-user config directory
-(`~/.config/STO_CombatLogAnalyzer` on Linux, `%APPDATA%` on Windows), with the
+(`~/.config/STO-CLARE` on Linux, `%APPDATA%` on Windows), with the
 old next-to-the-executable location read as a fallback. See
 `app/settings/app_settings.rs` and `app/logging.rs`.
 

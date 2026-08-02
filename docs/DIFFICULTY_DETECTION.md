@@ -224,7 +224,7 @@ mentions the environment, so a user rule called "Bug Hunt Ground" does not becom
 
 Bundled next to the module and embedded via `include_str!`, parsed once into the
 `DETECTION_RULES` lazy static. A user override at
-`<config dir>/STO_CombatLogAnalyzer/detection_rules.json` (same dir as the app
+`<config dir>/STO-CLARE/detection_rules.json` (same dir as the app
 settings) **fully replaces** the bundled tables when present and valid; a
 malformed override is logged and ignored. The file is **keyed by map name**, each
 map carrying everything about it (`DetectionRules { maps: HashMap<String, MapDef> }`):

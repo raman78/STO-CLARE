@@ -47,7 +47,7 @@ fn main() {
         &qh,
         surface,
         Layer::Overlay,
-        Some("sto-cla-overlay"),
+        Some("sto-clare-overlay"),
         None,
     );
     layer.set_anchor(Anchor::TOP | Anchor::RIGHT);

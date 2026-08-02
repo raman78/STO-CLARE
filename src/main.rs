@@ -26,9 +26,13 @@ fn main() {
     }));
 
     if std::env::args().any(|a| a == "--version") {
-        println!("STO_CombatLogAnalyzer {}", env!("CARGO_PKG_VERSION"));
+        println!("STO-CLARE {}", env!("CARGO_PKG_VERSION"));
         return;
     }
+
+    // Settings written under the old name are carried over here, before
+    // anything reads them — logging is the first to.
+    helpers::paths::migrate_legacy_config();
 
     logging::initialize();
 
@@ -100,7 +104,7 @@ fn main() {
     let overlay_instance: Option<eframe::wgpu::Instance> = None;
 
     let res = eframe::run_native(
-        &format!("STO_CombatLogAnalyzer V{}", env!("CARGO_PKG_VERSION")),
+        &format!("STO-CLARE V{}", env!("CARGO_PKG_VERSION")),
         native_options,
         Box::new(move |cc| Ok(Box::new(app::App::new(cc, overlay_instance)))),
     );

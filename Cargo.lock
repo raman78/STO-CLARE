@@ -3,42 +3,6 @@
 version = 4
 
 [[package]]
-name = "STO_CombatLogAnalyzer"
-version = "1.8.1"
-dependencies = [
- "bitflags 2.11.1",
- "chrono",
- "crossbeam-channel",
- "dirs",
- "educe",
- "eframe",
- "egui",
- "egui-wgpu",
- "egui_plot",
- "flate2",
- "itertools",
- "lazy_static",
- "log",
- "mslnk",
- "notify",
- "png",
- "pollster",
- "raw-window-handle",
- "regex",
- "reqwest 0.13.3",
- "rfd",
- "rustc-hash 2.1.2",
- "self_update",
- "serde",
- "serde_json",
- "simplelog",
- "smallvec",
- "smithay-client-toolkit 0.19.2",
- "timer",
- "winres",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4178,6 +4142,42 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "sto-clare"
+version = "2.0.0"
+dependencies = [
+ "bitflags 2.11.1",
+ "chrono",
+ "crossbeam-channel",
+ "dirs",
+ "educe",
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "egui_plot",
+ "flate2",
+ "itertools",
+ "lazy_static",
+ "log",
+ "mslnk",
+ "notify",
+ "png",
+ "pollster",
+ "raw-window-handle",
+ "regex",
+ "reqwest 0.13.3",
+ "rfd",
+ "rustc-hash 2.1.2",
+ "self_update",
+ "serde",
+ "serde_json",
+ "simplelog",
+ "smallvec",
+ "smithay-client-toolkit 0.19.2",
+ "timer",
+ "winres",
+]
 
 [[package]]
 name = "strict-num"

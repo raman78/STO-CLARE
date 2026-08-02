@@ -121,7 +121,7 @@ pub fn create_shared_gpu() -> OverlayGpu {
     }))
     .expect("no wgpu adapter for the shared overlay/main-window device");
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("sto-cla-shared"),
+        label: Some("sto-clare-shared"),
         // Mirror egui-wgpu's default device limits so eframe accepts the device
         // we hand it (it wants a 4k+ capable max_texture_dimension_2d).
         required_limits: wgpu::Limits {
@@ -230,7 +230,7 @@ fn run(
     let margin = *position.lock().unwrap();
     let surface = compositor.create_surface(&qh);
     let layer =
-        layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("sto-cla-overlay"), None);
+        layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("sto-clare-overlay"), None);
     layer.set_anchor(Anchor::TOP | Anchor::LEFT);
     layer.set_margin(margin.0, 0, 0, margin.1);
     layer.set_size(MIN_W * 2, MIN_H * 2);

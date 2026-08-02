@@ -25,8 +25,6 @@ use log::{info, warn};
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 
-/// Config-dir subfolder shared with the app settings/log.
-const APP_CONFIG_DIR: &str = "STO_CombatLogAnalyzer";
 /// Optional user override file; when present it fully replaces the bundled rules.
 const OVERRIDE_FILE_NAME: &str = "detection_rules.json";
 
@@ -316,14 +314,9 @@ lazy_static! {
     pub static ref DETECTION_RULES: DetectionRules = load_rules();
 }
 
-/// Path to the optional override, e.g.
-/// `~/.config/STO_CombatLogAnalyzer/detection_rules.json`.
+/// Path to the optional override, e.g. `~/.config/STO-CLARE/detection_rules.json`.
 fn override_path() -> Option<PathBuf> {
-    Some(
-        dirs::config_dir()?
-            .join(APP_CONFIG_DIR)
-            .join(OVERRIDE_FILE_NAME),
-    )
+    Some(crate::helpers::paths::config_dir()?.join(OVERRIDE_FILE_NAME))
 }
 
 /// Load the override file if it exists and parses; otherwise the embedded

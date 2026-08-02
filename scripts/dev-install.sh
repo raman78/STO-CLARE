@@ -2,7 +2,7 @@
 # Local "editable" install (the closest Rust analogue to `pipx install -e .`).
 #
 # Rust compiles to a native binary, so there is no true editable install.
-# Instead we build a release binary and symlink `sto-cla` to it: after every
+# Instead we build a release binary and symlink `sto-clare` to it: after every
 # `cargo build --release` the symlink points at the freshly built binary, so
 # your latest changes run immediately — no reinstall step.
 #
@@ -11,12 +11,12 @@
 set -e
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-TARGET="$PROJECT_DIR/target/release/STO_CombatLogAnalyzer"
+TARGET="$PROJECT_DIR/target/release/sto-clare"
 BIN_DIR="$HOME/.local/bin"
-LINK="$BIN_DIR/sto-cla"
+LINK="$BIN_DIR/sto-clare"
 
 echo "==========================================="
-echo "  STO Combat Log Analyzer — dev install     "
+echo "        STO-CLARE — dev install           "
 echo "==========================================="
 echo ""
 
@@ -37,7 +37,7 @@ echo "Linked $LINK -> $TARGET"
 
 echo ""
 echo "==========================================="
-echo "Done. Run it with:  sto-cla"
+echo "Done. Run it with:  sto-clare"
 echo "After code changes:  cargo build --release  (the symlink auto-updates)"
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;

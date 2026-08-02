@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     analyzer::settings::AnalysisSettings,
     app::{compare::CompareSettings, settings::CombatNotes},
+    helpers::paths,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -96,31 +97,26 @@ pub struct UploadSettings {
     pub oscr_url: String,
 }
 
-static DEFAULT_SETTINGS: &str = include_str!("STO_CombatLogAnalyzer_Settings.json");
-
-const SETTINGS_FILE_NAME: &str = "STO_CombatLogAnalyzer_Settings.json";
+static DEFAULT_SETTINGS: &str = include_str!("STO-CLARE_Settings.json");
 
 impl Settings {
-    /// Per-user config directory for this app: `~/.config/STO_CombatLogAnalyzer`
-    /// on Linux, `%APPDATA%\STO_CombatLogAnalyzer` on Windows. Using the OS
-    /// config dir means settings and logs survive when the program lives in a
-    /// read-only location (e.g. /usr/bin, C:\Program Files, an AppImage mount).
+    /// Per-user config directory — see [`crate::helpers::paths`], which owns
+    /// every name the app writes there.
     pub fn config_dir() -> Option<PathBuf> {
-        let mut path = dirs::config_dir()?;
-        path.push("STO_CombatLogAnalyzer");
-        Some(path)
+        paths::config_dir()
     }
 
     fn file_path() -> Option<PathBuf> {
-        Some(Self::config_dir()?.join(SETTINGS_FILE_NAME))
+        Some(Self::config_dir()?.join(paths::SETTINGS_FILE_NAME))
     }
 
-    /// Location used by older versions: next to the executable. Read as a
-    /// fallback so existing settings are not lost on upgrade; never written to.
+    /// Location used by older versions: next to the executable, under the name
+    /// they wrote. Read as a fallback so existing settings are not lost on
+    /// upgrade; never written to.
     fn legacy_file_path() -> Option<PathBuf> {
         let mut path = std::env::current_exe().ok()?;
         path.pop();
-        path.push(SETTINGS_FILE_NAME);
+        path.push(paths::LEGACY_SETTINGS_FILE_NAME);
         Some(path)
     }
 
