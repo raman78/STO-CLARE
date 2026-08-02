@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
-use eframe::egui::{load::SizedTexture, *};
+use eframe::egui::*;
 use rfd::FileDialog;
 
 use crate::{
@@ -60,8 +60,6 @@ fn is_wayland(cc: &eframe::CreationContext) -> bool {
 
 pub struct App {
     settings_window: SettingsWindow,
-    /// The app icon, uploaded on the first frame that draws the top bar.
-    icon: Option<TextureHandle>,
     combats: Vec<String>,
     /// Detected difficulty per combat, aligned with `combats` (compare filter).
     combat_difficulties: Vec<Option<Difficulty>>,
@@ -127,7 +125,6 @@ impl App {
             SettingsWindow::new(&cc.egui_ctx, cc.egui_ctx.native_pixels_per_point());
         let app = Self {
             settings_window,
-            icon: None,
             combats: Default::default(),
             combat_difficulties: Default::default(),
             combat_base_names: Default::default(),
@@ -190,20 +187,9 @@ impl eframe::App for App {
         if let Some(position) = self.state.overlay.position() {
             self.state.settings.general.overlay_position = Some(position);
         }
-        let ctx_for_icon = ui.ctx().clone();
         CentralPanel::default().show_inside(ui, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    // The program's own mark, ahead of its buttons. It also
-                    // carries the version, which the title bar shows but a
-                    // maximised window on some desktops does not.
-                    let icon = self
-                        .icon
-                        .get_or_insert_with(|| app_icon::texture(&ctx_for_icon));
-                    let side = ui.spacing().interact_size.y;
-                    ui.add(Image::new(SizedTexture::new(icon.id(), Vec2::splat(side))))
-                        .on_hover_text(concat!("STO-CLARE ", env!("CARGO_PKG_VERSION")));
-
                     self.settings_window.show(
                         &mut self.state,
                         self.selected_combat.as_deref(),
