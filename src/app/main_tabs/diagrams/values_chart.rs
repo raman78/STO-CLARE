@@ -104,7 +104,7 @@ impl<T: PreparedValue> ValuesChart<T> {
             self.newly_created = false;
         }
 
-        if self.bars.len() == 0 {
+        if self.bars.is_empty() {
             plot = plot.include_x(60.0);
         }
 

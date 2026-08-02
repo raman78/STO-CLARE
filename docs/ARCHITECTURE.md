@@ -168,6 +168,23 @@ the map detection produced, so a rename would orphan the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
 
+### Why eframe/winit, and not SDL3
+
+Parked on 2026-08-02, after it was built far enough to judge. The branch
+`experiment/sdl3` carries a working replacement of eframe/winit with a
+hand-rolled SDL3 + egui-wgpu driver (`src/platform.rs`, ~360 lines): winit
+leaves the dependency graph entirely and the app runs on Linux/Wayland, with
+cursors, maximised-state persistence, the window icon and the Windows/macOS
+paths still to do.
+
+It is not merged, and should not be without a reason that is missing today. It
+trades a maintained window layer for one we own, and until the Windows path
+follows it means **two** window stacks side by side. The one real pain — an
+overlay that stays above a full-screen game on Wayland — is already solved by
+the layer-shell backend (`docs/OVERLAY.md`), which does not touch this choice.
+The branch stays as a record; revisit only if winit blocks something users ask
+for.
+
 ### One place for the look — `app/theme.rs`
 
 Everything about how the app looks is declared in that one module and reaches

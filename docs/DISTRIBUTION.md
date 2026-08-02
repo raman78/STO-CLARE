@@ -44,17 +44,20 @@ the `StartupWMClass` written into the `.desktop` entry.
 
 ## Icon
 
-`icon/icon.svg` is the source and the only file to edit. `icon/build.sh` renders
-it (inkscape) into the two files that actually ship:
+`icon/build.py` draws the icon and is the only file to edit. There is no vector
+master: the glass look is gradients, blurs and soft shadows, which are read off
+the numbers at the top of that script rather than off a drawing. Its only inputs
+are `icon/delta-mask.png` (the silhouette of the mark) and the Ubuntu Bold face
+already bundled for the tables. It writes the two files that ship:
 
 | File | Used by |
 |---|---|
 | `icon/icon.png` | window icon (`include_bytes!` in `main.rs`), desktop entry, macOS bundle |
 | `icon/icon.ico` | `build.rs` via `winres` (the exe's own icon) and the Inno installer |
 
-Both are committed, so a normal build needs neither inkscape nor Pillow. The
-lettering in the SVG is already outlined, so no font has to be installed to
-render it.
+Both are committed, so a normal build needs neither the script nor Pillow. Run
+`python3 icon/build.py` after changing the design; it works at 1024px and scales
+down, so edges and blurs stay smooth at every size that ships.
 
 ## Local dev ("editable") — `scripts/dev-install.sh`
 

@@ -2,7 +2,7 @@
 
 [package]
 name = "sto-clare"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "STO-CLARE — Combat Log Analyzer ReMastered: parses and analyzes Star Trek Online combat logs"
@@ -15,7 +15,6 @@ readme = "README.md"
 eframe = { version = "0.34", features = ["wgpu"] }
 egui_plot = { version = "0.35" }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
-lazy_static = "1"
 regex = "1"
 bitflags = "2"
 log = { version = "0.4", features = ["serde"] }
@@ -34,7 +33,6 @@ smallvec = { version = "1", features = ["const_new", "const_generics"] }
 crossbeam-channel = "0.5"
 simplelog = "0.12"
 notify = "8"
-timer = "0.2"
 itertools = "0.14"
 educe = { version = "0.6", default-features = false, features = [
     "Deref",

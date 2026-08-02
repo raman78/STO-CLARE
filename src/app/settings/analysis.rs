@@ -9,6 +9,9 @@ use crate::custom_widgets::table::Table;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
+/// Per-row warning: returns a tooltip when the row's rule should be flagged.
+type RowWarning<'a> = &'a dyn Fn(&RulesGroup) -> Option<String>;
+
 const HEADER_HEIGHT: f32 = 15.0;
 const ROW_HEIGHT: f32 = 25.0;
 
@@ -67,7 +70,7 @@ struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
     popup_extra_space: f32,
     /// Optional per-row warning: returns a tooltip when the row's rule should be
     /// flagged (e.g. it shadows an auto-detected map). Adds a ⚠ cell per row.
-    row_warning: Option<&'a dyn Fn(&RulesGroup) -> Option<String>>,
+    row_warning: Option<RowWarning<'a>>,
     /// Explicit height cap; falls back to all available space.
     max_height: Option<f32>,
 }
@@ -216,7 +219,7 @@ impl AnalysisTab {
                 })
                 .body(ROW_HEIGHT, |b| {
                     for name in names.filter(|n| {
-                        filter.len() == 0 || n.to_lowercase().contains(&filter.to_lowercase())
+                        filter.is_empty() || n.to_lowercase().contains(&filter.to_lowercase())
                     }) {
                         b.row(|r| {
                             r.cell(|ui| {
@@ -676,7 +679,7 @@ impl<'a> RulesTable<'a> {
                                     .selected_text(rule.aspect.display())
                                     .width(150.0)
                                     .show_ui(ui, |ui| {
-                                        self.match_aspect_set.into_iter().for_each(|a| {
+                                        self.match_aspect_set.iter().for_each(|a| {
                                             ui.selectable_value(&mut rule.aspect, *a, a.display());
                                         });
                                     });
@@ -732,7 +735,7 @@ impl<'a> RulesTable<'a> {
     }
 }
 
-fn show_move_up_down<T>(selected: &mut Option<usize>, items: &mut Vec<T>, ui: &mut Ui) {
+fn show_move_up_down<T>(selected: &mut Option<usize>, items: &mut [T], ui: &mut Ui) {
     if ui
         .add_enabled(
             selected.map(|s| s > 0 && s < items.len()).unwrap_or(false),

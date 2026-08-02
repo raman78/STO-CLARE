@@ -307,10 +307,9 @@ impl eframe::App for App {
                                             entry,
                                         )
                                         .changed()
+                                        && let Some(combat_index) = self.selected_combat_index
                                     {
-                                        if let Some(combat_index) = self.selected_combat_index {
-                                            self.state.analysis_handler.get_combat(combat_index);
-                                        }
+                                        self.state.analysis_handler.get_combat(combat_index);
                                     }
                                 }
                             });
@@ -344,20 +343,18 @@ impl eframe::App for App {
                                 Button::new("Save Combat 💾"),
                             )
                             .clicked()
-                        {
-                            if let Some(file) = FileDialog::new()
+                            && let Some(file) = FileDialog::new()
                                 .set_title("Save Combat")
                                 .add_filter("log", &["log"])
                                 .set_file_name(
-                                    &self.selected_combat.as_ref().unwrap().file_identifier(),
+                                    self.selected_combat.as_ref().unwrap().file_identifier(),
                                 )
                                 .set_parent(frame)
                                 .save_file()
-                            {
-                                self.state
-                                    .analysis_handler
-                                    .save_combat(self.selected_combat_index.unwrap(), file);
-                            }
+                        {
+                            self.state
+                                .analysis_handler
+                                .save_combat(self.selected_combat_index.unwrap(), file);
                         }
 
                         self.upload.show(

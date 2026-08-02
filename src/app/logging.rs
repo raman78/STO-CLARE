@@ -15,9 +15,8 @@ pub fn initialize() {
     let mut loggers: Vec<Box<dyn SharedLogger>> =
         vec![SimpleLogger::new(log::LevelFilter::Info, Config::default())];
 
-    if let Some(file) = file_path()
-        .map(|p| OpenOptions::new().create(true).append(true).open(&p).ok())
-        .flatten()
+    if let Some(file) =
+        file_path().and_then(|p| OpenOptions::new().create(true).append(true).open(&p).ok())
     {
         loggers.push(WriteLogger::new(
             settings.debug.log_level_filter,

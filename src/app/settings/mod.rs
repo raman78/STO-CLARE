@@ -188,12 +188,7 @@ impl SettingsWindow {
 
     fn handle_dropped_file(&mut self, ui: &mut Ui, state: &mut AppState) {
         ui.ctx().input(|i| {
-            let file = i
-                .raw
-                .dropped_files
-                .last()
-                .map(|f| f.path.as_ref())
-                .flatten();
+            let file = i.raw.dropped_files.last().and_then(|f| f.path.as_ref());
             if let Some(file) = file {
                 if file.extension() != Some(OsStr::new("log")) {
                     return;

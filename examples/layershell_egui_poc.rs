@@ -183,8 +183,8 @@ impl App {
             ..Default::default()
         };
 
-        let full = gpu.egui_ctx.run(raw_input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let full = gpu.egui_ctx.run_ui(raw_input, |ctx| {
+            egui::CentralPanel::default().show_inside(ctx, |ui| {
                 ui.heading("CLA Overlay (layer-shell PoC)");
                 ui.separator();
                 egui::Grid::new("dps").striped(true).show(ui, |ui| {

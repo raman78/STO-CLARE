@@ -141,6 +141,7 @@ impl Default for CompareSettings {
     }
 }
 
+#[derive(Default)]
 pub struct CompareView {
     open: bool,
     selected: Vec<usize>,
@@ -149,18 +150,6 @@ pub struct CompareView {
     /// lists are filtered the same way and mean the same by each choice.
     filter: CombatFilter,
     comparison: Option<Comparison>,
-}
-
-impl Default for CompareView {
-    fn default() -> Self {
-        Self {
-            open: false,
-            selected: Vec::new(),
-            name_filter: String::new(),
-            filter: CombatFilter::default(),
-            comparison: None,
-        }
-    }
 }
 
 impl CompareView {
@@ -177,6 +166,9 @@ impl CompareView {
         self.comparison = Some(Comparison::new(combats, &settings.compare.columns));
     }
 
+    // Drawing context threaded through; a struct of the same fields would
+    // only move the list somewhere else.
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         state: &mut AppState,
@@ -221,6 +213,9 @@ impl CompareView {
         }
     }
 
+    // Drawing context threaded through; a struct of the same fields would
+    // only move the list somewhere else.
+    #[allow(clippy::too_many_arguments)]
     fn show_selection(
         &mut self,
         state: &mut AppState,
@@ -364,8 +359,10 @@ mod tests {
     /// Search and pickers narrow together, not one or the other.
     #[test]
     fn the_search_box_and_the_pickers_both_apply() {
-        let mut view = CompareView::default();
-        view.name_filter = "infected".to_string();
+        let mut view = CompareView {
+            name_filter: "infected".to_string(),
+            ..Default::default()
+        };
         view.filter.environment = Some("Ground".to_string());
         assert!(!view.matches_filters("Infected Space | t", "", entry()));
     }

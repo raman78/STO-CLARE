@@ -60,7 +60,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         }
     }
 
-    pub fn from_data<'a>(
+    pub fn from_data(
         diagram_type: DiagramType,
         lines: impl Iterator<Item = PreparedDataSet<T>>,
         filter: f64,
@@ -139,7 +139,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
             self.newly_created = false;
         }
 
-        if self.lines.len() == 0 {
+        if self.lines.is_empty() {
             plot = plot.include_x(60.0);
         }
 
@@ -179,7 +179,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
 }
 
 impl<T: PreparedValue> GraphLine<T> {
-    fn new<'a>(data: PreparedDataSet<T>) -> Self {
+    fn new(data: PreparedDataSet<T>) -> Self {
         Self {
             points: Vec::new(),
             data,

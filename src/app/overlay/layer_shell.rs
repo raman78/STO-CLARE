@@ -922,10 +922,10 @@ impl SeatHandler for State {
         _: wl_seat::WlSeat,
         capability: Capability,
     ) {
-        if capability == Capability::Pointer {
-            if let Some(pointer) = self.pointer.take() {
-                pointer.release();
-            }
+        if capability == Capability::Pointer
+            && let Some(pointer) = self.pointer.take()
+        {
+            pointer.release();
         }
     }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
@@ -1029,12 +1029,12 @@ impl Dispatch<ZwpRelativePointerV1, ()> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let zwp_relative_pointer_v1::Event::RelativeMotion { dx, dy, .. } = event {
-            if state.dragging {
-                state.drag_delta.0 += dx;
-                state.drag_delta.1 += dy;
-                state.needs_redraw = true;
-            }
+        if let zwp_relative_pointer_v1::Event::RelativeMotion { dx, dy, .. } = event
+            && state.dragging
+        {
+            state.drag_delta.0 += dx;
+            state.drag_delta.1 += dy;
+            state.needs_redraw = true;
         }
     }
 }

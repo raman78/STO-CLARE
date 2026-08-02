@@ -58,10 +58,10 @@ impl<'a, T: FromStr + Ord + ToString + Copy + Debug> NumberEdit<'a, T> {
         }
 
         let text_edit_response = text_edit.show(ui).response.response;
-        if text_edit_response.changed() {
-            if let Ok(new_value) = state.value_text.parse::<T>() {
-                *value = new_value;
-            }
+        if text_edit_response.changed()
+            && let Ok(new_value) = state.value_text.parse::<T>()
+        {
+            *value = new_value;
         }
 
         if let Some(clamp_min) = clamp_min {

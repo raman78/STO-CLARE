@@ -2,6 +2,9 @@ use std::ops::RangeInclusive;
 
 use eframe::{egui::*, emath::GuiRounding};
 
+/// What a splitter draws into its two halves.
+type SplitterContents<'c, R> = Box<dyn FnOnce(&mut Ui, &mut Ui) -> R + 'c>;
+
 #[must_use = "You should call .show()"]
 pub struct Splitter {
     orientation: SplitterOrientation,
@@ -83,7 +86,7 @@ impl Splitter {
     pub fn show_dyn<'c, R>(
         self,
         ui: &mut Ui,
-        add_contents: Box<dyn FnOnce(&mut Ui, &mut Ui) -> R + 'c>,
+        add_contents: SplitterContents<'c, R>,
     ) -> SplitterResponse<R> {
         let Self {
             orientation,

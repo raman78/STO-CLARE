@@ -438,10 +438,10 @@ impl Comparison {
                             }
                         }
                     })
-                    .body(ROW_HEIGHT, |mut t| {
+                    .body(ROW_HEIGHT, |t| {
                         for node in nodes.iter_mut() {
                             node.show(
-                                &mut t,
+                                t,
                                 0.0,
                                 n_slots,
                                 n_metrics,
@@ -480,10 +480,8 @@ impl Comparison {
             }
             _ => show_time_filter_setting(&mut self.filter, ui),
         };
-        if changed {
-            if let Some(diagrams) = &mut self.diagrams {
-                diagrams.update(self.filter, self.time_slice);
-            }
+        if changed && let Some(diagrams) = &mut self.diagrams {
+            diagrams.update(self.filter, self.time_slice);
         }
 
         match &mut self.diagrams {
@@ -496,6 +494,9 @@ impl Comparison {
 }
 
 impl CompareNode {
+    // Drawing context threaded through; a struct of the same fields would
+    // only move the list somewhere else.
+    #[allow(clippy::too_many_arguments)]
     fn show(
         &mut self,
         t: &mut TableBody,
@@ -662,10 +663,10 @@ fn follow_the_reference_player(slots: &mut [Slot]) {
         .get(&reference.combat.name_manager)
         .to_string();
     for slot in slots.iter_mut().skip(1) {
-        if let Some(handle) = slot.combat.name_manager.get_handle(&reference_name) {
-            if slot.combat.players.contains_key(&handle) {
-                slot.player = handle;
-            }
+        if let Some(handle) = slot.combat.name_manager.get_handle(&reference_name)
+            && slot.combat.players.contains_key(&handle)
+        {
+            slot.player = handle;
         }
     }
 }

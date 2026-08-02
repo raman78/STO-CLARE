@@ -97,10 +97,10 @@ impl<'a> SliderTextEdit<'a> {
             }
 
             let text_edit_response = text_edit.show(ui).response;
-            if text_edit_response.changed() {
-                if let Ok(new_value) = state.value_text.parse::<f64>() {
-                    *value = new_value;
-                }
+            if text_edit_response.changed()
+                && let Ok(new_value) = state.value_text.parse::<f64>()
+            {
+                *value = new_value;
             }
 
             if let Some(clamp_min) = clamp_min {
@@ -127,9 +127,9 @@ impl<'a> SliderTextEdit<'a> {
     fn format_value(mut value: f64, display_precision: Option<i32>) -> String {
         if let Some(display_precision) = display_precision {
             let multiplier = 10.0f64.powi(display_precision);
-            value = value * multiplier;
+            value *= multiplier;
             value = value.round();
-            value = value / multiplier;
+            value /= multiplier;
         }
         format!("{}", value)
     }

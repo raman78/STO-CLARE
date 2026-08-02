@@ -47,8 +47,7 @@ impl RequestError {
     ) -> std::fmt::Result {
         match error
             .as_ref()
-            .map(|e| serde_json::from_str::<ServerError>(e).ok())
-            .flatten()
+            .and_then(|e| serde_json::from_str::<ServerError>(e).ok())
         {
             Some(error) => write!(f, "\n\nDetails: {}", error.detail)?,
             None => {

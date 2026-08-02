@@ -176,7 +176,7 @@ impl Analyzer {
     /// worth it while the damage filter alone keeps the list clean.
     fn discard_combats_without_damage(&mut self) {
         self.combats
-            .retain(|combat| f64::from(combat.total_damage_out.all) > 0.0);
+            .retain(|combat| combat.total_damage_out.all > 0.0);
     }
 
     fn process_next_record(
@@ -551,9 +551,7 @@ impl Combat {
 
     fn update_time(&mut self, record: &Record) {
         if record.is_player_out_damage() && !record.is_immune_or_zero() {
-            let combat_time = self
-                .combat_time
-                .get_or_insert_with(|| record.time..record.time);
+            let combat_time = self.combat_time.get_or_insert(record.time..record.time);
             combat_time.end = record.time;
         }
         self.active_time.end = record.time;
@@ -660,7 +658,6 @@ impl Player {
                     path,
                     (!lands_on_self).then_some(target_name),
                     heal,
-                    record.value_flags,
                     combat_start_offset_millis,
                 );
             }
@@ -714,7 +711,6 @@ impl Player {
                     path,
                     Some(source_name),
                     heal,
-                    record.value_flags,
                     combat_start_offset_millis,
                 );
             }
@@ -734,7 +730,6 @@ impl Player {
         path: GroupingPath,
         person: Option<NameHandle>,
         heal: BaseHealTick,
-        flags: ValueFlags,
         combat_start_offset_millis: u32,
     ) {
         let mut by_person = path;
@@ -744,7 +739,7 @@ impl Player {
             by_person.push(GroupPathSegment::Group(person));
         }
         pool.by_person
-            .add_heal(&by_person, heal, flags, combat_start_offset_millis);
+            .add_heal(&by_person, heal, combat_start_offset_millis);
 
         // The other order is the same path read the other way round. Moving the
         // person to the front instead would leave whatever `build_grouping_path`
@@ -753,7 +748,7 @@ impl Player {
         let mut by_ability = by_person;
         by_ability.reverse();
         pool.by_ability
-            .add_heal(&by_ability, heal, flags, combat_start_offset_millis);
+            .add_heal(&by_ability, heal, combat_start_offset_millis);
     }
 
     fn build_grouping_path(
@@ -813,16 +808,12 @@ impl Player {
         if record.is_immune_or_zero() {
             return;
         }
-        let combat_time = self
-            .combat_time
-            .get_or_insert_with(|| record.time..record.time);
+        let combat_time = self.combat_time.get_or_insert(record.time..record.time);
         combat_time.end = record.time;
     }
 
     fn update_active_time(&mut self, record: &Record) {
-        let active_time = self
-            .active_time
-            .get_or_insert_with(|| record.time..record.time);
+        let active_time = self.active_time.get_or_insert(record.time..record.time);
         active_time.end = record.time;
     }
 
@@ -850,25 +841,21 @@ impl Player {
             .as_ref()
             .map(|t| t.end.signed_duration_since(t.start))
             .unwrap_or(Duration::MAX);
-        let duration = duration.to_std().unwrap().as_secs_f64();
-        duration
+
+        duration.to_std().unwrap().as_secs_f64()
     }
 }
 
 impl Combat {
     pub fn read_log_combat_data(&self, file_path: &Path) -> Option<Vec<u8>> {
-        let pos = match self.log_pos.clone() {
-            Some(p) => p,
-            None => return None,
-        };
+        let pos = self.log_pos.clone()?;
 
         let file = match File::options().create(false).read(true).open(file_path) {
             Ok(f) => f,
             Err(_) => return None,
         };
 
-        let mut combat_data = Vec::new();
-        combat_data.resize((pos.end - pos.start) as _, 0);
+        let mut combat_data = vec![0; (pos.end - pos.start) as _];
         let mut reader = BufReader::with_capacity(1 << 20, file);
         reader.seek(SeekFrom::Start(pos.start)).ok()?;
 
@@ -917,8 +904,8 @@ impl CombatName {
         }
     }
 
-    fn format(&self) -> Cow<'_, String> {
-        if self.additional_infos.len() == 0 {
+    fn format(&self) -> Cow<'_, str> {
+        if self.additional_infos.is_empty() {
             return Cow::Borrowed(&self.name);
         }
 
@@ -1309,7 +1296,7 @@ mod tests {
         );
         for combat in analyzer.result() {
             assert!(
-                f64::from(combat.total_damage_out.all) > 0.0,
+                combat.total_damage_out.all > 0.0,
                 "a kept combat must have damage"
             );
         }
@@ -1347,7 +1334,7 @@ mod tests {
             analyzer.result().len(),
             "the trailing self-buff burst must not survive as a combat"
         );
-        assert!(f64::from(analyzer.result()[0].total_damage_out.all) > 0.0);
+        assert!(analyzer.result()[0].total_damage_out.all > 0.0);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

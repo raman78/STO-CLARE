@@ -118,11 +118,7 @@ impl Upload {
                             }
                         });
                     ui.add_space(40.0);
-                    if ui.button("Close").clicked() {
-                        true
-                    } else {
-                        false
-                    }
+                    ui.button("Close").clicked()
                 }) {
                     self.state = UploadState::Idle;
                 }
@@ -131,11 +127,7 @@ impl Upload {
                 if let Some(true) = Self::window(ui, false, |ui| {
                     ui.label(&*error);
                     ui.add_space(40.0);
-                    if ui.button("Close").clicked() {
-                        true
-                    } else {
-                        false
-                    }
+                    ui.button("Close").clicked()
                 }) {
                     self.state = UploadState::Idle;
                 }
@@ -153,10 +145,7 @@ impl Upload {
             window = window.max_size([360.0, 480.0]);
         }
 
-        window
-            .show(ui.ctx(), add_contents)
-            .map(|r| r.inner)
-            .flatten()
+        window.show(ui.ctx(), add_contents).and_then(|r| r.inner)
     }
 
     fn begin_upload(
@@ -272,10 +261,7 @@ enum UploadState {
 
 impl UploadState {
     fn is_idle(&self) -> bool {
-        match self {
-            UploadState::Idle => true,
-            _ => false,
-        }
+        matches!(self, UploadState::Idle)
     }
 }
 

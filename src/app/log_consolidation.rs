@@ -160,11 +160,11 @@ impl Consolidator {
             return;
         };
         let mut lines = content.lines();
-        if let (Some(name), Some(offset)) = (lines.next(), lines.next()) {
-            if !name.is_empty() {
-                self.active = Some(self.dir.join(name));
-                self.active_offset = offset.trim().parse().unwrap_or(0);
-            }
+        if let (Some(name), Some(offset)) = (lines.next(), lines.next())
+            && !name.is_empty()
+        {
+            self.active = Some(self.dir.join(name));
+            self.active_offset = offset.trim().parse().unwrap_or(0);
         }
     }
 
@@ -280,14 +280,12 @@ fn verify_range(
 fn first_record_key(path: &Path) -> String {
     if let Ok(mut file) = File::open(path) {
         let mut buf = [0u8; 24];
-        if let Ok(read) = file.read(&mut buf) {
-            if let Ok(text) = std::str::from_utf8(&buf[..read]) {
-                if let Some(timestamp) = text.split("::").next() {
-                    if !timestamp.is_empty() {
-                        return timestamp.to_string();
-                    }
-                }
-            }
+        if let Ok(read) = file.read(&mut buf)
+            && let Ok(text) = std::str::from_utf8(&buf[..read])
+            && let Some(timestamp) = text.split("::").next()
+            && !timestamp.is_empty()
+        {
+            return timestamp.to_string();
         }
     }
     path.file_name()

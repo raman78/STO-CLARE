@@ -39,7 +39,7 @@ impl<T: Clone> ValuesManager<T> {
     #[inline]
     pub fn get<'a>(&'a self, hits: &'a Values<T>) -> &'a [T] {
         match hits {
-            Values::Leaf(values) => &values,
+            Values::Leaf(values) => values,
             Values::Branch(range) => &self.values[range.clone()],
         }
     }
@@ -100,7 +100,7 @@ impl<T: Clone> Values<T> {
         let Self::Leaf(values) = self else {
             panic!("values is not a leaf")
         };
-        &values
+        values
     }
 }
 

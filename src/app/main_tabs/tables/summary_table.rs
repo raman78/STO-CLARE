@@ -267,7 +267,7 @@ impl SummaryTable {
 
     fn sort_by_option_f64(&mut self, mut value: impl FnMut(&Player) -> Option<f64>) {
         self.players
-            .sort_unstable_by_key(|p| Reverse(value(p).map(|v| F64TotalOrd(v))))
+            .sort_unstable_by_key(|p| Reverse(value(p).map(F64TotalOrd)))
     }
 
     fn sort_by_key<K: Ord>(&mut self, mut key: impl FnMut(&Player) -> K) {

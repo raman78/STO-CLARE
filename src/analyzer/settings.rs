@@ -40,6 +40,9 @@ pub struct MatchRule {
     pub enabled: bool,
 }
 
+// The variant names are what the settings file stores, so they are read back
+// from every existing installation and cannot be shortened.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum MatchAspect {
     SourceOrTargetName,

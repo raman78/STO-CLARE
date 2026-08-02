@@ -72,15 +72,15 @@ impl CombatFilter {
         difficulty: Option<Difficulty>,
         base_name: &str,
     ) -> bool {
-        if let Some(wanted) = &self.environment {
-            if environment != Some(wanted.as_str()) {
-                return false;
-            }
+        if let Some(wanted) = &self.environment
+            && environment != Some(wanted.as_str())
+        {
+            return false;
         }
-        if let Some(wanted) = &self.map {
-            if base_name != wanted {
-                return false;
-            }
+        if let Some(wanted) = &self.map
+            && base_name != wanted
+        {
+            return false;
         }
         self.difficulty.matches(difficulty)
     }
@@ -117,25 +117,23 @@ impl CombatFilter {
     /// Drops a choice that the other filters have made impossible, so the list
     /// can never end up empty through a combination nothing matches.
     fn drop_impossible_choices(&mut self, combats: &[CombatEntry]) {
-        if let Some(environment) = &self.environment {
-            if !self
+        if let Some(environment) = &self.environment
+            && !self
                 .options(combats, Dimension::Environment)
                 .environments
                 .iter()
                 .any(|e| e == environment)
-            {
-                self.environment = None;
-            }
+        {
+            self.environment = None;
         }
-        if let Some(map) = &self.map {
-            if !self
+        if let Some(map) = &self.map
+            && !self
                 .options(combats, Dimension::Map)
                 .maps
                 .iter()
                 .any(|m| m == map)
-            {
-                self.map = None;
-            }
+        {
+            self.map = None;
         }
         if self.difficulty != DifficultyFilter::Any
             && !self
@@ -243,20 +241,26 @@ mod tests {
 
     #[test]
     fn each_part_narrows_on_its_own() {
-        let mut filter = CombatFilter::default();
-        filter.environment = Some("Ground".to_string());
+        let filter = CombatFilter {
+            environment: Some("Ground".to_string()),
+            ..Default::default()
+        };
         assert!(filter.matches(Some("Ground"), None, "Bug Hunt"));
         assert!(!filter.matches(Some("Space"), None, "Bug Hunt"));
         // A combat whose map was never recognized has no environment at all.
         assert!(!filter.matches(None, None, "Combat"));
 
-        let mut filter = CombatFilter::default();
-        filter.map = Some("Infected Space".to_string());
+        let filter = CombatFilter {
+            map: Some("Infected Space".to_string()),
+            ..Default::default()
+        };
         assert!(filter.matches(Some("Space"), None, "Infected Space"));
         assert!(!filter.matches(Some("Space"), None, "Hive Onslaught"));
 
-        let mut filter = CombatFilter::default();
-        filter.difficulty = DifficultyFilter::Elite;
+        let filter = CombatFilter {
+            difficulty: DifficultyFilter::Elite,
+            ..Default::default()
+        };
         assert!(filter.matches(None, Some(Difficulty::Elite), "x"));
         assert!(!filter.matches(None, Some(Difficulty::Normal), "x"));
     }
@@ -291,8 +295,10 @@ mod tests {
     #[test]
     fn a_chosen_environment_narrows_the_other_menus() {
         let entries = entries();
-        let mut filter = CombatFilter::default();
-        filter.environment = Some("Ground".to_string());
+        let filter = CombatFilter {
+            environment: Some("Ground".to_string()),
+            ..Default::default()
+        };
 
         let maps = filter.options(&entries, Dimension::Map).maps;
         assert_eq!(vec!["Bug Hunt".to_string()], maps);
@@ -311,8 +317,10 @@ mod tests {
     #[test]
     fn a_menu_is_not_narrowed_by_its_own_choice() {
         let entries = entries();
-        let mut filter = CombatFilter::default();
-        filter.environment = Some("Ground".to_string());
+        let filter = CombatFilter {
+            environment: Some("Ground".to_string()),
+            ..Default::default()
+        };
 
         let environments = filter
             .options(&entries, Dimension::Environment)
@@ -331,9 +339,11 @@ mod tests {
     fn an_impossible_pair_is_resolved_rather_than_left_empty() {
         let entries = entries();
         for (environment, map) in [("Ground", "Infected Space"), ("Space", "Bug Hunt")] {
-            let mut filter = CombatFilter::default();
-            filter.environment = Some(environment.to_string());
-            filter.map = Some(map.to_string());
+            let mut filter = CombatFilter {
+                environment: Some(environment.to_string()),
+                map: Some(map.to_string()),
+                ..Default::default()
+            };
             assert!(
                 !entries
                     .iter()

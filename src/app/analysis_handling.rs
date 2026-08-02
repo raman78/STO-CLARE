@@ -6,15 +6,14 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
-    time::SystemTime,
+    time::{Instant, SystemTime},
 };
 
 use chrono::{Duration, NaiveDateTime};
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use eframe::egui::{Context, ViewportId};
 use log::info;
 use notify::{RecommendedWatcher, Watcher, recommended_watcher};
-use timer::{Guard, Timer};
 
 use crate::{
     analyzer::{Analyzer, Combat, Difficulty, settings::AnalysisSettings},
@@ -60,9 +59,7 @@ struct HandlerContext {
 }
 
 struct AutoRefreshContext {
-    tx: Sender<Instruction>,
     _watcher: RecommendedWatcher,
-    timer: Timer,
     state: AutoRefreshState,
     interval: Duration,
     last_refresh: SystemTime,
@@ -70,7 +67,11 @@ struct AutoRefreshContext {
 
 enum AutoRefreshState {
     Idle,
-    RefreshScheduled(#[allow(dead_code)] Guard),
+    /// The log changed less than one interval ago, so the refresh waits until
+    /// this moment. The run loop waits for it on the instruction channel, which
+    /// is also what cancels it: anything that refreshes in the meantime puts the
+    /// state back to `Idle` and the deadline is simply forgotten.
+    RefreshDue(Instant),
 }
 
 enum Instruction {
@@ -320,9 +321,21 @@ impl AnalysisContext {
 
     fn run(&mut self) {
         loop {
-            let instruction = match self.instruction_rx.recv() {
-                Ok(i) => i,
-                Err(_) => return,
+            let instruction = match self.refresh_due_at() {
+                // A refresh is waiting for its interval to pass: take whichever
+                // comes first, an instruction or that moment.
+                Some(deadline) => match self.instruction_rx.recv_deadline(deadline) {
+                    Ok(i) => i,
+                    Err(RecvTimeoutError::Timeout) => {
+                        self.refresh(true);
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => return,
+                },
+                None => match self.instruction_rx.recv() {
+                    Ok(i) => i,
+                    Err(_) => return,
+                },
             };
 
             match instruction {
@@ -359,7 +372,7 @@ impl AnalysisContext {
                 Instruction::RemoveHandler(id) => {
                     if let Some(index) = self.handlers.iter().position(|t| t.id == id) {
                         self.handlers.remove(index);
-                        if self.handlers.len() == 0 {
+                        if self.handlers.is_empty() {
                             return;
                         }
                         self.update_auto_refresh();
@@ -502,11 +515,11 @@ impl AnalysisContext {
 
     fn auto_refresh(&mut self) {
         if let Some(ctx) = &mut self.auto_refresh {
-            if let AutoRefreshState::RefreshScheduled(_) = ctx.state {
+            if let AutoRefreshState::RefreshDue(_) = ctx.state {
                 return;
             }
 
-            let delta_time = match ctx.last_refresh.elapsed().map(|d| Duration::from_std(d)) {
+            let delta_time = match ctx.last_refresh.elapsed().map(Duration::from_std) {
                 Ok(Ok(t)) => t,
                 err => {
                     info!("failed to retrieve elapsed time {:?}", err);
@@ -520,12 +533,8 @@ impl AnalysisContext {
                 return;
             }
 
-            let delay = ctx.interval - delta_time;
-            let tx = ctx.tx.clone();
-            let guard = ctx
-                .timer
-                .schedule_with_delay(delay, move || _ = tx.send(Instruction::Refresh(true)));
-            ctx.state = AutoRefreshState::RefreshScheduled(guard);
+            let delay = (ctx.interval - delta_time).to_std().unwrap_or_default();
+            ctx.state = AutoRefreshState::RefreshDue(Instant::now() + delay);
         }
     }
 
@@ -676,6 +685,14 @@ impl AnalysisContext {
         );
     }
 
+    /// When the next automatic refresh is due, if one is waiting.
+    fn refresh_due_at(&self) -> Option<Instant> {
+        match self.auto_refresh.as_ref()?.state {
+            AutoRefreshState::Idle => None,
+            AutoRefreshState::RefreshDue(deadline) => Some(deadline),
+        }
+    }
+
     fn auto_refresh_enabled(&self) -> bool {
         self.handlers.iter().any(|h| h.auto_refresh)
     }
@@ -688,7 +705,7 @@ impl AutoRefreshContext {
         file: &Path,
         watch_dir: bool,
     ) -> Option<Self> {
-        let tx_watcher = tx.clone();
+        let tx_watcher = tx;
         // When watching the whole folder, the game's logs dir holds unrelated
         // files too, so only react to combat log files. When watching a single
         // file every event on it is already relevant.
@@ -713,8 +730,6 @@ impl AutoRefreshContext {
             .ok()?;
 
         Some(Self {
-            tx,
-            timer: Timer::new(),
             state: AutoRefreshState::Idle,
             interval,
             _watcher: watcher,
@@ -729,9 +744,8 @@ impl AutoRefreshContext {
 
 impl HandlerContext {
     fn send(&self, info: AnalysisInfo, ctx: &Context) {
-        match self.tx.send(info) {
-            Ok(_) => ctx.request_repaint_of(self.viewport),
-            Err(_) => (),
+        if self.tx.send(info).is_ok() {
+            ctx.request_repaint_of(self.viewport)
         }
     }
 }
@@ -810,6 +824,80 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
+    }
+
+    /// The delayed half of automatic refreshing. A change that lands inside the
+    /// interval must not refresh at once — it sets a deadline the run loop waits
+    /// for on the instruction channel — and one deadline is kept however many
+    /// changes arrive, until something refreshes and clears it.
+    #[test]
+    fn a_change_inside_the_interval_waits_for_one_deadline() {
+        let dir = std::env::temp_dir().join(format!("cla-refresh-due-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        std::fs::write(
+            &log,
+            "26:07:23:20:00:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n",
+        )
+        .unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (main_tx, _main_rx) = unbounded();
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            HandlerContext {
+                tx: main_tx,
+                auto_refresh: true,
+                id: 0,
+                viewport: ViewportId::ROOT,
+            },
+            instruction_tx,
+            settings,
+            Context::default(),
+            Arc::new(AtomicBool::new(false)),
+            // A whole minute, so the change below is well inside the interval
+            // and the deadline cannot pass while the test runs.
+            60.0,
+        );
+        context.update_auto_refresh();
+        assert!(
+            context.auto_refresh.is_some(),
+            "the watcher context must exist for the rest of this test to mean anything"
+        );
+        assert_eq!(None, context.refresh_due_at(), "nothing is waiting yet");
+
+        // A refresh happens, then the log changes right after it.
+        context.refresh(false);
+        context.auto_refresh();
+        let deadline = context
+            .refresh_due_at()
+            .expect("a change inside the interval must leave a refresh waiting");
+        assert!(deadline > Instant::now(), "the deadline is in the future");
+
+        // More changes while one is already waiting keep the same deadline
+        // rather than piling up.
+        context.auto_refresh();
+        context.auto_refresh();
+        assert_eq!(
+            Some(deadline),
+            context.refresh_due_at(),
+            "one deadline, not a queue of them"
+        );
+
+        // Anything that refreshes in the meantime cancels it.
+        context.refresh(false);
+        assert_eq!(
+            None,
+            context.refresh_due_at(),
+            "a refresh clears the waiting one"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Regression: an automatic (live) refresh feeds only the overlay and

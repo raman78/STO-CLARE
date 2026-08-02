@@ -59,7 +59,7 @@ impl NumberFormatter {
 
         let number = number.abs();
 
-        const THRESHOLD_AND_SUFFIX: &[(f64, &'static str)] = &[
+        const THRESHOLD_AND_SUFFIX: &[(f64, &str)] = &[
             (1e-6, "n"),
             (1e-3, "u"),
             (0.0, "m"),
