@@ -1,12 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{backtrace::Backtrace, io::Cursor};
+use std::backtrace::Backtrace;
 
 use app::logging;
-use eframe::{
-    egui::{IconData, ViewportBuilder},
-    epaint::vec2,
-};
+use eframe::{egui::ViewportBuilder, epaint::vec2};
 
 mod analyzer;
 mod app;
@@ -70,7 +67,7 @@ fn main() {
             .with_inner_size(saved_size.unwrap_or(vec2(1280.0, 720.0)))
             .with_min_inner_size(vec2(800.0, 600.0))
             .with_maximized(maximized)
-            .with_icon(icon_data()),
+            .with_icon(app::app_icon::window_icon()),
         ..Default::default()
     };
 
@@ -121,18 +118,4 @@ fn is_wayland_session() -> bool {
     ["WAYLAND_DISPLAY", "WAYLAND_SOCKET"]
         .iter()
         .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
-}
-
-fn icon_data() -> IconData {
-    const ICON: &[u8] = include_bytes!("../icon/icon.png");
-    let decoder = png::Decoder::new(Cursor::new(ICON));
-    let mut reader = decoder.read_info().unwrap();
-    let mut data = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut data).unwrap();
-    assert_eq!(info.color_type, png::ColorType::Rgba);
-    IconData {
-        rgba: data,
-        width: info.width,
-        height: info.height,
-    }
 }

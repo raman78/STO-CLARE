@@ -34,7 +34,7 @@ const LEGACY_APP_NAME: &str = "STO Combat Log Analyzer";
 /// Old desktop-entry / icon basename.
 const LEGACY_APP_ID: &str = "sto-cla";
 /// Icon shipped with the binary (same asset as the window icon).
-const ICON_PNG: &[u8] = include_bytes!("../../icon/icon.png");
+use super::app_icon::PNG as ICON_PNG;
 
 /// 8-char stable hash of the current executable's path. Stable across runs of
 /// the same binary; differs when the binary lives in a different location.

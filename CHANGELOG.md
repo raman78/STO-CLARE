@@ -2,6 +2,10 @@
 
 ## unreleased
 
+### Other Changes
+- the program shows its own mark at the left of the top bar. Pointing at it tells you which version you are running, which the title bar says but a maximised window on some desktops hides
+- the lettering on the icon is black, and the mark itself is no longer partly see-through — against a dark desktop it used to take on the colour behind it instead of standing on its own tile
+
 ## v2.0.1
 
 ### Other Changes

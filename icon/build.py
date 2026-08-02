@@ -31,7 +31,7 @@ RADIUS = int(SIZE * 0.22)
 ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 BLUE = (54, 56, 189)  # the blue of the sto-warp icon's corner
-RED = (232, 42, 48)
+LETTERING = (0, 0, 0)
 
 # The mark, and the lettering across it.
 DELTA_HEIGHT = 0.76  # of the tile
@@ -39,6 +39,8 @@ DELTA_CENTRE_Y = 0.45
 TEXT = "CLA"
 TEXT_MARGIN = 0.07  # of the tile, left and right
 TEXT_CENTRE_Y = 0.50
+# How much of the tile shows through the glass mark.
+GLASS_ALPHA = 215
 
 
 def rounded(radius):
@@ -124,9 +126,12 @@ def draw():
     tile.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(SIZE * 0.028)))
 
     # The mark itself: white glass, cooler towards the bottom, lit from above.
+    # Composited rather than pasted: pasting an image that carries alpha would
+    # replace the tile's own alpha with it, punching a translucent hole through
+    # the finished icon instead of laying glass over an opaque tile.
     glass = vertical_gradient((255, 255, 255), (190, 196, 255)).convert("RGBA")
-    glass.putalpha(215)
-    tile.paste(glass, (0, 0), delta)
+    glass.putalpha(delta.point(lambda v: v * GLASS_ALPHA // 255))
+    tile.alpha_composite(glass)
     tile.paste(
         Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 255)),
         (0, 0),
@@ -134,19 +139,15 @@ def draw():
     )
 
     # The lettering runs the width of the tile, so it crosses both the white
-    # glass and the blue. Its own shadow is what keeps it legible on both.
+    # glass and the blue. Black carries both without a shadow behind it, which
+    # under letters this heavy only softened their edges.
     font = font_for_width(SIZE * (1 - 2 * TEXT_MARGIN))
     layer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     pen = ImageDraw.Draw(layer)
     left, top, right, bottom = pen.textbbox((0, 0), TEXT, font=font)
     x = SIZE / 2 - (right - left) / 2 - left
     y = SIZE * TEXT_CENTRE_Y - (bottom - top) / 2 - top
-    cast = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    ImageDraw.Draw(cast).text(
-        (x, y + SIZE * 0.012), TEXT, font=font, fill=(0, 0, 20, 190)
-    )
-    tile.alpha_composite(cast.filter(ImageFilter.GaussianBlur(SIZE * 0.012)))
-    pen.text((x, y), TEXT, font=font, fill=RED + (255,))
+    pen.text((x, y), TEXT, font=font, fill=LETTERING + (255,))
     tile.alpha_composite(layer)
 
     # Thickness: dark inside the bottom edge, bright along the rim.
