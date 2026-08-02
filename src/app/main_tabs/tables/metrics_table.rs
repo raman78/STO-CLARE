@@ -313,6 +313,9 @@ impl<T> MetricsTablePart<T> {
         }
     }
 
+    // Drawing context threaded through; a struct of the same fields would
+    // only move the list somewhere else.
+    #[allow(clippy::too_many_arguments)]
     fn show(
         &mut self,
         columns: &[ColumnDescriptor<T>],

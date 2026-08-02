@@ -494,6 +494,9 @@ impl Comparison {
 }
 
 impl CompareNode {
+    // Drawing context threaded through; a struct of the same fields would
+    // only move the list somewhere else.
+    #[allow(clippy::too_many_arguments)]
     fn show(
         &mut self,
         t: &mut TableBody,

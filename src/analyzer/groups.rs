@@ -395,7 +395,6 @@ impl HealGroup {
         &mut self,
         path: &[GroupPathSegment],
         tick: BaseHealTick,
-        flags: ValueFlags,
         combat_start_offset_millis: u32,
     ) {
         if path.len() == 1 {
@@ -408,12 +407,7 @@ impl HealGroup {
         }
 
         let indirect_source = self.get_branch_sub_group(*path.last().unwrap());
-        indirect_source.add_heal(
-            &path[..path.len() - 1],
-            tick,
-            flags,
-            combat_start_offset_millis,
-        );
+        indirect_source.add_heal(&path[..path.len() - 1], tick, combat_start_offset_millis);
     }
 }
 

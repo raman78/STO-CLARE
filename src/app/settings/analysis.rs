@@ -9,6 +9,9 @@ use crate::custom_widgets::table::Table;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
+/// Per-row warning: returns a tooltip when the row's rule should be flagged.
+type RowWarning<'a> = &'a dyn Fn(&RulesGroup) -> Option<String>;
+
 const HEADER_HEIGHT: f32 = 15.0;
 const ROW_HEIGHT: f32 = 25.0;
 
@@ -67,7 +70,7 @@ struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
     popup_extra_space: f32,
     /// Optional per-row warning: returns a tooltip when the row's rule should be
     /// flagged (e.g. it shadows an auto-detected map). Adds a ⚠ cell per row.
-    row_warning: Option<&'a dyn Fn(&RulesGroup) -> Option<String>>,
+    row_warning: Option<RowWarning<'a>>,
     /// Explicit height cap; falls back to all available space.
     max_height: Option<f32>,
 }

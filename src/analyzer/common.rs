@@ -123,7 +123,7 @@ impl ShieldHullOptionalValues {
 }
 
 impl ShieldHullCounts {
-    pub fn to_values(&self) -> ShieldHullValues {
+    pub fn to_values(self) -> ShieldHullValues {
         ShieldHullValues {
             all: self.all as _,
             shield: self.shield as _,

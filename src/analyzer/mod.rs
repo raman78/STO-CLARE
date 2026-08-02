@@ -658,7 +658,6 @@ impl Player {
                     path,
                     (!lands_on_self).then_some(target_name),
                     heal,
-                    record.value_flags,
                     combat_start_offset_millis,
                 );
             }
@@ -712,7 +711,6 @@ impl Player {
                     path,
                     Some(source_name),
                     heal,
-                    record.value_flags,
                     combat_start_offset_millis,
                 );
             }
@@ -732,7 +730,6 @@ impl Player {
         path: GroupingPath,
         person: Option<NameHandle>,
         heal: BaseHealTick,
-        flags: ValueFlags,
         combat_start_offset_millis: u32,
     ) {
         let mut by_person = path;
@@ -742,7 +739,7 @@ impl Player {
             by_person.push(GroupPathSegment::Group(person));
         }
         pool.by_person
-            .add_heal(&by_person, heal, flags, combat_start_offset_millis);
+            .add_heal(&by_person, heal, combat_start_offset_millis);
 
         // The other order is the same path read the other way round. Moving the
         // person to the front instead would leave whatever `build_grouping_path`
@@ -751,7 +748,7 @@ impl Player {
         let mut by_ability = by_person;
         by_ability.reverse();
         pool.by_ability
-            .add_heal(&by_ability, heal, flags, combat_start_offset_millis);
+            .add_heal(&by_ability, heal, combat_start_offset_millis);
     }
 
     fn build_grouping_path(

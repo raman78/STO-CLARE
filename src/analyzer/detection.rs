@@ -485,6 +485,10 @@ fn hull_damage_match(
             None => return false,
             Some(meta) => {
                 let low = threshold * (1.0 - HULL_VARIANCE);
+                // Negated on purpose rather than written as `>=`: a median that
+                // is NaN must count as "not above the threshold" and reject the
+                // map, which `>=` would do the other way round.
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
                 if meta.deaths == 0 || !(low < meta.median_hull_damage()) {
                     return false;
                 }
@@ -959,21 +963,26 @@ mod tests {
         let rules = bundled_rules();
         let elite = vec![
             ("Bluegills_Ground_Boss", {
-                let mut m = CritterMeta::default();
-                m.deaths = 1;
+                let mut m = CritterMeta {
+                    deaths: 1,
+                    ..Default::default()
+                };
                 m.hull_damage_per_instance.insert(0, 451_781.0);
                 m
             }),
             ("Bluegills_Ground_Cdr", {
-                let mut m = CritterMeta::default();
-                m.deaths = 1;
+                let mut m = CritterMeta {
+                    deaths: 1,
+                    ..Default::default()
+                };
                 m.hull_damage_per_instance.insert(0, 16_077.0);
                 m
             }),
             ("Bluegills_Ground_Ens_Noautospawn_Queenfodder", {
-                let mut m = CritterMeta::default();
-                m.deaths = 13;
-                m
+                CritterMeta {
+                    deaths: 13,
+                    ..Default::default()
+                }
             }),
         ];
         let result = detect(&rules, &view(&elite));

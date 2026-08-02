@@ -242,10 +242,12 @@ mod tests {
 
     #[test]
     fn window_geometry_survives_a_save_and_load() {
-        let mut settings = Settings::default();
-        settings.window = WindowGeometry {
-            size: Some([1024.0, 768.0]),
-            maximized: true,
+        let settings = Settings {
+            window: WindowGeometry {
+                size: Some([1024.0, 768.0]),
+                maximized: true,
+            },
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&settings).unwrap();
