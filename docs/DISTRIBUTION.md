@@ -68,6 +68,14 @@ approximates it:
 After a code change, `cargo build --release` alone refreshes what `sto-clare`
 (and the menu entry, which resolves to the same real path) runs.
 
+It also writes a second menu entry, **"STO-CLARE (dev build)"**
+(`sto-clare-dev.desktop`), which runs `scripts/run-dev.sh`: build the checkout,
+then start it. The entry sets `Terminal=true`, so the build is visible while it
+runs; on success the app is detached and the terminal closes, on failure the
+window stays with the error. The script picks up `~/.cargo/env` when `cargo` is
+not on the session's PATH — a menu entry never runs the shell profile that puts
+it there. Remove the entry by deleting that file; nothing else refers to it.
+
 ## Releases — `.github/workflows/release.yml`
 
 Triggered on `release: published` (tag `vX.Y.Z`) and `workflow_dispatch`.

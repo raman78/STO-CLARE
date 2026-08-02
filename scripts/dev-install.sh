@@ -35,10 +35,31 @@ echo "Linked $LINK -> $TARGET"
 # Register the menu entry / icon for this build location.
 "$TARGET" --install-desktop
 
+# A second entry that builds the checkout before running it, for trying the
+# current source without going through a terminal first. It opens one itself so
+# the build is visible; see scripts/run-dev.sh.
+APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+DEV_ENTRY="$APPS_DIR/sto-clare-dev.desktop"
+mkdir -p "$APPS_DIR"
+cat > "$DEV_ENTRY" <<EOF
+[Desktop Entry]
+Type=Application
+Name=STO-CLARE (dev build)
+Comment=Build the current source, then run it
+Exec="$PROJECT_DIR/scripts/run-dev.sh"
+Icon=$PROJECT_DIR/icon/icon.png
+Terminal=true
+Categories=Game;
+StartupNotify=true
+StartupWMClass=sto-clare
+EOF
+echo "Wrote $DEV_ENTRY"
+
 echo ""
 echo "==========================================="
 echo "Done. Run it with:  sto-clare"
 echo "After code changes:  cargo build --release  (the symlink auto-updates)"
+echo "Or use the \"STO-CLARE (dev build)\" menu entry, which builds first."
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) echo ""
