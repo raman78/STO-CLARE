@@ -33,7 +33,6 @@ smallvec = { version = "1", features = ["const_new", "const_generics"] }
 crossbeam-channel = "0.5"
 simplelog = "0.12"
 notify = "8"
-timer = "0.2"
 itertools = "0.14"
 educe = { version = "0.6", default-features = false, features = [
     "Deref",
