@@ -2,6 +2,8 @@
 
 ## unreleased
 
+## v2.0.1
+
 ### Other Changes
 - the icon has a new look: the mark is now made of glass, lit from above, on a deep blue tile, with CLA written across the whole width so it can be read at a glance instead of squinting at a small caption
 
