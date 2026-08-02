@@ -5,6 +5,7 @@
 ### Major Changes
 - the program is now called **STO-CLARE** — Combat Log Analyzer ReMastered. It reads the same logs and does everything it did before; what changes is the name it goes by, the icon it shows and the fact that it is developed on its own from here on. It began as a fork of AnotherNathan's Combat Log Analyzer, which is said plainly in the readme and in both licence files, and that credit is not going anywhere
 - your settings come with you. The first time the renamed program starts it copies everything it used to keep — the log path, your naming and grouping rules, window size, the lot — into its own folder. The old installation is left exactly as it was, so it still runs if you want to go back to it
+- the program has an icon of its own: a black Starfleet delta on a deep blue field, over a red CLA nameplate. It replaces the one inherited from the original tool, in the window, on the taskbar, in the applications menu and in the Windows installer
 - the menu entry, the taskbar name and the update command now read STO-CLARE. On Linux the entry left behind by the old name is cleared away once it no longer points at a program that is there; on Windows the setup replaces the old installation in place and removes the old shortcut. Updating from inside the program is `sto-clare --upgrade`
 
 ### Other Changes

@@ -42,6 +42,20 @@ Triggers:
 The main window's `app_id` is set to `sto-clare` so the runtime WM class matches
 the `StartupWMClass` written into the `.desktop` entry.
 
+## Icon
+
+`icon/icon.svg` is the source and the only file to edit. `icon/build.sh` renders
+it (inkscape) into the two files that actually ship:
+
+| File | Used by |
+|---|---|
+| `icon/icon.png` | window icon (`include_bytes!` in `main.rs`), desktop entry, macOS bundle |
+| `icon/icon.ico` | `build.rs` via `winres` (the exe's own icon) and the Inno installer |
+
+Both are committed, so a normal build needs neither inkscape nor Pillow. The
+lettering in the SVG is already outlined, so no font has to be installed to
+render it.
+
 ## Local dev ("editable") — `scripts/dev-install.sh`
 
 Rust compiles to a native binary; there is no true editable install. The script
