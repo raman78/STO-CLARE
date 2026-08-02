@@ -2,6 +2,30 @@
 
 ## unreleased
 
+## v2.0.0
+
+### Major Changes
+- the program is now called **STO-CLARE** — Combat Log Analyzer ReMastered. It reads the same logs and does everything it did before; what changes is the name it goes by, the icon it shows and the fact that it is developed on its own from here on. It began as a fork of AnotherNathan's Combat Log Analyzer, which is said plainly in the readme and in both licence files, and that credit is not going anywhere
+- your settings come with you. The first time the renamed program starts it copies everything it used to keep — the log path, your naming and grouping rules, window size, the lot — into its own folder. The old installation is left exactly as it was, so it still runs if you want to go back to it
+- the program has an icon of its own: a black Starfleet delta on a deep blue field, over a red CLA nameplate. It replaces the one inherited from the original tool, in the window, on the taskbar, in the applications menu and in the Windows installer
+- the menu entry, the taskbar name and the update command now read STO-CLARE. On Linux the entry left behind by the old name is cleared away once it no longer points at a program that is there; on Windows the setup replaces the old installation in place and removes the old shortcut. Updating from inside the program is `sto-clare --upgrade`
+
+### Other Changes
+- charts draw their series in a fixed set of eight colours, picked so that neighbouring ones stay apart for colour-blind readers as well, instead of colours worked out on the spot. Each theme has its own version of them, so the lines keep their bite on a light background as well as on a dark one
+- the Light theme now colours the rest of what the program paints, not only its windows: the green and red differences in Compare, the warning marks in the settings and the little status symbols were all tuned for a dark background and washed out on a light one
+- pointing at a bar in the Summary chart shows the same framed box the other charts show, which turns over at the edge of the window instead of being cut off. The old label always grew upwards from the bar, so on the topmost bar it crossed the top of the chart and half of it was lost
+- charts no longer slide left and right when the numbers beside them change size. Room is kept for a figure up to a million, so switching a healing chart between Hull and Shield — an order of magnitude apart — leaves the graph where it was
+- the smoothing slider now stops where smoothing still tells you something about the fight: a sixteenth of its length, never less than the 6 seconds it offered before and never more than 60. A long TFO can therefore be smoothed across whole phases from the slider, while on a one-minute patrol a setting that would flatten the whole line into its own edges is out of reach
+- the Hull and Shield switches above the healing charts are buttons that stay lit while on, matching the chart and tab switches around them, instead of check boxes
+
+### Fixes
+- the DPS, HPS and per-second hit charts now draw at their true height. The smoothing setting used to pull the whole line down as well as smooth it — a little at the default, several percent at the widest the slider offers, and by more than half at the widest value the box accepts — so the chart disagreed with the DPS in the table
+- a player keeps one colour and one place in the legend across every chart of a tab. The bar charts sorted them by size while the line charts left them in whatever order the analysis happened to produce, so the same person could be blue on one chart and red on the next
+- the two damage charts in Summary no longer call their value "DPS" when it is a damage total. They say Damage Dealt and Damage Taken
+- the healing charts follow the Hull and Shield switches when a row is picked in the table. A chart drawn for a selection always started with both halves added together, whatever the switches said, until something else was touched
+- taking a series off a per-second chart lets it shrink back. The chart kept room for the line that was removed
+- expanding a row now orders its parts on the chart by their own size. Every part carried the total of the row above it instead, so their order was arbitrary
+
 ## v1.8.1
 
 ### Major Changes

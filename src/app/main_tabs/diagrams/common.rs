@@ -1,6 +1,7 @@
 use std::{ops::RangeInclusive, sync::Arc};
 
 use educe::Educe;
+use eframe::egui::{TextStyle, Ui};
 use egui_plot::*;
 
 use crate::{
@@ -365,6 +366,23 @@ pub fn millis_to_seconds(millis: u32) -> f64 {
     millis as f64 * (1.0 / 1e3)
 }
 
+/// Widest y axis label a chart reserves room for: `1'000'000`, nine characters
+/// with the thousands marks. A per-second or per-slice figure does not
+/// realistically go past a few million.
+const WIDEST_Y_LABEL_CHARS: f32 = 9.0;
+
+/// Room to keep for the y axis labels, so the plot area starts at the same
+/// place on every chart and stops sliding sideways when the numbers change
+/// magnitude — switching a healing chart between hull and shield moves them by
+/// an order of magnitude, and the whole plot used to jump with them.
+///
+/// Measured from the font in use rather than fixed, so it holds at any UI
+/// scale. It is a *minimum*: a label that needs more still gets it.
+pub fn y_axis_width(ui: &Ui) -> f32 {
+    let digit = ui.fonts_mut(|fonts| fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0'));
+    digit * WIDEST_Y_LABEL_CHARS + ui.spacing().item_spacing.x * 2.0
+}
+
 pub fn format_axis(mark: GridMark, _: &RangeInclusive<f64>) -> String {
     if mark.value < 0.0 {
         return String::new();
@@ -421,7 +439,6 @@ pub fn time_slices<'a, T: PreparedValue>(
     sliced_values
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,7 +458,12 @@ mod tests {
                 time_millis: s * 1000,
             })
             .collect();
-        PreparedDataSet::base_new("test", 100.0 * times_s.len() as f64, values.into_iter(), combat_duration_s)
+        PreparedDataSet::base_new(
+            "test",
+            100.0 * times_s.len() as f64,
+            values.into_iter(),
+            combat_duration_s,
+        )
     }
 
     /// A series whose first value lands well into the fight still starts at the
@@ -480,9 +502,18 @@ mod tests {
             hull_heals_count: 2,
             shield_heals_count: 1,
         };
-        let both = HealComponents { hull: true, shield: true };
-        let hull = HealComponents { hull: true, shield: false };
-        let shield = HealComponents { hull: false, shield: true };
+        let both = HealComponents {
+            hull: true,
+            shield: true,
+        };
+        let hull = HealComponents {
+            hull: true,
+            shield: false,
+        };
+        let shield = HealComponents {
+            hull: false,
+            shield: true,
+        };
 
         assert_eq!(300.0, value.value(DiagramType::Hps, both));
         assert_eq!(200.0, value.value(DiagramType::Hps, hull));
@@ -526,7 +557,8 @@ mod tests {
     #[test]
     fn buckets_are_aligned_to_the_slice_and_cover_the_fight() {
         let data = heal_series(&[3, 4], 6.0);
-        let slices: Vec<(f64, usize)> = time_slices(&data, 1.0).map(|(c, s)| (c, s.len())).collect();
+        let slices: Vec<(f64, usize)> =
+            time_slices(&data, 1.0).map(|(c, s)| (c, s.len())).collect();
 
         assert_eq!(
             vec![0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5],

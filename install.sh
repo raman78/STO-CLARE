@@ -1,20 +1,20 @@
 #!/bin/sh
-# Bootstrap installer for STO Combat Log Analyzer (Linux).
+# Bootstrap installer for STO-CLARE (Linux).
 #
 # Downloads the latest prebuilt binary from GitHub Releases, installs it under
-# ~/.local/opt/sto-cla, symlinks `sto-cla` onto your PATH, and registers the
+# ~/.local/opt/sto-clare, symlinks `sto-clare` onto your PATH, and registers the
 # applications-menu entry. Re-running upgrades in place (no duplicate menu
 # entries). For a from-source dev install instead, use scripts/dev-install.sh.
 set -e
 
-REPO="raman78/STO_CombatLogAnalyzer"
-OPT_DIR="$HOME/.local/opt/sto-cla"
+REPO="raman78/STO-CLARE"
+OPT_DIR="$HOME/.local/opt/sto-clare"
 BIN_DIR="$HOME/.local/bin"
-LINK="$BIN_DIR/sto-cla"
-BIN_NAME="STO_CombatLogAnalyzer"
+LINK="$BIN_DIR/sto-clare"
+BIN_NAME="sto-clare"
 
 echo "==========================================="
-echo "  STO Combat Log Analyzer installer (Linux) "
+echo "        STO-CLARE installer (Linux)         "
 echo "==========================================="
 echo ""
 
@@ -44,9 +44,9 @@ fi
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 echo "Downloading $ASSET_URL"
-curl -fsSL "$ASSET_URL" -o "$TMP/sto-cla.tar.gz"
+curl -fsSL "$ASSET_URL" -o "$TMP/sto-clare.tar.gz"
 mkdir -p "$TMP/extract"
-tar -xzf "$TMP/sto-cla.tar.gz" -C "$TMP/extract"
+tar -xzf "$TMP/sto-clare.tar.gz" -C "$TMP/extract"
 
 if [ ! -f "$TMP/extract/$BIN_NAME" ]; then
     echo "Error: unexpected archive layout." >&2
@@ -72,7 +72,7 @@ ln -s "$OPT_DIR/$BIN_NAME" "$LINK"
 
 echo ""
 echo "==========================================="
-echo "Installation complete! Run it with:  sto-cla"
+echo "Installation complete! Run it with:  sto-clare"
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) echo ""

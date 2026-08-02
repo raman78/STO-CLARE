@@ -3,6 +3,7 @@ use std::{fs::OpenOptions, path::PathBuf};
 use simplelog::{CombinedLogger, Config, SharedLogger, SimpleLogger, WriteLogger};
 
 use super::settings::Settings;
+use crate::helpers::paths;
 
 pub fn initialize() {
     let settings = Settings::load_or_default();
@@ -31,5 +32,5 @@ pub fn initialize() {
 fn file_path() -> Option<PathBuf> {
     let dir = Settings::config_dir()?;
     std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("STO_CombatLogAnalyzer.log"))
+    Some(dir.join(paths::LOG_FILE_NAME))
 }

@@ -1,10 +1,13 @@
 [workspace]
 
 [package]
-name = "STO_CombatLogAnalyzer"
-version = "1.8.1"
+name = "sto-clare"
+version = "2.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "STO-CLARE — Combat Log Analyzer ReMastered: parses and analyzes Star Trek Online combat logs"
+repository = "https://github.com/raman78/STO-CLARE"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

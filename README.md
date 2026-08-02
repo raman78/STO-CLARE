@@ -1,21 +1,100 @@
-# STO_CombatLogAnalyzer (short CLA)
-Tool to parse and analyze the combat log file from Star Trek Online.
+# STO-CLARE
 
-It displays the result of this analysis in convenient tables and also provides multiple diagrams.
-| Combat Summary                         | Outgoing Damage                       |
-| -------------------------------------- | ------------------------------------- |
-| ![Summary Tab](images/summary_tab.png) | ![Summary Tab](images/damage_tab.png) |
+**C**ombat **L**og **A**nalyzer **Re**Mastered — a desktop tool that reads the
+combat log Star Trek Online writes and turns it into tables and charts: damage,
+healing, hits, kills, per-ability breakdowns, a live overlay, and uploads to the
+OSCR ladder. It runs on Linux and Windows.
+
+STO-CLARE grew out of
+[AnotherNathan/STO_CombatLogAnalyzer](https://github.com/AnotherNathan/STO_CombatLogAnalyzer)
+and everything that tool does is still here. It was renamed in version 2.0
+because it has gone its own way — the original author is not involved in it and
+is not the person to ask about it. The original copyright notice stays in the
+licence files, where it belongs.
+
+If you are coming from the older version: your settings are carried over the
+first time you start STO-CLARE, and your old installation keeps working.
+
+## What you need before you start
+
+- Star Trek Online, and a character you have fought something with.
+- Combat logging switched on in the game (step 2 below).
+- Nothing else — STO-CLARE is a single program with no separate runtime.
+
+## Quick start
+
+1. Install it (see [Install](#install)).
+2. In the game's chat window, type `/Combatlog 1` and press Enter. This has to
+   be done again after every login.
+3. Fight something.
+4. Start STO-CLARE, open **Settings** and enter the path to the game's
+   `combatlog.log`. It sits in
+   `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.
+5. Click **Ok** at the bottom of the settings window, then the refresh button.
+
+Your combats appear in the list at the top. Pick one and the tabs below fill in.
+
+```
+┌─ STO-CLARE V2.0.0 ──────────────────────────────────────────┐
+│  [ Refresh ]  [ Settings ]  [ Overlay ]  [ Compare ]        │
+│  Combat: [ [TFO] Hive Onslaught [Elite]  17:22 - 17:29  ▼ ] │
+│  Type: [ Space ▼ ]   Level: [ Elite ▼ ]   Map: [ any ▼ ]    │
+├─────────────────────────────────────────────────────────────┤
+│  Summary │ Damage Dealt │ Damage Taken │ Healing Ally │ …   │
+├─────────────────────────────────────────────────────────────┤
+│  Name              DPS       Total Damage    Hits           │
+│  ▸ You             182 456   41 963 220      3 412          │
+│  ▸ Teammate        119 003   27 380 991      2 884          │
+├─────────────────────────────────────────────────────────────┤
+│  (charts for the selected rows)                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Tip: add the launch option `-NoAutoRotateLogs` to the game (on Steam:
+right-click Star Trek Online → Properties → Launch Options) so it keeps writing
+a single log file instead of splitting it. Here is a
+[step-by-step guide](https://www.sto-league.com/how-to-disable-automatically-rotated-log-files/).
+On Linux you can skip this — if the log does get split, STO-CLARE merges the
+pieces back together for you.
 
 ---
-## Features in this fork
 
-This is a fork of [AnotherNathan/STO_CombatLogAnalyzer](https://github.com/AnotherNathan/STO_CombatLogAnalyzer).
-Everything from the original tool is still here — the table below lists only
-what this fork adds on top of it.
+## Install
 
-The "Offered back" column says whether the change has been proposed to the
-original project. A number is a pull request there; a dash means the feature
-lives only in this fork for now.
+### Linux — one command
+
+Paste this into a terminal. It fetches the latest release, puts `sto-clare` on
+your PATH and adds an applications-menu entry:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/raman78/STO-CLARE/main/install.sh | sh
+```
+
+To update later, run `sto-clare --upgrade` (or the same one-liner again).
+`sto-clare --version` tells you what you have.
+
+### Windows
+
+Download and run the installer (`…-setup.exe`) from the Releases page. Update
+with `sto-clare --upgrade` or by running a newer installer.
+
+### From source
+
+Install the Rust toolchain from [rust-lang.org](https://www.rust-lang.org/),
+then build the release binary:
+
+```sh
+cargo build --release
+```
+
+---
+
+## What STO-CLARE adds over the original
+
+Everything from the original tool is still here; the tables below list what has
+been added or fixed since. The "Offered back" column says whether the change was
+also proposed to the original project — a number is a pull request there, a dash
+means it lives here only.
 
 ### Reading your combats
 
@@ -66,100 +145,90 @@ lives only in this fork for now.
 | Browse opens where you were | The file dialog for the combat log starts in the folder you last picked one from. | — |
 | Settings kept with your account | Your settings and the log file are written to the place your system keeps program settings, so the tool also works when it is installed somewhere you cannot write to. Settings from older versions are picked up automatically. | — |
 | Names with accents | Names containing non-English characters are shown correctly. | — |
+| Scroll bars stay out of the way | A scroll bar no longer grows over the bottom row of a table when your pointer comes near it. | — |
 
 ### Installing and updating
 
 | Feature | What it does | Offered back |
 |---|---|---|
-| One-command install (Linux) | A single command fetches the latest release, puts the program on your path and adds a menu entry. See [Install](#install). | — |
+| One-command install (Linux) | A single command fetches the latest release, puts the program on your path and adds a menu entry. | — |
 | Windows installer | A regular setup program instead of unpacking an archive by hand. | — |
-| Update from inside the app | `sto-cla --upgrade` fetches and installs the newest release, and `sto-cla --version` tells you what you have. | — |
+| Update from inside the app | `sto-clare --upgrade` fetches and installs the newest release, and `sto-clare --version` tells you what you have. | — |
 | Menu entry | The tool registers itself with your desktop, so you can start it from the applications menu. | — |
 
 ---
-## Install
 
-### Linux — one command (nothing to download by hand)
-Paste this into a terminal. It fetches the latest release, puts `sto-cla` on
-your PATH and adds an applications-menu entry:
+## Advanced settings
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/raman78/STO_CombatLogAnalyzer/main/install.sh | sh
-```
+These live under **Settings → Analysis**. You do not need them to read your
+damage — they change how rows are grouped in the tables.
 
-Later, upgrade to the newest release with either:
+### Indirect source grouping reversal
 
-```sh
-sto-cla --upgrade      # updates the app in place
-```
+Some damage and healing does not come straight from you: pets, anomalies,
+consoles that spawn something. Those show up as a row you can expand, with the
+individual effects underneath.
 
-(or just run the one-liner above again). Check the installed version with
-`sto-cla --version`.
+Sometimes you want it the other way round — the effect on top, the pets
+underneath. That is what a reversal rule does. The Tachyon Net Drones console
+is the classic case: by default its effect is scattered over many rows, and one
+rule folds it into a single row you can expand. The default settings ship with
+a ready-made example for the starship trait Spore-Infused Anomalies; tick its
+"on" box to use it.
 
-### Windows
-Download and run the installer (`…-setup.exe`) from the Releases page. Upgrade
-with `sto-cla --upgrade` or by running a newer installer.
+### Custom grouping rules
 
-### From source
-See “Building the tool from Source” below.
-
----
-## Getting started
-1. Install using one of the methods above (or download it from the Releases page).
-
-2. **Recommended:** stop the game from splitting the combat log into many files.
-   Add the launch option `-NoAutoRotateLogs` to the game (on Steam: right‑click
-   Star Trek Online → Properties → Launch Options), so it always writes a single
-   `combatlog.log`. See this [step‑by‑step guide](https://www.sto-league.com/how-to-disable-automatically-rotated-log-files/).
-
-   On Linux you can skip this if you want — if the log still gets split,
-   STO_CombatLogAnalyzer automatically merges the pieces back into one for you.
-
-3. Go into the game and type "/Combatlog 1" into the chat window. You have to do
-   this again every time you log in.
-   
-4. Fight something.
-
-5. Start STO_CombatLogAnalyzer, open the Settings and enter the path to the combatlog file of the game located at "\<path to STO installation\>\Star Trek Online\Live\logs\GameClient\combatlog.log."
-Click Ok at the bottom of the settings window.
-
-6. Click the refresh button.
+A custom grouping rule folds several effects into one row. Useful for a weapon
+with an extra proc — for example the Advanced Piezo Beam Array, whose Technical
+Overload fires alongside the beam itself. The default settings include an
+example for the Dark Matter Quantum Torpedo, again switched on with its "on"
+box.
 
 ---
-## Advanced Features
-This paragraph describes the more advanced and less intuitive parts of the analyzer. The described features can be found in the Settings in the Analysis tab.
 
-### Indirect Source Grouping Reversal Rules
-Indirect sources are damage or heal sources that do not come directly from an entity but still belong to this entity. These indirect sources can for instance be pets, most anomalies and more.
+## Common situations
 
-Indirect sources show up in the damage or heal tables as rows that can be expanded, where the sub-rows show the actual effects that made damage or healed.
+| If you want to… | Do this |
+|---|---|
+| See only Elite runs of one map | Use the Type / Level / Map menus under the toolbar. |
+| Compare two runs of the same map | Open **Compare**, tick the combats, and read the green/red differences. |
+| Watch your DPS while playing | Open **Overlay**. On Linux a Wayland session keeps it above a full-screen game. |
+| Look at one ability over time | Click its row in the table; the charts below follow your selection. |
+| Free up disk space | Use **Clear Log File** and tick the combats you no longer need. |
+| Start fresh | Delete the settings file from the folder listed in the FAQ below. |
 
-Sometimes it is more desirable to have the effect as row that can be expanded with the indirect sources as the sub-rows. This is where Indirect Source Grouping rules come into play.
+## What can go wrong
 
-Lets see this with at the example of the Tachyon Net Drones Console Ability. The effect of this console shows up as many different rows in the damage table by default. But with a Indirect Source Reversal Rule it becomes one single row in the table with the indirect sources as a sub-row.
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| The combats list is empty | Combat logging is off in the game | Type `/Combatlog 1` in the game chat, fight something, then press refresh. |
+| Still empty after that | The path to the log file is wrong | Settings → the combat log path must end in `combatlog.log`. |
+| Only your newest fights show up | The game split the log into several files | Add `-NoAutoRotateLogs` to the launch options. On Linux the pieces are merged for you. |
+| The overlay is behind the game | Your session is X11, or the window manager decides otherwise | Use a Wayland session, or run the game in windowed mode. |
+| `sto-clare --upgrade` fails to write | The program is installed where your account cannot write | Reinstall with the one-liner above, which installs under your home folder. |
+| Numbers look far too low for a run | You are reading a combat that was cut short in the log | Pick the neighbouring entry in the combats list; long fights can span two. |
 
-![Tachyon Net Drones Indirect Source Grouping Reversal](images/tachyon_net_drones_indirect_source_grouping_reversal.png)
+## FAQ
 
-The default settings also come with an example for the starship trait Spore-Infused Anomalies, which you can simple activate by ticking the "on" checkbox.
+**Q: I used STO_CombatLogAnalyzer. Do I have to set everything up again?**
+A: No. The first time STO-CLARE starts it copies your old settings — including
+your naming and grouping rules — into its own folder. The old installation is
+left untouched, so it keeps working if you want to go back.
 
-### Custom Grouping Rules
-Custom grouping rules allows you to group multiple effects into a single row in the damage or heal tables.
+**Q: Where are my settings kept?**
+A: In the folder your system uses for program settings: `~/.config/STO-CLARE`
+on Linux, `%APPDATA%\STO-CLARE` on Windows.
 
-Here is an example of grouping up all effects of the Advanced Piezo Beam Array, which has the neat extra effect of the Technical Overload when used with Beam Overload or Surgical Strikes.
+**Q: Is this the same program as the original?**
+A: It started as a copy of it and still does everything it does, but it is
+developed separately now. Bug reports belong here, not with the original
+author.
 
-![Advanced Piezo Beam Array Custom Grouping](images/advanced_piezo_beam_custom_grouping_rule.png)
+**Q: Does it change anything in the game?**
+A: No. It only reads the log file the game writes.
 
-The default settings also come with an example for the Dark Matter Quantum Torpedo, which you can simple activate by ticking the "on" checkbox.
+## Where to get more help
 
----
-## Building the tool from Source
-Install the rust tool chain from https://www.rust-lang.org/.
-
-And the build it with
-
-```
-C:\path\to\STO_CombatLogAnalyzer> cargo build --release
-```
-
-And that is it.
-
+- Report a problem or ask a question in the
+  [issue tracker](https://github.com/raman78/STO-CLARE/issues).
+- Every release is listed with its changes in `CHANGELOG.md`.

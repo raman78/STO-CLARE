@@ -9,7 +9,7 @@ linked from the relevant section.
 
 ## Purpose
 
-`STO_CombatLogAnalyzer` reads the combat log Star Trek Online writes, splits it
+`STO-CLARE` reads the combat log Star Trek Online writes, splits it
 into fights, and reports what happened in each — damage, healing, hits, kills,
 per-ability breakdowns, charts, a live overlay, and upload to the OSCR ladder.
 It is a native desktop application; there is no server component of its own.
@@ -121,6 +121,7 @@ name next to the settings overrides it without a rebuild. See
 | charts | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts |
 | compare | `app/compare` | several combats side by side with coloured deltas |
 | settings | `app/settings` | split into analysis settings (invalidate the parse) and the rest |
+| how it looks | `app/theme.rs` | the themes on offer, the app's own colours, the text sizes |
 | overlay | `app/overlay` | separate always-on-top window; see `docs/OVERLAY.md` |
 
 Two conventions worth knowing before changing a table or a chart:
@@ -132,6 +133,17 @@ Two conventions worth knowing before changing a table or a chart:
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
+- **Every chart orders its series the same way** — by `PreparedDataSet::
+  total_value`, largest first (`ValuesChart::sort`, `ValuePerSecondGraph::sort`,
+  `DamageResistanceChart::sort`). Series colours are handed out by that order
+  (`theme::series_color`), so any chart that ordered its series differently gave
+  the same player a different colour and a different place in the legend.
+- **The per-second charts are a kernel density estimate, so the kernel has to
+  integrate to one.** It is cut at `KERNEL_CUTOFF_SIGMAS` (4 σ) and divided by
+  the mass inside that cut, which makes the line's height independent of the
+  smoothing setting. The line still dips where the kernel hangs over the start
+  or the end of the fight — that is inherent to smoothing a finite record, and
+  it shows up at smoothing widths comparable to the length of the fight.
 - **Bold text needs its own font.** egui's `RichText::strong()` only picks a
   brighter colour, and the fonts epaint bundles have no bold face. `app/fonts`
   embeds `assets/fonts/Ubuntu-Bold.ttf` — the matching weight of the Ubuntu-Light
@@ -156,6 +168,34 @@ the map detection produced, so a rename would orphan the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
 
+### One place for the look — `app/theme.rs`
+
+Everything about how the app looks is declared in that one module and reaches
+the screen through `theme::apply`, which the settings window calls at startup
+and whenever the choice changes.
+
+| what | where | note |
+|---|---|---|
+| the themes on offer | `THEMES` | one entry per theme: the `Theme` variant, its label, its `Visuals`, its `Palette`. The settings tab lists the registry, so adding a theme is a variant plus an entry — both in this file |
+| widget colours | `Visuals` per entry | egui's own: backgrounds, strokes, selection |
+| the app's colours | `Palette` | what egui does not know about: the compare deltas, the warning mark, the status/upload marks, and the chart series |
+| text sizes | `TEXT_SIZES` | spelled out rather than inherited from egui, so the sizes are one table |
+
+Two things follow from `Theme` being stored in the settings file by variant
+name: a variant may be **added but never renamed**, and both of egui's
+light/dark slots get the same style — the app follows its own setting, not the
+desktop's preference.
+
+Which theme is active is a process-wide value (`ACTIVE`), so `theme::palette()`
+works from any call site, including the overlay's separate egui context.
+
+The series palette is eight hues validated as a set — lightness band, chroma
+floor, and separation between neighbouring hues under normal vision and under
+protanopia, deuteranopia and tritanopia — with a step for a dark surface and a
+step for a light one. Past eight the order starts again: how many series a chart
+holds is the user's choice, and every chart names its series in the legend and
+on hover, so colour is never the only thing telling two apart.
+
 ## Log files on disk
 
 STO under Proton rotates its combat log. On Linux `app/log_consolidation` merges
@@ -168,7 +208,7 @@ touches line reading has to keep those ranges exact.
 ## Where things are written
 
 Settings and the log file go to the per-user config directory
-(`~/.config/STO_CombatLogAnalyzer` on Linux, `%APPDATA%` on Windows), with the
+(`~/.config/STO-CLARE` on Linux, `%APPDATA%` on Windows), with the
 old next-to-the-executable location read as a fallback. See
 `app/settings/app_settings.rs` and `app/logging.rs`.
 

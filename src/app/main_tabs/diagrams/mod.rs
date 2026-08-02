@@ -6,10 +6,10 @@ mod values_chart;
 
 pub use crate::app::main_tabs::diagrams::common::DiagramType;
 use crate::app::settings::Settings;
-pub use common::combat_duration_seconds;
 pub use common::HealComponents;
 pub use common::PreparedDamageDataSet;
 pub use common::PreparedHealDataSet;
+pub use common::combat_duration_seconds;
 use eframe::egui::Ui;
 use itertools::Itertools;
 pub use summary_chart::SummaryChart;
@@ -146,6 +146,7 @@ impl HealDiagrams {
         combat: &Combat,
         filter: f64,
         damage_time_slice: f64,
+        components: HealComponents,
     ) -> Self {
         let combat_duration_s = combat_duration_seconds(combat);
         let data = groups.map(|g| {
@@ -157,16 +158,20 @@ impl HealDiagrams {
             )
         });
 
-        Self::from_data(data, filter, damage_time_slice)
+        Self::from_data(data, filter, damage_time_slice, components)
     }
 
+    /// `components` has to be handed in rather than left at its default: a
+    /// chart built while the picker says "hull only" would otherwise draw both
+    /// halves until the next time anything else moved.
     pub fn from_data(
         data: impl Iterator<Item = PreparedHealDataSet>,
         filter: f64,
         heal_time_slice: f64,
+        components: HealComponents,
     ) -> Self {
         let data = data.collect_vec();
-        Self {
+        let mut diagrams = Self {
             hps_graph: HpsGraph::from_data(DiagramType::Hps, data.iter().cloned(), filter),
             heal_chart: HealChart::from_data(
                 DiagramType::Heal,
@@ -183,7 +188,9 @@ impl HealDiagrams {
                 data.iter().cloned(),
                 heal_time_slice,
             ),
-        }
+        };
+        diagrams.update(filter, heal_time_slice, components);
+        diagrams
     }
 
     pub fn add_data(&mut self, data: PreparedHealDataSet, filter: f64, time_slice: f64) {

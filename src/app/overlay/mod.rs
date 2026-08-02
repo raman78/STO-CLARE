@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use eframe::{egui::*, epaint::mutex::Mutex};
 
+use crate::custom_widgets::popup_button::PopupButton;
 use crate::{
     analyzer::{Combat, Player},
     app::settings::Settings,
     custom_widgets::table::Table,
     helpers::number_formatting::NumberFormatter,
 };
-use crate::custom_widgets::popup_button::PopupButton;
 
 use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
 
@@ -317,8 +317,7 @@ impl Overlay {
                         .general
                         .overlay_position
                         .map_or((0, 0), |[top, left]| (top, left));
-                    inner.layer =
-                        Some(layer_shell::LayerOverlay::spawn(gpu, position));
+                    inner.layer = Some(layer_shell::LayerOverlay::spawn(gpu, position));
                 }
             }
             inner.check_update(ui.ctx());
@@ -340,7 +339,7 @@ impl Overlay {
         {
             let mut builder = ViewportBuilder::default()
                 .with_title("CLA Overlay")
-                .with_app_id("sto-cla-overlay")
+                .with_app_id("sto-clare-overlay")
                 .with_decorations(inner.move_around)
                 .with_minimize_button(false)
                 .with_maximize_button(false)
@@ -480,7 +479,12 @@ impl OverlayInner {
     #[cfg(target_os = "linux")]
     fn to_overlay_data(&self) -> layer_shell::OverlayData {
         layer_shell::OverlayData {
-            columns: self.data.columns.iter().map(|c| c.name.to_string()).collect(),
+            columns: self
+                .data
+                .columns
+                .iter()
+                .map(|c| c.name.to_string())
+                .collect(),
             rows: self
                 .data
                 .players

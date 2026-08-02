@@ -2,21 +2,22 @@ use std::{io::Write, thread::JoinHandle, time::Duration};
 
 use eframe::egui::*;
 use reqwest::{
-    blocking::{
-        multipart::{Form, Part},
-        ClientBuilder,
-    },
     Url,
+    blocking::{
+        ClientBuilder,
+        multipart::{Form, Part},
+    },
 };
 use serde::Deserialize;
 
 use crate::{
-    analyzer::{settings::AnalysisSettings, Combat},
+    analyzer::{Combat, settings::AnalysisSettings},
+    app::theme,
     custom_widgets::table::Table,
     helpers::number_formatting::NumberFormatter,
 };
 
-use super::common::{spawn_request, RequestError};
+use super::common::{RequestError, spawn_request};
 
 #[derive(Default)]
 pub struct Upload {
@@ -55,7 +56,7 @@ impl Upload {
                         ui.add_space(20.0);
                         ui.label("uploading...");
                         ui.add_space(40.0);
-                        ui.label(WidgetText::from("⏳").color(Color32::YELLOW));
+                        ui.label(WidgetText::from("⏳").color(theme::palette().busy));
                         ui.add_space(20.0);
                     });
                 });
@@ -98,8 +99,11 @@ impl Upload {
                                             .with_cross_align(Align::Center),
                                         |ui| {
                                             let text = match result.updated {
-                                                true => WidgetText::from("✔").color(Color32::GREEN),
-                                                false => WidgetText::from("✖").color(Color32::RED),
+                                                true => {
+                                                    WidgetText::from("✔").color(theme::palette().ok)
+                                                }
+                                                false => WidgetText::from("✖")
+                                                    .color(theme::palette().error),
                                             };
                                             ui.label(text);
                                         },

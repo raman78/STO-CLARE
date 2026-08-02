@@ -204,7 +204,12 @@ impl<T: 'static> MetricsTable<T> {
         });
     }
 
-    fn show_column_header(&mut self, row: &mut TableRow, column: &ColumnDescriptor<T>, split: bool) {
+    fn show_column_header(
+        &mut self,
+        row: &mut TableRow,
+        column: &ColumnDescriptor<T>,
+        split: bool,
+    ) {
         // Unsplit: one cell holding the metric name. Split: a rule opens the
         // group, the metric name sits above its first cell, and All/Hull/Shield
         // label the second line. Without the rule, three same-looking numbers

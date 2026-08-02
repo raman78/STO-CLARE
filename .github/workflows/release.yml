@@ -40,11 +40,11 @@ jobs:
       - name: Package tarball
         run: |
           VER="${{ steps.ver.outputs.version }}"
-          ASSET="STO_CombatLogAnalyzer-$VER-linux-x86_64.tar.gz"
+          ASSET="STO-CLARE-$VER-linux-x86_64.tar.gz"
           # Files at the archive root (no wrapping dir) so `self_update` can
           # find the binary directly during `--upgrade`.
           STAGE="$(mktemp -d)"
-          cp target/release/STO_CombatLogAnalyzer "$STAGE/"
+          cp target/release/sto-clare "$STAGE/"
           cp icon/icon.png "$STAGE/"
           cp install.sh "$STAGE/" 2>/dev/null || true
           tar -czf "$ASSET" -C "$STAGE" .
@@ -88,21 +88,21 @@ jobs:
           choco install innosetup --no-progress -y
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
             "/DAppVersion=${{ steps.ver.outputs.version }}" `
-            "packaging\windows\STO_CombatLogAnalyzer.iss"
+            "packaging\windows\STO-CLARE.iss"
 
       - name: Package portable zip
         run: |
           $ver = "${{ steps.ver.outputs.version }}"
           # Bare exe in a zip so `self_update` can replace the binary on --upgrade.
-          Compress-Archive -Path target\release\STO_CombatLogAnalyzer.exe `
-            -DestinationPath "STO_CombatLogAnalyzer-$ver-windows-x86_64.zip"
+          Compress-Archive -Path target\release\sto-clare.exe `
+            -DestinationPath "STO-CLARE-$ver-windows-x86_64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             dist/installer/*.exe
-            STO_CombatLogAnalyzer-*-windows-x86_64.zip
+            STO-CLARE-*-windows-x86_64.zip
 
       - name: Attach to release
         if: github.event_name == 'release'
@@ -110,4 +110,4 @@ jobs:
         with:
           files: |
             dist/installer/*.exe
-            STO_CombatLogAnalyzer-*-windows-x86_64.zip
+            STO-CLARE-*-windows-x86_64.zip

@@ -1,11 +1,11 @@
-use eframe::{
-    egui::{ComboBox, Context, Style, Ui, Visuals, style::Selection},
-    epaint::{Rgba, Shadow},
+use eframe::egui::{ComboBox, Context, Ui};
+
+use crate::{
+    app::{overlay::Overlay, theme},
+    custom_widgets::slider_text_edit::SliderTextEdit,
 };
 
-use crate::{app::overlay::Overlay, custom_widgets::slider_text_edit::SliderTextEdit};
-
-use super::{Settings, app_settings::Theme};
+use super::Settings;
 
 #[derive(Default)]
 pub struct VisualsTab {}
@@ -16,28 +16,15 @@ impl VisualsTab {
         ui.label("Theme");
         ComboBox::from_id_salt("theme combo box")
             .selected_text(visuals.theme.display())
+            // Straight from the registry, so a theme added there shows up here.
             .show_ui(ui, |ui| {
-                if ui
-                    .selectable_value(&mut visuals.theme, Theme::Dark, Theme::Dark.display())
-                    .changed()
-                {
-                    Self::set_theme(ui.ctx(), visuals.theme);
-                }
-                if ui
-                    .selectable_value(
-                        &mut visuals.theme,
-                        Theme::LightDark,
-                        Theme::LightDark.display(),
-                    )
-                    .changed()
-                {
-                    Self::set_theme(ui.ctx(), visuals.theme);
-                }
-                if ui
-                    .selectable_value(&mut visuals.theme, Theme::Light, Theme::Light.display())
-                    .changed()
-                {
-                    Self::set_theme(ui.ctx(), visuals.theme);
+                for entry in theme::THEMES.iter() {
+                    if ui
+                        .selectable_value(&mut visuals.theme, entry.theme, entry.name)
+                        .changed()
+                    {
+                        Self::set_theme(ui.ctx(), visuals.theme);
+                    }
                 }
             });
 
@@ -73,59 +60,12 @@ impl VisualsTab {
         Self::set_ui_scale(ctx, native_pixels_per_point, visuals.ui_scale);
     }
 
-    fn set_theme(ctx: &Context, theme: Theme) {
-        let visuals = match theme {
-            Theme::Dark => Visuals::dark(),
-            Theme::LightDark => Self::light_dark(),
-            Theme::Light => Visuals::light(),
-        };
-        let mut style = Style::clone(&ctx.global_style());
-        style.visuals = visuals;
-        style.interaction.selectable_labels = false;
-        style.interaction.tooltip_delay = 0.0;
-        // Floating scroll bars grow when the pointer comes near them and would
-        // then be drawn on top of the content — the horizontal bar of a table
-        // covering its last row. Reserve a strip as wide as the fully grown bar,
-        // so it sits next to the content instead of over it. The strip is only
-        // taken while the bar is actually shown.
-        style.spacing.scroll.floating_allocated_width = style.spacing.scroll.bar_width;
-        ctx.set_style_of(eframe::egui::Theme::Dark, style.clone());
-        ctx.set_style_of(eframe::egui::Theme::Light, style);
+    fn set_theme(ctx: &Context, selected: theme::Theme) {
+        theme::apply(ctx, selected);
         Overlay::request_repaint(ctx);
     }
 
     fn set_ui_scale(ctx: &Context, native_pixels_per_point: Option<f32>, ui_scale: f64) {
         ctx.set_pixels_per_point(native_pixels_per_point.unwrap_or(1.0) * ui_scale as f32);
-    }
-
-    fn light_dark() -> Visuals {
-        let background = Rgba::from_rgb(0.08, 0.08, 0.08).into();
-        let darker_background = Rgba::from_rgb(0.05, 0.05, 0.05).into();
-        let brighter_background = Rgba::from_rgb(0.15, 0.15, 0.15).into();
-        let mut theme = Visuals::dark();
-        theme.code_bg_color = background;
-        theme.error_fg_color = Rgba::from_rgb(0.8, 0.3, 0.3).into();
-        theme.extreme_bg_color = darker_background;
-        theme.faint_bg_color = brighter_background;
-        theme.hyperlink_color = Rgba::from_rgb(0.2, 0.2, 0.9).into();
-        theme.panel_fill = background;
-        theme.warn_fg_color = Rgba::from_rgb(0.8, 0.7, 0.3).into();
-        theme.selection = Selection {
-            bg_fill: Rgba::from_rgb(0.2, 0.2, 0.7).into(),
-            ..Default::default()
-        };
-        theme.popup_shadow = Shadow::NONE;
-
-        theme.widgets.inactive.bg_fill = Rgba::from_rgb(0.2, 0.2, 0.2).into();
-        theme.widgets.hovered.bg_fill = Rgba::from_rgb(0.25, 0.25, 0.25).into();
-        theme.widgets.active.bg_fill = Rgba::from_rgb(0.3, 0.3, 0.3).into();
-
-        theme.widgets.noninteractive.fg_stroke.color = Rgba::from_rgb(0.92, 0.92, 0.92).into();
-        theme.widgets.inactive.fg_stroke.color = Rgba::from_rgb(0.92, 0.92, 0.92).into();
-
-        theme.window_fill = background;
-        theme.window_stroke.color = Rgba::from_rgb(0.9, 0.9, 0.9).into();
-        theme.window_shadow = Shadow::NONE;
-        theme
     }
 }

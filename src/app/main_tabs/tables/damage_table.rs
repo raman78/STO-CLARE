@@ -1,9 +1,10 @@
 use crate::{
     analyzer::*,
     app::{main_tabs::common::*, settings::Settings},
-    col, shield_hull_col,
+    col,
     custom_widgets::table::*,
     helpers::number_formatting::NumberFormatter,
+    shield_hull_col,
 };
 
 use super::{common::Kills, metrics_table::*};

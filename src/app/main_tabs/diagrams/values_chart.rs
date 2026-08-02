@@ -2,7 +2,10 @@ use eframe::egui::*;
 use egui_plot::*;
 use itertools::Itertools;
 
-use crate::{app::settings::Settings, helpers::number_formatting::NumberFormatter};
+use crate::{
+    app::{settings::Settings, theme},
+    helpers::number_formatting::NumberFormatter,
+};
 
 use super::common::*;
 
@@ -82,6 +85,7 @@ impl<T: PreparedValue> ValuesChart<T> {
 
         let mut plot = Plot::new(["value chart", self.diagram_type.name()])
             .auto_bounds(true)
+            .y_axis_min_width(y_axis_width(ui))
             .y_axis_formatter(format_axis)
             .x_axis_formatter(format_axis)
             .label_formatter(|_, p| {
@@ -105,8 +109,8 @@ impl<T: PreparedValue> ValuesChart<T> {
         }
 
         plot.show(ui, |p| {
-            for bars in self.bars.iter() {
-                p.bar_chart(bars.chart(settings));
+            for (index, bars) in self.bars.iter().enumerate() {
+                p.bar_chart(bars.chart(settings).color(theme::series_color(index)));
             }
         });
     }

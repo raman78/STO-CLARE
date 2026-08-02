@@ -89,6 +89,7 @@ impl SummaryTab {
         self.summary_table = SummaryTable::new(settings, combat);
         self.summary_dps_chart = SummaryChart::from_data(
             "summary dps chart",
+            "DPS",
             combat.players.values().map(|p| {
                 (
                     p.damage_out.name().get(&combat.name_manager),
@@ -97,7 +98,8 @@ impl SummaryTab {
             }),
         );
         self.summary_damage_out_chart = SummaryChart::from_data(
-            "summary damage in chart",
+            "summary damage out chart",
+            "Damage Dealt",
             combat.players.values().map(|p| {
                 (
                     p.damage_out.name().get(&combat.name_manager),
@@ -106,7 +108,8 @@ impl SummaryTab {
             }),
         );
         self.summary_damage_in_chart = SummaryChart::from_data(
-            "summary damage out chart",
+            "summary damage in chart",
+            "Damage Taken",
             combat.players.values().map(|p| {
                 (
                     p.damage_out.name().get(&combat.name_manager),
@@ -133,9 +136,9 @@ impl SummaryTab {
         // than fixed, so it holds at any UI scale; the slack covers letters
         // wider than a digit, since the face is proportional and no width can
         // fit every possible fifty characters.
-        let note_width = ui.fonts_mut(|fonts| {
-            fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0')
-        }) * MAX_NOTE_CHARS as f32
+        let note_width = ui
+            .fonts_mut(|fonts| fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0'))
+            * MAX_NOTE_CHARS as f32
             * 1.2;
 
         ui.horizontal(|ui| {

@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
+    app::theme,
     custom_widgets::{
         number_edit::NumberEdit,
         table::{Table, TableRow},
@@ -92,7 +93,7 @@ impl Records {
         ui.add_space(20.0);
         ui.label("loading record tables...");
         ui.add_space(40.0);
-        ui.label(WidgetText::from("⏳").color(Color32::YELLOW));
+        ui.label(WidgetText::from("⏳").color(theme::palette().busy));
         ui.add_space(20.0);
     }
 
@@ -240,7 +241,7 @@ impl Entries {
                 ui.add_space(20.0);
                 ui.label("loading table entries...");
                 ui.add_space(40.0);
-                ui.label(WidgetText::from("⏳").color(Color32::YELLOW));
+                ui.label(WidgetText::from("⏳").color(theme::palette().busy));
                 ui.add_space(20.0);
             }
             Entries::Loaded(entries) => {
@@ -532,7 +533,7 @@ impl DownloadLogState {
                         ui.add_space(20.0);
                         ui.label(&*message);
                         ui.add_space(40.0);
-                        ui.label(WidgetText::from("⏳").color(Color32::YELLOW));
+                        ui.label(WidgetText::from("⏳").color(theme::palette().busy));
                         ui.add_space(20.0);
                     });
                 if join_handle.as_ref().unwrap().is_finished() {

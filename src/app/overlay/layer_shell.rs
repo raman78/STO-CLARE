@@ -17,6 +17,20 @@ use egui_wgpu::wgpu;
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
+use smithay_client_toolkit::reexports::calloop::{
+    EventLoop,
+    channel::{Channel, Event as ChannelEvent, Sender, channel},
+};
+use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
+use smithay_client_toolkit::reexports::client::{
+    Connection, Dispatch, Proxy, QueueHandle,
+    globals::registry_queue_init,
+    protocol::{wl_output, wl_pointer, wl_seat, wl_surface},
+};
+use smithay_client_toolkit::reexports::protocols::wp::relative_pointer::zv1::client::{
+    zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+    zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
+};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, Region},
     delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
@@ -25,34 +39,20 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
-        pointer::{PointerEvent, PointerEventKind, PointerHandler},
         Capability, SeatHandler, SeatState,
+        pointer::{PointerEvent, PointerEventKind, PointerHandler},
     },
     shell::{
+        WaylandSurface,
         wlr_layer::{
             Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
             LayerSurfaceConfigure,
         },
-        WaylandSurface,
     },
     shm::{Shm, ShmHandler},
 };
-use smithay_client_toolkit::reexports::protocols::wp::relative_pointer::zv1::client::{
-    zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
-    zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
-};
-use smithay_client_toolkit::reexports::calloop::{
-    channel::{channel, Channel, Event as ChannelEvent, Sender},
-    EventLoop,
-};
-use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
-use smithay_client_toolkit::reexports::client::{
-    globals::registry_queue_init,
-    protocol::{wl_output, wl_pointer, wl_seat, wl_surface},
-    Connection, Dispatch, Proxy, QueueHandle,
-};
 
-use crossbeam_channel::{unbounded, Receiver as EventRx, Sender as EventTx};
+use crossbeam_channel::{Receiver as EventRx, Sender as EventTx, unbounded};
 
 use crate::custom_widgets::table::Table;
 
@@ -121,7 +121,7 @@ pub fn create_shared_gpu() -> OverlayGpu {
     }))
     .expect("no wgpu adapter for the shared overlay/main-window device");
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("sto-cla-shared"),
+        label: Some("sto-clare-shared"),
         // Mirror egui-wgpu's default device limits so eframe accepts the device
         // we hand it (it wants a 4k+ capable max_texture_dimension_2d).
         required_limits: wgpu::Limits {
@@ -229,8 +229,13 @@ fn run(
     // Restore the saved (top, left) offset from the TOP|LEFT anchor.
     let margin = *position.lock().unwrap();
     let surface = compositor.create_surface(&qh);
-    let layer =
-        layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("sto-cla-overlay"), None);
+    let layer = layer_shell.create_layer_surface(
+        &qh,
+        surface,
+        Layer::Overlay,
+        Some("sto-clare-overlay"),
+        None,
+    );
     layer.set_anchor(Anchor::TOP | Anchor::LEFT);
     layer.set_margin(margin.0, 0, 0, margin.1);
     layer.set_size(MIN_W * 2, MIN_H * 2);
@@ -455,7 +460,10 @@ impl State {
     /// Clamps the margin onto the output; returns whether it changed.
     fn clamp_margin(&mut self) -> bool {
         let (max_left, max_top) = self.max_margin();
-        let clamped = (self.margin.0.clamp(0, max_top), self.margin.1.clamp(0, max_left));
+        let clamped = (
+            self.margin.0.clamp(0, max_top),
+            self.margin.1.clamp(0, max_left),
+        );
         if clamped != self.margin {
             self.margin = clamped;
             true
@@ -572,79 +580,81 @@ impl State {
             let frame = egui::Frame::central_panel(&style)
                 .stroke(style.visuals.window_stroke)
                 .inner_margin(4.0);
-            egui::CentralPanel::default().frame(frame).show_inside(ui, |ui| {
-                // The refreshing part: the DPS table. Its measured rect drives
-                // the surface size (content-sized, unlike ui.min_rect() which
-                // includes fill-width widgets and makes the surface oscillate).
-                let table_rect = Table::new(ui)
-                    .min_scroll_height(f32::MAX)
-                    .header(15.0, |h| {
-                        h.cell(|ui| {
-                            ui.label("Player");
-                        });
-                        for c in &data.columns {
+            egui::CentralPanel::default()
+                .frame(frame)
+                .show_inside(ui, |ui| {
+                    // The refreshing part: the DPS table. Its measured rect drives
+                    // the surface size (content-sized, unlike ui.min_rect() which
+                    // includes fill-width widgets and makes the surface oscillate).
+                    let table_rect = Table::new(ui)
+                        .min_scroll_height(f32::MAX)
+                        .header(15.0, |h| {
                             h.cell(|ui| {
-                                ui.label(c);
+                                ui.label("Player");
                             });
-                        }
-                    })
-                    .body(25.0, |t| {
-                        for row in &data.rows {
-                            t.row(|r| {
-                                r.cell(|ui| {
-                                    ui.label(&row.name);
+                            for c in &data.columns {
+                                h.cell(|ui| {
+                                    ui.label(c);
                                 });
-                                for v in &row.values {
-                                    r.cell_with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            ui.label(v);
-                                        },
-                                    );
-                                }
-                            });
-                        }
-                    });
+                            }
+                        })
+                        .body(25.0, |t| {
+                            for row in &data.rows {
+                                t.row(|r| {
+                                    r.cell(|ui| {
+                                        ui.label(&row.name);
+                                    });
+                                    for v in &row.values {
+                                        r.cell_with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                ui.label(v);
+                                            },
+                                        );
+                                    }
+                                });
+                            }
+                        });
 
-                // Column popup (when open) and the icon toolbar at the bottom,
-                // like the live parser. Measure their height via the cursor so
-                // the surface can size to table + toolbar without fill-width
-                // widgets feeding back into the width.
-                let bottom_start = ui.cursor().top();
-                if settings_open {
-                    for (index, (name, enabled)) in data.all_columns.iter().enumerate() {
-                        let mut enabled = *enabled;
-                        if ui.checkbox(&mut enabled, name).clicked() {
-                            toggled_columns.push(index);
+                    // Column popup (when open) and the icon toolbar at the bottom,
+                    // like the live parser. Measure their height via the cursor so
+                    // the surface can size to table + toolbar without fill-width
+                    // widgets feeding back into the width.
+                    let bottom_start = ui.cursor().top();
+                    if settings_open {
+                        for (index, (name, enabled)) in data.all_columns.iter().enumerate() {
+                            let mut enabled = *enabled;
+                            if ui.checkbox(&mut enabled, name).clicked() {
+                                toggled_columns.push(index);
+                            }
                         }
                     }
-                }
-                toolbar_rect = ui
-                    .horizontal(|ui| {
-                        // Square, fully-clickable icon buttons (the plain label
-                        // only reacts on the glyph itself).
-                        let icon = egui::vec2(TOOLBAR_H as f32 - 6.0, TOOLBAR_H as f32 - 6.0);
-                        if ui
-                            .add_sized(icon, egui::Button::selectable(settings_open, "⛭"))
-                            .clicked()
-                        {
-                            toggle_settings = true;
-                        }
-                        if ui
-                            .add_sized(icon, egui::Button::selectable(move_mode, "✋"))
-                            .clicked()
-                        {
-                            toggle_move = true;
-                        }
-                    })
-                    .response
-                    .rect;
-                let bottom_height = ui.cursor().top() - bottom_start;
+                    toolbar_rect = ui
+                        .horizontal(|ui| {
+                            // Square, fully-clickable icon buttons (the plain label
+                            // only reacts on the glyph itself).
+                            let icon = egui::vec2(TOOLBAR_H as f32 - 6.0, TOOLBAR_H as f32 - 6.0);
+                            if ui
+                                .add_sized(icon, egui::Button::selectable(settings_open, "⛭"))
+                                .clicked()
+                            {
+                                toggle_settings = true;
+                            }
+                            if ui
+                                .add_sized(icon, egui::Button::selectable(move_mode, "✋"))
+                                .clicked()
+                            {
+                                toggle_move = true;
+                            }
+                        })
+                        .response
+                        .rect;
+                    let bottom_height = ui.cursor().top() - bottom_start;
 
-                required = egui::vec2(table_rect.width(), table_rect.height() + bottom_height)
-                    + ui.spacing().window_margin.left_top()
-                    + ui.spacing().window_margin.right_bottom();
-            });
+                    required = egui::vec2(table_rect.width(), table_rect.height() + bottom_height)
+                        + ui.spacing().window_margin.left_top()
+                        + ui.spacing().window_margin.right_bottom();
+                });
         });
 
         // Remember the toolbar's rect (points == pixels at scale 1), padded a
@@ -716,16 +726,20 @@ impl State {
 
         let clipped = gpu.egui_ctx.tessellate(full.shapes, ppp);
         for (id, delta) in &full.textures_delta.set {
-            gpu.egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, delta);
+            gpu.egui_renderer
+                .update_texture(&gpu.device, &gpu.queue, *id, delta);
         }
         let frame = match gpu.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+            wgpu::CurrentSurfaceTexture::Success(f)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {
                 gpu.surface.configure(&gpu.device, &gpu.config);
                 return;
             }
         };
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [w, h],
             pixels_per_point: ppp,
@@ -733,9 +747,13 @@ impl State {
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let user_buffers =
-            gpu.egui_renderer
-                .update_buffers(&gpu.device, &gpu.queue, &mut encoder, &clipped, &screen);
+        let user_buffers = gpu.egui_renderer.update_buffers(
+            &gpu.device,
+            &gpu.queue,
+            &mut encoder,
+            &clipped,
+            &screen,
+        );
         {
             let mut rpass = encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -762,8 +780,11 @@ impl State {
                 .forget_lifetime();
             gpu.egui_renderer.render(&mut rpass, &clipped, &screen);
         }
-        gpu.queue
-            .submit(user_buffers.into_iter().chain(std::iter::once(encoder.finish())));
+        gpu.queue.submit(
+            user_buffers
+                .into_iter()
+                .chain(std::iter::once(encoder.finish())),
+        );
         frame.present();
         for id in &full.textures_delta.free {
             gpu.egui_renderer.free_texture(id);
@@ -800,11 +821,39 @@ impl LayerShellHandler for State {
 }
 
 impl CompositorHandler for State {
-    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
-    fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
+    fn scale_factor_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: i32,
+    ) {
+    }
+    fn transform_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: wl_output::Transform,
+    ) {
+    }
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
-    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
-    fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
+    fn surface_leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
 }
 
 impl OutputHandler for State {
@@ -814,7 +863,12 @@ impl OutputHandler for State {
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
         self.learn_output(&output);
     }
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+    fn update_output(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
+    ) {
         self.learn_output(&output);
     }
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
@@ -898,7 +952,8 @@ impl PointerHandler for State {
                 PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                     self.pointer_pos = pos;
                     self.pointer_on_toolbar = on_toolbar;
-                    self.egui_events.push(egui::Event::PointerMoved(egui_pos(pos)));
+                    self.egui_events
+                        .push(egui::Event::PointerMoved(egui_pos(pos)));
                     // Actual dragging happens once per rendered frame (see
                     // render); doing it per motion event double-counts the
                     // async coordinate shift and flings the surface around.

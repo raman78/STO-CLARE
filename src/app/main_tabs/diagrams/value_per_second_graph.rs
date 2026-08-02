@@ -4,11 +4,30 @@ use eframe::egui::*;
 use egui_plot::*;
 use itertools::Itertools;
 
-use crate::{app::settings::Settings, helpers::number_formatting::NumberFormatter};
+use crate::{
+    app::{settings::Settings, theme},
+    helpers::number_formatting::NumberFormatter,
+};
 
 use super::common::*;
 
 const SAMPLE_RATE: f64 = 10.0;
+
+/// Half-width of the smoothing kernel, in standard deviations. Past it the
+/// weight counts as zero, which is what lets the sampling walk stop instead of
+/// running over every value in the fight.
+const KERNEL_CUTOFF_SIGMAS: f64 = 4.0;
+
+/// How much of a normal distribution lies within [`KERNEL_CUTOFF_SIGMAS`]. The
+/// kernel is divided by it so that the *cut* kernel still integrates to one,
+/// and a value per second therefore comes out at its true height.
+///
+/// The cut used to be made by subtracting a constant from the kernel and
+/// compensating with a fixed 0.1%, which does not depend on the standard
+/// deviation while the mass lost that way does: the line read 0.2% low at the
+/// default smoothing of 0.4, 3.8% low at the slider's 6.0 and 60% low at the
+/// 120 the text field accepts.
+const KERNEL_MASS_WITHIN_CUTOFF: f64 = 0.999_936_657_5;
 
 pub struct ValuePerSecondGraph<T: PreparedValue> {
     lines: Vec<GraphLine<T>>,
@@ -52,6 +71,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
             updated_filter: Some(filter),
             ..Self::empty(diagram_type)
         };
+        _self.sort();
         _self.compute_largest_point();
 
         _self
@@ -59,6 +79,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
 
     pub fn add_line(&mut self, line: PreparedDataSet<T>, filter: f64) {
         self.lines.push(GraphLine::new(line));
+        self.sort();
         self.compute_largest_point();
         self.update(filter);
     }
@@ -66,7 +87,22 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
     pub fn remove_line(&mut self, line: &str) {
         if let Some((index, _)) = self.lines.iter().find_position(|l| l.data.name == line) {
             self.lines.remove(index);
+            // The tallest line may have been the one just dropped, and the
+            // y range includes this figure — without recomputing, the chart
+            // keeps room for a line that is no longer drawn.
+            self.compute_largest_point();
         }
+    }
+
+    /// Largest total first, the same order the bar charts use, so a series
+    /// keeps its colour and its place in the legend from one chart to the next.
+    fn sort(&mut self) {
+        self.lines.sort_unstable_by(|l1, l2| {
+            l1.data
+                .total_value
+                .total_cmp(&l2.data.total_value)
+                .reverse()
+        });
     }
 
     /// Which halves of a heal to draw. Only the heal charts offer the choice;
@@ -89,6 +125,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
 
         let mut plot = Plot::new(("per second graph", self.diagram_type.name()))
             .auto_bounds(true)
+            .y_axis_min_width(y_axis_width(ui))
             .y_axis_formatter(format_axis)
             .x_axis_formatter(format_axis)
             .label_formatter(|n, p| {
@@ -107,8 +144,10 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         }
 
         plot.show(ui, |p| {
-            for line in self.lines.iter() {
-                p.line(line.to_line());
+            // Series are sorted largest first, so the colour a series gets is
+            // the same on every chart it appears on.
+            for (index, line) in self.lines.iter().enumerate() {
+                p.line(line.to_line().color(theme::series_color(index)));
             }
         });
     }
@@ -156,7 +195,13 @@ impl<T: PreparedValue> GraphLine<T> {
             let time = self.data.start_time_s + duration * start_offset;
             let point = [
                 time,
-                Self::get_sample_gauss_filtered(&self.data.values, time, filter, diagram_type, components),
+                Self::get_sample_gauss_filtered(
+                    &self.data.values,
+                    time,
+                    filter,
+                    diagram_type,
+                    components,
+                ),
             ];
             points.push(point);
         }
@@ -187,13 +232,14 @@ impl<T: PreparedValue> GraphLine<T> {
     ) -> Option<f64> {
         let hit = points.get(index)?;
         let t = millis_to_seconds(hit.time_millis);
-        let finite_hack_value = 1e-3;
-        let weight = (Self::gauss_probability_density_function(t, time_seconds, sigma_seconds)
-            - finite_hack_value)
-            * (1.0 + finite_hack_value);
-        if weight <= 0.0 {
+        // Outside the kernel's half-width there is nothing left to add, and
+        // since the walk moves away from the sample in time, nothing beyond
+        // this point can come back into it either.
+        if (t - time_seconds).abs() > KERNEL_CUTOFF_SIGMAS * sigma_seconds {
             return None;
         }
+        let weight = Self::gauss_probability_density_function(t, time_seconds, sigma_seconds)
+            / KERNEL_MASS_WITHIN_CUTOFF;
 
         Some(weight * hit.value(diagram_type, components))
     }
@@ -277,5 +323,110 @@ impl<T: PreparedValue> GraphLine<T> {
 
     fn to_line(&self) -> Line<'_> {
         Line::new(&self.data.name, self.points.clone()).width(2.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::app::main_tabs::diagrams::common::{PreparedHitValue, PreparedPoint};
+
+    /// Steady fire: one hit every tenth of a second, so the true rate is a
+    /// round number and any bias in the kernel shows up directly.
+    fn steady_fire(damage_per_hit: f64, seconds: u32) -> Vec<PreparedPoint<PreparedHitValue>> {
+        (0..seconds * 10)
+            .map(|i| PreparedPoint {
+                value: PreparedHitValue {
+                    damage: damage_per_hit,
+                    hull_damage: damage_per_hit,
+                    shield_damage: 0.0,
+                    base_damage: damage_per_hit,
+                    drain_damage: 0.0,
+                    damage_prevented_to_hull: 0.0,
+                    hits_count: 1,
+                },
+                time_millis: i * 100,
+            })
+            .collect()
+    }
+
+    /// The height of the line must be the rate itself, whatever the smoothing.
+    /// The kernel used to be cut by subtracting a constant and compensating with
+    /// a fixed 0.1%, so the line read low — by 3.8% at the slider's widest and
+    /// by 60% at the widest the text field takes.
+    #[test]
+    fn the_smoothing_width_does_not_change_the_height_of_the_line() {
+        // 10 hits a second of 100 damage each
+        let expected = 1000.0;
+
+        for sigma in [0.4f64, 1.0, 2.0, 6.0, 30.0, 120.0] {
+            // Long enough that the kernel sits inside the fight: a kernel
+            // hanging over the start or the end of the record reads low
+            // whatever the normalisation, which is a property of smoothing a
+            // finite fight and not what this test is about.
+            let seconds = (sigma * 10.0).max(60.0) as u32;
+            let points = steady_fire(100.0, seconds);
+            let sampled = GraphLine::<PreparedHitValue>::get_sample_gauss_filtered(
+                &points,
+                seconds as f64 / 2.0,
+                sigma,
+                DiagramType::Dps,
+                HealComponents::ALL,
+            );
+            let error = (sampled / expected - 1.0).abs();
+            assert!(
+                error < 0.01,
+                "at sigma {sigma} the line reads {sampled:.1} instead of {expected:.1} \
+                 ({:.1}% off)",
+                error * 100.0
+            );
+        }
+    }
+
+    /// Series are drawn largest first in every chart, so one player keeps one
+    /// colour and one place in the legend across all of them.
+    #[test]
+    fn lines_are_ordered_by_their_total() {
+        let line = |name: &str, total: f64| PreparedDataSet {
+            name: name.to_string(),
+            total_value: total,
+            values: Arc::from(Vec::new()),
+            start_time_s: 0.0,
+            duration_s: 10.0,
+        };
+        let graph = ValuePerSecondGraph::<PreparedHitValue>::from_data(
+            DiagramType::Dps,
+            [line("small", 10.0), line("big", 100.0), line("mid", 50.0)].into_iter(),
+            1.0,
+        );
+
+        let names: Vec<&str> = graph.lines.iter().map(|l| l.data.name.as_str()).collect();
+        assert_eq!(vec!["big", "mid", "small"], names);
+    }
+
+    /// Dropping the tallest line has to shrink the y range with it, or the
+    /// chart keeps room for something it no longer draws.
+    #[test]
+    fn removing_a_line_lets_the_y_range_shrink() {
+        let mut graph = ValuePerSecondGraph::<PreparedHitValue>::from_data(
+            DiagramType::Dps,
+            [PreparedDataSet {
+                name: "only".to_string(),
+                total_value: 100.0,
+                values: Arc::from(steady_fire(100.0, 10)),
+                start_time_s: 0.0,
+                duration_s: 10.0,
+            }]
+            .into_iter(),
+            1.0,
+        );
+        graph.lines[0].update(1.0, DiagramType::Dps, HealComponents::ALL);
+        graph.compute_largest_point();
+        assert!(graph.largest_point > 0.0);
+
+        graph.remove_line("only");
+        assert_eq!(0.0, graph.largest_point);
     }
 }

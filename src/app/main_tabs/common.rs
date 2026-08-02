@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use chrono::Duration;
 use eframe::egui::*;
 
@@ -289,17 +291,43 @@ pub fn show_time_slice_setting(time_slice: &mut f64, ui: &mut Ui) -> bool {
     .inner
 }
 
-pub fn show_time_filter_setting(filter: &mut f64, ui: &mut Ui) -> bool {
+/// Widest smoothing that still says something about the fight, as a share of
+/// its length. The kernel reaches four standard deviations either side of the
+/// sample, so at a sixteenth of the fight it spans a quarter of it — past that
+/// the line is mostly the ramps at the two ends, where the kernel hangs over
+/// the start and the finish and there is nothing to average with.
+const MAX_FILTER_SHARE_OF_COMBAT: f64 = 1.0 / 16.0;
+
+/// Bounds on that limit: never below the old fixed ceiling, so short fights
+/// keep the range they had, and never so wide that the slider becomes useless
+/// on a long one.
+const FILTER_LIMITS: RangeInclusive<f64> = 6.0..=60.0;
+
+pub fn show_time_filter_setting(filter: &mut f64, combat_duration_s: f64, ui: &mut Ui) -> bool {
+    let max = (combat_duration_s * MAX_FILTER_SHARE_OF_COMBAT)
+        .clamp(*FILTER_LIMITS.start(), *FILTER_LIMITS.end());
+
     ui.horizontal(|ui| {
-        let changed = SliderTextEdit::new(filter, 0.4..=6.0, "filter slider")
+        // A value carried over from a longer fight has to come down with the
+        // limit, and that counts as a change so the charts are redrawn.
+        let mut changed = *filter > max;
+        *filter = filter.min(max);
+
+        changed |= SliderTextEdit::new(filter, 0.4..=max, "filter slider")
             .clamp_min(0.1)
-            .clamp_max(120.0)
+            .clamp_max(max)
             .desired_text_edit_width(30.0)
             .display_precision(4)
             .step_by(0.1)
             .show(ui)
             .changed();
-        ui.label("Gauss Filter Standard Deviation (how much to smooth the graph)");
+        ui.label("Gauss Filter Standard Deviation (how much to smooth the graph)")
+            .on_hover_text(format!(
+                "How far either side of a moment the graph averages.\n\
+                 Capped at {max:.0} s for this combat: the smoothing reaches four \
+                 times this far, and a window approaching the length of the fight \
+                 flattens the line into its own edges.",
+            ));
         changed
     })
     .inner

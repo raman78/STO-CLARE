@@ -31,13 +31,14 @@ mod fonts;
 #[cfg(target_os = "linux")]
 mod log_consolidation;
 pub mod logging;
-pub mod self_upgrade;
 mod main_tabs;
 mod overlay;
+pub mod self_upgrade;
 mod settings;
 mod state;
 mod status;
 mod summary_copy;
+pub mod theme;
 
 // The layer-shell overlay backend lives under `overlay::layer_shell`; re-export
 // the startup helper so main.rs can build the shared wgpu stack (see main.rs).
@@ -225,8 +226,7 @@ impl eframe::App for App {
                         // One row of the popup, used both for its height cap
                         // and for the room reserved inside it, so the two agree
                         // whatever the UI scale is.
-                        let row =
-                            ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+                        let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
                         // The combat on show, with its note where there is one,
                         // so the closed box says the same as the list entry it
                         // came from.
@@ -247,10 +247,7 @@ impl eframe::App for App {
                                 format!("{} — {}", self.main_tabs.identifier, note)
                             }
                         };
-                        ComboBox::new(
-                            ("combat list", self.combat_filter_generation),
-                            "Combats",
-                        )
+                        ComboBox::new(("combat list", self.combat_filter_generation), "Combats")
                             // Room for a full identifier — map, environment,
                             // level, date and time — plus a note of the full 50
                             // characters, on one line.
@@ -268,9 +265,7 @@ impl eframe::App for App {
                                 let visible = (0..self.combats.len())
                                     .filter(|&i| self.combat_matches_filter(i))
                                     .count();
-                                ui.set_min_height(
-                                    row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32,
-                                );
+                                ui.set_min_height(row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32);
                                 // The scroll area takes its viewport from the
                                 // content size it measured last frame. After a
                                 // filter is cleared the first frame still has

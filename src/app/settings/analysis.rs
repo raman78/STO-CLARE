@@ -4,14 +4,13 @@ use eframe::egui::*;
 
 use super::Settings;
 use crate::analyzer::{Combat, curated_map_identifiers, curated_map_names};
+use crate::app::theme;
 use crate::custom_widgets::table::Table;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
 const HEADER_HEIGHT: f32 = 15.0;
 const ROW_HEIGHT: f32 = 25.0;
-/// Amber used for shadow/overlap warnings.
-const WARN_COLOR: Color32 = Color32::from_rgb(0xd9, 0x95, 0x00);
 
 #[derive(Default)]
 pub struct AnalysisTab {
@@ -112,10 +111,9 @@ impl AnalysisTab {
         ui.separator();
 
         match self.selected_section {
-            AnalysisSection::CombatNames => {
-                self.combat_names_rules
-                    .show(&mut modified_settings.analysis, ui)
-            }
+            AnalysisSection::CombatNames => self
+                .combat_names_rules
+                .show(&mut modified_settings.analysis, ui),
             AnalysisSection::SourceReversal => self
                 .indirect_source_reversal_rules
                 .show(&mut modified_settings.analysis, ui),
@@ -394,7 +392,7 @@ impl CombatNameRules {
         // Legend for the per-row ⚠, directly under the rules frame above.
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.colored_label(WARN_COLOR, "⚠");
+            ui.colored_label(theme::palette().warn, "⚠");
             ui.label(
                 RichText::new(
                     "= this rule overlaps an auto-detected map (your rule takes priority \
@@ -567,7 +565,8 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         if let Some(row_warning) = row_warning {
                             r.cell(|ui| match row_warning(rule.borrow()) {
                                 Some(tooltip) => {
-                                    ui.colored_label(WARN_COLOR, "⚠").on_hover_text(tooltip);
+                                    ui.colored_label(theme::palette().warn, "⚠")
+                                        .on_hover_text(tooltip);
                                 }
                                 // Keep the column width constant whether or not a
                                 // warning shows, so toggling rules doesn't shift the row.
@@ -802,8 +801,14 @@ mod tests {
 
     #[test]
     fn strip_category_prefix_removes_only_a_leading_bracket_tag() {
-        assert_eq!(strip_category_prefix("[Patrol] Trouble Over Terrh"), "Trouble Over Terrh");
-        assert_eq!(strip_category_prefix("[TFO] Azure Nebula Rescue"), "Azure Nebula Rescue");
+        assert_eq!(
+            strip_category_prefix("[Patrol] Trouble Over Terrh"),
+            "Trouble Over Terrh"
+        );
+        assert_eq!(
+            strip_category_prefix("[TFO] Azure Nebula Rescue"),
+            "Azure Nebula Rescue"
+        );
         assert_eq!(strip_category_prefix("Infected Space"), "Infected Space");
         // A bracket that is not a leading category tag is left alone.
         assert_eq!(strip_category_prefix("Nukara [x]"), "Nukara [x]");
@@ -874,8 +879,6 @@ mod tests {
         }
 
         // A rule that merely mentions an unrelated name is still not flagged.
-        assert!(
-            CombatNameRules::overlapping_maps(&rule("My Own Thing"), &identifiers).is_empty()
-        );
+        assert!(CombatNameRules::overlapping_maps(&rule("My Own Thing"), &identifiers).is_empty());
     }
 }

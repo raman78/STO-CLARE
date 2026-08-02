@@ -1,5 +1,6 @@
 use eframe::egui::*;
 
+use crate::app::theme;
 use crate::helpers::number_formatting::NumberFormatter;
 
 pub struct StatusIndicator {
@@ -33,17 +34,17 @@ impl StatusIndicator {
         };
         match status {
             Status::NothingLoaded => {
-                ui.label(WidgetText::from("？").color(Color32::YELLOW))
+                ui.label(WidgetText::from("？").color(theme::palette().busy))
                     .on_hover_text("nothing loaded yet");
             }
             Status::Busy => {
-                ui.label(WidgetText::from("⏳").color(Color32::YELLOW))
+                ui.label(WidgetText::from("⏳").color(theme::palette().busy))
                     .on_hover_text("Working..");
             }
             Status::LoadError {
                 combatlog_file: path,
             } => {
-                ui.label(WidgetText::from("✖").color(Color32::RED))
+                ui.label(WidgetText::from("✖").color(theme::palette().error))
                     .on_hover_ui(|ui| {
                         ui.label("failed to load log from:");
                         ui.label(path);
@@ -53,7 +54,7 @@ impl StatusIndicator {
                 combatlog_file,
                 file_size,
             } => {
-                ui.label(WidgetText::from("✔").color(Color32::GREEN))
+                ui.label(WidgetText::from("✔").color(theme::palette().ok))
                     .on_hover_ui(|ui| {
                         ui.label("log loaded from:");
                         ui.label(combatlog_file);

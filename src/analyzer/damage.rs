@@ -305,7 +305,8 @@ mod tests {
 
         let mut with_drain = DamageMetrics::default();
         with_drain.calc_and_apply_delta(&shot);
-        with_drain.calc_and_apply_delta(&[BaseHit::shield_drain(5000.0, ValueFlags::NONE).to_hit(0)]);
+        with_drain
+            .calc_and_apply_delta(&[BaseHit::shield_drain(5000.0, ValueFlags::NONE).to_hit(0)]);
 
         assert_eq!(
             without_drain.damage_resistance_percentage, with_drain.damage_resistance_percentage,
@@ -351,7 +352,10 @@ mod tests {
 
         assert_eq!(metrics.hits.hull, 2);
         assert_eq!(metrics.hits.shield, 1);
-        assert_eq!(metrics.crits, 1, "only the hull crit counts, not the shield crit");
+        assert_eq!(
+            metrics.crits, 1,
+            "only the hull crit counts, not the shield crit"
+        );
         // Previously `hits.hull - crits` (2 - 3 with the shield crit) underflowed.
         metrics.recalculate_time_based_metrics(10.0);
         assert_eq!(metrics.average_non_crit_hull_hit, Some(150.0));

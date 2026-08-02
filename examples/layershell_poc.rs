@@ -9,6 +9,11 @@
 //! Then launch STO (borderless or fullscreen) and check whether the box stays
 //! on top. Close with Ctrl-C in the terminal.
 
+use smithay_client_toolkit::reexports::client::{
+    Connection, QueueHandle,
+    globals::registry_queue_init,
+    protocol::{wl_output, wl_shm, wl_surface},
+};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -16,30 +21,27 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
+        WaylandSurface,
         wlr_layer::{
             Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
             LayerSurfaceConfigure,
         },
-        WaylandSurface,
     },
-    shm::{slot::SlotPool, Shm, ShmHandler},
-};
-use smithay_client_toolkit::reexports::client::{
-    globals::registry_queue_init,
-    protocol::{wl_output, wl_shm, wl_surface},
-    Connection, QueueHandle,
+    shm::{Shm, ShmHandler, slot::SlotPool},
 };
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 140;
 
 fn main() {
-    let conn = Connection::connect_to_env().expect("no Wayland connection (is this a Wayland session?)");
+    let conn =
+        Connection::connect_to_env().expect("no Wayland connection (is this a Wayland session?)");
     let (globals, mut event_queue) = registry_queue_init(&conn).unwrap();
     let qh = event_queue.handle();
 
     let compositor = CompositorState::bind(&globals, &qh).expect("wl_compositor not available");
-    let layer_shell = LayerShell::bind(&globals, &qh).expect("wlr-layer-shell not available on this compositor");
+    let layer_shell =
+        LayerShell::bind(&globals, &qh).expect("wlr-layer-shell not available on this compositor");
     let shm = Shm::bind(&globals, &qh).expect("wl_shm not available");
 
     let surface = compositor.create_surface(&qh);
@@ -47,7 +49,7 @@ fn main() {
         &qh,
         surface,
         Layer::Overlay,
-        Some("sto-cla-overlay"),
+        Some("sto-clare-overlay"),
         None,
     );
     layer.set_anchor(Anchor::TOP | Anchor::RIGHT);
@@ -55,7 +57,8 @@ fn main() {
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
     layer.commit();
 
-    let pool = SlotPool::new((WIDTH * HEIGHT * 4) as usize, &shm).expect("failed to create shm pool");
+    let pool =
+        SlotPool::new((WIDTH * HEIGHT * 4) as usize, &shm).expect("failed to create shm pool");
 
     let mut state = Poc {
         registry_state: RegistryState::new(&globals),
@@ -68,7 +71,9 @@ fn main() {
         configured: false,
     };
 
-    println!("layer-shell PoC running: a coloured box should appear top-right, above other windows.");
+    println!(
+        "layer-shell PoC running: a coloured box should appear top-right, above other windows."
+    );
     println!("Launch the game and check if it stays on top. Ctrl-C to quit.");
     loop {
         event_queue.blocking_dispatch(&mut state).unwrap();
@@ -140,15 +145,43 @@ impl LayerShellHandler for Poc {
 }
 
 impl CompositorHandler for Poc {
-    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
-    fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
+    fn scale_factor_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: i32,
+    ) {
+    }
+    fn transform_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: wl_output::Transform,
+    ) {
+    }
     fn frame(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
         if self.configured {
             self.draw(qh);
         }
     }
-    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
-    fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
+    fn surface_leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
 }
 
 impl OutputHandler for Poc {

@@ -230,10 +230,14 @@ fn append_and_verify(
     target.flush()?;
     target.sync_data()?;
     if from + copied != len {
-        return Err(io::Error::other("short read while consolidating combat log"));
+        return Err(io::Error::other(
+            "short read while consolidating combat log",
+        ));
     }
     if base + copied != target.metadata()?.len() {
-        return Err(io::Error::other("short write while consolidating combat log"));
+        return Err(io::Error::other(
+            "short write while consolidating combat log",
+        ));
     }
     verify_range(src, from, target_path, base, copied)?;
     Ok(len)
@@ -301,16 +305,29 @@ mod tests {
 
     #[test]
     fn merges_complete_files_and_mirrors_active() {
-        let dir = std::env::temp_dir().join(format!("cla-consolidation-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cla-consolidation-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
         // Two complete (older) files and one active (newest) one. Give the
         // active file the latest mtime by writing it last.
-        write(&dir, "combatlog_2026-07-19_10-00-00.log", "26:07:19:10:00:00.0::a\n");
-        write(&dir, "combatlog_2026-07-19_11-00-00.log", "26:07:19:11:00:00.0::b\n");
+        write(
+            &dir,
+            "combatlog_2026-07-19_10-00-00.log",
+            "26:07:19:10:00:00.0::a\n",
+        );
+        write(
+            &dir,
+            "combatlog_2026-07-19_11-00-00.log",
+            "26:07:19:11:00:00.0::b\n",
+        );
         std::thread::sleep(std::time::Duration::from_millis(20));
-        write(&dir, "combatlog_2026-07-19_12-00-00.log", "26:07:19:12:00:00.0::c\n");
+        write(
+            &dir,
+            "combatlog_2026-07-19_12-00-00.log",
+            "26:07:19:12:00:00.0::c\n",
+        );
 
         let mut consolidator = Consolidator::new(&dir);
         consolidator.tick(None);
@@ -335,7 +352,11 @@ mod tests {
             .unwrap();
         consolidator.tick(None);
         let merged = std::fs::read_to_string(&consolidator.target).unwrap();
-        assert_eq!(merged.matches("::c").count(), 1, "active must not be duplicated");
+        assert_eq!(
+            merged.matches("::c").count(),
+            1,
+            "active must not be duplicated"
+        );
         assert!(merged.ends_with("26:07:19:12:00:01.0::d\n"));
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -374,7 +395,10 @@ mod tests {
         let merged = std::fs::read(&consolidator.target).unwrap();
         let merged_lines = merged.iter().filter(|&&b| b == b'\n').count();
         println!("source lines: {total_lines}, merged lines: {merged_lines}");
-        assert_eq!(merged_lines, total_lines, "line count changed after consolidation");
+        assert_eq!(
+            merged_lines, total_lines,
+            "line count changed after consolidation"
+        );
 
         // Only the active file should remain alongside the consolidated target.
         let remaining: Vec<_> = std::fs::read_dir(&dir)
@@ -390,8 +414,8 @@ mod tests {
 
     #[test]
     fn verify_range_detects_mismatch_and_accepts_match() {
-        let dir = std::env::temp_dir()
-            .join(format!("cla-consolidation-verify-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cla-consolidation-verify-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -414,8 +438,8 @@ mod tests {
 
     #[test]
     fn preserves_every_byte_including_large_files() {
-        let dir = std::env::temp_dir()
-            .join(format!("cla-consolidation-large-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cla-consolidation-large-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -424,14 +448,24 @@ mod tests {
         let big: String = (0..5000)
             .map(|i| format!("26:07:19:10:{:02}:{:02}.0::line-{i}\n", i / 60 % 60, i % 60))
             .collect();
-        assert!(big.len() > VERIFY_CHUNK, "big file must span multiple chunks");
+        assert!(
+            big.len() > VERIFY_CHUNK,
+            "big file must span multiple chunks"
+        );
         write(&dir, "combatlog_2026-07-19_10-00-00.log", &big);
-        write(&dir, "combatlog_2026-07-19_11-00-00.log", "26:07:19:11:00:00.0::mid\n");
+        write(
+            &dir,
+            "combatlog_2026-07-19_11-00-00.log",
+            "26:07:19:11:00:00.0::mid\n",
+        );
         std::thread::sleep(std::time::Duration::from_millis(20));
-        write(&dir, "combatlog_2026-07-19_12-00-00.log", "26:07:19:12:00:00.0::active\n");
+        write(
+            &dir,
+            "combatlog_2026-07-19_12-00-00.log",
+            "26:07:19:12:00:00.0::active\n",
+        );
 
-        let expected =
-            format!("{big}26:07:19:11:00:00.0::mid\n26:07:19:12:00:00.0::active\n");
+        let expected = format!("{big}26:07:19:11:00:00.0::mid\n26:07:19:12:00:00.0::active\n");
 
         let mut consolidator = Consolidator::new(&dir);
         consolidator.tick(None);
@@ -448,10 +482,15 @@ mod tests {
 
     #[test]
     fn restart_does_not_reduplicate_active() {
-        let dir = std::env::temp_dir().join(format!("cla-consolidation-restart-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cla-consolidation-restart-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        write(&dir, "combatlog_2026-07-19_12-00-00.log", "26:07:19:12:00:00.0::c\n");
+        write(
+            &dir,
+            "combatlog_2026-07-19_12-00-00.log",
+            "26:07:19:12:00:00.0::c\n",
+        );
 
         let mut consolidator = Consolidator::new(&dir);
         consolidator.tick(None);
@@ -460,7 +499,11 @@ mod tests {
         restarted.tick(None);
 
         let merged = std::fs::read_to_string(&restarted.target).unwrap();
-        assert_eq!(merged.matches("::c").count(), 1, "restart re-appended active");
+        assert_eq!(
+            merged.matches("::c").count(),
+            1,
+            "restart re-appended active"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

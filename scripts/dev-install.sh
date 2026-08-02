@@ -2,7 +2,7 @@
 # Local "editable" install (the closest Rust analogue to `pipx install -e .`).
 #
 # Rust compiles to a native binary, so there is no true editable install.
-# Instead we build a release binary and symlink `sto-cla` to it: after every
+# Instead we build a release binary and symlink `sto-clare` to it: after every
 # `cargo build --release` the symlink points at the freshly built binary, so
 # your latest changes run immediately — no reinstall step.
 #
@@ -11,12 +11,12 @@
 set -e
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-TARGET="$PROJECT_DIR/target/release/STO_CombatLogAnalyzer"
+TARGET="$PROJECT_DIR/target/release/sto-clare"
 BIN_DIR="$HOME/.local/bin"
-LINK="$BIN_DIR/sto-cla"
+LINK="$BIN_DIR/sto-clare"
 
 echo "==========================================="
-echo "  STO Combat Log Analyzer — dev install     "
+echo "        STO-CLARE — dev install           "
 echo "==========================================="
 echo ""
 
@@ -35,10 +35,31 @@ echo "Linked $LINK -> $TARGET"
 # Register the menu entry / icon for this build location.
 "$TARGET" --install-desktop
 
+# A second entry that builds the checkout before running it, for trying the
+# current source without going through a terminal first. It opens one itself so
+# the build is visible; see scripts/run-dev.sh.
+APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+DEV_ENTRY="$APPS_DIR/sto-clare-dev.desktop"
+mkdir -p "$APPS_DIR"
+cat > "$DEV_ENTRY" <<EOF
+[Desktop Entry]
+Type=Application
+Name=STO-CLARE (dev build)
+Comment=Build the current source, then run it
+Exec="$PROJECT_DIR/scripts/run-dev.sh"
+Icon=$PROJECT_DIR/icon/icon.png
+Terminal=true
+Categories=Game;
+StartupNotify=true
+StartupWMClass=sto-clare
+EOF
+echo "Wrote $DEV_ENTRY"
+
 echo ""
 echo "==========================================="
-echo "Done. Run it with:  sto-cla"
+echo "Done. Run it with:  sto-clare"
 echo "After code changes:  cargo build --release  (the symlink auto-updates)"
+echo "Or use the \"STO-CLARE (dev build)\" menu entry, which builds first."
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) echo ""
