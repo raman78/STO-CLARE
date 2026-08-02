@@ -221,12 +221,12 @@ impl HealTab {
         combat_duration_s: f64,
         components: HealComponents,
     ) -> HealDiagrams {
-        return HealDiagrams::from_data(
+        HealDiagrams::from_data(
             [Self::make_single_data_set(part, combat_duration_s)].into_iter(),
             filter,
             heal_time_slice,
             components,
-        );
+        )
     }
 
     fn make_single_data_set(part: &HealTablePart, combat_duration_s: f64) -> PreparedHealDataSet {

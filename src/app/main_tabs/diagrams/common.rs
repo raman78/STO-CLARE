@@ -394,10 +394,9 @@ pub fn format_axis(mark: GridMark, _: &RangeInclusive<f64>) -> String {
 pub fn format_element(bar: &Bar, _: &BarChart, more_decimals: bool) -> String {
     let mut formatter = NumberFormatter::new();
     if bar.name.is_empty() {
-        return format!(
-            "{}",
-            formatter.format(bar.value, if more_decimals { 2 } else { 0 })
-        );
+        return formatter
+            .format(bar.value, if more_decimals { 2 } else { 0 })
+            .to_string();
     }
     format!(
         "{}\n{}",
@@ -419,10 +418,11 @@ pub fn time_slices<'a, T: PreparedValue>(
     let last_time_m = seconds_to_millis(data.start_time_s + data.duration_s);
     let mut time_slice_end = first_time_slice + time_slice_m;
     let mut values = &*data.values;
-    let sliced_values = std::iter::from_fn(move || {
+
+    std::iter::from_fn(move || {
         // Keep emitting (empty) buckets to the end of the combat, so a series
         // that stops early still shows the rest of the fight as nothing.
-        if values.len() == 0 && time_slice_end > last_time_m + time_slice_m {
+        if values.is_empty() && time_slice_end > last_time_m + time_slice_m {
             return None;
         }
         let slice_end = values
@@ -434,9 +434,7 @@ pub fn time_slices<'a, T: PreparedValue>(
         values = &values[slice_end..];
         time_slice_end += time_slice_m;
         Some((center, slice))
-    });
-
-    sliced_values
+    })
 }
 
 #[cfg(test)]

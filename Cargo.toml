@@ -15,7 +15,6 @@ readme = "README.md"
 eframe = { version = "0.34", features = ["wgpu"] }
 egui_plot = { version = "0.35" }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
-lazy_static = "1"
 regex = "1"
 bitflags = "2"
 log = { version = "0.4", features = ["serde"] }

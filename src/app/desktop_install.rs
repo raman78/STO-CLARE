@@ -162,10 +162,10 @@ fn sweep_stale_entries(apps_dir: &std::path::Path, our_exec: &str, our_name: &st
         for line in text.lines() {
             if let Some(rest) = line.strip_prefix("Exec=") {
                 let exec = rest.trim().trim_matches('"');
-                if exec == our_exec || !std::path::Path::new(exec).exists() {
-                    if std::fs::remove_file(entry.path()).is_ok() {
-                        log::info!("desktop installer: removed stale entry {name}");
-                    }
+                if (exec == our_exec || !std::path::Path::new(exec).exists())
+                    && std::fs::remove_file(entry.path()).is_ok()
+                {
+                    log::info!("desktop installer: removed stale entry {name}");
                 }
                 break;
             }

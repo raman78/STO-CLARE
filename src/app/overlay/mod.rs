@@ -202,7 +202,7 @@ impl Overlay {
     pub fn new(root_handler: &AnalysisHandler, settings: &Settings) -> Self {
         Self(Arc::new(Mutex::new(OverlayInner {
             move_around: true,
-            columns: COLUMNS.iter().cloned().collect(),
+            columns: COLUMNS.to_vec(),
             // Must start non-zero: Wayland rejects a 0x0 xdg_surface geometry,
             // which crashes wgpu ("Surface is not configured for presentation").
             // Matches the min_inner_size used when building the viewport below.
@@ -237,7 +237,7 @@ impl Overlay {
         self.0.lock().overlay_gpu = Some(gpu);
     }
 
-    pub fn show(self: &Self, ui: &mut Ui) {
+    pub fn show(&self, ui: &mut Ui) {
         let mut inner = self.0.lock();
 
         if Button::new("Overlay")
@@ -310,15 +310,15 @@ impl Overlay {
                 inner.force_update(ui.ctx());
             }
 
-            if inner.layer.is_none() {
-                if let Some(gpu) = inner.overlay_gpu.clone() {
-                    let position = inner
-                        .settings
-                        .general
-                        .overlay_position
-                        .map_or((0, 0), |[top, left]| (top, left));
-                    inner.layer = Some(layer_shell::LayerOverlay::spawn(gpu, position));
-                }
+            if inner.layer.is_none()
+                && let Some(gpu) = inner.overlay_gpu.clone()
+            {
+                let position = inner
+                    .settings
+                    .general
+                    .overlay_position
+                    .map_or((0, 0), |[top, left]| (top, left));
+                inner.layer = Some(layer_shell::LayerOverlay::spawn(gpu, position));
             }
             inner.check_update(ui.ctx());
             let data = inner.to_overlay_data();
@@ -545,8 +545,10 @@ impl OverlayInner {
             ctx.request_repaint_of(Overlay::viewport_id());
         }
 
-        let mut display_data = DisplayData::default();
-        display_data.columns = self.columns.iter().filter(|c| c.enabled).cloned().collect();
+        let mut display_data = DisplayData {
+            columns: self.columns.iter().filter(|c| c.enabled).cloned().collect(),
+            ..Default::default()
+        };
         let mut formatter = NumberFormatter::new();
         for (&player_name, player) in combat.players.iter() {
             let mut display_player = DisplayPlayer {
@@ -567,7 +569,7 @@ impl OverlayInner {
             display_data.players.push(display_player);
         }
 
-        if display_data.columns.len() > 0 {
+        if !display_data.columns.is_empty() {
             display_data
                 .players
                 .sort_by(|p1, p2| p1.sort_value().total_cmp(&p2.sort_value()).reverse());

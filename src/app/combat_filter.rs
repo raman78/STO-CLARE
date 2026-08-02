@@ -72,15 +72,15 @@ impl CombatFilter {
         difficulty: Option<Difficulty>,
         base_name: &str,
     ) -> bool {
-        if let Some(wanted) = &self.environment {
-            if environment != Some(wanted.as_str()) {
-                return false;
-            }
+        if let Some(wanted) = &self.environment
+            && environment != Some(wanted.as_str())
+        {
+            return false;
         }
-        if let Some(wanted) = &self.map {
-            if base_name != wanted {
-                return false;
-            }
+        if let Some(wanted) = &self.map
+            && base_name != wanted
+        {
+            return false;
         }
         self.difficulty.matches(difficulty)
     }
@@ -117,25 +117,23 @@ impl CombatFilter {
     /// Drops a choice that the other filters have made impossible, so the list
     /// can never end up empty through a combination nothing matches.
     fn drop_impossible_choices(&mut self, combats: &[CombatEntry]) {
-        if let Some(environment) = &self.environment {
-            if !self
+        if let Some(environment) = &self.environment
+            && !self
                 .options(combats, Dimension::Environment)
                 .environments
                 .iter()
                 .any(|e| e == environment)
-            {
-                self.environment = None;
-            }
+        {
+            self.environment = None;
         }
-        if let Some(map) = &self.map {
-            if !self
+        if let Some(map) = &self.map
+            && !self
                 .options(combats, Dimension::Map)
                 .maps
                 .iter()
                 .any(|m| m == map)
-            {
-                self.map = None;
-            }
+        {
+            self.map = None;
         }
         if self.difficulty != DifficultyFilter::Any
             && !self

@@ -121,7 +121,7 @@ impl Settings {
             .and_then(|f| std::fs::read_to_string(&f).ok())
             .or_else(|| Self::legacy_file_path().and_then(|f| std::fs::read_to_string(&f).ok()))
             .and_then(|d| serde_json::from_str(&d).ok())
-            .unwrap_or_else(|| Self::default())
+            .unwrap_or_default()
     }
 
     pub fn save(&self) {

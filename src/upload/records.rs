@@ -83,10 +83,7 @@ impl Records {
     }
 
     fn collapsed(&self) -> bool {
-        match self {
-            Self::Collapsed => true,
-            _ => false,
-        }
+        matches!(self, Self::Collapsed)
     }
 
     fn show_loading_ladders(ui: &mut Ui) {
@@ -105,7 +102,7 @@ impl Records {
     fn load_ladders(ctx: Context, url: Url) -> Self {
         let state = match Self::do_load_ladders(url.clone()) {
             Ok(ladders) => {
-                if ladders.results.len() == 0 {
+                if ladders.results.is_empty() {
                     return Self::LoadError("Failed to load records tables.".into());
                 }
                 Self::Loaded(LoadedLadders::new(ladders, &ctx, url))
@@ -192,7 +189,7 @@ impl LoadedLadders {
                         .iter()
                         .enumerate()
                         .any(|(index, ladder_type)| {
-                            ui.selectable_value(&mut self.selected_type, index, &*ladder_type)
+                            ui.selectable_value(&mut self.selected_type, index, ladder_type)
                                 .changed()
                         })
                 })
@@ -420,7 +417,7 @@ impl LoadedEntries {
     }
 
     fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &Url) {
-        if self.entries.len() == 0 {
+        if self.entries.is_empty() {
             ui.label("no entries");
             return;
         }
@@ -494,10 +491,7 @@ enum DownloadLogState {
 
 impl DownloadLogState {
     fn is_idle(&self) -> bool {
-        match self {
-            DownloadLogState::Idle => true,
-            _ => false,
-        }
+        matches!(self, DownloadLogState::Idle)
     }
 
     fn show_download_button(&mut self, row: &mut TableRow, frame: &Frame, url: &Url, log_id: i32) {
@@ -509,15 +503,13 @@ impl DownloadLogState {
             })
             .on_hover_text("download log")
             .clicked()
-        {
-            if let Some(file) = rfd::FileDialog::new()
+            && let Some(file) = rfd::FileDialog::new()
                 .set_parent(frame)
                 .set_title("Download combatlog File")
                 .add_filter("combatlog", &["log"])
                 .save_file()
-            {
-                *self = Self::begin_download_log(url.clone(), file, log_id);
-            }
+        {
+            *self = Self::begin_download_log(url.clone(), file, log_id);
         }
     }
 
@@ -642,7 +634,7 @@ impl From<LaddersModel> for Ladders {
             .iter()
             .map(|l| &l.variant)
             .unique()
-            .map(|v| v.clone())
+            .cloned()
             .collect();
         Self {
             ladders: types
@@ -651,7 +643,8 @@ impl From<LaddersModel> for Ladders {
                     value
                         .results
                         .iter()
-                        .filter_map(|l| (l.variant == *t).then(|| l.into()))
+                        .filter(|&l| l.variant == *t)
+                        .map(|l| l.into())
                         .collect()
                 })
                 .collect(),
@@ -699,17 +692,14 @@ impl DataValue {
         match value {
             Value::Null => Self::non_number(String::new()),
             Value::Bool(bool) => Self::non_number(if *bool { "✔" } else { "✖" }.into()),
-            Value::Number(number) => Self::number(
-                if number.is_f64() {
-                    formatter.format(number.as_f64().unwrap(), 2)
-                } else {
-                    number.to_string()
-                }
-                .into(),
-            ),
+            Value::Number(number) => Self::number(if number.is_f64() {
+                formatter.format(number.as_f64().unwrap(), 2)
+            } else {
+                number.to_string()
+            }),
             Value::String(str) => Self::non_number(str.into()),
-            Value::Array(array) => Self::non_number(format!("{:?}", array).into()),
-            Value::Object(object) => Self::non_number(format!("{:?}", object).into()),
+            Value::Array(array) => Self::non_number(format!("{:?}", array)),
+            Value::Object(object) => Self::non_number(format!("{:?}", object)),
         }
     }
 
@@ -760,7 +750,7 @@ impl TableColumn {
 
             for (name, value) in entry.data.iter() {
                 columns
-                    .entry(&name)
+                    .entry(name)
                     .or_default()
                     .push(DataValue::from_json_value(value, formatter));
             }
@@ -773,7 +763,7 @@ impl TableColumn {
 
         let mut columns: Vec<Self> = [("Rank", ranks), ("Player", players), ("Date", dates)]
             .into_iter()
-            .chain(columns.into_iter())
+            .chain(columns)
             .map(|(n, c)| Self {
                 name: n.replace('_', " "),
                 values: c,
@@ -798,7 +788,6 @@ impl TableColumn {
 
 fn str_equal_ignore_case(str1: &str, str2: &str) -> bool {
     str1.chars()
-        .map(|c| c.to_lowercase())
-        .flatten()
-        .eq(str2.chars().map(|c| c.to_lowercase()).flatten())
+        .flat_map(|c| c.to_lowercase())
+        .eq(str2.chars().flat_map(|c| c.to_lowercase()))
 }

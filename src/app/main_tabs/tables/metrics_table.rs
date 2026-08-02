@@ -176,23 +176,23 @@ impl<T: 'static> MetricsTable<T> {
         ScrollArea::horizontal().show(ui, |ui| {
             Table::new(ui)
                 .cell_spacing(10.0)
-                .header(header_height, |mut r| {
+                .header(header_height, |r| {
                     r.cell(|ui| {
                         ui.label("Name");
                     });
 
                     for (index, column) in self.columns.iter().enumerate() {
-                        self.show_column_header(&mut r, column, split);
+                        self.show_column_header(r, column, split);
                         if closes_group(self.columns, index, split) {
-                            show_group_separator(&mut r);
+                            show_group_separator(r);
                         }
                     }
                 })
-                .body(ROW_HEIGHT, |mut t| {
+                .body(ROW_HEIGHT, |t| {
                     for player in self.players.iter_mut() {
                         player.show(
-                            &self.columns,
-                            &mut t,
+                            self.columns,
+                            t,
                             0.0,
                             &mut self.selection,
                             &mut on_selected,
@@ -262,14 +262,14 @@ impl<T: 'static> MetricsTable<T> {
         &mut self,
         mut key: impl FnMut(&MetricsTablePart<T>) -> Option<f64> + Copy,
     ) {
-        self.sort_by_desc(move |p| key(p).map(|v| F64TotalOrd(v)));
+        self.sort_by_desc(move |p| key(p).map(F64TotalOrd));
     }
 
     pub fn sort_by_option_f64_asc(
         &mut self,
         mut key: impl FnMut(&MetricsTablePart<T>) -> Option<f64> + Copy,
     ) {
-        self.sort_by_asc(move |p| key(p).map(|v| F64TotalOrd(v)));
+        self.sort_by_asc(move |p| key(p).map(F64TotalOrd));
     }
 
     pub fn sort_by_desc<K: Ord>(&mut self, mut key: impl FnMut(&MetricsTablePart<T>) -> K + Copy) {
@@ -323,12 +323,12 @@ impl<T> MetricsTablePart<T> {
         modifiers: Modifiers,
         split: bool,
     ) {
-        let response = table.selectable_row(selection.is_selected(self.id), |mut r| {
+        let response = table.selectable_row(selection.is_selected(self.id), |r| {
             r.cell(|ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(indent * 30.0);
                     let symbol = if self.open { "⏷" } else { "⏵" };
-                    let can_open = self.sub_parts.len() > 0;
+                    let can_open = !self.sub_parts.is_empty();
                     if ui
                         .add_visible(can_open, Button::selectable(false, symbol))
                         .clicked()
@@ -342,16 +342,16 @@ impl<T> MetricsTablePart<T> {
 
             for (index, column) in columns.iter().enumerate() {
                 if split && !column.parts.is_empty() {
-                    show_group_separator(&mut r);
+                    show_group_separator(r);
                 }
-                (column.show)(self, &mut r);
+                (column.show)(self, r);
                 if split {
                     for part in column.parts.iter() {
-                        (part.show)(self, &mut r);
+                        (part.show)(self, r);
                     }
                 }
                 if closes_group(columns, index, split) {
-                    show_group_separator(&mut r);
+                    show_group_separator(r);
                 }
             }
         });

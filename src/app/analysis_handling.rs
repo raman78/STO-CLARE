@@ -359,7 +359,7 @@ impl AnalysisContext {
                 Instruction::RemoveHandler(id) => {
                     if let Some(index) = self.handlers.iter().position(|t| t.id == id) {
                         self.handlers.remove(index);
-                        if self.handlers.len() == 0 {
+                        if self.handlers.is_empty() {
                             return;
                         }
                         self.update_auto_refresh();
@@ -506,7 +506,7 @@ impl AnalysisContext {
                 return;
             }
 
-            let delta_time = match ctx.last_refresh.elapsed().map(|d| Duration::from_std(d)) {
+            let delta_time = match ctx.last_refresh.elapsed().map(Duration::from_std) {
                 Ok(Ok(t)) => t,
                 err => {
                     info!("failed to retrieve elapsed time {:?}", err);
@@ -729,9 +729,8 @@ impl AutoRefreshContext {
 
 impl HandlerContext {
     fn send(&self, info: AnalysisInfo, ctx: &Context) {
-        match self.tx.send(info) {
-            Ok(_) => ctx.request_repaint_of(self.viewport),
-            Err(_) => (),
+        if self.tx.send(info).is_ok() {
+            ctx.request_repaint_of(self.viewport)
         }
     }
 }

@@ -10,7 +10,7 @@ pub struct F64TotalOrd(pub f64);
 
 impl PartialOrd for F64TotalOrd {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.0.total_cmp(&other.0))
+        Some(self.cmp(other))
     }
 }
 

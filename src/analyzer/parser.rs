@@ -1,3 +1,4 @@
+use std::sync::LazyLock;
 use std::{
     collections::VecDeque,
     fmt::Write,
@@ -8,7 +9,6 @@ use std::{
 };
 
 use chrono::NaiveDateTime;
-use lazy_static::lazy_static;
 use log::error;
 use regex::Regex;
 
@@ -311,10 +311,10 @@ impl Parser {
         Some(record)
     }
 
-    fn parse_time<'b>(time: &'b str, scratch_pad: &mut String) -> Option<NaiveDateTime> {
+    fn parse_time(time: &str, scratch_pad: &mut String) -> Option<NaiveDateTime> {
         scratch_pad.clear();
         write!(scratch_pad, "{}00", time).ok()?;
-        let time = NaiveDateTime::parse_from_str(&scratch_pad, "%y:%m:%d:%H:%M:%S%.3f").ok()?;
+        let time = NaiveDateTime::parse_from_str(scratch_pad, "%y:%m:%d:%H:%M:%S%.3f").ok()?;
 
         Some(time)
     }
@@ -414,12 +414,11 @@ impl LineKey {
     }
 }
 
-lazy_static! {
-    static ref ID_AND_UNIQUE_NAME_REGEX: Regex = Regex::new(
-        r"(?P<type>P|C|S)\[(?P<id>\d+)(@(?P<player_id>\d+))?(\s+(?P<unique_name>[^\]]+))?\]"
-    )
-    .unwrap();
-}
+static ID_AND_UNIQUE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?P<type>P|C|S)\[(?P<id>\d+)(@(?P<player_id>\d+))?(\s+(?P<unique_name>[^\]]+))?\]")
+        .unwrap()
+});
+
 impl<'a> Entity<'a> {
     fn parse(name: Cow<'a, str>, id_and_unique_name: Cow<'a, str>) -> Option<Self> {
         if name.is_empty() && (id_and_unique_name.is_empty() || id_and_unique_name == "*") {
@@ -481,17 +480,11 @@ impl<'a> Entity<'a> {
     }
 
     pub fn is_player(&self) -> bool {
-        match self {
-            Entity::Player { .. } => true,
-            _ => false,
-        }
+        matches!(self, Entity::Player { .. })
     }
 
     pub fn is_none(&self) -> bool {
-        match self {
-            Entity::None { .. } => true,
-            _ => false,
-        }
+        matches!(self, Entity::None { .. })
     }
 }
 
@@ -538,7 +531,7 @@ impl RecordValue {
         if value2 == 0.0 {
             return Some(Self::Damage(BaseHit::hull(value1, flags, value1)));
         }
-        return Some(Self::Damage(BaseHit::hull(value1, flags, value2)));
+        Some(Self::Damage(BaseHit::hull(value1, flags, value2)))
     }
 
     pub fn is_all_zero(&self) -> bool {

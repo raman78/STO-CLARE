@@ -22,7 +22,7 @@ impl DamageTab {
         Self {
             table: DamageTable::empty(),
             dmg_main_diagrams: DamageDiagrams::empty(),
-            damage_group: damage_group,
+            damage_group,
             filter: 0.4,
             diagram_time_slice: 1.0,
             dmg_selection_diagrams: None,
@@ -140,11 +140,11 @@ impl DamageTab {
         damage_time_slice: f64,
         combat_duration_s: f64,
     ) -> DamageDiagrams {
-        return DamageDiagrams::from_data(
+        DamageDiagrams::from_data(
             [Self::make_single_data_set(part, combat_duration_s)].into_iter(),
             filter,
             damage_time_slice,
-        );
+        )
     }
 
     fn make_single_data_set(

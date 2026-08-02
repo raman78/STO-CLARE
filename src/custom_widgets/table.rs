@@ -1,5 +1,3 @@
-use std::f32::INFINITY;
-
 use eframe::{egui::*, emath::GuiRounding};
 
 pub struct Table<'a> {
@@ -58,7 +56,7 @@ impl<'a> Table<'a> {
             ui,
             id,
             min_scroll_height: 0.0,
-            max_scroll_height: INFINITY,
+            max_scroll_height: f32::INFINITY,
             cell_spacing: 5.0,
             striped: true,
         }
@@ -95,7 +93,7 @@ impl<'a> Table<'a> {
         add_header: impl FnOnce(&mut TableRow),
     ) -> TableWithHeader<'a> {
         let left_top = self.ui.cursor().left_top();
-        let mut state = State::load(&self.ui, self.id);
+        let mut state = State::load(self.ui, self.id);
         TableRow::show(
             self.ui,
             &mut state,
@@ -118,7 +116,7 @@ impl<'a> Table<'a> {
     }
 
     pub fn body(self, row_height: f32, add_body: impl FnOnce(&mut TableBody)) -> Rect {
-        let state = State::load(&self.ui, self.id);
+        let state = State::load(self.ui, self.id);
 
         self.body_inner(row_height, add_body, state, None)
     }
@@ -186,13 +184,13 @@ impl<'a> TableBody<'a> {
     pub fn row(&mut self, add_cells: impl FnOnce(&mut TableRow)) -> Response {
         let response = TableRow::show(
             self.ui,
-            &mut self.state,
+            self.state,
             self.current_row,
             self.left_top,
             self.row_height,
             self.cell_spacing,
             add_cells,
-            self.striped && (self.current_row % 2) == 0,
+            self.striped && self.current_row.is_multiple_of(2),
             None,
         );
 
@@ -208,13 +206,13 @@ impl<'a> TableBody<'a> {
     ) -> Response {
         let response = TableRow::show(
             self.ui,
-            &mut self.state,
+            self.state,
             self.current_row,
             self.left_top,
             self.row_height,
             self.cell_spacing,
             add_cells,
-            self.striped && (self.current_row % 2) == 0,
+            self.striped && self.current_row.is_multiple_of(2),
             Some(checked),
         );
 
@@ -252,11 +250,11 @@ impl<'a> TableRow<'a> {
 
         let mut row = TableRow {
             current_column: 0,
-            state: state,
+            state,
             ui,
             left_top,
             left_offset: 0.0,
-            row_height: row_height,
+            row_height,
             cell_spacing,
         };
         add_cells(&mut row);
@@ -343,7 +341,7 @@ impl ColumnState {
     }
 
     fn draw_separators(columns: &[Self], ui: &mut Ui, rect: Rect, cell_spacing: f32) {
-        if columns.len() == 0 {
+        if columns.is_empty() {
             return;
         }
 
@@ -361,8 +359,7 @@ impl ColumnState {
 
 impl State {
     fn load(ui: &Ui, id: Id) -> Self {
-        ui.data_mut(|d| d.get_temp(id))
-            .unwrap_or_else(|| Default::default())
+        ui.data_mut(|d| d.get_temp(id)).unwrap_or_default()
     }
 
     fn store(self, ui: &Ui, id: Id) {
@@ -420,13 +417,13 @@ fn draw_visuals(ui: &mut Ui, is_stripe: bool, checked: Option<bool>, response: &
         _ => (),
     }
 
-    if checked.is_some() && response.hovered() {
+    if let Some(checked) = checked
+        && response.hovered()
+    {
         ui.painter().rect_stroke(
             response.rect,
             0.0,
-            ui.style()
-                .interact_selectable(&response, checked.unwrap())
-                .bg_stroke,
+            ui.style().interact_selectable(response, checked).bg_stroke,
             StrokeKind::Inside,
         );
     }

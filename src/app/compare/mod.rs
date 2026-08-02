@@ -141,6 +141,7 @@ impl Default for CompareSettings {
     }
 }
 
+#[derive(Default)]
 pub struct CompareView {
     open: bool,
     selected: Vec<usize>,
@@ -149,18 +150,6 @@ pub struct CompareView {
     /// lists are filtered the same way and mean the same by each choice.
     filter: CombatFilter,
     comparison: Option<Comparison>,
-}
-
-impl Default for CompareView {
-    fn default() -> Self {
-        Self {
-            open: false,
-            selected: Vec::new(),
-            name_filter: String::new(),
-            filter: CombatFilter::default(),
-            comparison: None,
-        }
-    }
 }
 
 impl CompareView {

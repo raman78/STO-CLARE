@@ -33,7 +33,7 @@ impl DamageResistanceChart {
     }
 
     pub fn from_data(bars: impl Iterator<Item = PreparedDamageDataSet>, time_slice: f64) -> Self {
-        let bars: Vec<_> = bars.map(|d| DamageResistanceBars::new(d)).collect();
+        let bars: Vec<_> = bars.map(DamageResistanceBars::new).collect();
         let mut _self = Self {
             newly_created: true,
             bars,
@@ -96,7 +96,7 @@ impl DamageResistanceChart {
             self.newly_created = false;
         }
 
-        if self.bars.len() == 0 {
+        if self.bars.is_empty() {
             plot = plot.include_x(60.0);
         }
 

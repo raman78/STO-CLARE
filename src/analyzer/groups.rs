@@ -233,7 +233,7 @@ impl DamageGroup {
         if self.is_leaf() {
             hits_manager.add_leaf(self.hits.get_leaf());
             let delta_hits = &self.hits.get(hits_manager)[self.damage_metrics.hits.all as usize..];
-            if delta_hits.len() > 0 {
+            if !delta_hits.is_empty() {
                 self.max_one_hit.update_from_hits(self.name(), delta_hits);
                 let delta = self.damage_metrics.calc_and_apply_delta(delta_hits);
                 apply_delta(&delta, &self.max_one_hit);
@@ -253,7 +253,7 @@ impl DamageGroup {
                     });
                     for damage_type in sub_group.damage_types.iter() {
                         if !self.damage_types.contains(damage_type) {
-                            self.damage_types.insert(damage_type.clone());
+                            self.damage_types.insert(*damage_type);
                         }
                     }
 
@@ -357,7 +357,7 @@ impl HealGroup {
             ticks_manager.add_leaf(self.ticks.get_leaf());
             let delta_ticks =
                 &self.ticks.get(ticks_manager)[self.heal_metrics.ticks.all as usize..];
-            if delta_ticks.len() > 0 {
+            if !delta_ticks.is_empty() {
                 let delta = self.heal_metrics.calc_and_apply(delta_ticks);
                 apply_delta(&delta);
             }

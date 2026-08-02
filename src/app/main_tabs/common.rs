@@ -132,10 +132,10 @@ impl TextValue {
             };
         }
 
-        return Self {
+        Self {
             text: None,
             value: None,
-        };
+        }
     }
 
     pub fn show(&self, row: &mut TableRow) -> Option<Response> {

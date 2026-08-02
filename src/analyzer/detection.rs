@@ -18,9 +18,9 @@
 //! per-entity deaths, low tier to high), and a hull-damage tie-break for maps
 //! whose tiers share death counts (e.g. Hive Space).
 
+use std::sync::LazyLock;
 use std::{collections::HashMap, path::PathBuf};
 
-use lazy_static::lazy_static;
 use log::{info, warn};
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
@@ -305,11 +305,9 @@ pub struct Detected {
     pub combat_type: Option<String>,
 }
 
-lazy_static! {
-    /// The active rules, parsed once: a user override from the config dir if
-    /// present and valid, otherwise the bundled default.
-    pub static ref DETECTION_RULES: DetectionRules = load_rules();
-}
+/// The active rules, parsed once: a user override from the config dir if
+/// present and valid, otherwise the bundled default.
+pub static DETECTION_RULES: LazyLock<DetectionRules> = LazyLock::new(load_rules);
 
 /// Path to the optional override, e.g. `~/.config/STO-CLARE/detection_rules.json`.
 fn override_path() -> Option<PathBuf> {
@@ -319,18 +317,18 @@ fn override_path() -> Option<PathBuf> {
 /// Load the override file if it exists and parses; otherwise the embedded
 /// default. A malformed override is ignored (logged), never fatal.
 fn load_rules() -> DetectionRules {
-    if let Some(path) = override_path() {
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            match serde_json::from_str(&text) {
-                Ok(rules) => {
-                    info!("using detection rules override from {}", path.display());
-                    return rules;
-                }
-                Err(e) => warn!(
-                    "ignoring invalid detection rules override at {}: {e}",
-                    path.display()
-                ),
+    if let Some(path) = override_path()
+        && let Ok(text) = std::fs::read_to_string(&path)
+    {
+        match serde_json::from_str(&text) {
+            Ok(rules) => {
+                info!("using detection rules override from {}", path.display());
+                return rules;
             }
+            Err(e) => warn!(
+                "ignoring invalid detection rules override at {}: {e}",
+                path.display()
+            ),
         }
     }
     serde_json::from_str(include_str!("detection_rules.json"))
@@ -424,19 +422,19 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     // Hull-damage tie-break: overrides the death-count result where the tiers
     // share death counts (e.g. Hive Onslaught). Higher tiers still override lower.
     for tier in DIFFICULTY_ORDER {
-        if let Some(table) = def.hull_counts.get(&tier) {
-            if hull_damage_match(table, critters) {
-                difficulty = Some(tier);
-            }
+        if let Some(table) = def.hull_counts.get(&tier)
+            && hull_damage_match(table, critters)
+        {
+            difficulty = Some(tier);
         }
     }
     // Any-of hull tie-break: for faction-randomized maps, whichever listed
     // variant spawned decides the tier. Same low-to-high override.
     for tier in DIFFICULTY_ORDER {
-        if let Some(table) = def.hull_any.get(&tier) {
-            if hull_any_match(table, critters) {
-                difficulty = Some(tier);
-            }
+        if let Some(table) = def.hull_any.get(&tier)
+            && hull_any_match(table, critters)
+        {
+            difficulty = Some(tier);
         }
     }
 
@@ -445,15 +443,16 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     // disagreement is logged: on a map with hand-verified tables it means one of
     // the two is wrong, and that is exactly what we want to see.
     if let Some(global) = global {
-        if let Some(from_tables) = difficulty {
-            if from_tables != global && from_tables != Difficulty::Any {
-                warn!(
-                    "{}: global ship-class tier says {:?}, the map's own tables say {:?}",
-                    def.display_name(name),
-                    global,
-                    from_tables
-                );
-            }
+        if let Some(from_tables) = difficulty
+            && from_tables != global
+            && from_tables != Difficulty::Any
+        {
+            warn!(
+                "{}: global ship-class tier says {:?}, the map's own tables say {:?}",
+                def.display_name(name),
+                global,
+                from_tables
+            );
         }
         difficulty = Some(global);
     }
