@@ -195,8 +195,24 @@ and whenever the choice changes.
 |---|---|---|
 | the themes on offer | `THEMES` | one entry per theme: the `Theme` variant, its label, its `Visuals`, its `Palette`. The settings tab lists the registry, so adding a theme is a variant plus an entry — both in this file |
 | widget colours | `Visuals` per entry | egui's own: backgrounds, strokes, selection |
+| the material | `glassify` + `Glass` | the shape every theme shares: corner radii, the rim on each widget state, the window and popup shadows |
 | the app's colours | `Palette` | what egui does not know about: the compare deltas, the warning mark, the status/upload marks, and the chart series |
 | text sizes | `TEXT_SIZES` | spelled out rather than inherited from egui, so the sizes are one table |
+
+Colour and material are kept apart on purpose. Every entry's `Visuals` function
+ends in `glassify`, so the app is made of one material throughout and the themes
+differ only in colour — but `glassify` changes **shape only**. It never touches
+a fill (`bg_fill`, `weak_bg_fill`, `faint_bg_color`), because those are what set
+a drop-down, a text box or a table row apart from the page behind them;
+replacing them with translucent panes looks like glass and reads like fog. The
+accent it paints a pressed rim with is the theme's own `hyperlink_color`, the
+one colour every theme already declares as bright enough for its background.
+`a_field_stands_out_from_the_page_in_every_theme` holds that line: a resting
+field has to differ from `panel_fill` by at least 15 of perceived brightness.
+
+A corollary for the radius: a checkbox is about 14 points across and shares
+`WidgetVisuals::corner_radius` with buttons, so the widget radius stays at 4 —
+rounder turns every checkbox into a radio button.
 
 Two things follow from `Theme` being stored in the settings file by variant
 name: a variant may be **added but never renamed**, and both of egui's
