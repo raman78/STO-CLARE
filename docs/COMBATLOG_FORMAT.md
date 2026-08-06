@@ -40,12 +40,12 @@ upstream, the field order is correct.
 Fields 12 and 13 are generically "actual magnitude inflicted" and "some relevant
 number to pair with 12". Their meaning depends on the line:
 
-| line kind | magnitude | base magnitude |
-|---|---|---|
-| hull heal | −(amount healed) | −(heal before Sensor Analysis / healing reductions), or 0 if same |
-| shield heal | −(amount healed) | −(heal before reductions), or 0 if same |
-| shield damage | −(damage to shields) | −(damage prevented to hull) |
-| hull damage | **+**(damage to hull) | base damage of the shot |
+| line kind     | magnitude             | base magnitude                                                    |
+|---------------|-----------------------|-------------------------------------------------------------------|
+| hull heal     | −(amount healed)      | −(heal before Sensor Analysis / healing reductions), or 0 if same |
+| shield heal   | −(amount healed)      | −(heal before reductions), or 0 if same                           |
+| shield damage | −(damage to shields)  | −(damage prevented to hull)                                       |
+| hull damage   | **+**(damage to hull) | base damage of the shot                                           |
 
 Values carry 6 significant figures, so compare with a tolerance rather than for
 equality.
@@ -60,12 +60,12 @@ healing.
 
 One shot writes one *or two* lines; there is never a zero-filler.
 
-| situation | lines |
-|---|---|
-| target has a shield facing up | shield line **and** hull line |
-| no shield facing, or the attack ignores shields | hull line only |
-| shield absorbed everything | shield line only |
-| a drain is logged | shield line only |
+| situation                                       | lines                         |
+|-------------------------------------------------|-------------------------------|
+| target has a shield facing up                   | shield line **and** hull line |
+| no shield facing, or the attack ignores shields | hull line only                |
+| shield absorbed everything                      | shield line only              |
+| a drain is logged                               | shield line only              |
 
 Two complications the reference calls out:
 
@@ -154,11 +154,11 @@ attributable to a target and a moment but not to a facing.
 
 This is why one combined "resistance" figure cannot be right:
 
-| what is hit | stat | formula | cap |
-|---|---|---|---|
-| hull | Damage Resistance Rating | `R = 1 − (¼ + 3·(75/(150+m))²)` | 75% asymptotic |
-| shields | shield hardness | `1 − Π(1 − hᵢ)` | 75% hard |
-| shields, by a drain | DrainX | `1/(1 + DrainX)` | — |
+| what is hit         | stat                     | formula                         | cap            |
+|---------------------|--------------------------|---------------------------------|----------------|
+| hull                | Damage Resistance Rating | `R = 1 − (¼ + 3·(75/(150+m))²)` | 75% asymptotic |
+| shields             | shield hardness          | `1 − Π(1 − hᵢ)`                 | 75% hard       |
+| shields, by a drain | DrainX                   | `1/(1 + DrainX)`                | —              |
 
 Also: bleedthrough sends a share of the pre-resistance damage straight to hull
 (5% on a typical resilient shield), and kinetic damage is cut by 75% against

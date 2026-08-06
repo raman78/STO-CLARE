@@ -43,11 +43,11 @@ entity anchors are the only route to a map name — and why OSCR does the same.
 transfers — i.e. actual map changes — with timestamps **in UTC**. Against the
 2026-07-30 combats these line up closely:
 
-| combat (combatlog, local time) | transfer logged |
-|---|---|
-| Into the Hive ends 12:10:02 | 12:10:22 |
-| Undine Assault 12:17:00–12:23:07 | 12:15:56 (in), **12:23:08** (out) |
-| Undine Infiltration ends 12:46:47 | 12:46:52 |
+| combat (combatlog, local time)    | transfer logged                   |
+|-----------------------------------|-----------------------------------|
+| Into the Hive ends 12:10:02       | 12:10:22                          |
+| Undine Assault 12:17:00–12:23:07  | 12:15:56 (in), **12:23:08** (out) |
+| Undine Infiltration ends 12:46:47 | 12:46:52                          |
 
 It carries **no map names** — only "disconnected from our gameserver for
 transfer" — so it cannot help identify a map. What it could give is exact combat

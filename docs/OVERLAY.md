@@ -48,10 +48,10 @@ overlay is a layer surface instead of a viewport. The two back ends render the
 same content (see [Unified styling](#unified-styling)) but share no windowing
 code.
 
-| Session | Back end | Mechanism |
-|---|---|---|
-| Wayland | **wlr-layer-shell** surface on its own thread | `src/app/overlay/layer_shell.rs` |
-| X11, Windows, macOS | eframe **deferred viewport** | `show_viewport_deferred` with `.with_always_on_top()` |
+| Session             | Back end                                      | Mechanism                                             |
+|---------------------|-----------------------------------------------|-------------------------------------------------------|
+| Wayland             | **wlr-layer-shell** surface on its own thread | `src/app/overlay/layer_shell.rs`                      |
+| X11, Windows, macOS | eframe **deferred viewport**                  | `show_viewport_deferred` with `.with_always_on_top()` |
 
 ## Why the choice is made at runtime
 
@@ -123,24 +123,24 @@ it unless the flag actually changed (`overlay/layer_shell.rs`, `Msg::Move` handl
 
 `enum Msg` (`overlay/layer_shell.rs`) is the only thing crossing the thread boundary:
 
-| Variant | Payload | Effect on the layer thread |
-|---|---|---|
-| `Data` | `OverlayData` | replace displayed rows, request redraw |
-| `Move` | `bool` | toggle move mode → swap input region |
-| `Stop` | — | leave the event loop, tear down (I1) |
+| Variant | Payload       | Effect on the layer thread             |
+|---------|---------------|----------------------------------------|
+| `Data`  | `OverlayData` | replace displayed rows, request redraw |
+| `Move`  | `bool`        | toggle move mode → swap input region   |
+| `Stop`  | —             | leave the event loop, tear down (I1)   |
 
 A closed channel (`ChannelEvent::Closed`) is treated as `Stop`.
 
 ## Components
 
-| File / symbol | Responsibility | Called by |
-|---|---|---|
-| `overlay/mod.rs` `Overlay` | app-side controller, back-end selection, UI buttons | main tab UI |
-| `overlay/mod.rs` `OverlayInner` | polls analyzer, builds `DisplayData`, owns the `LayerOverlay` handle | `Overlay` |
-| `overlay/layer_shell.rs` `LayerOverlay` | thread handle: `spawn`/`update`/`set_move`/`stop`; stops thread on `Drop` | `OverlayInner` |
-| `overlay/layer_shell.rs` `run()` | thread body: Wayland globals, event loop, redraw loop | `spawn` |
-| `overlay/layer_shell.rs` `State` | per-surface state: wgpu, egui, geometry, pointer/drag | delegated handlers |
-| `custom_widgets/table.rs` `Table` | shared table widget used by both back ends | both render paths |
+| File / symbol                           | Responsibility                                                            | Called by          |
+|-----------------------------------------|---------------------------------------------------------------------------|--------------------|
+| `overlay/mod.rs` `Overlay`              | app-side controller, back-end selection, UI buttons                       | main tab UI        |
+| `overlay/mod.rs` `OverlayInner`         | polls analyzer, builds `DisplayData`, owns the `LayerOverlay` handle      | `Overlay`          |
+| `overlay/layer_shell.rs` `LayerOverlay` | thread handle: `spawn`/`update`/`set_move`/`stop`; stops thread on `Drop` | `OverlayInner`     |
+| `overlay/layer_shell.rs` `run()`        | thread body: Wayland globals, event loop, redraw loop                     | `spawn`            |
+| `overlay/layer_shell.rs` `State`        | per-surface state: wgpu, egui, geometry, pointer/drag                     | delegated handlers |
+| `custom_widgets/table.rs` `Table`       | shared table widget used by both back ends                                | both render paths  |
 
 The `LayerOverlay` handle lives in `OverlayInner.layer`
 (`Option<LayerOverlay>`). It is created lazily on first visible frame
@@ -193,12 +193,12 @@ frames, `render()` also forces a redraw while
 
 ### Failure modes
 
-| Symptom | Cause | Where to look |
-|---|---|---|
-| Segfault when hiding/closing the overlay | I1 violated (surface dropped before wgpu) | field order in `State`, `app.gpu = None` in `run()` |
-| `layer overlay: ...` logged, no overlay | Wayland connect/bind failed (not a Wayland session, no layer-shell) | `run()` return path, `spawn()` error log |
-| Overlay eats clicks meant for the game | input region left non-empty (I3) | `apply_input_region()`, move-mode plumbing |
-| Overlay stuck at 240×80 or oversized | auto-size not converging | `render()` size block, `Table::size()` |
+| Symptom                                  | Cause                                                               | Where to look                                       |
+|------------------------------------------|---------------------------------------------------------------------|-----------------------------------------------------|
+| Segfault when hiding/closing the overlay | I1 violated (surface dropped before wgpu)                           | field order in `State`, `app.gpu = None` in `run()` |
+| `layer overlay: ...` logged, no overlay  | Wayland connect/bind failed (not a Wayland session, no layer-shell) | `run()` return path, `spawn()` error log            |
+| Overlay eats clicks meant for the game   | input region left non-empty (I3)                                    | `apply_input_region()`, move-mode plumbing          |
+| Overlay stuck at 240×80 or oversized     | auto-size not converging                                            | `render()` size block, `Table::size()`              |
 
 ## Move mode and input passthrough
 
@@ -231,10 +231,10 @@ down.
 
 Two things persist, both in the `general` settings section:
 
-| setting | written | read |
-|---|---|---|
-| `overlay_position` | every frame in `App::ui` (Linux) | when the overlay is next shown |
-| `overlay_shown` | `App::on_exit` only | `Overlay::new`, straight into `OverlayInner.show` |
+| setting            | written                          | read                                              |
+|--------------------|----------------------------------|---------------------------------------------------|
+| `overlay_position` | every frame in `App::ui` (Linux) | when the overlay is next shown                    |
+| `overlay_shown`    | `App::on_exit` only              | `Overlay::new`, straight into `OverlayInner.show` |
 
 `overlay_shown` is written **only on exit**, not as the ✋/Overlay button is
 toggled, so that a mid-session change cannot make the settings dialog think the
@@ -247,10 +247,10 @@ nudging the overlay and then applying any setting re-parsed the whole log. The
 two are now gated separately, because they cost very different amounts
 (measured on a 150 MB log):
 
-| call | what it does | cost |
-|---|---|---|
-| `set_settings` | builds a new `Analyzer` — full re-parse | **2.54 s** |
-| `refresh` | reuses it, reads only what the log grew by, re-sends the result | **2.8 µs** |
+| call           | what it does                                                    | cost       |
+|----------------|-----------------------------------------------------------------|------------|
+| `set_settings` | builds a new `Analyzer` — full re-parse                         | **2.54 s** |
+| `refresh`      | reuses it, reads only what the log grew by, re-sends the result | **2.8 µs** |
 
 Only `analysis` can invalidate the analyzer (it is the only thing the analyzer is
 ever given), so `set_settings` is now gated on that alone. A `general` change
@@ -355,10 +355,10 @@ is guesswork. So while the dialog is open, `SettingsWindow::show` pushes the
 working copy's opacity straight to the overlay each frame
 (`Overlay::set_opacity`), the same way picking a theme repaints the app at once.
 
-| Closing with | What happens |
-|---|---|
-| Ok | `apply_setting_changes` sends the whole settings to the overlay. `visuals_changed` joins the condition for `settings_changed`, but deliberately **not** the one for `refresh`/`set_settings` — a colour has no business re-parsing the log. |
-| Cancel | `discard_setting_changes` puts the live value back, unconditionally: the preview ran regardless of what else the user touched. |
+| Closing with | What happens                                                                                                                                                                                                                                |
+|--------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Ok           | `apply_setting_changes` sends the whole settings to the overlay. `visuals_changed` joins the condition for `settings_changed`, but deliberately **not** the one for `refresh`/`set_settings` — a colour has no business re-parsing the log. |
+| Cancel       | `discard_setting_changes` puts the live value back, unconditionally: the preview ran regardless of what else the user touched.                                                                                                              |
 
 `set_opacity` only writes the one field, so it stays cheap enough to call per
 frame — unlike `settings_changed`, which clones the whole settings including the
@@ -366,18 +366,18 @@ rule lists.
 
 The two back ends apply the visuals differently, because of where each renders:
 
-| Back end | How |
-|---|---|
-| layer-shell | The visuals go into the `Style` already pushed to the overlay thread (`LayerOverlay::set_style`), so the thread's own egui context draws everything at that opacity. |
-| viewport | Renders inside the app's own context, so the visuals are set on the overlay's `Ui` (`*ui.visuals_mut() = …`) rather than pushed globally — the main window must not fade with it. |
+| Back end    | How                                                                                                                                                                               |
+|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| layer-shell | The visuals go into the `Style` already pushed to the overlay thread (`LayerOverlay::set_style`), so the thread's own egui context draws everything at that opacity.              |
+| viewport    | Renders inside the app's own context, so the visuals are set on the overlay's `Ui` (`*ui.visuals_mut() = …`) rather than pushed globally — the main window must not fade with it. |
 
 Three things had to line up, and each was silently cancelling the alpha out:
 
-| Where | What it was | Why it mattered |
-|---|---|---|
-| `layer_shell::init_gpu` | `alpha_mode: caps.alpha_modes[0]` | KWin offers `[Opaque, PreMultiplied]` — index 0 is `Opaque`, which discards alpha wholesale. Now the mode is chosen by preference (`PreMultiplied`, then `PostMultiplied`, then `Inherit`), which is also what egui paints with. The negotiated mode is logged at startup. |
-| `layer_shell` render pass | `LoadOp::Clear` with `a: 0.85` | It sat *under* the opaque panel egui then painted, so it never showed. The clear is now `Color::TRANSPARENT` and the panel carries the alpha. |
-| `App::clear_color` | `window_fill()`, alpha 255 | eframe hands one clear colour to **every** viewport (`wgpu_integration.rs`: `app.clear_color(...)` per viewport), so the overlay window was wiped opaque before egui drew. Now `[0, 0, 0, 0]`. The main window is unaffected: its surface is opaque, so the alpha is ignored, and its central panel covers every pixel. |
+| Where                     | What it was                       | Why it mattered                                                                                                                                                                                                                                                                                                         |
+|---------------------------|-----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `layer_shell::init_gpu`   | `alpha_mode: caps.alpha_modes[0]` | KWin offers `[Opaque, PreMultiplied]` — index 0 is `Opaque`, which discards alpha wholesale. Now the mode is chosen by preference (`PreMultiplied`, then `PostMultiplied`, then `Inherit`), which is also what egui paints with. The negotiated mode is logged at startup.                                              |
+| `layer_shell` render pass | `LoadOp::Clear` with `a: 0.85`    | It sat *under* the opaque panel egui then painted, so it never showed. The clear is now `Color::TRANSPARENT` and the panel carries the alpha.                                                                                                                                                                           |
+| `App::clear_color`        | `window_fill()`, alpha 255        | eframe hands one clear colour to **every** viewport (`wgpu_integration.rs`: `app.clear_color(...)` per viewport), so the overlay window was wiped opaque before egui drew. Now `[0, 0, 0, 0]`. The main window is unaffected: its surface is opaque, so the alpha is ignored, and its central panel covers every pixel. |
 
 The viewport back end additionally asks for `ViewportBuilder::with_transparent(true)`.
 Whether that is honoured is up to the desktop — without a compositor the window
@@ -386,10 +386,10 @@ simply stays solid, which is a cosmetic loss, not a failure.
 Measured on KWin/Wayland, sampling the overlay's surface through the compositor
 at two settings:
 
-| Back end | opacity 1.0 | opacity 0.3 |
-|---|---|---|
-| layer-shell (Wayland) | 84,84,84 | 70,70,72 (dark desktop behind) |
-| viewport (XWayland) | 80,80,80 | 200,200,200 (light desktop behind) |
+| Back end              | opacity 1.0 | opacity 0.3                        |
+|-----------------------|-------------|------------------------------------|
+| layer-shell (Wayland) | 84,84,84    | 70,70,72 (dark desktop behind)     |
+| viewport (XWayland)   | 80,80,80    | 200,200,200 (light desktop behind) |
 
 ## Testing
 

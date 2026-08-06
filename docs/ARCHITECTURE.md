@@ -18,13 +18,13 @@ Entry point: `src/main.rs` → `eframe::run_native` → `app::App`.
 
 ## Layout
 
-| module | responsibility | depends on |
-|---|---|---|
-| `analyzer` | reads the log, builds `Combat`s and their metric trees | nothing in the app |
-| `app` | windows, tables, charts, settings, overlay, the analysis thread | `analyzer`, `upload` |
-| `upload` | packaging and sending a combat to the OSCR ladder | `analyzer` |
-| `custom_widgets` | table, splitter, sliders — egui widgets the app needs and egui lacks | egui only |
-| `helpers` | number formatting, small shared utilities | nothing |
+| module           | responsibility                                                       | depends on           |
+|------------------|----------------------------------------------------------------------|----------------------|
+| `analyzer`       | reads the log, builds `Combat`s and their metric trees               | nothing in the app   |
+| `app`            | windows, tables, charts, settings, overlay, the analysis thread      | `analyzer`, `upload` |
+| `upload`         | packaging and sending a combat to the OSCR ladder                    | `analyzer`           |
+| `custom_widgets` | table, splitter, sliders — egui widgets the app needs and egui lacks | egui only            |
+| `helpers`        | number formatting, small shared utilities                            | nothing              |
 
 `analyzer` knows nothing about egui and never reads settings the UI owns; the
 dependency runs one way only.
@@ -113,16 +113,16 @@ name next to the settings overrides it without a rebuild. See
 
 ## UI
 
-| area | module | notes |
-|---|---|---|
-| shell, combat picker, menus | `app/mod.rs` | owns `MainTabs`, `CompareView`, the overlay handle |
-| per-combat tabs | `app/main_tabs` | Summary, Damage Dealt/Taken, the three healing tabs |
-| tables | `app/main_tabs/tables` | one generic `MetricsTable<T>` driven by a static column list |
-| charts | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts |
-| compare | `app/compare` | several combats side by side with coloured deltas |
-| settings | `app/settings` | split into analysis settings (invalidate the parse) and the rest |
-| how it looks | `app/theme.rs` | the themes on offer, the app's own colours, the text sizes |
-| overlay | `app/overlay` | separate always-on-top window; see `docs/OVERLAY.md` |
+| area                        | module                   | notes                                                            |
+|-----------------------------|--------------------------|------------------------------------------------------------------|
+| shell, combat picker, menus | `app/mod.rs`             | owns `MainTabs`, `CompareView`, the overlay handle               |
+| per-combat tabs             | `app/main_tabs`          | Summary, Damage Dealt/Taken, the three healing tabs              |
+| tables                      | `app/main_tabs/tables`   | one generic `MetricsTable<T>` driven by a static column list     |
+| charts                      | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts      |
+| compare                     | `app/compare`            | several combats side by side with coloured deltas                |
+| settings                    | `app/settings`           | split into analysis settings (invalidate the parse) and the rest |
+| how it looks                | `app/theme.rs`           | the themes on offer, the app's own colours, the text sizes       |
+| overlay                     | `app/overlay`            | separate always-on-top window; see `docs/OVERLAY.md`             |
 
 Two conventions worth knowing before changing a table or a chart:
 
@@ -191,13 +191,13 @@ Everything about how the app looks is declared in that one module and reaches
 the screen through `theme::apply`, which the settings window calls at startup
 and whenever the choice changes.
 
-| what | where | note |
-|---|---|---|
-| the themes on offer | `THEMES` | one entry per theme: the `Theme` variant, its label, its `Visuals`, its `Palette`. The settings tab lists the registry, so adding a theme is a variant plus an entry — both in this file |
-| widget colours | `Visuals` per entry | egui's own: backgrounds, strokes, selection |
-| the material | `glassify` + `Glass` | the shape every theme shares: corner radii, the rim on each widget state, the window and popup shadows |
-| the app's colours | `Palette` | what egui does not know about: the compare deltas, the warning mark, the status/upload marks, and the chart series |
-| text sizes | `TEXT_SIZES` | spelled out rather than inherited from egui, so the sizes are one table |
+| what                | where                | note                                                                                                                                                                                     |
+|---------------------|----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| the themes on offer | `THEMES`             | one entry per theme: the `Theme` variant, its label, its `Visuals`, its `Palette`. The settings tab lists the registry, so adding a theme is a variant plus an entry — both in this file |
+| widget colours      | `Visuals` per entry  | egui's own: backgrounds, strokes, selection                                                                                                                                              |
+| the material        | `glassify` + `Glass` | the shape every theme shares: corner radii, the rim on each widget state, the window and popup shadows                                                                                   |
+| the app's colours   | `Palette`            | what egui does not know about: the compare deltas, the warning mark, the status/upload marks, and the chart series                                                                       |
+| text sizes          | `TEXT_SIZES`         | spelled out rather than inherited from egui, so the sizes are one table                                                                                                                  |
 
 Colour and material are kept apart on purpose. Every entry's `Visuals` function
 ends in `glassify`, so the app is made of one material throughout and the themes
@@ -247,12 +247,12 @@ old next-to-the-executable location read as a fallback. See
 
 ## Related documents
 
-| document | scope |
-|---|---|
-| `docs/COMBATLOG_FORMAT.md` | what the log's fields mean, and their sources |
-| `docs/HEALING_MODEL.md` | the three healing pools and the two grouping orders |
-| `docs/DIFFICULTY_DETECTION.md` | how map and difficulty are derived |
-| `docs/DETECTION_SAMPLES.md` | the measurements behind the difficulty tiers |
-| `docs/OVERLAY.md` | the always-on-top overlay, including the Wayland path |
-| `docs/LADDER_UPLOAD.md` | uploading a combat to the OSCR ladder |
-| `docs/DISTRIBUTION.md` | packaging and releases |
+| document                       | scope                                                 |
+|--------------------------------|-------------------------------------------------------|
+| `docs/COMBATLOG_FORMAT.md`     | what the log's fields mean, and their sources         |
+| `docs/HEALING_MODEL.md`        | the three healing pools and the two grouping orders   |
+| `docs/DIFFICULTY_DETECTION.md` | how map and difficulty are derived                    |
+| `docs/DETECTION_SAMPLES.md`    | the measurements behind the difficulty tiers          |
+| `docs/OVERLAY.md`              | the always-on-top overlay, including the Wayland path |
+| `docs/LADDER_UPLOAD.md`        | uploading a combat to the OSCR ladder                 |
+| `docs/DISTRIBUTION.md`         | packaging and releases                                |

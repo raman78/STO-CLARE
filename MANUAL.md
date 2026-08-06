@@ -100,15 +100,15 @@ and you can tell at a glance which column is which build.
 
 ### The buttons around the list
 
-| Button | What it does |
-|---|---|
-| Refresh Now | Re-reads the log and picks up combats fought since you last looked. |
-| Auto Refresh when log changes | Keeps the list and the numbers current by itself while you play. |
-| Save Combat | Writes the selected combat to a log file of its own, so you can keep or share it. |
-| Clear Log File | Opens a list of every combat with tick boxes, and deletes only the ones you tick. Everything but the newest is ticked for you. |
-| Copy Combat Summary | Puts a short text summary on your clipboard, ready to paste into the game chat. |
-| Upload | Sends the combat to the OSCR ladder — see [Uploading](#uploading-to-the-oscr-ladder). |
-| Overlay | Opens the small always-on-top window — see [The overlay](#the-overlay). |
+| Button                        | What it does                                                                                                                   |
+|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| Refresh Now                   | Re-reads the log and picks up combats fought since you last looked.                                                            |
+| Auto Refresh when log changes | Keeps the list and the numbers current by itself while you play.                                                               |
+| Save Combat                   | Writes the selected combat to a log file of its own, so you can keep or share it.                                              |
+| Clear Log File                | Opens a list of every combat with tick boxes, and deletes only the ones you tick. Everything but the newest is ticked for you. |
+| Copy Combat Summary           | Puts a short text summary on your clipboard, ready to paste into the game chat.                                                |
+| Upload                        | Sends the combat to the OSCR ladder — see [Uploading](#uploading-to-the-oscr-ladder).                                          |
+| Overlay                       | Opens the small always-on-top window — see [The overlay](#the-overlay).                                                        |
 
 ---
 
@@ -138,14 +138,14 @@ that player used, ordered by contribution:
 
 Read across the columns for one ability:
 
-| Column | What it tells you |
-|---|---|
-| DPS | Damage per second that ability contributed over the whole fight. |
-| Total Damage | Everything it dealt, hull and shield. |
-| Damage % | Its share of that player's damage. Useful for spotting what is actually carrying your build. |
+| Column       | What it tells you                                                                                             |
+|--------------|---------------------------------------------------------------------------------------------------------------|
+| DPS          | Damage per second that ability contributed over the whole fight.                                              |
+| Total Damage | Everything it dealt, hull and shield.                                                                         |
+| Damage %     | Its share of that player's damage. Useful for spotting what is actually carrying your build.                  |
 | Resistance % | How much of the target's hull soaked the hit up. A negative number means you were cutting through resistance. |
-| Max One-Hit | The single biggest hit it landed. |
-| Average Hit | What a typical hit did. |
+| Max One-Hit  | The single biggest hit it landed.                                                                             |
+| Average Hit  | What a typical hit did.                                                                                       |
 
 Rows can be opened further where an ability has parts underneath it — a console
 that spawns something, a pet, an anomaly.
@@ -161,10 +161,10 @@ your shields absorbed.
 
 Healing is split into three tabs that never count the same heal twice:
 
-| Tab | What it holds |
-|---|---|
-| Self Healing | What you healed on yourself. |
-| Healing Ally | What you healed on other people. |
+| Tab              | What it holds                    |
+|------------------|----------------------------------|
+| Self Healing     | What you healed on yourself.     |
+| Healing Ally     | What you healed on other people. |
 | Healing Received | What other people healed on you. |
 
 ![A healing tab](images/healing-tab.png)
@@ -223,10 +223,10 @@ open in the main window.
 
 Two buttons sit on the overlay itself, along its bottom edge:
 
-| Button | What it does |
-|---|---|
-| ⛭ | Picks which columns the overlay shows. DPS is on to begin with; tick as many more as you want to watch. |
-| ✋ | Lets you drag the overlay around. Switch it off again and the overlay stops taking mouse clicks, so it cannot get in the way of the game. |
+| Button | What it does                                                                                                                              |
+|--------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| ⛭      | Picks which columns the overlay shows. DPS is on to begin with; tick as many more as you want to watch.                                   |
+| ✋      | Lets you drag the overlay around. Switch it off again and the overlay stops taking mouse clicks, so it cannot get in the way of the game. |
 
 Away from those two buttons the overlay ignores the mouse entirely, so you can
 click straight through it at whatever is behind — the game included. Only when
@@ -285,14 +285,14 @@ bottom.
 
 ![Settings, General](images/settings-general.png)
 
-| Setting | What it does |
-|---|---|
-| Combatlog File | The path to the game's `combatlog.log`. Use **Browse** to find it; it sits in `<your STO installation>\Star Trek Online\Live\logs\GameClient\`. |
+| Setting                                  | What it does                                                                                                                                                                                        |
+|------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Combatlog File                           | The path to the game's `combatlog.log`. Use **Browse** to find it; it sits in `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.                                                     |
 | Merge rotating combat logs into one file | If the game splits the log into many files, they are merged back into one so all your combats show up together. The originals are only removed once the merged file has been checked byte for byte. |
-| Combat Separation Time | How long a lull has to last before the next fighting counts as a new combat. |
-| Auto Refresh / interval | Whether the numbers keep themselves current, and how often. |
-| Show more decimals | More precision in the tables. |
-| Show Hull and Shield as separate columns | Off gives you the compact table, with hull and shield only in the hover box. |
+| Combat Separation Time                   | How long a lull has to last before the next fighting counts as a new combat.                                                                                                                        |
+| Auto Refresh / interval                  | Whether the numbers keep themselves current, and how often.                                                                                                                                         |
+| Show more decimals                       | More precision in the tables.                                                                                                                                                                       |
+| Show Hull and Shield as separate columns | Off gives you the compact table, with hull and shield only in the hover box.                                                                                                                        |
 
 ### Analysis
 
@@ -301,12 +301,12 @@ bottom.
 You do not need this section to read your damage. It changes how rows are named
 and grouped.
 
-| Tab | What it is for |
-|---|---|
-| Combat Names | Your own rules for naming a combat. The list below the rules shows the maps recognised automatically, which is what is used when no rule of yours matches. |
-| Source Reversal | Turns a group inside out: the effect on top and the pets or anomalies underneath, rather than the other way round. The Tachyon Net Drones console is the classic case. |
-| Custom Grouping | Folds several effects into one row — useful for a weapon with an extra proc, like the Advanced Piezo Beam Array and its Technical Overload. |
-| Damage Exclusion | Leaves chosen damage out of the tables entirely. |
+| Tab              | What it is for                                                                                                                                                         |
+|------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Combat Names     | Your own rules for naming a combat. The list below the rules shows the maps recognised automatically, which is what is used when no rule of yours matches.             |
+| Source Reversal  | Turns a group inside out: the effect on top and the pets or anomalies underneath, rather than the other way round. The Tachyon Net Drones console is the classic case. |
+| Custom Grouping  | Folds several effects into one row — useful for a weapon with an extra proc, like the Advanced Piezo Beam Array and its Technical Overload.                            |
+| Damage Exclusion | Leaves chosen damage out of the tables entirely.                                                                                                                       |
 
 **Source reversal** in more detail: some damage and healing does not come
 straight from you — pets, anomalies, consoles that spawn something. Those show
@@ -393,29 +393,29 @@ written into the settings folder under the new name.
 
 ## Common situations
 
-| If you want to… | Do this |
-|---|---|
-| See only Elite runs of one map | Use the type, level and map menus under the toolbar. |
-| Find out what is carrying your build | Damage Dealt, open your row, read the Damage % column. |
-| Compare two runs of the same map | Compare Combats, tick both, read the green and red numbers. |
-| Watch your DPS while playing | Open the Overlay; add more columns with ⛭. |
-| Label a run so you find it later | Type into the Note field under the tabs. |
-| Share your numbers in chat | Copy Combat Summary, then paste in the game. |
-| Keep one fight and clear the rest | Clear Log File, untick the one you are keeping. |
-| See one ability over time | Select its row; the charts at the bottom follow it. |
+| If you want to…                      | Do this                                                     |
+|--------------------------------------|-------------------------------------------------------------|
+| See only Elite runs of one map       | Use the type, level and map menus under the toolbar.        |
+| Find out what is carrying your build | Damage Dealt, open your row, read the Damage % column.      |
+| Compare two runs of the same map     | Compare Combats, tick both, read the green and red numbers. |
+| Watch your DPS while playing         | Open the Overlay; add more columns with ⛭.                  |
+| Label a run so you find it later     | Type into the Note field under the tabs.                    |
+| Share your numbers in chat           | Copy Combat Summary, then paste in the game.                |
+| Keep one fight and clear the rest    | Clear Log File, untick the one you are keeping.             |
+| See one ability over time            | Select its row; the charts at the bottom follow it.         |
 
 ## What can go wrong
 
-| Symptom | Likely cause | What to do |
-|---|---|---|
-| The combats list is empty | Combat logging is off in the game | Type `/Combatlog 1` in the game chat, fight something, press Refresh Now. |
-| Still empty after that | The path to the log is wrong | Settings → General: the path must end in `combatlog.log`. |
-| Only your newest fights show up | The game split the log into several files | On Linux, leave log merging switched on. On Windows, add `-NoAutoRotateLogs` to the game's launch options. |
-| The overlay shows only the word "Player" | It has not been handed a combat yet | Press Refresh Now in the main window. |
-| The overlay sits behind the game | X11 session, or your window manager decided otherwise | Use a Wayland session, or run the game in windowed mode. |
-| Numbers look far too low | The fight is split across two entries in the list | Check the neighbouring entry. |
-| A combat is named wrongly | One of your own naming rules is matching first | Settings → Analysis → Combat Names; a warning mark shows which rule overlaps. |
-| The upload produced no ladder entries | That map and difficulty have no ladder for the period, or it is solo-only | Nothing to fix; the run is still uploaded. |
+| Symptom                                  | Likely cause                                                              | What to do                                                                                                 |
+|------------------------------------------|---------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| The combats list is empty                | Combat logging is off in the game                                         | Type `/Combatlog 1` in the game chat, fight something, press Refresh Now.                                  |
+| Still empty after that                   | The path to the log is wrong                                              | Settings → General: the path must end in `combatlog.log`.                                                  |
+| Only your newest fights show up          | The game split the log into several files                                 | On Linux, leave log merging switched on. On Windows, add `-NoAutoRotateLogs` to the game's launch options. |
+| The overlay shows only the word "Player" | It has not been handed a combat yet                                       | Press Refresh Now in the main window.                                                                      |
+| The overlay sits behind the game         | X11 session, or your window manager decided otherwise                     | Use a Wayland session, or run the game in windowed mode.                                                   |
+| Numbers look far too low                 | The fight is split across two entries in the list                         | Check the neighbouring entry.                                                                              |
+| A combat is named wrongly                | One of your own naming rules is matching first                            | Settings → Analysis → Combat Names; a warning mark shows which rule overlaps.                              |
+| The upload produced no ladder entries    | That map and difficulty have no ladder for the period, or it is solo-only | Nothing to fix; the run is still uploaded.                                                                 |
 
 ## FAQ
 

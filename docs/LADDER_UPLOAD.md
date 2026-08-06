@@ -56,10 +56,10 @@ has no bearing on it either.
 
 Raised as an exception (v1 returns HTTP error, v2 returns `detail`):
 
-| reason | message |
-|---|---|
-| no parsable combat | `Combat log is empty` |
-| no players in it | `Combat log is empty` |
+| reason                                                            | message                                                            |
+|-------------------------------------------------------------------|--------------------------------------------------------------------|
+| no parsable combat                                                | `Combat log is empty`                                              |
+| no players in it                                                  | `Combat log is empty`                                              |
 | map/difficulty not laddered, or outside the variant's date window | `<map> (<difficulty> Difficulty) at <time> has no matching ladder` |
 
 The ladder lookup matches `internal_name` **and** `internal_difficulty` (or a
@@ -73,13 +73,13 @@ cannot be uploaded at all: only a small authorised set has ladder rows.
 These are per-player and do **not** fail the upload — they come back in
 `results[]` with `updated: false`:
 
-| reason | detail |
-|---|---|
-| prohibited ability used | `<ability> is a prohibited ability. Ladder entry will not be updated.` |
-| combat time below threshold | `<player>'s combat time was too low.` |
-| player banned | `<player> is banned from the ladder.` (`BlockedHandle`) |
-| solo ladder, group run | silently skipped (`ladder.is_solo and len(players) != 1`) |
-| existing entry already better | `No updates for <player> on <ladder>` |
+| reason                        | detail                                                                 |
+|-------------------------------|------------------------------------------------------------------------|
+| prohibited ability used       | `<ability> is a prohibited ability. Ladder entry will not be updated.` |
+| combat time below threshold   | `<player>'s combat time was too low.`                                  |
+| player banned                 | `<player> is banned from the ladder.` (`BlockedHandle`)                |
+| solo ladder, group run        | silently skipped (`ladder.is_solo and len(players) != 1`)              |
+| existing entry already better | `No updates for <player> on <ladder>`                                  |
 
 The combat-time threshold is a fraction of either the top player's combat time,
 the log duration, or the player duration, depending on

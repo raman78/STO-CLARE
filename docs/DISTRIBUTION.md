@@ -6,12 +6,12 @@ no PyPI/pipx — those are Python-only).
 
 ## Channels
 
-| Audience | Mechanism | Entry point |
-|---|---|---|
-| End users (Linux) | Prebuilt tarball from GitHub Releases | `install.sh` |
-| End users (Windows) | Inno Setup `.exe` from GitHub Releases | `install.ps1` |
-| Local development | Symlink to a release build (editable analogue) | `scripts/dev-install.sh` |
-| Rust users | `cargo install --git …` | — |
+| Audience            | Mechanism                                      | Entry point              |
+|---------------------|------------------------------------------------|--------------------------|
+| End users (Linux)   | Prebuilt tarball from GitHub Releases          | `install.sh`             |
+| End users (Windows) | Inno Setup `.exe` from GitHub Releases         | `install.ps1`            |
+| Local development   | Symlink to a release build (editable analogue) | `scripts/dev-install.sh` |
+| Rust users          | `cargo install --git …`                        | —                        |
 
 ## Desktop integration (`src/app/desktop_install.rs`)
 
@@ -55,10 +55,10 @@ the numbers at the top of that script rather than off a drawing. Its only inputs
 are `icon/delta-mask.png` (the silhouette of the mark) and the Ubuntu Bold face
 already bundled for the tables. It writes the two files that ship:
 
-| File | Used by |
-|---|---|
+| File            | Used by                                                                  |
+|-----------------|--------------------------------------------------------------------------|
 | `icon/icon.png` | window icon (`include_bytes!` in `main.rs`), desktop entry, macOS bundle |
-| `icon/icon.ico` | `build.rs` via `winres` (the exe's own icon) and the Inno installer |
+| `icon/icon.ico` | `build.rs` via `winres` (the exe's own icon) and the Inno installer      |
 
 Both are committed, so a normal build needs neither the script nor Pillow. Run
 `python3 icon/build.py` after changing the design; it works at 1024px and scales

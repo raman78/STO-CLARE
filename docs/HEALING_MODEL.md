@@ -16,11 +16,11 @@ source, once because they were the target.
 
 The scale of that double count on a real 212 MB log, for one player:
 
-| pool | ticks | total | hull | shield |
-|---|---|---|---|---|
-| received from others | 859 | 778 635 | 478 k | 300 k |
-| done to others | 2 076 | 353 042 | 90 k | 260 k |
-| self | 5 528 | 54 553 454 | 300 k | 54 253 k |
+| pool                 | ticks | total      | hull  | shield   |
+|----------------------|-------|------------|-------|----------|
+| received from others | 859   | 778 635    | 478 k | 300 k    |
+| done to others       | 2 076 | 353 042    | 90 k  | 260 k    |
+| self                 | 5 528 | 54 553 454 | 300 k | 54 253 k |
 
 54.55 M of 55.68 M was self healing, dominated by a single gear proc
 (`Shield Absorptive Frequency Generator Proc`, 53.5 M). Counting it in both
@@ -32,11 +32,11 @@ that actually came from teammates.
 `RecordValue::new` (`src/analyzer/parser.rs:268`) classifies a record before any
 of this applies:
 
-| condition | result |
-|---|---|
-| `value_type == "HitPoints"`, `value1 < 0` | hull heal |
+| condition                                                               | result                                |
+|-------------------------------------------------------------------------|---------------------------------------|
+| `value_type == "HitPoints"`, `value1 < 0`                               | hull heal                             |
 | `value_type == "Shield"`, `value2 == 0`, no `ShieldBreak`, `value1 < 0` | shield heal **or** damage — see below |
-| `value_type == "Shield"`, `value2 == 0`, no `ShieldBreak`, `value1 > 0` | **shield drain damage**, not a heal |
+| `value_type == "Shield"`, `value2 == 0`, no `ShieldBreak`, `value1 > 0` | **shield drain damage**, not a heal   |
 
 The third row surprises: a positive shield value with a zero second value is a
 drain, and lands in the damage trees.
@@ -108,16 +108,16 @@ is not counted a second time.
 Every shape below was observed in a real log. `me` is the player whose pools are
 being filled.
 
-| source | indirect | target | example | pool |
-|---|---|---|---|---|
-| me | — | — | `Reflexive Emitters`, `Brace for Impact III` | `heal_self` |
-| me | my console | me | `Bio-Molecular Shield Generator Fabrication` | `heal_self` |
-| me | — | me | explicit self-target | `heal_self` |
-| me | — / console | other player | `Rally Cry V` → `Sirak` | `heal_ally` |
-| me | — / console | NPC | → `U.S.S. Birmingham`, `Security Escort III` | `heal_ally` |
-| me | my pet | — | `Motivated Strikes` through `Security Escort III` | `heal_ally`, credited to the pet |
-| other player | — / console | me | `Shield Generator Energy Matrix` from `Bor'ar` | `heal_received` |
-| NPC | — | me | ally (or oddly-signed enemy) ability | `heal_received` |
+| source       | indirect    | target       | example                                           | pool                             |
+|--------------|-------------|--------------|---------------------------------------------------|----------------------------------|
+| me           | —           | —            | `Reflexive Emitters`, `Brace for Impact III`      | `heal_self`                      |
+| me           | my console  | me           | `Bio-Molecular Shield Generator Fabrication`      | `heal_self`                      |
+| me           | —           | me           | explicit self-target                              | `heal_self`                      |
+| me           | — / console | other player | `Rally Cry V` → `Sirak`                           | `heal_ally`                      |
+| me           | — / console | NPC          | → `U.S.S. Birmingham`, `Security Escort III`      | `heal_ally`                      |
+| me           | my pet      | —            | `Motivated Strikes` through `Security Escort III` | `heal_ally`, credited to the pet |
+| other player | — / console | me           | `Shield Generator Energy Matrix` from `Bor'ar`    | `heal_received`                  |
+| NPC          | —           | me           | ally (or oddly-signed enemy) ability              | `heal_received`                  |
 
 The pet row is deliberate: `src=me, ind=my pet, tgt=-` heals the *pet*, not the
 player, so it is healing done with the pet as recipient — which is what
@@ -177,10 +177,10 @@ longer corresponds to what is on screen.
 
 ## Metric bases
 
-| metric | denominator | source |
-|---|---|---|
-| DPS | player `combat_time` (first to last damage dealt) | `Player::recalculate_metrics` |
-| HPS, ticks/s | player `active_time` (first to last action of any kind) | same |
+| metric       | denominator                                             | source                        |
+|--------------|---------------------------------------------------------|-------------------------------|
+| DPS          | player `combat_time` (first to last damage dealt)       | `Player::recalculate_metrics` |
+| HPS, ticks/s | player `active_time` (first to last action of any kind) | same                          |
 
 The two healing rates therefore use a different time base than DPS in the
 neighbouring tabs. This predates the split and was left alone; the column
@@ -209,11 +209,11 @@ self 54553454`, matching a standalone count of the raw records to the unit.
 
 Unit coverage, all in `src/analyzer/mod.rs`:
 
-| test | asserts |
-|---|---|
-| `healing_is_split_into_three_disjoint_pools` | H1, plus the hull/shield split per pool |
+| test                                                 | asserts                                                                            |
+|------------------------------------------------------|------------------------------------------------------------------------------------|
+| `healing_is_split_into_three_disjoint_pools`         | H1, plus the hull/shield split per pool                                            |
 | `a_heal_between_two_players_lands_in_opposite_pools` | a cross-player heal is done for one side, received for the other, self for neither |
-| `a_heal_pool_holds_both_grouping_orders` | H2, and that each order nests the way it claims |
+| `a_heal_pool_holds_both_grouping_orders`             | H2, and that each order nests the way it claims                                    |
 
 ## Related
 

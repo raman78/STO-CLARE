@@ -94,23 +94,23 @@ NPC's median hull damage tagged with the detected map and tier
 faction.** For the *same entity*, Elite carries ~4.4x the hull of Advanced:
 
 | environment | n (entity pairs) | median Elite/Advanced | quartiles |
-|---|---|---|---|
-| Space | 45 | **4.44x** | 4.20–4.61 |
-| Ground | 7 | **1.54x** | 1.33–1.58 |
-| Boss | 1 | 6.31x | — |
+|-------------|------------------|-----------------------|-----------|
+| Space       | 45               | **4.44x**             | 4.20–4.61 |
+| Ground      | 7                | **1.54x**             | 1.33–1.58 |
+| Boss        | 1                | 6.31x                 | —         |
 
 Because the ratio is near-constant, each class occupies the same band on every
 map, and one global table can tier a map we have never sampled:
 
-| class | Advanced observed | Elite observed | threshold used |
-|---|---|---|---|
-| Dreadnought | 1.68–1.95M | 8.30–8.99M | 4,000,000 |
-| Battleship | 301–620k | 1.16–7.09M | 850,000 |
-| Escort | 203–491k | 915k–2.28M | 670,000 |
-| Battlecruiser | 273–358k | 1.20–1.21M | 650,000 |
-| Cruiser | 196–465k | 875k–2.57M | 640,000 |
-| Frigate | 91–167k | 418–746k | 264,000 |
-| Raider | 92–155k | 399–551k | 250,000 |
+| class         | Advanced observed | Elite observed | threshold used |
+|---------------|-------------------|----------------|----------------|
+| Dreadnought   | 1.68–1.95M        | 8.30–8.99M     | 4,000,000      |
+| Battleship    | 301–620k          | 1.16–7.09M     | 850,000        |
+| Escort        | 203–491k          | 915k–2.28M     | 670,000        |
+| Battlecruiser | 273–358k          | 1.20–1.21M     | 650,000        |
+| Cruiser       | 196–465k          | 875k–2.57M     | 640,000        |
+| Frigate       | 91–167k           | 418–746k       | 264,000        |
+| Raider        | 92–155k           | 399–551k       | 250,000        |
 
 Each threshold is the geometric mean of the highest Advanced and lowest Elite of
 that class, i.e. ~2.1x (= √4.4) above a typical Advanced.
@@ -146,12 +146,12 @@ are excluded from the global table. The open question was whether a table keyed 
 senior ranks. **A second Elite map killed that.** Devil's Heart (Elite) has
 weaker troops than Bug Hunt has on *Advanced*:
 
-| rank | Advanced across 4 maps | Elite across 2 maps | verdict |
-|---|---|---|---|
-| Capt | 13,842–21,807 | 22,087–33,332 | x1.01 — noise |
-| Cdr | 4,536–8,236 | 7,095–16,077 | **overlap** |
-| Lt | 2,514–3,890 | 4,346–5,114 | x1.12 |
-| Ens | 1,873–2,470 | 2,740–3,756 | x1.11 |
+| rank | Advanced across 4 maps | Elite across 2 maps | verdict       |
+|------|------------------------|---------------------|---------------|
+| Capt | 13,842–21,807          | 22,087–33,332       | x1.01 — noise |
+| Cdr  | 4,536–8,236            | 7,095–16,077        | **overlap**   |
+| Lt   | 2,514–3,890            | 4,346–5,114         | x1.12         |
+| Ens  | 1,873–2,470            | 2,740–3,756         | x1.11         |
 
 Devil's Heart on **Elite** fields a Cdr of 7,095 against Bug Hunt's 7,803 on
 **Advanced** — 9% *weaker* one tier up. No threshold can separate those.
@@ -168,23 +168,23 @@ against Bug Hunt's **1.54x** — so the multiplier is a property of ground conte
 not of Bug Hunt. That was the one thing needed to make extrapolation from a single
 sample defensible.
 
-| entity | Advanced | Elite | ratio |
-|---|---|---|---|
-| Miniboss | 13,693 | 22,087 | 1.61x |
-| Aetherian Hacker | 5,202 | 8,396 | 1.61x |
-| Aetherian Commander | 4,780 | 7,095 | 1.48x |
-| Borg Cdr (Anchor) | 4,749 | 7,021 | 1.48x |
-| Borg Ens (Range) | 2,169 | 3,316 | 1.53x |
+| entity              | Advanced | Elite  | ratio |
+|---------------------|----------|--------|-------|
+| Miniboss            | 13,693   | 22,087 | 1.61x |
+| Aetherian Hacker    | 5,202    | 8,396  | 1.61x |
+| Aetherian Commander | 4,780    | 7,095  | 1.48x |
+| Borg Cdr (Anchor)   | 4,749    | 7,021  | 1.48x |
+| Borg Ens (Range)    | 2,169    | 3,316  | 1.53x |
 
 Four more pairs followed the same day. Five independent measurements:
 
-| map | median ratio | spread within the map |
-|---|---|---|
-| Devil's Heart | 1.53x | 1.34–2.18x |
-| Bug Hunt | 1.54x | 1.33–2.06x |
-| Pahvo Dissension | 1.58x | 1.42–2.04x |
-| Into the Hive | 1.67x | 1.49–1.74x |
-| Brotherhood of the Sword | **1.74x** | 1.39–2.09x |
+| map                      | median ratio | spread within the map |
+|--------------------------|--------------|-----------------------|
+| Devil's Heart            | 1.53x        | 1.34–2.18x            |
+| Bug Hunt                 | 1.54x        | 1.33–2.06x            |
+| Pahvo Dissension         | 1.58x        | 1.42–2.04x            |
+| Into the Hive            | 1.67x        | 1.49–1.74x            |
+| Brotherhood of the Sword | **1.74x**    | 1.39–2.09x            |
 
 **The between-map spread grew with every sample: 3% at three maps, 9% at four,
 14% at five (1.53–1.74x).** A ground multiplier exists, but it is an
@@ -246,14 +246,14 @@ been deliberately left with no bands at all while only its Advanced was sampled,
 because an Advanced-only band would have made a future Elite read as Advanced.
 The Elite run arrived and the map now has a measured `hull_any` pair.
 
-| entity | Advanced | Elite | ratio |
-|---|---|---|---|
-| `Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss` | 30,710 | 71,916 | 2.34x |
-| `Ground_Undine_Capt_Range_Psi` | 19,476 | 31,900 | 1.64x |
-| `Ground_Undine_Cdr_Range_Psi` | 7,134 | 11,207 | 1.57x |
-| `Ground_Undine_Lt_Range_Psi` | 3,513 | 5,695 | 1.62x |
-| `Ground_Undine_Lt_Mixed` | 3,890 | 5,734 | 1.47x |
-| ~~`Ground_Undine_Cdr_Melee`~~ | 8,236 | 9,868 | **1.20x — excluded** |
+| entity                                                   | Advanced | Elite  | ratio                |
+|----------------------------------------------------------|----------|--------|----------------------|
+| `Mission_Ground_Undine_Capt_Range_Psi_Infiltration_Boss` | 30,710   | 71,916 | 2.34x                |
+| `Ground_Undine_Capt_Range_Psi`                           | 19,476   | 31,900 | 1.64x                |
+| `Ground_Undine_Cdr_Range_Psi`                            | 7,134    | 11,207 | 1.57x                |
+| `Ground_Undine_Lt_Range_Psi`                             | 3,513    | 5,695  | 1.62x                |
+| `Ground_Undine_Lt_Mixed`                                 | 3,890    | 5,734  | 1.47x                |
+| ~~`Ground_Undine_Cdr_Melee`~~                            | 8,236    | 9,868  | **1.20x — excluded** |
 
 Median 1.57x, inside the 1.53–1.74x ground range. `Cdr_Melee` is left out on
 purpose: at 1.20x its Advanced figure (8,236) sits *above* the Elite firing
@@ -320,17 +320,17 @@ evidence to lean on.
 
 **What is missing, per map:**
 
-| map | have | needs |
-|---|---|---|
-| Bug Hunt | Normal + Advanced + Elite | — (all three measured) |
-| Devil's Heart | Advanced + Elite | — (has tables) |
-| Pahvo Dissension | Advanced + Elite | — (has tables) |
-| Into the Hive | Advanced + Elite | — (has tables) |
-| Brotherhood of the Sword | Advanced + Elite | — (has tables) |
-| Khitomer in Stasis | Normal + Advanced | — (has tables; the queue offers no Elite) |
-| Undine Infiltration | Advanced + Elite | — (has tables) |
-| Infected: Manus | — (anchor only) | Normal + Advanced |
-| Cure Applied | — (anchor only) | Normal + Advanced |
+| map                      | have                      | needs                                     |
+|--------------------------|---------------------------|-------------------------------------------|
+| Bug Hunt                 | Normal + Advanced + Elite | — (all three measured)                    |
+| Devil's Heart            | Advanced + Elite          | — (has tables)                            |
+| Pahvo Dissension         | Advanced + Elite          | — (has tables)                            |
+| Into the Hive            | Advanced + Elite          | — (has tables)                            |
+| Brotherhood of the Sword | Advanced + Elite          | — (has tables)                            |
+| Khitomer in Stasis       | Normal + Advanced         | — (has tables; the queue offers no Elite) |
+| Undine Infiltration      | Advanced + Elite          | — (has tables)                            |
+| Infected: Manus          | — (anchor only)           | Normal + Advanced                         |
+| Cure Applied             | — (anchor only)           | Normal + Advanced                         |
 
 **Which pair a ground map needs depends on the queue.** Three of them top out
 below Elite — Khitomer in Stasis, Infected: Manus and Cure Applied all offer
@@ -354,15 +354,15 @@ Added 2026-07-29 on far weaker evidence than the Advanced/Elite split, and marke
 as such in the rules file. Only one Normal map exists in the log (Defense of
 Starbase One), so every Normal figure comes from a single map and faction.
 
-| class | Normal observed | lowest Advanced | threshold | basis |
-|---|---|---|---|---|
-| Battleship | 209,618–224,842 | 300,537 | 260,000 | measured, n=10 |
-| Cruiser | 169,169–181,217 | 194,197 | 188,000 | measured, n=5 |
-| Raider | 60,045–71,669 | 92,360 | 81,000 | measured, n=5 |
-| Frigate | 18,372–26,061 | 81,493 | 46,000 | measured, n=2 |
-| Dreadnought | — | — | 1,200,000 | extrapolated |
-| Battlecruiser | — | — | 195,000 | extrapolated |
-| Escort | — | — | 200,000 | extrapolated |
+| class         | Normal observed | lowest Advanced | threshold | basis          |
+|---------------|-----------------|-----------------|-----------|----------------|
+| Battleship    | 209,618–224,842 | 300,537         | 260,000   | measured, n=10 |
+| Cruiser       | 169,169–181,217 | 194,197         | 188,000   | measured, n=5  |
+| Raider        | 60,045–71,669   | 92,360          | 81,000    | measured, n=5  |
+| Frigate       | 18,372–26,061   | 81,493          | 46,000    | measured, n=2  |
+| Dreadnought   | —               | —               | 1,200,000 | extrapolated   |
+| Battlecruiser | —               | —               | 195,000   | extrapolated   |
+| Escort        | —               | —               | 200,000   | extrapolated   |
 
 Extrapolated classes use 0.30x the Elite threshold — the median
 `normal_threshold / threshold` of the four measured ones (0.293–0.325, with
@@ -383,13 +383,13 @@ Advanced of 300,537 elsewhere).
 Fixed by giving Elachi their own bands, listed **before** the generic ones — the
 class list is matched in order, so this needed no code change:
 
-| class | all factions | excluding Elachi | Elachi alone |
-|---|---|---|---|
-| Escort | **overlap** | x1.96 | x2.06 |
-| Battleship | x1.03 | x1.34 | x2.05 |
-| Frigate | x1.05 | x1.14 | x1.38 |
-| Cruiser | x1.07 | x1.07 | no pair yet |
-| Raider | x1.24 | x1.24 | no pair yet |
+| class      | all factions | excluding Elachi | Elachi alone |
+|------------|--------------|------------------|--------------|
+| Escort     | **overlap**  | x1.96            | x2.06        |
+| Battleship | x1.03        | x1.34            | x2.05        |
+| Frigate    | x1.05        | x1.14            | x1.38        |
+| Cruiser    | x1.07        | x1.07            | no pair yet  |
+| Raider     | x1.24        | x1.24            | no pair yet  |
 
 Cruiser (x1.07) and Frigate (x1.14) stay tight even without Elachi — there the
 squeeze comes from Tholians at the *bottom* (Cruiser_Web 194,197 against a
@@ -427,10 +427,10 @@ numbers need revisiting — that is the point of keeping it global.
 - **Tier:** `hull_counts` on `Space_Elachi_Frigate` (Adv 80k / Elite 300k) and
   `Space_Elachi_Escort` (Adv 350k / Elite 1.4M).
 
-| sample | tier | Frigate | Escort | Battleship_V1 |
-|---|---|---|---|---|
-| 2026-07-25 21:03 | Advanced | 106,615 | 486,256 | 620,136 |
-| 2026-07-25 12:08 | Elite | 490,858 | 2,279,671 | 2,835,426 |
+| sample           | tier     | Frigate | Escort    | Battleship_V1 |
+|------------------|----------|---------|-----------|---------------|
+| 2026-07-25 21:03 | Advanced | 106,615 | 486,256   | 620,136       |
+| 2026-07-25 12:08 | Elite    | 490,858 | 2,279,671 | 2,835,426     |
 
 ---
 
@@ -445,9 +445,9 @@ numbers need revisiting — that is the point of keeping it global.
 - **Tier:** none. Ground maps are excluded from the global table, and this run is
   what proved a rank-based ground table cannot work (see above).
 
-| sample | tier | Miniboss | Aetherian_Cdr | Aetherian_Lt | Aetherian_Ens |
-|---|---|---|---|---|---|
-| 2026-07-31 00:18 | Elite | 22,087 | 7,095 | 5,114 | 3,756 |
+| sample           | tier  | Miniboss | Aetherian_Cdr | Aetherian_Lt | Aetherian_Ens |
+|------------------|-------|----------|---------------|--------------|---------------|
+| 2026-07-31 00:18 | Elite | 22,087   | 7,095         | 5,114        | 3,756         |
 
 ## [TFO] Iuppiter Iratus — Space — DONE (anchor + global tier)
 - **Anchor:** `Space_Holo_Projector_Jupiter_Tfo` (Iuppiter is Latin for Jupiter,
@@ -472,9 +472,9 @@ numbers need revisiting — that is the point of keeping it global.
 - **Tier:** from the global ship-class table (battleship 453,593 against an 850k
   band ⇒ Advanced).
 
-| sample | tier | Mirror_Enterprise | Battleship_Mirror | Cruiser_Mirror_2 | Frigate_Mirror |
-|---|---|---|---|---|---|
-| 2026-07-30 23:43 | Advanced | 4,626,261 | 453,593 | 387,758 | 173,633 |
+| sample           | tier     | Mirror_Enterprise | Battleship_Mirror | Cruiser_Mirror_2 | Frigate_Mirror |
+|------------------|----------|-------------------|-------------------|------------------|----------------|
+| 2026-07-30 23:43 | Advanced | 4,626,261         | 453,593           | 387,758          | 173,633        |
 
 ## [TFO] Breach — Space — DONE (anchor + global tier)
 - **Anchor:** the Dyson breach emplacements (`Mission_Dys_Breach_Hard_Point`,
@@ -490,9 +490,9 @@ numbers need revisiting — that is the point of keeping it global.
 - **Tier:** from the global ship-class table (cruiser 446,733 against a 640k band
   ⇒ Advanced). No tables of its own.
 
-| sample | tier | Voth_Power_Core | Dreadnaught | Cruiser | Frigate |
-|---|---|---|---|---|---|
-| 2026-07-30 22:55 | Advanced | 6,707,080 | 3,081,268 | 446,733 | 181,219 |
+| sample           | tier     | Voth_Power_Core | Dreadnaught | Cruiser | Frigate |
+|------------------|----------|-----------------|-------------|---------|---------|
+| 2026-07-30 22:55 | Advanced | 6,707,080       | 3,081,268   | 446,733 | 181,219 |
 
 ## [TFO] Brotherhood of the Sword — Ground — DONE (anchor only, no tier)
 - **Anchor:** the seven `Msn_Ico_Qonos_Ground*` allies — Honor Guards (Ferasan,
@@ -508,9 +508,9 @@ numbers need revisiting — that is the point of keeping it global.
   cannot clear them. If a split ever loses the early part, they are the fallback.
 - **Tier:** none — ground maps are excluded from the global table.
 
-| sample | tier | Capt_Gravity | Cdr_Melee | Lieutenant | Ensign |
-|---|---|---|---|---|---|
-| 2026-07-30 22:40 | Advanced | 24,336 | 5,030 | 2,159 | 1,657 |
+| sample           | tier     | Capt_Gravity | Cdr_Melee | Lieutenant | Ensign |
+|------------------|----------|--------------|-----------|------------|--------|
+| 2026-07-30 22:40 | Advanced | 24,336       | 5,030     | 2,159      | 1,657  |
 
 Fifth Advanced ground sample. Still no Elite pair from a second ground map, so the
 rank table described above remains unbuilt.
@@ -533,9 +533,9 @@ rank table described above remains unbuilt.
   mission object of either map, and is now correctly left unidentified rather than
   mislabelled Rescue and Search.
 
-| sample | tier | Battleship_Mokai | Cruiser_Mokai | Raider_Mokai |
-|---|---|---|---|---|
-| 2026-07-30 22:05 | Advanced | 472,023 | 376,972 | 126,811 |
+| sample           | tier     | Battleship_Mokai | Cruiser_Mokai | Raider_Mokai |
+|------------------|----------|------------------|---------------|--------------|
+| 2026-07-30 22:05 | Advanced | 472,023          | 376,972       | 126,811      |
 
 ## [TFO] Battle of Korfez — Space — DONE (single-difficulty Elite)
 - **Anchor:** `Dlt_Vaadwaur_Stf_System_Dreadnought_Boss` (27.8M hull — the STF's
@@ -552,9 +552,9 @@ rank table described above remains unbuilt.
 - The global table would have reached Elite on its own (cruiser 2.27M against a
   1.0M band, dreadnought 27.8M against 4.0M); the pin just makes it certain.
 
-| sample | tier | Boss | Cruiser | Battleship | Frigate |
-|---|---|---|---|---|---|
-| 2026-07-30 17:22 | Elite | 27,822,587 | 2,274,614 | 2,188,095 | 665,022 |
+| sample           | tier  | Boss       | Cruiser   | Battleship | Frigate |
+|------------------|-------|------------|-----------|------------|---------|
+| 2026-07-30 17:22 | Elite | 27,822,587 | 2,274,614 | 2,188,095  | 665,022 |
 
 ## [TFO] Khitomer in Stasis — Ground — DONE (anchor only, no tier)
 - **Anchor:** `Mission_Borgraid03_Borg_Power_Node` plus the `Ground_Borg_*_Raidisode_*`
@@ -574,9 +574,9 @@ rank table described above remains unbuilt.
   is a *space* queue, so a ground entity of that name should not collide with it.
 - **Tier:** none — ground maps are excluded from the global table.
 
-| sample | tier | Capt_Melee | Power_Node | Cdr_Melee | Lt_Range | Ens_Melee |
-|---|---|---|---|---|---|---|
-| 2026-07-30 16:32 | Advanced | 14,047 | 6,401 | 5,325 | 3,795 | 3,181 |
+| sample           | tier     | Capt_Melee | Power_Node | Cdr_Melee | Lt_Range | Ens_Melee |
+|------------------|----------|------------|------------|-----------|----------|-----------|
+| 2026-07-30 16:32 | Advanced | 14,047     | 6,401      | 5,325     | 3,795    | 3,181     |
 
 ## [TFO] Pahvo Dissension — Ground — DONE (anchor only, no tier)
 - **Anchor:** any-of the two named bosses
@@ -600,9 +600,9 @@ rank table described above remains unbuilt.
   Same for `Ground_Universal_Kit_Pahvo_Crystal_Prism_Module_Summon`, a player kit.
 - **Tier:** none — ground maps are excluded from the global table.
 
-| sample | tier | Boss_Eng | Boss_Tac | Cdr | Lt | Ens |
-|---|---|---|---|---|---|---|
-| 2026-07-30 16:06 | Advanced | 35,027 | 27,182 | 4,536 | 2,514 | 2,047 |
+| sample           | tier     | Boss_Eng | Boss_Tac | Cdr   | Lt    | Ens   |
+|------------------|----------|----------|----------|-------|-------|-------|
+| 2026-07-30 16:06 | Advanced | 35,027   | 27,182   | 4,536 | 2,514 | 2,047 |
 
 This is a **fourth Advanced ground sample**. It widens the Cdr spread across maps
 to 1.81x (4,536–8,236), against a 1.95x margin to the lowest known Elite — so the
@@ -623,9 +623,9 @@ suggested. Ens stays useless (1,873–2,470 across four maps).
   capitalisation). Note `Battle of the Binary Stars` on the wiki redirects to the
   *story mission*, not this TFO — they are different content.
 
-| sample | tier | Battleship_Dsc | Cruiser_Dsc | Escort_Dsc | Raider_Dsc |
-|---|---|---|---|---|---|
-| 2026-07-30 13:57 | Normal | 216,081 | 170,195 | 132,630 | 63,031 |
+| sample           | tier   | Battleship_Dsc | Cruiser_Dsc | Escort_Dsc | Raider_Dsc |
+|------------------|--------|----------------|-------------|------------|------------|
+| 2026-07-30 13:57 | Normal | 216,081        | 170,195     | 132,630    | 63,031     |
 
 ## Red Alerts — all five DONE (single-difficulty Normal)
 
@@ -633,13 +633,13 @@ Raman confirmed from the in-game queue that **every Red Alert is Normal-only**, 
 all five carry `difficulty: "Normal"` and never reach the tier tables. Sampled
 2026-07-30 in one sitting.
 
-| map | anchor(s) |
-|---|---|
-| Borg | `Mission_Space_Borg_Battleship_7_Of_10`, `Space_Borg_Battleship_Dse`, `Space_Borg_Cruiser_Dse` |
-| Tholian | `Space_Tholian_Dreadnought_Red_Alert` |
-| Tzenkethi | `Msn_Event_Tzenkethi_Alert_System_Satellite`, `Mission_Tzenkethi_Protomatter_Torpedo_Entity` |
-| Elachi | `Mission_Space_Elachi_Frigate` |
-| Na'kuhl | `Event_Nakuhl_Space_Convoy_Transport`, `Space_Federation_Frigate_Nakuhl_Red_Alert` |
+| map       | anchor(s)                                                                                      |
+|-----------|------------------------------------------------------------------------------------------------|
+| Borg      | `Mission_Space_Borg_Battleship_7_Of_10`, `Space_Borg_Battleship_Dse`, `Space_Borg_Cruiser_Dse` |
+| Tholian   | `Space_Tholian_Dreadnought_Red_Alert`                                                          |
+| Tzenkethi | `Msn_Event_Tzenkethi_Alert_System_Satellite`, `Mission_Tzenkethi_Protomatter_Torpedo_Entity`   |
+| Elachi    | `Mission_Space_Elachi_Frigate`                                                                 |
+| Na'kuhl   | `Event_Nakuhl_Space_Convoy_Transport`, `Space_Federation_Frigate_Nakuhl_Red_Alert`             |
 
 **Pattern worth reusing:** a Red Alert shares its rank-and-file ships with the
 regular map of the same faction, and is distinguished only by a *mission object* —
@@ -661,9 +661,9 @@ Red Alert and its parent map.
 - No other Na'kuhl map exists in the catalog, so there is nothing to collide with.
 - **Tier:** pinned `difficulty: "Normal"`.
 
-| sample | tier | Dreadnought | Battleship | Cruiser | Frigate |
-|---|---|---|---|---|---|
-| 2026-07-30 01:33 | Normal | 977,294 | 224,627 | 175,553 | 74,208 |
+| sample           | tier   | Dreadnought | Battleship | Cruiser | Frigate |
+|------------------|--------|-------------|------------|---------|---------|
+| 2026-07-30 01:33 | Normal | 977,294     | 224,627    | 175,553 | 74,208  |
 
 ## [TFO] Red Alert: Elachi — Space — DONE (single-difficulty Normal)
 - **Anchor:** `Mission_Space_Elachi_Frigate` — present for the whole fight and in
@@ -679,9 +679,9 @@ Red Alert and its parent map.
   `Space_Elachi_Escort`, so neither is anchored on those.
 - **Tier:** pinned `difficulty: "Normal"`.
 
-| sample | tier | Battleship_V1 | Battleship_V2 | Escort | Mission_Frigate |
-|---|---|---|---|---|---|
-| 2026-07-30 01:25 | Normal | 217,336 | 213,382 | 211,767 | 62,531 |
+| sample           | tier   | Battleship_V1 | Battleship_V2 | Escort  | Mission_Frigate |
+|------------------|--------|---------------|---------------|---------|-----------------|
+| 2026-07-30 01:25 | Normal | 217,336       | 213,382       | 211,767 | 62,531          |
 
 Elachi on a Red Alert are weaker than on Terrh Normal (battleship 217,336 vs
 292,930), so again the tier bands do not transfer between maps.
@@ -702,9 +702,9 @@ Elachi on a Red Alert are weaker than on Terrh Normal (battleship 217,336 vs
   `Stationmod` is already in the global-tier exclusions for the same reason.
 - **Tier:** pinned `difficulty: "Normal"`.
 
-| sample | tier | RedAlert_Dreadnought | RedAlert_Battleship | Cruiser_Var1 |
-|---|---|---|---|---|
-| 2026-07-30 01:15 | Normal | 1,052,092 | 191,876 | 109,986 |
+| sample           | tier   | RedAlert_Dreadnought | RedAlert_Battleship | Cruiser_Var1 |
+|------------------|--------|----------------------|---------------------|--------------|
+| 2026-07-30 01:15 | Normal | 1,052,092            | 191,876             | 109,986      |
 
 Note the shared dreadnought is 1,052,092 here against 1,682,031 on Tzenkethi Front
 Advanced — the same entity is weaker on a Red Alert, so its tier bands are not
@@ -721,9 +721,9 @@ transferable between the two maps.
   all key on different Borg entities.
 - **Tier:** pinned `difficulty: "Normal"`.
 
-| sample | tier | Battleship_7_Of_10 | Battleship_Dse | Cruiser_Dse | Frigate_Dse |
-|---|---|---|---|---|---|
-| 2026-07-30 00:53 | Normal | 3,107,477 | 211,201 | 187,210 | 79,156 |
+| sample           | tier   | Battleship_7_Of_10 | Battleship_Dse | Cruiser_Dse | Frigate_Dse |
+|------------------|--------|--------------------|----------------|-------------|-------------|
+| 2026-07-30 00:53 | Normal | 3,107,477          | 211,201        | 187,210     | 79,156      |
 
 ## [TFO] Red Alert: Tholian — Space — DONE (single-difficulty Normal)
 - **Anchor:** `Space_Tholian_Dreadnought_Red_Alert` (appears in this map only,
@@ -742,9 +742,9 @@ transferable between the two maps.
 - Note `Mission_Event_Tzenkethi_Red_Alert_*` belongs to **Tzenkethi Front**, not
   to Red Alert: Tzenkethi — reused assets, see that map's entry.
 
-| sample | tier | Dreadnought_Red_Alert | Tholian_Battleship | Tholian_Cruiser |
-|---|---|---|---|---|
-| 2026-07-30 00:45 | Normal | 1,619,134 | 230,750 | 176,695 |
+| sample           | tier   | Dreadnought_Red_Alert | Tholian_Battleship | Tholian_Cruiser |
+|------------------|--------|-----------------------|--------------------|-----------------|
+| 2026-07-30 00:45 | Normal | 1,619,134             | 230,750            | 176,695         |
 
 ## [TFO] Azure Nebula Rescue — Space — anchor only (no tier yet)
 - **Anchor:** `Space_Tholian_Cruiser_Web` (re-anchored off the shared Lleiset onto a
@@ -752,10 +752,10 @@ transferable between the two maps.
 - **Tier:** none yet. Data below would support hull_counts on Cruiser_Web /
   Battleship if wanted.
 
-| sample | tier | Tholian_Cruiser_Web | Tholian_Battleship |
-|---|---|---|---|
-| 2026-07-25 21:43 | Advanced | 355,249 | 652,603 |
-| 2026-07-25 21:22 | Elite | 1,700,205 | 2,888,013 |
+| sample           | tier     | Tholian_Cruiser_Web | Tholian_Battleship |
+|------------------|----------|---------------------|--------------------|
+| 2026-07-25 21:43 | Advanced | 355,249             | 652,603            |
+| 2026-07-25 21:22 | Elite    | 1,700,205           | 2,888,013          |
 
 ---
 
@@ -777,11 +777,11 @@ transferable between the two maps.
   entity name changes. Bands: Advanced 1.5M / Elite 4.0M; variants listed:
   `Space_Borg_Dreadnought_Mirror` / `_Control` / plain `Space_Borg_Dreadnought`.
 
-| sample | tier | faction | dreadnought median |
-|---|---|---|---|
-| 2026-07-26 11:46 | Advanced | Mirror | 1,954,225 |
-| 2026-07-26 11:51 | Elite | Control | 8,568,353 |
-| 2026-07-26 12:02 | Elite | regular | 8,300,426 |
+| sample           | tier     | faction | dreadnought median |
+|------------------|----------|---------|--------------------|
+| 2026-07-26 11:46 | Advanced | Mirror  | 1,954,225          |
+| 2026-07-26 11:51 | Elite    | Control | 8,568,353          |
+| 2026-07-26 12:02 | Elite    | regular | 8,300,426          |
 
 Open: only Mirror seen at Advanced — a regular/Control **Advanced** sample would
 confirm the dreadnought's Advanced band is truly faction-independent.
@@ -798,9 +798,9 @@ confirm the dreadnought's Advanced band is truly faction-independent.
   for this TFO is **out of date**. First of the "Normal-only" maps; the schema
   already supports it (`difficulty` field, like Winter Invasion / Operation Wolf).
 
-| sample | tier | Battleship_Dsc | Cruiser_Dsc | Raider_Dsc |
-|---|---|---|---|---|
-| 2026-07-26 17:41 | Normal | 226,313 | 176,588 | 63,403 |
+| sample           | tier   | Battleship_Dsc | Cruiser_Dsc | Raider_Dsc |
+|------------------|--------|----------------|-------------|------------|
+| 2026-07-26 17:41 | Normal | 226,313        | 176,588     | 63,403     |
 
 ## [TFO] Resistance of Starbase One — Space — DONE (anchor + any-of tier)
 - Randomized enemy group (both samples were **Mirror Borg**). **No collision with
@@ -813,10 +813,10 @@ confirm the dreadnought's Advanced band is truly faction-independent.
   plain extrapolated from the established faction-independent dreadnought HP). If a
   non-Borg-variant run appears without a tier, add its dreadnought entity.
 
-| sample | tier | faction | Dreadnought_Mirror | Battleship_Mirror |
-|---|---|---|---|---|
-| 2026-07-26 14:45 | Advanced | Mirror | 1,909,801 | 504,586 |
-| 2026-07-26 16:26 | Elite | Mirror | 8,804,174 | 2,352,650 |
+| sample           | tier     | faction | Dreadnought_Mirror | Battleship_Mirror |
+|------------------|----------|---------|--------------------|-------------------|
+| 2026-07-26 14:45 | Advanced | Mirror  | 1,909,801          | 504,586           |
+| 2026-07-26 16:26 | Elite    | Mirror  | 8,804,174          | 2,352,650         |
 
 ## [Patrol] To Die With Honor — Space — DONE (anchor + tier)
 - Fixed-faction **Klingon** patrol (Forcas system). Distinct from the *TFO* "To
@@ -831,10 +831,10 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 - **Lesson:** don't tier on a deaths=0 entity (Mrek) — its "hull" is damage we
   *dealt*, player-dependent, not its HP. Use killed entities (hull ~ HP).
 
-| sample | tier | Mrek (deaths=0, not HP) | Battlecruiser | Raider | Escort |
-|---|---|---|---|---|---|
-| 2026-07-26 12:47 | Advanced | 1,144,742 | 357,756 | 118,931 | 206,499 |
-| 2026-07-26 13:38 | Elite | 5,832,321 | 1,196,890 | 523,080 | 928,583 |
+| sample           | tier     | Mrek (deaths=0, not HP) | Battlecruiser | Raider  | Escort  |
+|------------------|----------|-------------------------|---------------|---------|---------|
+| 2026-07-26 12:47 | Advanced | 1,144,742               | 357,756       | 118,931 | 206,499 |
+| 2026-07-26 13:38 | Elite    | 5,832,321               | 1,196,890     | 523,080 | 928,583 |
 
 ## [Patrol] Out of Control — Space — DONE (anchor + tier)
 - **Fixed faction** (Borg Control in both samples — not randomized like Unwanted
@@ -846,10 +846,10 @@ confirm the dreadnought's Advanced band is truly faction-independent.
 - The Control Borg entities are shared with Unwanted Guests, but the anchors
   differ (Sitor turret vs Aetherian ally), so the maps never cross.
 
-| sample | tier | Battleship_Control | Cruiser_Control | Frigate_Control |
-|---|---|---|---|---|
-| 2026-07-26 12:54 | Advanced | 421,569 | 289,338 | 117,537 |
-| 2026-07-26 13:12 | Elite | 1,489,182 | 1,211,985 | 467,344 |
+| sample           | tier     | Battleship_Control | Cruiser_Control | Frigate_Control |
+|------------------|----------|--------------------|-----------------|-----------------|
+| 2026-07-26 12:54 | Advanced | 421,569            | 289,338         | 117,537         |
+| 2026-07-26 13:12 | Elite    | 1,489,182          | 1,211,985       | 467,344         |
 
 ## [Patrol] The Ninth Rule — Space — DONE (any-of anchor + per-class any-of tier)
 - **Enemies fully randomized** across ≥4 factions — Gorn, Nausicaan, Orion,
@@ -875,16 +875,16 @@ Conversely `Mission_..._Hofmann` is 100% specific but only *sometimes* logged �
 it is a non-combatant, so it only surfaces when it happens to trade damage. Each
 anchor covers the other's gap:
 
-| run | faction | tier | Hofmann | Galaxy | map confirmed by Raman |
-|---|---|---|---|---|---|
-| 2026-07-23 13:22 | Gorn + Nausicaan | Advanced | — | ✅ | ❔ inferred |
-| 2026-07-25 00:24 | Terran-Mirror + Orion | Elite | ✅ | ✅ | ❔ inferred |
-| 2026-07-26 11:42 | Gorn | Advanced | — | ✅ | ✅ |
-| 2026-07-26 12:24 | Orion | Elite | ✅ | ✅ | ✅ |
-| 2026-07-28 18:38 *(split fragment)* | Gorn | Advanced | ✅ | — | ✅ |
-| 2026-07-28 18:40 | Gorn | Advanced | ✅ | ✅ | ✅ |
-| 2026-07-28 22:18 | Nausicaan + Gorn | Advanced | — | ✅ | ❔ inferred |
-| 2026-07-29 21:56 | Gorn + Orion | Elite | ✅ | ✅ | ✅ |
+| run                                 | faction               | tier     | Hofmann | Galaxy | map confirmed by Raman |
+|-------------------------------------|-----------------------|----------|---------|--------|------------------------|
+| 2026-07-23 13:22                    | Gorn + Nausicaan      | Advanced | —       | ✅      | ❔ inferred             |
+| 2026-07-25 00:24                    | Terran-Mirror + Orion | Elite    | ✅       | ✅      | ❔ inferred             |
+| 2026-07-26 11:42                    | Gorn                  | Advanced | —       | ✅      | ✅                      |
+| 2026-07-26 12:24                    | Orion                 | Elite    | ✅       | ✅      | ✅                      |
+| 2026-07-28 18:38 *(split fragment)* | Gorn                  | Advanced | ✅       | —      | ✅                      |
+| 2026-07-28 18:40                    | Gorn                  | Advanced | ✅       | ✅      | ✅                      |
+| 2026-07-28 22:18                    | Nausicaan + Gorn      | Advanced | —       | ✅      | ❔ inferred             |
+| 2026-07-29 21:56                    | Gorn + Orion          | Elite    | ✅       | ✅      | ✅                      |
 
 The 18:38 row is a real 45s-separation fragment (61s lull before 18:40:33) that
 carries Hofmann but no Galaxy — exactly the split-fragility any-of exists for.
@@ -903,12 +903,12 @@ their same-class ships land within 0.4–1.7% of each other. Same for Advanced G
 vs Nausicaan. So one band per class covers every faction, including the ones never
 yet seen at a given tier.
 
-| class | Advanced | Elite | ratio |
-|---|---|---|---|
-| Battleship | Gorn 326,971 / 343,967 / 349,282 · Nausicaan 345,674 | Gorn 1,519,796 · Orion 1,513,717 · Terran 1,532,854 | ~4.4× |
-| Cruiser | Gorn 265,301 / 276,849 / 279,422 | Gorn 1,205,138 · Orion 1,192,155 / 1,200,843 · Terran 1,192,785 | ~4.4× |
-| Escort | Nausicaan 203,391 / 210,443 / 214,071 / 223,368 | Terran 925,069 | ~4.4× |
-| Frigate | Gorn 103,119 / 107,894 / 112,073 · Nausicaan 111,100 / 115,184 | Gorn 481,527 · Orion 469,080 / 477,575 / 489,814 · Terran 476,289 | ~4.3× |
+| class      | Advanced                                                       | Elite                                                             | ratio |
+|------------|----------------------------------------------------------------|-------------------------------------------------------------------|-------|
+| Battleship | Gorn 326,971 / 343,967 / 349,282 · Nausicaan 345,674           | Gorn 1,519,796 · Orion 1,513,717 · Terran 1,532,854               | ~4.4× |
+| Cruiser    | Gorn 265,301 / 276,849 / 279,422                               | Gorn 1,205,138 · Orion 1,192,155 / 1,200,843 · Terran 1,192,785   | ~4.4× |
+| Escort     | Nausicaan 203,391 / 210,443 / 214,071 / 223,368                | Terran 925,069                                                    | ~4.4× |
+| Frigate    | Gorn 103,119 / 107,894 / 112,073 · Nausicaan 111,100 / 115,184 | Gorn 481,527 · Orion 469,080 / 477,575 / 489,814 · Terran 476,289 | ~4.3× |
 
 Open: Normal-tier runs (patrols offer N/A/E) fall below the Advanced band and
 report no tier — consistent with the other patrols, no table written.
@@ -930,12 +930,12 @@ report no tier — consistent with the other patrols, no table written.
   still resolves). Bands: Dreadnought 1.3M / 6.0M · Cruiser_Var2 200k / 900k ·
   Cruiser_Var1 180k / 700k · Frigate 85k / 330k.
 
-| sample | tier | Dreadnought | Cruiser_Var2 | Cruiser_Var1 | Frigate |
-|---|---|---|---|---|---|
-| 2026-07-27 19:32 | Advanced | 1,787,974 | 260,424 | 226,552 | 134,227 |
-| 2026-07-29 15:59 | Advanced | 1,682,031 | 248,757 | 227,332 | 101,212 |
-| 2026-07-27 18:35 | Elite | 8,955,752 | 1,207,045 | 1,017,930 | 448,302 |
-| 2026-07-29 22:50 | Elite | 8,424,430 | 1,286,509 | 1,017,058 | 469,240 |
+| sample           | tier     | Dreadnought | Cruiser_Var2 | Cruiser_Var1 | Frigate |
+|------------------|----------|-------------|--------------|--------------|---------|
+| 2026-07-27 19:32 | Advanced | 1,787,974   | 260,424      | 226,552      | 134,227 |
+| 2026-07-29 15:59 | Advanced | 1,682,031   | 248,757      | 227,332      | 101,212 |
+| 2026-07-27 18:35 | Elite    | 8,955,752   | 1,207,045    | 1,017,930    | 448,302 |
+| 2026-07-29 22:50 | Elite    | 8,424,430   | 1,286,509    | 1,017,058    | 469,240 |
 
 `Space_Tzenkethi_Cruiser_Var1` is the steadiest signal in any map measured so far
 (226,552 / 227,332 Advanced; 1,017,930 / 1,017,058 Elite). `Space_Tzenkethi_Battleship`
@@ -960,10 +960,10 @@ anchored without risk of colliding with this one.
   run's boss hull were Advanced-level — but real Elite runs have Elite-level hull
   (boss ~452k > the 380k band), so it doesn't happen in practice.
 
-| sample | tier | Boss | Cdr | Queenfodder present? |
-|---|---|---|---|---|
-| 2026-07-26 14:18 | Advanced | 286,343 | 7,803 | no |
-| 2026-07-26 12:58 | Elite | 451,781 | 16,077 | yes (13 deaths) |
+| sample           | tier     | Boss    | Cdr    | Queenfodder present? |
+|------------------|----------|---------|--------|----------------------|
+| 2026-07-26 14:18 | Advanced | 286,343 | 7,803  | no                   |
+| 2026-07-26 12:58 | Elite    | 451,781 | 16,077 | yes (13 deaths)      |
 
 ## [Patrol] Jupiter Station Showdown — Ground — DONE (anchor + tier)
 - **Anchor:** `Msn_Ground_Capt_Mirror_Janeway_Boss_Unkillable`.
