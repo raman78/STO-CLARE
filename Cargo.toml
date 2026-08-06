@@ -54,6 +54,10 @@ lto = "thin"
 # Wayland layer-shell overlay: always-on-top over full-screen games, which the
 # winit/eframe path cannot do on Wayland. Versions matched to eframe 0.34.
 smithay-client-toolkit = "0.19"
+# Pointer position in an X11 session, which winit does not expose. Only needed
+# to keep the overlay click-through everywhere except its own toolbar; already
+# in the tree via winit, so this adds no new dependency.
+x11rb = "0.13"
 egui = "0.34"
 egui-wgpu = "0.34"
 raw-window-handle = "0.6"
@@ -64,3 +68,9 @@ winres = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"
+# Same as x11rb above: the pointer position, which winit does not expose.
+# Already in the tree via winit.
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+] }

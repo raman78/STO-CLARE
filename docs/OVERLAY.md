@@ -276,6 +276,52 @@ does (`Table::new(ui).header(...).body(...)`), which is possible because
 right-aligned value cells match the viewport overlay, so the two look
 identical.
 
+## The toolbar, and click-through on an ordinary window
+
+Both back ends now carry ⛭ and ✋ **on the overlay itself**; nothing about the
+overlay is left in the main window except the button that opens it.
+
+On Wayland this is free: the surface declares an input region covering only the
+toolbar, and the compositor routes every click itself (`apply_input_region`).
+An ordinary window has no equivalent — winit exposes `set_cursor_hittest(bool)`
+and egui `ViewportCommand::MousePassthrough(bool)`, both whole-window. So the
+viewport back end flips that switch itself, from where the pointer is:
+
+```
+every ~50 ms, while the overlay is open:
+
+  pointer position (pointer::on_screen)      toolbar rect (last frame)
+              │                                        │
+              └──────────────► is it inside? ◄─────────┘
+                                    │
+                    yes ────────────┴──────────── no
+                     │                             │
+        window takes the pointer          window is click-through
+        (toolbar is clickable)            (clicks reach the game)
+```
+
+`pointer::on_screen` is the one thing winit cannot answer — while the overlay is
+click-through it receives no pointer events at all — so it is one system call
+per platform: `GetCursorPos` on Windows, `QueryPointer` on X11, and `None`
+elsewhere (which leaves the overlay click-through unless it is being moved, the
+behaviour it had before it had a toolbar). Both crates were already in the tree
+via winit, so neither adds a dependency.
+
+Two details that are easy to get wrong:
+
+- **Wake the right context.** The builder lives in the main window, but the
+  command is delivered to the overlay's viewport, which has to be awake to act
+  on it. Repainting only the main window left the switch flipping seconds late;
+  `request_repaint_after_for(.., viewport_id())` is what makes it prompt.
+- **The ⛭ popup is outside the toolbar strip.** Its checkboxes would be
+  unclickable under a toolbar-only rule, so the whole window takes the pointer
+  while the popup is open — the same exception the layer-shell input region
+  makes for `settings_open`.
+
+The cost against Wayland is one poll interval: a click made in the very instant
+the pointer crosses onto the toolbar can still go to the game. Measured with a
+0.3 s dwell before clicking, the toolbar responds.
+
 ## Transparency
 
 `settings.visuals.overlay_opacity` (0.2–1.0, default 0.85) decides how solid the

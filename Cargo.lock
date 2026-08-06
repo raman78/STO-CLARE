@@ -4140,7 +4140,9 @@ dependencies = [
  "simplelog",
  "smallvec",
  "smithay-client-toolkit 0.19.2",
+ "windows-sys 0.60.2",
  "winres",
+ "x11rb",
 ]
 
 [[package]]

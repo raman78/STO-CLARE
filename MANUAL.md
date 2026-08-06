@@ -221,13 +221,16 @@ open in the main window.
 
 ![The overlay](images/overlay.png)
 
-Two buttons go with it. On Linux in a Wayland session they sit on the overlay
-itself; everywhere else they are next to the Overlay button in the main window.
+Two buttons sit on the overlay itself, along its bottom edge:
 
 | Button | What it does |
 |---|---|
 | ⛭ | Picks which columns the overlay shows. DPS is on to begin with; tick as many more as you want to watch. |
 | ✋ | Lets you drag the overlay around. Switch it off again and the overlay stops taking mouse clicks, so it cannot get in the way of the game. |
+
+Away from those two buttons the overlay ignores the mouse entirely, so you can
+click straight through it at whatever is behind — the game included. Only when
+you move the pointer onto the buttons does it start taking clicks again.
 
 If the overlay opens with nothing but the word "Player" in it, it has not been
 given a combat yet — press **Refresh Now** in the main window and it fills in.

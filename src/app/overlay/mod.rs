@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use eframe::{egui::*, epaint::mutex::Mutex};
 
-use crate::custom_widgets::popup_button::PopupButton;
 use crate::{
     analyzer::{Combat, Player},
     app::settings::Settings,
@@ -15,10 +14,15 @@ use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
 // The Linux wlr-layer-shell backend (always-on-top surface + its own thread).
 #[cfg(target_os = "linux")]
 pub mod layer_shell;
+mod pointer;
 
 /// The overlay never goes fully see-through: below this it is a ghost you
 /// cannot read and can barely find again to switch off.
 pub const MIN_OPACITY: f64 = 0.2;
+
+/// Height of the overlay's own icon toolbar. Matches the layer-shell one so
+/// both back ends carry the same strip.
+const TOOLBAR_HEIGHT: f32 = 26.0;
 
 /// `color` at the overlay's opacity.
 fn at_opacity(color: Color32, opacity: f64) -> Color32 {
@@ -65,6 +69,13 @@ struct OverlayInner {
     // Only the viewport path toggles this; the layer-shell overlay owns its own
     // move state.
     move_around: bool,
+    // The ⛭ popup on the overlay's own toolbar (viewport path; the layer-shell
+    // overlay keeps the same state on its thread).
+    columns_open: bool,
+    columns_changed: bool,
+    /// Where the toolbar ended up last frame, in the overlay's own coordinates.
+    /// Used to decide whether the pointer is over it — see `follow_pointer`.
+    toolbar_rect: Rect,
     columns: Vec<ColumnDescriptor>,
     analysis_handler: AnalysisHandler,
     state: State,
@@ -239,6 +250,9 @@ impl Overlay {
     pub fn new(root_handler: &AnalysisHandler, settings: &Settings) -> Self {
         Self(Arc::new(Mutex::new(OverlayInner {
             move_around: true,
+            columns_open: false,
+            columns_changed: false,
+            toolbar_rect: Rect::NOTHING,
             columns: COLUMNS.to_vec(),
             // Must start non-zero: Wayland rejects a 0x0 xdg_surface geometry,
             // which crashes wgpu ("Surface is not configured for presentation").
@@ -284,40 +298,6 @@ impl Overlay {
             .clicked()
         {
             inner.toggle_show();
-        }
-
-        // With the viewport backend the overlay is a plain window, so its column
-        // config (⛭) and move toggle (✋) live in the main window. The
-        // layer-shell overlay carries both on its own toolbar instead.
-        if !inner.uses_layer_shell() {
-            PopupButton::new("⛭").show(ui, |ui| {
-                ui.label("Configure what columns are displayed in the Overlay");
-                let mut config_changed = false;
-                for column in inner.columns.iter_mut() {
-                    if ui.checkbox(&mut column.enabled, column.name).clicked() {
-                        config_changed = true;
-                    }
-                }
-                if config_changed {
-                    inner.force_update(ui.ctx());
-                }
-            });
-
-            ui.add_enabled_ui(inner.show, |ui: &mut Ui| {
-                if Button::new("✋")
-                    .selected(inner.move_around)
-                    .ui(ui)
-                    .on_hover_text("Move the Overlay")
-                    .clicked()
-                {
-                    inner.move_around = !inner.move_around;
-                }
-            });
-        }
-
-        inner.poll_update(ui.ctx());
-        if !inner.show {
-            return;
         }
 
         // Wayland: render the overlay on a wlr-layer-shell surface so it stays
@@ -398,7 +378,19 @@ impl Overlay {
                 // desktop honours it is up to the compositor — without one the
                 // window simply stays solid.
                 .with_transparent(true)
-                .with_mouse_passthrough(!inner.move_around);
+                // Click-through everywhere except the overlay's own toolbar, so
+                // it can carry ⛭ and ✋ the way the layer-shell one does without
+                // swallowing clicks meant for the game. eframe turns a change
+                // here into a viewport command, so flipping it per frame is all
+                // it takes. See `pointer_over_toolbar`.
+                // While the ⛭ popup is open its checkboxes sit outside the
+                // toolbar strip, so the whole window takes the pointer then —
+                // the same exception the layer-shell input region makes.
+                .with_mouse_passthrough(
+                    !inner.move_around
+                        && !inner.columns_open
+                        && !inner.pointer_over_toolbar(ui.ctx()),
+                );
             builder.position = inner.position;
             drop(inner);
             let inner = self.0.clone();
@@ -406,6 +398,22 @@ impl Overlay {
                 .show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
                     inner.lock().show_overlay(ui);
                 });
+            // While it is click-through the overlay gets no pointer events, so
+            // the only way to notice the pointer arriving at its toolbar is to
+            // look. This is also what bounds how quickly the switch flips, so it
+            // is kept short enough that moving onto a button and clicking feels
+            // immediate.
+            // Both contexts: the main window re-evaluates the viewport builder
+            // (which is what carries the switch), and the overlay viewport has
+            // to be awake to act on the command it is sent. Waking only the
+            // main window leaves the command sitting until something else stirs
+            // the overlay, which turns a 50 ms flip into seconds.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(50));
+            ui.ctx().request_repaint_after_for(
+                std::time::Duration::from_millis(50),
+                Self::viewport_id(),
+            );
         }
     }
 
@@ -469,6 +477,33 @@ impl OverlayInner {
         }
     }
 
+    /// Whether the pointer is over the overlay's own toolbar, which is what
+    /// decides between swallowing clicks and letting them through to the game.
+    ///
+    /// The toolbar's rect is in the overlay's own coordinates, so it is moved by
+    /// the window's position on screen; the pointer comes back in physical
+    /// pixels, so it is brought into points. A little padding covers the gap
+    /// between the icons and the frame, matching what the layer-shell input
+    /// region does.
+    ///
+    /// `false` whenever anything is unknown — no pointer implementation for this
+    /// platform, or the window has not reported its position yet — which leaves
+    /// the overlay click-through, as it was before it carried a toolbar.
+    fn pointer_over_toolbar(&self, ctx: &Context) -> bool {
+        let (Some(window), Some(pointer)) = (self.position, pointer::on_screen()) else {
+            return false;
+        };
+        if !self.toolbar_rect.is_finite() || self.toolbar_rect.area() <= 0.0 {
+            return false;
+        }
+        let points_per_pixel = ctx.native_pixels_per_point().unwrap_or(1.0);
+        let pointer = pos2(pointer.x / points_per_pixel, pointer.y / points_per_pixel);
+        self.toolbar_rect
+            .translate(window.to_vec2())
+            .expand(4.0)
+            .contains(pointer)
+    }
+
     // The eframe-viewport render path, used everywhere except a Wayland
     // session, where the overlay is a layer-shell surface rendered on its own
     // thread instead (see layer_shell).
@@ -522,8 +557,52 @@ impl OverlayInner {
                     }
                 })
                 .size();
-            let required_size = required_size
-                + ui.spacing().window_margin.left_top()
+
+            // The column popup (when open) and the icon toolbar, both carried by
+            // the overlay itself so this path matches the layer-shell one. Their
+            // height is measured off the cursor rather than `min_rect`, which
+            // would fold in fill-width widgets and make the window oscillate.
+            let bottom_start = ui.cursor().top();
+            if self.columns_open {
+                for column in self.columns.iter_mut() {
+                    if ui.checkbox(&mut column.enabled, column.name).clicked() {
+                        self.columns_changed = true;
+                    }
+                }
+            }
+            if self.columns_changed {
+                self.columns_changed = false;
+                self.force_update(ui.ctx());
+            }
+            let toolbar_rect = ui
+                .horizontal(|ui| {
+                    // Square, fully-clickable icon buttons: a plain label only
+                    // reacts on the glyph itself.
+                    let icon = vec2(TOOLBAR_HEIGHT - 6.0, TOOLBAR_HEIGHT - 6.0);
+                    if ui
+                        .add_sized(icon, Button::selectable(self.columns_open, "⛭"))
+                        .on_hover_text("Configure what columns are displayed")
+                        .clicked()
+                    {
+                        self.columns_open = !self.columns_open;
+                    }
+                    if ui
+                        .add_sized(icon, Button::selectable(self.move_around, "✋"))
+                        .on_hover_text("Move the Overlay")
+                        .clicked()
+                    {
+                        self.move_around = !self.move_around;
+                    }
+                })
+                .response
+                .rect;
+            self.toolbar_rect = toolbar_rect;
+            let bottom_height = ui.cursor().top() - bottom_start;
+
+            let required_size = vec2(
+                required_size.x.max(toolbar_rect.width()),
+                required_size.y + bottom_height,
+            ) + ui.spacing().window_margin.left_top()
                 + ui.spacing().window_margin.right_bottom()
                 + ui.spacing().item_spacing;
             // Never request below the viewport's min size: otherwise the
