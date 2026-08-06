@@ -80,6 +80,16 @@ pub struct AutoRefresh {
 pub struct Visuals {
     pub ui_scale: f64,
     pub theme: Theme,
+    /// How solid the overlay is, 0.2 to 1.0. Only the overlay is affected — the
+    /// main window is a window like any other and stays opaque. Settings files
+    /// written before this existed come up at the value the overlay has always
+    /// had.
+    #[serde(default = "default_overlay_opacity")]
+    pub overlay_opacity: f64,
+}
+
+fn default_overlay_opacity() -> f64 {
+    0.85
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -181,6 +191,7 @@ impl Default for Visuals {
         Self {
             ui_scale: 1.0,
             theme: Default::default(),
+            overlay_opacity: default_overlay_opacity(),
         }
     }
 }
@@ -238,6 +249,98 @@ mod tests {
         let loaded: Settings = serde_json::from_str(&json).unwrap();
 
         assert!(loaded.general.overlay_shown);
+    }
+
+    /// A settings file written by the stock STO_CombatLogAnalyzer, whose file
+    /// this program is documented as being able to take over. It has none of
+    /// the sections added since the fork, and its own sections have to arrive
+    /// intact — the rule lists above all, which are what a user spent time on.
+    const UPSTREAM_SETTINGS: &str = r#"{
+        "analysis": {
+            "combatlog_file": "/games/Star Trek Online/Live/logs/GameClient/combatlog.log",
+            "combat_separation_time_seconds": 45.0,
+            "indirect_source_grouping_revers_rules": [
+                {"aspect": "DamageOrHealName", "expression": "Spore-Infused Anomalies",
+                 "method": "Equals", "enabled": false}
+            ],
+            "custom_group_rules": [
+                {"name": "Dark Matter Quantum Torpedo Launcher",
+                 "rules": [
+                    {"aspect": "DamageOrHealName", "expression": "Dark Matter Laced Quantum Torpedo",
+                     "method": "StartsWith", "enabled": true}
+                 ],
+                 "enabled": true}
+            ],
+            "combat_name_rules": [
+                {"name_rule": {"name": "Infected Conduit",
+                    "rules": [
+                        {"aspect": "SourceOrTargetUniqueName",
+                         "expression": "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss",
+                         "method": "Equals", "enabled": true}
+                    ],
+                    "enabled": true},
+                 "additional_info_rules": [
+                    {"name": "Elite",
+                     "rules": [
+                        {"aspect": "SourceOrTargetUniqueName", "expression": "Elite_Initial",
+                         "method": "EndsWith", "enabled": true}
+                     ],
+                     "enabled": true}
+                 ]}
+            ]
+        },
+        "auto_refresh": {"enable": false, "interval_seconds": 1.0},
+        "visuals": {"ui_scale": 1.0, "theme": "LightDark"},
+        "debug": {"enable_log": false, "log_level_filter": "INFO"},
+        "upload": {"oscr_url": "https://oscr.stobuilds.com/"}
+    }"#;
+
+    #[test]
+    fn a_stock_analyzer_settings_file_loads_with_its_rules_intact() {
+        let settings: Settings = serde_json::from_str(UPSTREAM_SETTINGS)
+            .expect("a stock STO_CombatLogAnalyzer settings file has to load");
+
+        assert_eq!(
+            "/games/Star Trek Online/Live/logs/GameClient/combatlog.log",
+            settings.analysis.combatlog_file
+        );
+        assert_eq!(45.0, settings.analysis.combat_separation_time_seconds);
+        assert_eq!(1, settings.analysis.custom_group_rules.len());
+        assert_eq!(
+            "Dark Matter Quantum Torpedo Launcher",
+            settings.analysis.custom_group_rules[0].name
+        );
+        assert_eq!(1, settings.analysis.combat_name_rules.len());
+        assert_eq!(
+            "Infected Conduit",
+            settings.analysis.combat_name_rules[0].name_rule.name
+        );
+        assert_eq!(
+            1,
+            settings.analysis.indirect_source_grouping_revers_rules.len()
+        );
+        assert_eq!(Theme::LightDark, settings.visuals.theme);
+        assert_eq!("https://oscr.stobuilds.com/", settings.upload.oscr_url);
+    }
+
+    /// The sections that did not exist upstream have to come up at their
+    /// defaults rather than stopping the file from loading at all.
+    #[test]
+    fn a_stock_settings_file_gets_defaults_for_what_it_does_not_have() {
+        let settings: Settings = serde_json::from_str(UPSTREAM_SETTINGS).unwrap();
+
+        assert_eq!(WindowGeometry::default(), settings.window);
+        assert_eq!(CombatNotes::default(), settings.combat_notes);
+        assert!(!settings.general.overlay_shown);
+        assert_eq!(
+            default_overlay_opacity(),
+            settings.visuals.overlay_opacity,
+            "a file with no opacity in it keeps the overlay as it always looked"
+        );
+        assert!(
+            settings.analysis.consolidate_combatlog,
+            "log merging defaults to on for a file that predates the option"
+        );
     }
 
     #[test]
