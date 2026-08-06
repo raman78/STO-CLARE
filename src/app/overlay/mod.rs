@@ -74,7 +74,7 @@ struct OverlayInner {
     columns_open: bool,
     columns_changed: bool,
     /// Where the toolbar ended up last frame, in the overlay's own coordinates.
-    /// Used to decide whether the pointer is over it — see `follow_pointer`.
+    /// Used to decide whether the pointer is over it — see `pointer_over_toolbar`.
     toolbar_rect: Rect,
     columns: Vec<ColumnDescriptor>,
     analysis_handler: AnalysisHandler,
@@ -298,6 +298,17 @@ impl Overlay {
             .clicked()
         {
             inner.toggle_show();
+        }
+
+        // Drained whether or not the overlay is on screen: the analysis keeps
+        // sending, and a hidden overlay that stops reading would leave the
+        // messages piling up behind it.
+        inner.poll_update(ui.ctx());
+        // Nothing below this point runs while the overlay is off — including
+        // spawning the layer-shell surface, which would otherwise be recreated
+        // the frame after it was switched off.
+        if !inner.show {
+            return;
         }
 
         // Wayland: render the overlay on a wlr-layer-shell surface so it stays
@@ -739,6 +750,39 @@ impl DisplayPlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::settings::AnalysisSettings;
+
+    fn test_overlay() -> Overlay {
+        let ctx = Context::default();
+        let settings = Settings::default();
+        let handler = AnalysisHandler::new(settings.analysis.clone(), ctx, 1.0, false);
+        Overlay::new(&handler, &settings)
+    }
+
+    /// Switching the overlay off has to stay switched off. The frame after a
+    /// toggle runs the same code again, and everything below the `show` check
+    /// would put the overlay straight back — which is exactly what happened
+    /// when that check went missing.
+    #[test]
+    fn switching_the_overlay_off_leaves_it_off() {
+        let overlay = test_overlay();
+        let ctx = Context::default();
+
+        assert!(!overlay.is_shown(), "starts hidden with default settings");
+        overlay.0.lock().toggle_show();
+        assert!(overlay.is_shown());
+
+        overlay.0.lock().toggle_show();
+        assert!(!overlay.is_shown());
+        // Run the frame that follows the toggle; nothing may bring it back.
+        ctx.run(Default::default(), |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| overlay.show(ui));
+        });
+        assert!(
+            !overlay.is_shown(),
+            "the overlay came back on the frame after it was switched off"
+        );
+    }
 
     fn visuals_filled_with(color: Color32) -> Visuals {
         let mut visuals = Visuals::dark();
