@@ -504,6 +504,19 @@ impl State {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
+        // egui paints with premultiplied alpha, so ask the compositor to read
+        // the surface that way — picking whatever the driver happens to list
+        // first can land on `Opaque`, which throws the alpha away and leaves the
+        // overlay solid whatever the opacity setting says.
+        let alpha_mode = [
+            wgpu::CompositeAlphaMode::PreMultiplied,
+            wgpu::CompositeAlphaMode::PostMultiplied,
+            wgpu::CompositeAlphaMode::Inherit,
+        ]
+        .into_iter()
+        .find(|mode| caps.alpha_modes.contains(mode))
+        .unwrap_or(caps.alpha_modes[0]);
+        log::info!("overlay surface alpha mode: {alpha_mode:?} (offered: {:?})", caps.alpha_modes);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -511,7 +524,7 @@ impl State {
             height: self.height,
             present_mode: wgpu::PresentMode::Fifo,
             desired_maximum_frame_latency: 2,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
         };
         surface.configure(&self.device, &config);
@@ -762,12 +775,12 @@ impl State {
                         view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.02,
-                                g: 0.02,
-                                b: 0.02,
-                                a: 0.85,
-                            }),
+                            // Fully transparent: the panel painted on top
+                            // carries the overlay's colour and its opacity (see
+                            // `surface_fill` in the parent module). Clearing to
+                            // anything solid here would sit under that panel
+                            // and cancel the transparency out.
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: wgpu::StoreOp::Store,
                         },
                         depth_slice: None,

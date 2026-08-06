@@ -16,6 +16,43 @@ use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
 #[cfg(target_os = "linux")]
 pub mod layer_shell;
 
+/// The overlay never goes fully see-through: below this it is a ghost you
+/// cannot read and can barely find again to switch off.
+pub const MIN_OPACITY: f64 = 0.2;
+
+/// `color` at the overlay's opacity.
+fn at_opacity(color: Color32, opacity: f64) -> Color32 {
+    let alpha = (opacity.clamp(MIN_OPACITY, 1.0) * 255.0).round() as u8;
+    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
+}
+
+/// The theme's colours with every *background* the overlay paints taken down to
+/// the chosen opacity — the panel, the stripe under every other table row, and
+/// the fills behind its own toolbar buttons.
+///
+/// Text is deliberately left alone. The point of a see-through overlay is to
+/// stop it hiding the game, not to stop it being readable, and fading the
+/// figures is what would cost you the reading at a glance. Missing one of these
+/// backgrounds shows up immediately: the panel goes see-through while the row
+/// stripes stay solid, and the table looks like it is floating on bars.
+fn overlay_visuals(base: &Visuals, opacity: f64) -> Visuals {
+    let mut visuals = base.clone();
+    visuals.panel_fill = at_opacity(visuals.panel_fill, opacity);
+    visuals.faint_bg_color = at_opacity(visuals.faint_bg_color, opacity);
+    visuals.extreme_bg_color = at_opacity(visuals.extreme_bg_color, opacity);
+    for widget in [
+        &mut visuals.widgets.noninteractive,
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
+    ] {
+        widget.bg_fill = at_opacity(widget.bg_fill, opacity);
+        widget.weak_bg_fill = at_opacity(widget.weak_bg_fill, opacity);
+    }
+    visuals
+}
+
 pub struct Overlay(Arc<Mutex<OverlayInner>>);
 
 struct OverlayInner {
@@ -322,7 +359,13 @@ impl Overlay {
             }
             inner.check_update(ui.ctx());
             let data = inner.to_overlay_data();
-            let style = ui.style().clone();
+            // The overlay's transparency rides along in the style it is sent:
+            // the surface it paints carries the alpha, so nothing in the main
+            // window's own style has to be touched.
+            let mut style = Style::clone(ui.style());
+            style.visuals =
+                overlay_visuals(&style.visuals, inner.settings.visuals.overlay_opacity);
+            let style = Arc::new(style);
             if let Some(layer) = &inner.layer {
                 layer.update(data);
                 layer.set_style(style);
@@ -349,6 +392,12 @@ impl Overlay {
                 .with_inner_size(inner.current_size)
                 .with_always_on_top()
                 .with_taskbar(false)
+                // Asked for unconditionally: the window has to be created
+                // transparent to ever become see-through, and the opacity is a
+                // setting the user can change while it is open. Whether the
+                // desktop honours it is up to the compositor — without one the
+                // window simply stays solid.
+                .with_transparent(true)
                 .with_mouse_passthrough(!inner.move_around);
             builder.position = inner.position;
             drop(inner);
@@ -370,6 +419,21 @@ impl Overlay {
 
     pub fn settings_changed(&self, settings: &Settings) {
         self.0.lock().settings = settings.clone();
+    }
+
+    /// Show `opacity` right now, without waiting for the settings dialog to be
+    /// closed with Ok.
+    ///
+    /// Dragging a slider you cannot see the effect of is guesswork, so the
+    /// overlay follows it live — the same way picking a theme repaints the app
+    /// at once. The dialog holds a working copy of the settings and puts the
+    /// live ones back if it is closed with Cancel, so this is a preview, not a
+    /// change: nothing is saved until Ok.
+    pub fn set_opacity(&self, opacity: f64) {
+        let mut inner = self.0.lock();
+        if inner.settings.visuals.overlay_opacity != opacity {
+            inner.settings.visuals.overlay_opacity = opacity;
+        }
     }
 
     /// Current overlay position as the (top, left) anchor margin, for
@@ -410,7 +474,16 @@ impl OverlayInner {
     // thread instead (see layer_shell).
     fn show_overlay(&mut self, ui: &mut Ui) {
         self.check_update(ui.ctx());
-        CentralPanel::default().show_inside(ui, |ui| {
+        // This path renders inside the app's own context, so the opacity is put
+        // on this `Ui` rather than pushed as a style: the table below then draws
+        // its stripes and cells from these visuals, and the window itself was
+        // asked for transparent.
+        let opacity = self.settings.visuals.overlay_opacity;
+        *ui.visuals_mut() = overlay_visuals(ui.visuals(), opacity);
+        // Takes `panel_fill` from the visuals just set, so the panel arrives at
+        // the same opacity as everything drawn on it.
+        let frame = Frame::central_panel(ui.style());
+        CentralPanel::default().frame(frame).show_inside(ui, |ui| {
             if ui
                 .ctx()
                 .input_for(Overlay::viewport_id(), |i| i.viewport().close_requested())
@@ -581,5 +654,91 @@ impl OverlayInner {
 impl DisplayPlayer {
     fn sort_value(&self) -> f64 {
         self.columns.first().map(|c| c.value).unwrap_or(0.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn visuals_filled_with(color: Color32) -> Visuals {
+        let mut visuals = Visuals::dark();
+        visuals.panel_fill = color;
+        visuals
+    }
+
+    /// The opacity setting has to reach the surface as alpha, and the theme's
+    /// colour has to survive the trip — the overlay is meant to match the main
+    /// window, only see-through.
+    #[test]
+    fn the_surface_carries_the_chosen_opacity_and_keeps_the_theme_colour() {
+        let color = Color32::from_rgb(0x11, 0x22, 0x33);
+        let visuals = overlay_visuals(&visuals_filled_with(color), 0.5);
+
+        assert_eq!(128, visuals.panel_fill.a());
+        assert_eq!(
+            Color32::from_rgba_unmultiplied(0x11, 0x22, 0x33, 128),
+            visuals.panel_fill
+        );
+    }
+
+    /// Every background the overlay paints has to fade together. Leaving one
+    /// behind is visible at once: a see-through panel with solid bars under
+    /// every other table row.
+    #[test]
+    fn every_background_fades_not_just_the_panel() {
+        let visuals = overlay_visuals(&Visuals::dark(), 0.5);
+
+        assert_eq!(128, visuals.panel_fill.a(), "panel");
+        assert_eq!(128, visuals.faint_bg_color.a(), "row stripe");
+        assert_eq!(128, visuals.extreme_bg_color.a(), "text field");
+        for widget in [
+            &visuals.widgets.noninteractive,
+            &visuals.widgets.inactive,
+            &visuals.widgets.hovered,
+            &visuals.widgets.active,
+            &visuals.widgets.open,
+        ] {
+            assert_eq!(128, widget.bg_fill.a(), "widget fill");
+            assert_eq!(128, widget.weak_bg_fill.a(), "weak widget fill");
+        }
+    }
+
+    /// Text stays fully solid whatever the opacity: a see-through overlay is
+    /// meant to stop hiding the game, not to stop being readable.
+    #[test]
+    fn the_figures_stay_readable_at_any_opacity() {
+        let base = Visuals::dark();
+        let visuals = overlay_visuals(&base, MIN_OPACITY);
+
+        assert_eq!(
+            base.widgets.noninteractive.fg_stroke.color,
+            visuals.widgets.noninteractive.fg_stroke.color
+        );
+        assert_eq!(255, visuals.widgets.noninteractive.fg_stroke.color.a());
+        assert_eq!(base.override_text_color, visuals.override_text_color);
+    }
+
+    #[test]
+    fn full_opacity_is_a_solid_surface() {
+        let visuals = overlay_visuals(&visuals_filled_with(Color32::from_rgb(9, 9, 9)), 1.0);
+        assert_eq!(255, visuals.panel_fill.a());
+    }
+
+    /// A slider that could reach zero would leave the overlay invisible, with
+    /// nothing left to click to bring it back.
+    #[test]
+    fn the_overlay_never_becomes_invisible() {
+        let visuals = visuals_filled_with(Color32::from_rgb(9, 9, 9));
+        let floor = (MIN_OPACITY * 255.0).round() as u8;
+        assert_eq!(floor, overlay_visuals(&visuals, 0.0).panel_fill.a());
+        assert_eq!(floor, overlay_visuals(&visuals, -1.0).panel_fill.a());
+        assert!(overlay_visuals(&visuals, 0.0).panel_fill.a() > 0);
+    }
+
+    #[test]
+    fn opacity_above_one_is_just_solid() {
+        let visuals = overlay_visuals(&visuals_filled_with(Color32::from_rgb(9, 9, 9)), 5.0);
+        assert_eq!(255, visuals.panel_fill.a());
     }
 }

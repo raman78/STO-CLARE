@@ -421,8 +421,16 @@ impl eframe::App for App {
         });
     }
 
+    /// Fully transparent, because eframe hands this one colour to *every*
+    /// window it paints — the main one and the overlay alike. Anything solid
+    /// here is painted underneath the overlay's own surface and cancels its
+    /// opacity setting out (see `overlay::surface_fill`).
+    ///
+    /// The main window loses nothing by it: its surface is opaque, so the alpha
+    /// is ignored there, and its central panel covers every pixel with the
+    /// theme's own colour before the frame is shown.
     fn clear_color(&self, _visuals: &eframe::egui::Visuals) -> [f32; 4] {
-        _visuals.window_fill().to_normalized_gamma_f32()
+        [0.0, 0.0, 0.0, 0.0]
     }
 
     fn on_exit(&mut self) {

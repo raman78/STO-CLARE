@@ -11,7 +11,7 @@ use self::{
     visuals::VisualsTab,
 };
 
-use super::{analysis_handling::AnalysisHandler, state::AppState};
+use super::{analysis_handling::AnalysisHandler, overlay::Overlay, state::AppState};
 
 mod analysis;
 mod app_settings;
@@ -80,6 +80,13 @@ impl SettingsWindow {
         if !self.is_open {
             return;
         }
+        // Preview the overlay's opacity while the dialog is open, so the slider
+        // shows what it does as it is dragged. Ok keeps it (below); Cancel puts
+        // the live value back (see `discard_setting_changes`).
+        state
+            .overlay
+            .set_opacity(self.modified_settings.visuals.overlay_opacity);
+        Overlay::request_repaint(ui.ctx());
         // Restore the last size. The window is freely resizable, but capped to
         // the viewport so that expanding a collapsed section (which grows the
         // content) cannot push the window off-screen.
@@ -227,8 +234,11 @@ impl SettingsWindow {
         // overlay used to re-parse the entire log for nothing.
         let analysis_changed = self.modified_settings.analysis != state.settings.analysis;
         let general_changed = self.modified_settings.general != state.settings.general;
+        // Visuals reach the overlay too — it carries its own opacity — but they
+        // must not drag in the re-analysis the other two trigger below.
+        let visuals_changed = self.modified_settings.visuals != state.settings.visuals;
 
-        if analysis_changed || general_changed {
+        if analysis_changed || general_changed || visuals_changed {
             state.overlay.settings_changed(&self.modified_settings);
         }
         if analysis_changed {
@@ -262,6 +272,13 @@ impl SettingsWindow {
                 &state.settings,
             );
         }
+        // Unconditional, unlike the theme above: the overlay has been showing a
+        // live preview of the working copy for as long as the dialog was open,
+        // so the live value goes back whether or not anything else changed.
+        state
+            .overlay
+            .set_opacity(state.settings.visuals.overlay_opacity);
+        Overlay::request_repaint(ui.ctx());
 
         self.modified_settings = state.settings.clone();
     }
