@@ -276,6 +276,121 @@ does (`Table::new(ui).header(...).body(...)`), which is possible because
 right-aligned value cells match the viewport overlay, so the two look
 identical.
 
+## The toolbar, and click-through on an ordinary window
+
+Both back ends now carry ⛭ and ✋ **on the overlay itself**; nothing about the
+overlay is left in the main window except the button that opens it.
+
+On Wayland this is free: the surface declares an input region covering only the
+toolbar, and the compositor routes every click itself (`apply_input_region`).
+An ordinary window has no equivalent — winit exposes `set_cursor_hittest(bool)`
+and egui `ViewportCommand::MousePassthrough(bool)`, both whole-window. So the
+viewport back end flips that switch itself, from where the pointer is:
+
+```
+every ~50 ms, while the overlay is open:
+
+  pointer position (pointer::on_screen)      toolbar rect (last frame)
+              │                                        │
+              └──────────────► is it inside? ◄─────────┘
+                                    │
+                    yes ────────────┴──────────── no
+                     │                             │
+        window takes the pointer          window is click-through
+        (toolbar is clickable)            (clicks reach the game)
+```
+
+`pointer::on_screen` is the one thing winit cannot answer — while the overlay is
+click-through it receives no pointer events at all — so it is one system call
+per platform: `GetCursorPos` on Windows, `QueryPointer` on X11, and `None`
+elsewhere (which leaves the overlay click-through unless it is being moved, the
+behaviour it had before it had a toolbar). Both crates were already in the tree
+via winit, so neither adds a dependency.
+
+Two details that are easy to get wrong:
+
+- **Wake the right context.** The builder lives in the main window, but the
+  command is delivered to the overlay's viewport, which has to be awake to act
+  on it. Repainting only the main window left the switch flipping seconds late;
+  `request_repaint_after_for(.., viewport_id())` is what makes it prompt.
+- **The ⛭ popup is outside the toolbar strip.** Its checkboxes would be
+  unclickable under a toolbar-only rule, so the whole window takes the pointer
+  while the popup is open — the same exception the layer-shell input region
+  makes for `settings_open`.
+
+The cost against Wayland is one poll interval: a click made in the very instant
+the pointer crosses onto the toolbar can still go to the game. Measured with a
+0.3 s dwell before clicking, the toolbar responds.
+
+## Transparency
+
+`settings.visuals.overlay_opacity` (0.2–1.0, default 0.85) decides how solid the
+overlay is. Only the overlay is affected; the main window is a window like any
+other.
+
+The opacity is carried as **alpha on what the overlay paints**, not as a
+window-manager opacity hint, so both back ends land on one mechanism:
+`overlay::overlay_visuals` returns the theme's `Visuals` with every background
+taken down to the chosen alpha — `panel_fill`, `faint_bg_color` (the stripe
+under every other table row), `extreme_bg_color`, and each `WidgetVisuals`
+`bg_fill`/`weak_bg_fill` behind the overlay's own toolbar buttons.
+
+Covering only `panel_fill` is not enough and shows immediately: the panel goes
+see-through while the row stripes stay solid, so the table looks like it is
+floating on bars. `every_background_fades_not_just_the_panel` holds that line.
+
+Text is deliberately **not** faded — `fg_stroke` and `override_text_color` are
+left as the theme set them. A see-through overlay is meant to stop hiding the
+game, not to stop being readable, and the figures are the whole point of it
+(`the_figures_stay_readable_at_any_opacity`).
+
+The floor of 0.2 (`overlay::MIN_OPACITY`) keeps the overlay findable: a fully
+invisible one could not be clicked to switch off.
+
+### Live preview
+
+The settings dialog edits a working copy (`SettingsWindow::modified_settings`)
+and only commits it on Ok, but a slider whose effect you cannot see until then
+is guesswork. So while the dialog is open, `SettingsWindow::show` pushes the
+working copy's opacity straight to the overlay each frame
+(`Overlay::set_opacity`), the same way picking a theme repaints the app at once.
+
+| Closing with | What happens |
+|---|---|
+| Ok | `apply_setting_changes` sends the whole settings to the overlay. `visuals_changed` joins the condition for `settings_changed`, but deliberately **not** the one for `refresh`/`set_settings` — a colour has no business re-parsing the log. |
+| Cancel | `discard_setting_changes` puts the live value back, unconditionally: the preview ran regardless of what else the user touched. |
+
+`set_opacity` only writes the one field, so it stays cheap enough to call per
+frame — unlike `settings_changed`, which clones the whole settings including the
+rule lists.
+
+The two back ends apply the visuals differently, because of where each renders:
+
+| Back end | How |
+|---|---|
+| layer-shell | The visuals go into the `Style` already pushed to the overlay thread (`LayerOverlay::set_style`), so the thread's own egui context draws everything at that opacity. |
+| viewport | Renders inside the app's own context, so the visuals are set on the overlay's `Ui` (`*ui.visuals_mut() = …`) rather than pushed globally — the main window must not fade with it. |
+
+Three things had to line up, and each was silently cancelling the alpha out:
+
+| Where | What it was | Why it mattered |
+|---|---|---|
+| `layer_shell::init_gpu` | `alpha_mode: caps.alpha_modes[0]` | KWin offers `[Opaque, PreMultiplied]` — index 0 is `Opaque`, which discards alpha wholesale. Now the mode is chosen by preference (`PreMultiplied`, then `PostMultiplied`, then `Inherit`), which is also what egui paints with. The negotiated mode is logged at startup. |
+| `layer_shell` render pass | `LoadOp::Clear` with `a: 0.85` | It sat *under* the opaque panel egui then painted, so it never showed. The clear is now `Color::TRANSPARENT` and the panel carries the alpha. |
+| `App::clear_color` | `window_fill()`, alpha 255 | eframe hands one clear colour to **every** viewport (`wgpu_integration.rs`: `app.clear_color(...)` per viewport), so the overlay window was wiped opaque before egui drew. Now `[0, 0, 0, 0]`. The main window is unaffected: its surface is opaque, so the alpha is ignored, and its central panel covers every pixel. |
+
+The viewport back end additionally asks for `ViewportBuilder::with_transparent(true)`.
+Whether that is honoured is up to the desktop — without a compositor the window
+simply stays solid, which is a cosmetic loss, not a failure.
+
+Measured on KWin/Wayland, sampling the overlay's surface through the compositor
+at two settings:
+
+| Back end | opacity 1.0 | opacity 0.3 |
+|---|---|---|
+| layer-shell (Wayland) | 84,84,84 | 70,70,72 (dark desktop behind) |
+| viewport (XWayland) | 80,80,80 | 200,200,200 (light desktop behind) |
+
 ## Testing
 
 `overlay/layer_shell.rs` has one `#[ignore]` integration test, `spawn_render_stop`,

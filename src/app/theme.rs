@@ -17,7 +17,10 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use eframe::{
-    egui::{Color32, Context, FontFamily, FontId, Style, TextStyle, Visuals, style::Selection},
+    egui::{
+        Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Visuals,
+        style::Selection,
+    },
     epaint::{Rgba, Shadow},
 };
 use serde::{Deserialize, Serialize};
@@ -30,6 +33,8 @@ pub enum Theme {
     #[default]
     LightDark,
     Light,
+    Nebula,
+    FrostLight,
 }
 
 /// The colours the app itself paints, on top of egui's widget colours.
@@ -62,7 +67,7 @@ pub const THEMES: &[ThemeEntry] = &[
     ThemeEntry {
         theme: Theme::Dark,
         name: "Dark",
-        visuals: Visuals::dark,
+        visuals: dark_visuals,
         palette: &DARK_PALETTE,
     },
     ThemeEntry {
@@ -74,7 +79,19 @@ pub const THEMES: &[ThemeEntry] = &[
     ThemeEntry {
         theme: Theme::Light,
         name: "Light",
-        visuals: Visuals::light,
+        visuals: light_visuals,
+        palette: &LIGHT_PALETTE,
+    },
+    ThemeEntry {
+        theme: Theme::Nebula,
+        name: "Nebula",
+        visuals: nebula_visuals,
+        palette: &DARK_PALETTE,
+    },
+    ThemeEntry {
+        theme: Theme::FrostLight,
+        name: "Frost Light",
+        visuals: frost_light_visuals,
         palette: &LIGHT_PALETTE,
     },
 ];
@@ -215,6 +232,29 @@ impl Theme {
     }
 }
 
+/// egui's own dark theme, in the app's material. Colours untouched.
+fn dark_visuals() -> Visuals {
+    glassify(
+        Visuals::dark(),
+        Glass {
+            rim: Color32::WHITE,
+            strength: 1.0,
+        },
+    )
+}
+
+/// egui's own light theme, in the app's material. Colours untouched; the rim is
+/// dark and eased off, because a white hairline on a white page is nothing.
+fn light_visuals() -> Visuals {
+    glassify(
+        Visuals::light(),
+        Glass {
+            rim: Color32::from_rgb(0x20, 0x20, 0x28),
+            strength: 0.55,
+        },
+    )
+}
+
 /// A dark theme with more contrast between the surfaces than egui's own, which
 /// is what the app opens with.
 fn light_dark_visuals() -> Visuals {
@@ -245,7 +285,176 @@ fn light_dark_visuals() -> Visuals {
     theme.window_fill = background;
     theme.window_stroke.color = Rgba::from_rgb(0.9, 0.9, 0.9).into();
     theme.window_shadow = Shadow::NONE;
-    theme
+    // The colours above are the ones this theme has always had — the fills that
+    // set a drop-down apart from the page included. `glassify` only rounds and
+    // rims them.
+    glassify(
+        theme,
+        Glass {
+            rim: Color32::WHITE,
+            strength: 1.0,
+        },
+    )
+}
+
+/// What tells one theme's glass apart from another's. Everything else about the
+/// material — the radii, the shadows — is the same for every theme, and lives
+/// in [`glassify`].
+struct Glass {
+    /// The hairline along the edge of a frame: what reads as the rim of a piece
+    /// of glass catching the light.
+    rim: Color32,
+    /// Scales every rim's alpha. A dark surface takes a full-strength rim; on a
+    /// light one the same alphas draw hard outlines, so they are eased off
+    /// rather than re-tuned one by one.
+    strength: f32,
+}
+
+impl Glass {
+    /// The rim at `alpha`, after [`Glass::strength`].
+    fn edge(&self, alpha: u8) -> Color32 {
+        self.tint(self.rim, alpha)
+    }
+
+    fn tint(&self, color: Color32, alpha: u8) -> Color32 {
+        let alpha = (alpha as f32 * self.strength).round().clamp(1.0, 255.0) as u8;
+        Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
+    }
+}
+
+/// Give a flat set of visuals the glass treatment: rounded corners, widget
+/// fills that let the surface below show through, a lit rim on every frame, and
+/// shadows switched back on so a popup reads as floating above the page rather
+/// than cut into it.
+///
+/// Every theme in the registry goes through here, so the app is made of one
+/// material throughout and the themes differ only in colour.
+///
+/// This is deliberately only the *shape* of things. Fills — `bg_fill`,
+/// `weak_bg_fill`, `faint_bg_color` — are left exactly as the theme set them,
+/// because that is what separates a drop-down or a table row from the page
+/// behind it. Replacing them with a translucent pane looks like glass and reads
+/// like fog: the field stops standing out from the background. Rounding,
+/// rimming and shadowing cost nothing in contrast, so those are what a theme
+/// gets here.
+fn glassify(mut visuals: Visuals, glass: Glass) -> Visuals {
+    visuals.window_corner_radius = CornerRadius::same(10);
+    visuals.menu_corner_radius = CornerRadius::same(8);
+
+    // A rim that firms up as the pointer approaches, so the response to it is
+    // the edge lighting up rather than the fill washing out.
+    let widgets = [
+        (&mut visuals.widgets.noninteractive, 14u8),
+        (&mut visuals.widgets.inactive, 26),
+        (&mut visuals.widgets.hovered, 60),
+        (&mut visuals.widgets.active, 90),
+        (&mut visuals.widgets.open, 70),
+    ];
+    for (widget, rim) in widgets {
+        widget.bg_stroke = Stroke::new(1.0, glass.edge(rim));
+        // 4, not more: a checkbox is about 14 points across and shares this
+        // radius, so anything rounder turns it into a radio button.
+        widget.corner_radius = CornerRadius::same(4);
+    }
+    // The pressed state is the one moment the theme's own accent takes over the
+    // rim, so a click lands somewhere visible instead of a shade lighter. The
+    // accent is the theme's link colour — the one colour every theme already
+    // defines as "bright enough to stand out against my background".
+    let accent = visuals.hyperlink_color;
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0, glass.tint(accent, 200));
+
+    visuals.window_stroke = Stroke::new(1.0, glass.edge(60));
+
+    // Straight down and wide: a shadow that reads as height, not as an object
+    // lying next to its own silhouette.
+    visuals.window_shadow = Shadow {
+        offset: [0, 8],
+        blur: 24,
+        spread: 0,
+        color: Color32::from_black_alpha(120),
+    };
+    visuals.popup_shadow = Shadow {
+        offset: [0, 6],
+        blur: 16,
+        spread: 0,
+        color: Color32::from_black_alpha(96),
+    };
+    visuals
+}
+
+/// Deep space instead of neutral grey: the surfaces carry a blue cast and the
+/// accent is the cyan of a shield facing.
+///
+/// The fills are stepped to match the separation "Light Dark" has between a
+/// field and the page behind it, so a drop-down still reads as a drop-down.
+fn nebula_visuals() -> Visuals {
+    let mut base = Visuals::dark();
+    base.panel_fill = Color32::from_rgb(0x0b, 0x0e, 0x14);
+    base.window_fill = Color32::from_rgb(0x0e, 0x12, 0x1a);
+    base.extreme_bg_color = Color32::from_rgb(0x07, 0x09, 0x10);
+    base.code_bg_color = Color32::from_rgb(0x11, 0x16, 0x20);
+    base.faint_bg_color = Color32::from_rgb(0x18, 0x1f, 0x2c);
+    base.warn_fg_color = Color32::from_rgb(0xf0, 0xa0, 0x30);
+    base.error_fg_color = Color32::from_rgb(0xe6, 0x67, 0x67);
+    base.hyperlink_color = Color32::from_rgb(0x3f, 0xc7, 0xe0);
+    base.selection = Selection {
+        bg_fill: Color32::from_rgb(0x1b, 0x5c, 0x74),
+        stroke: Stroke::new(1.0, Color32::from_rgb(0x9f, 0xe4, 0xf2)),
+    };
+
+    base.widgets.noninteractive.bg_fill = Color32::from_rgb(0x16, 0x1d, 0x2a);
+    base.widgets.noninteractive.weak_bg_fill = Color32::from_rgb(0x12, 0x18, 0x23);
+    base.widgets.inactive.bg_fill = Color32::from_rgb(0x25, 0x30, 0x44);
+    base.widgets.inactive.weak_bg_fill = Color32::from_rgb(0x1c, 0x25, 0x34);
+    base.widgets.hovered.bg_fill = Color32::from_rgb(0x31, 0x3f, 0x58);
+    base.widgets.hovered.weak_bg_fill = Color32::from_rgb(0x27, 0x33, 0x49);
+    base.widgets.active.bg_fill = Color32::from_rgb(0x3e, 0x50, 0x70);
+    base.widgets.active.weak_bg_fill = Color32::from_rgb(0x35, 0x45, 0x60);
+    base.widgets.open.bg_fill = Color32::from_rgb(0x31, 0x3f, 0x58);
+    base.widgets.open.weak_bg_fill = Color32::from_rgb(0x27, 0x33, 0x49);
+
+    base.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(0xd8, 0xe2, 0xf0);
+    base.widgets.inactive.fg_stroke.color = Color32::from_rgb(0xd8, 0xe2, 0xf0);
+    glassify(
+        base,
+        Glass {
+            rim: Color32::from_rgb(0x7f, 0xc8, 0xe8),
+            strength: 1.0,
+        },
+    )
+}
+
+/// The same material for daylight: a cool white page with fields a clear step
+/// darker than it, rather than the barely-there greys of egui's own light theme.
+fn frost_light_visuals() -> Visuals {
+    let mut base = Visuals::light();
+    base.panel_fill = Color32::from_rgb(0xf2, 0xf5, 0xf9);
+    base.window_fill = Color32::from_rgb(0xf7, 0xf9, 0xfc);
+    base.extreme_bg_color = Color32::from_rgb(0xff, 0xff, 0xff);
+    base.faint_bg_color = Color32::from_rgb(0xe4, 0xea, 0xf3);
+    base.hyperlink_color = Color32::from_rgb(0x0a, 0x6f, 0xd0);
+    base.selection = Selection {
+        bg_fill: Color32::from_rgb(0xb7, 0xd6, 0xf5),
+        stroke: Stroke::new(1.0, Color32::from_rgb(0x0a, 0x4a, 0x8a)),
+    };
+
+    base.widgets.noninteractive.bg_fill = Color32::from_rgb(0xe7, 0xec, 0xf3);
+    base.widgets.noninteractive.weak_bg_fill = Color32::from_rgb(0xed, 0xf1, 0xf7);
+    base.widgets.inactive.bg_fill = Color32::from_rgb(0xd8, 0xe1, 0xed);
+    base.widgets.inactive.weak_bg_fill = Color32::from_rgb(0xe2, 0xe9, 0xf2);
+    base.widgets.hovered.bg_fill = Color32::from_rgb(0xc6, 0xd4, 0xe6);
+    base.widgets.hovered.weak_bg_fill = Color32::from_rgb(0xd0, 0xdc, 0xeb);
+    base.widgets.active.bg_fill = Color32::from_rgb(0xb2, 0xc6, 0xde);
+    base.widgets.active.weak_bg_fill = Color32::from_rgb(0xbd, 0xce, 0xe3);
+    base.widgets.open.bg_fill = Color32::from_rgb(0xc6, 0xd4, 0xe6);
+    base.widgets.open.weak_bg_fill = Color32::from_rgb(0xd0, 0xdc, 0xeb);
+    glassify(
+        base,
+        Glass {
+            rim: Color32::from_rgb(0x1e, 0x3a, 0x5a),
+            strength: 0.55,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -260,7 +469,13 @@ mod tests {
     /// could be stored in the settings and never offered back.
     #[test]
     fn every_theme_is_in_the_registry() {
-        for theme in [Theme::Dark, Theme::LightDark, Theme::Light] {
+        for theme in [
+            Theme::Dark,
+            Theme::LightDark,
+            Theme::Light,
+            Theme::Nebula,
+            Theme::FrostLight,
+        ] {
             assert_eq!(
                 theme,
                 entry(theme).theme,
@@ -322,6 +537,110 @@ mod tests {
         ] {
             assert!(styles.contains(&style), "{style:?} has no size");
         }
+    }
+
+    /// Every theme is made of the same material: rounded frames, a rim, and
+    /// shadows on. One that missed the treatment would look like a different
+    /// app one tab over.
+    #[test]
+    fn every_theme_is_rounded_rimmed_and_lifted() {
+        for entry in THEMES {
+            let visuals = (entry.visuals)();
+            let name = entry.name;
+            assert_ne!(
+                CornerRadius::ZERO,
+                visuals.widgets.inactive.corner_radius,
+                "{name} paints square widgets"
+            );
+            assert_ne!(
+                CornerRadius::ZERO,
+                visuals.window_corner_radius,
+                "{name} paints square windows"
+            );
+            assert!(
+                visuals.widgets.inactive.bg_stroke.color.a() > 0,
+                "{name} draws no rim on a resting widget"
+            );
+            assert_ne!(Shadow::NONE, visuals.window_shadow, "{name} casts no shadow");
+        }
+    }
+
+    /// A field — a drop-down, a text box, a table row — has to stand off the
+    /// page behind it. This is what a translucent "pane" fill costs: it looks
+    /// like glass and reads like fog, and the combats list stops looking like
+    /// something to click.
+    #[test]
+    fn a_field_stands_out_from_the_page_in_every_theme() {
+        for entry in THEMES {
+            let visuals = (entry.visuals)();
+            let page = luma(visuals.panel_fill);
+            let field = luma(visuals.widgets.inactive.bg_fill);
+            assert!(
+                (page - field).abs() >= 15.0,
+                "{}: a resting field is {:.0} from the page it sits on, which reads as one surface",
+                entry.name,
+                (page - field).abs()
+            );
+        }
+    }
+
+    /// The rim firms up as the pointer arrives, which is what replaced washing
+    /// the fill out.
+    #[test]
+    fn the_rim_gets_stronger_with_interaction() {
+        for entry in THEMES {
+            let widgets = (entry.visuals)().widgets;
+            assert!(
+                widgets.inactive.bg_stroke.color.a() < widgets.hovered.bg_stroke.color.a(),
+                "{} does not light up on hover",
+                entry.name
+            );
+        }
+    }
+
+    /// The material must not touch the fills — those are the theme's own, and
+    /// they are what carries the contrast.
+    #[test]
+    fn glassify_leaves_the_fills_the_theme_chose() {
+        let before = Visuals::dark();
+        let after = glassify(
+            Visuals::dark(),
+            Glass {
+                rim: Color32::WHITE,
+                strength: 1.0,
+            },
+        );
+        assert_eq!(before.widgets.inactive.bg_fill, after.widgets.inactive.bg_fill);
+        assert_eq!(
+            before.widgets.hovered.weak_bg_fill,
+            after.widgets.hovered.weak_bg_fill
+        );
+        assert_eq!(before.faint_bg_color, after.faint_bg_color);
+        assert_eq!(before.panel_fill, after.panel_fill);
+        assert_eq!(before.selection.bg_fill, after.selection.bg_fill);
+    }
+
+    /// A rim with no alpha left is no rim. The light themes ease every alpha
+    /// down, so that is where rounding to nothing would show up first.
+    #[test]
+    fn eased_off_rims_never_vanish() {
+        for visuals in [frost_light_visuals(), light_visuals()] {
+            for widget in [
+                &visuals.widgets.noninteractive,
+                &visuals.widgets.inactive,
+                &visuals.widgets.hovered,
+                &visuals.widgets.active,
+                &visuals.widgets.open,
+            ] {
+                assert!(widget.bg_stroke.color.a() > 0);
+            }
+        }
+    }
+
+    /// Perceived brightness on the 0..255 scale, for asking whether two
+    /// surfaces read as one.
+    fn luma(color: Color32) -> f32 {
+        0.299 * color.r() as f32 + 0.587 * color.g() as f32 + 0.114 * color.b() as f32
     }
 
     fn apply_for_test(theme: Theme) {

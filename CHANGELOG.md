@@ -1,8 +1,16 @@
 # Change Log
 
-## unreleased
+## v2.1.0
+
+### Major Changes
+- there is now a manual: a walk through every part of the program with pictures — reading a run, comparing two of them, the overlay, the ladder and every setting — linked from the readme
+- the program has been given a coat of paint: rounded buttons and fields, a lit edge that firms up as you point at something, and shadows under the settings and popup windows. The colours are the ones you already know — every theme keeps its own — and fields still stand out from the page behind them as clearly as before
+- two new themes to pick from under Settings → Visuals: **Nebula**, deep space blue with a cyan highlight, and **Frost Light**, a cool daylight look. The readme shows all five side by side
+- the overlay carries its own buttons on every system now, not just on Linux: the column picker and the move handle sit on the overlay itself instead of in the main window, and you can still click straight through the rest of it at the game behind
+- the overlay can be made see-through, so it stops covering a chunk of the game. Settings → Visuals has an **Overlay Opacity** slider; the figures stay solid however faint you make the background, so your DPS is still readable at a glance. It turns out the overlay was never actually see-through before: it asked to be, but the setting was being thrown away before it reached the screen
 
 ### Other Changes
+- the readme now spells out how to bring your settings over from the original Combat Log Analyzer, step by step. Your naming rules, grouping rules, log path and the rest all come across, and your old installation is left working
 - the icon shows up where the desktop puts it too: in the window's own frame, in the task switcher and on the taskbar. On a Wayland desktop it was a generic "unknown application" mark, because the entry the desktop keeps for the program was filed under a different name than the one the window gives — the two agree now
 - the lettering on the icon is black, and the mark itself is no longer partly see-through — against a dark desktop it used to take on the colour behind it instead of standing on its own tile
 
