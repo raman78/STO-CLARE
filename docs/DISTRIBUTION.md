@@ -99,6 +99,27 @@ Triggered on `release: published` (tag `vX.Y.Z`) and `workflow_dispatch`.
 Asset names must contain the platform tag (`linux-x86_64`, `windows-x86_64`)
 and hold the binary at the archive root — that is what `--upgrade` matches on.
 
+### Where the version comes from
+
+Two places hold it, and they serve different ends:
+
+| Source       | Reaches                                                                                                         |
+|--------------|-----------------------------------------------------------------------------------------------------------------|
+| `Cargo.toml` | Compiled into the binary: `--version`, the window title, and the "current version" `--upgrade` compares against |
+| Tag `vX.Y.Z` | The release the assets are attached to, and therefore their file names                                          |
+
+`Determine version` picks between them by event: a `release` run takes the tag,
+because the assets have to be named after the release `install.sh` and
+`--upgrade` will look in; a manual run has no tag at all, so it reads
+`Cargo.toml`.
+
+On a `release` run the step also **compares the two and fails the build if they
+disagree**. A mismatch produces a release that contradicts itself — assets
+called `2.1.1` around a program reporting `2.1.0` — and because `--upgrade`
+compares its own compiled version against the latest release, that either
+upgrades in a loop or never fires. Bump `Cargo.toml` in the same commit the tag
+points at and the check is silent.
+
 ## Upgrading — `--upgrade` (`src/app/self_upgrade.rs`)
 
 The analogue of `pipx upgrade`. `sto-clare --upgrade` uses the `self_update` crate

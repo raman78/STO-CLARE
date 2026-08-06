@@ -28,11 +28,24 @@ jobs:
       - name: Determine version
         id: ver
         run: |
+          crate_version="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
           if [ "${{ github.event_name }}" = "release" ]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            # The tag names the assets, because that is what install.sh and
+            # `--upgrade` look for; Cargo.toml is what ends up compiled into the
+            # program and reported by `--version`. They have to agree, or the
+            # release is internally inconsistent: assets called one thing, a
+            # program calling itself another, and `--upgrade` either looping or
+            # never firing. Nothing else checks this, so it is checked here.
+            version="${GITHUB_REF_NAME#v}"
+            if [ "$version" != "$crate_version" ]; then
+              echo "::error::release tag v$version does not match Cargo.toml ($crate_version) — bump the version in the same commit as the tag"
+              exit 1
+            fi
           else
-            echo "version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')" >> "$GITHUB_OUTPUT"
+            # A manual run has no tag to take a version from.
+            version="$crate_version"
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build
         run: cargo build --release
@@ -74,11 +87,24 @@ jobs:
         id: ver
         shell: bash
         run: |
+          crate_version="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
           if [ "${{ github.event_name }}" = "release" ]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            # The tag names the assets, because that is what install.sh and
+            # `--upgrade` look for; Cargo.toml is what ends up compiled into the
+            # program and reported by `--version`. They have to agree, or the
+            # release is internally inconsistent: assets called one thing, a
+            # program calling itself another, and `--upgrade` either looping or
+            # never firing. Nothing else checks this, so it is checked here.
+            version="${GITHUB_REF_NAME#v}"
+            if [ "$version" != "$crate_version" ]; then
+              echo "::error::release tag v$version does not match Cargo.toml ($crate_version) — bump the version in the same commit as the tag"
+              exit 1
+            fi
           else
-            echo "version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')" >> "$GITHUB_OUTPUT"
+            # A manual run has no tag to take a version from.
+            version="$crate_version"
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build
         run: cargo build --release
