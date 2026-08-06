@@ -1,7 +1,8 @@
 # Technical documentation
 
-Notes for people who read or change the code. User-facing material lives in
-the top-level `README.md`.
+Notes for people who read or change the code. User-facing material lives at the
+top level: `README.md` for the overview and installing, `MANUAL.md` for the
+guide to using the program.
 
 Start with **`ARCHITECTURE.md`** — it maps the modules, the threads and the
 path a log line takes to become a number in a table, and links onward.

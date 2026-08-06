@@ -12,8 +12,13 @@ because it has gone its own way — the original author is not involved in it an
 is not the person to ask about it. The original copyright notice stays in the
 licence files, where it belongs.
 
-If you are coming from the older version: your settings are carried over the
-first time you start STO-CLARE, and your old installation keeps working.
+**[Read the manual](MANUAL.md)** for a walk through every part of the program,
+with pictures.
+
+Coming from the original STO_CombatLogAnalyzer? Your naming rules, grouping
+rules and every other setting can be carried over, and your old installation
+keeps working — see [Bringing your old settings
+across](#bringing-your-old-settings-across).
 
 ## What you need before you start
 
@@ -34,21 +39,15 @@ first time you start STO-CLARE, and your old installation keeps working.
 
 Your combats appear in the list at the top. Pick one and the tabs below fill in.
 
-```
-┌─ STO-CLARE V2.0.0 ──────────────────────────────────────────┐
-│  [ Refresh ]  [ Settings ]  [ Overlay ]  [ Compare ]        │
-│  Combat: [ [TFO] Hive Onslaught [Elite]  17:22 - 17:29  ▼ ] │
-│  Type: [ Space ▼ ]   Level: [ Elite ▼ ]   Map: [ any ▼ ]    │
-├─────────────────────────────────────────────────────────────┤
-│  Summary │ Damage Dealt │ Damage Taken │ Healing Ally │ …   │
-├─────────────────────────────────────────────────────────────┤
-│  Name              DPS       Total Damage    Hits           │
-│  ▸ You             182 456   41 963 220      3 412          │
-│  ▸ Teammate        119 003   27 380 991      2 884          │
-├─────────────────────────────────────────────────────────────┤
-│  (charts for the selected rows)                             │
-└─────────────────────────────────────────────────────────────┘
-```
+![The Summary tab](images/summary-tab.png)
+
+Open a player's row on the Damage Dealt tab and you get everything they used,
+ordered by how much it contributed:
+
+![A player's abilities, opened up](images/ability-breakdown.png)
+
+The [manual](MANUAL.md) covers the rest — comparing runs, the overlay, the
+ladder, and every setting.
 
 Tip: add the launch option `-NoAutoRotateLogs` to the game (on Steam:
 right-click Star Trek Online → Properties → Launch Options) so it keeps writing
@@ -86,6 +85,50 @@ then build the release binary:
 ```sh
 cargo build --release
 ```
+
+---
+
+## Bringing your old settings across
+
+Nothing has to be set up twice. Which route you need depends on which program
+you are coming from.
+
+**From an older version of this program** (anything before the rename): there is
+nothing to do. Your settings are copied into the new folder the first time
+STO-CLARE starts.
+
+**From the original STO_CombatLogAnalyzer:** that program keeps its settings in
+a file called `STO_CombatLogAnalyzer_Settings.json`, in the same folder as the
+program itself. Copy it across:
+
+1. Find `STO_CombatLogAnalyzer_Settings.json` in the folder you run the original
+   from.
+2. Copy it — do not move it — into the STO-CLARE settings folder:
+   `~/.config/STO-CLARE/` on Linux, `%APPDATA%\STO-CLARE\` on Windows.
+3. Rename the copy to exactly `STO-CLARE_Settings.json`.
+4. Start STO-CLARE.
+
+Everything comes over: the path to your combat log, the combat separation time,
+your combat naming rules, your custom grouping and source reversal rules, the
+theme and interface scale, and the ladder address. Sections that did not exist
+in the original start at their defaults. Because you copied the file rather than
+moving it, the original installation is untouched and keeps working.
+
+---
+
+## Themes
+
+Five looks, picked under Settings → Visuals. They differ in colour only — the
+rounding, the edges and the shadows are the same throughout.
+
+| | |
+|---|---|
+| **Light Dark** — the one it opens with | **Dark** |
+| ![Light Dark](images/theme-light-dark.png) | ![Dark](images/theme-dark.png) |
+| **Nebula** — deep space and cyan | **Frost Light** — cool daylight |
+| ![Nebula](images/theme-nebula.png) | ![Frost Light](images/theme-frost-light.png) |
+| **Light** | |
+| ![Light](images/theme-light.png) | |
 
 ---
 
@@ -160,29 +203,11 @@ means it lives here only.
 
 ## Advanced settings
 
-These live under **Settings → Analysis**. You do not need them to read your
-damage — they change how rows are grouped in the tables.
-
-### Indirect source grouping reversal
-
-Some damage and healing does not come straight from you: pets, anomalies,
-consoles that spawn something. Those show up as a row you can expand, with the
-individual effects underneath.
-
-Sometimes you want it the other way round — the effect on top, the pets
-underneath. That is what a reversal rule does. The Tachyon Net Drones console
-is the classic case: by default its effect is scattered over many rows, and one
-rule folds it into a single row you can expand. The default settings ship with
-a ready-made example for the starship trait Spore-Infused Anomalies; tick its
-"on" box to use it.
-
-### Custom grouping rules
-
-A custom grouping rule folds several effects into one row. Useful for a weapon
-with an extra proc — for example the Advanced Piezo Beam Array, whose Technical
-Overload fires alongside the beam itself. The default settings include an
-example for the Dark Matter Quantum Torpedo, again switched on with its "on"
-box.
+Under **Settings → Analysis** you can change how rows are named and grouped in
+the tables — naming rules, source reversal, custom grouping and damage
+exclusion. You do not need any of it to read your damage. The
+[manual](MANUAL.md#analysis) explains each one, with the ready-made examples
+that ship in the settings.
 
 ---
 
@@ -211,8 +236,10 @@ box.
 ## FAQ
 
 **Q: I used STO_CombatLogAnalyzer. Do I have to set everything up again?**
-A: No. The first time STO-CLARE starts it copies your old settings — including
-your naming and grouping rules — into its own folder. The old installation is
+A: No — including your naming and grouping rules. Settings from an older version
+of this program are picked up on the first start; settings from the original
+program are one file copy away. See [Bringing your old settings
+across](#bringing-your-old-settings-across). Either way the old installation is
 left untouched, so it keeps working if you want to go back.
 
 **Q: Where are my settings kept?**
