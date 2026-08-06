@@ -1,5 +1,10 @@
 # Change Log
 
+## v2.1.1
+
+### Fixes
+- the Overlay button switches the overlay off again. Since 2.1.0 it came straight back the instant it was closed, so the button looked like it did nothing
+
 ## v2.1.0
 
 ### Major Changes
