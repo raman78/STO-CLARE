@@ -288,7 +288,10 @@ impl Overlay {
         self.0.lock().overlay_gpu = Some(gpu);
     }
 
-    pub fn show(&self, ui: &mut Ui) {
+    /// The button that switches the overlay on and off. Nothing more: the
+    /// overlay itself is driven by [`Overlay::update`], which has to run
+    /// whatever the main window happens to be showing.
+    pub fn show_button(&self, ui: &mut Ui) {
         let mut inner = self.0.lock();
 
         if Button::new("Overlay")
@@ -299,11 +302,23 @@ impl Overlay {
         {
             inner.toggle_show();
         }
+    }
+
+    /// Drive the overlay for this frame: take what the analysis has sent, and
+    /// paint the surface it lives on.
+    ///
+    /// Called once a frame from `App::update`, and deliberately not from
+    /// whichever toolbar happens to be on screen. The overlay follows the
+    /// newest combat on its own handler, independently of what the main window
+    /// is doing — so tying this to a toolbar meant that opening a view which
+    /// hides that toolbar (Compare Combats) froze the overlay mid-fight.
+    pub fn update(&self, ctx: &Context) {
+        let mut inner = self.0.lock();
 
         // Drained whether or not the overlay is on screen: the analysis keeps
         // sending, and a hidden overlay that stops reading would leave the
         // messages piling up behind it.
-        inner.poll_update(ui.ctx());
+        inner.poll_update(ctx);
         // Nothing below this point runs while the overlay is off — including
         // spawning the layer-shell surface, which would otherwise be recreated
         // the frame after it was switched off.
@@ -335,7 +350,7 @@ impl Overlay {
                 }
             }
             if config_changed {
-                inner.force_update(ui.ctx());
+                inner.force_update(ctx);
             }
 
             if inner.layer.is_none()
@@ -348,12 +363,12 @@ impl Overlay {
                     .map_or((0, 0), |[top, left]| (top, left));
                 inner.layer = Some(layer_shell::LayerOverlay::spawn(gpu, position));
             }
-            inner.check_update(ui.ctx());
+            inner.check_update(ctx);
             let data = inner.to_overlay_data();
             // The overlay's transparency rides along in the style it is sent:
             // the surface it paints carries the alpha, so nothing in the main
             // window's own style has to be touched.
-            let mut style = Style::clone(ui.style());
+            let mut style = Style::clone(&ctx.global_style());
             style.visuals =
                 overlay_visuals(&style.visuals, inner.settings.visuals.overlay_opacity);
             let style = Arc::new(style);
@@ -363,7 +378,7 @@ impl Overlay {
             }
             // Keep the main app repainting so we keep feeding the overlay and
             // polling its toolbar events (column toggles) promptly.
-            ui.ctx()
+            ctx
                 .request_repaint_after(std::time::Duration::from_millis(200));
             return;
         }
@@ -400,12 +415,12 @@ impl Overlay {
                 .with_mouse_passthrough(
                     !inner.move_around
                         && !inner.columns_open
-                        && !inner.pointer_over_toolbar(ui.ctx()),
+                        && !inner.pointer_over_toolbar(ctx),
                 );
             builder.position = inner.position;
             drop(inner);
             let inner = self.0.clone();
-            ui.ctx()
+            ctx
                 .show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
                     inner.lock().show_overlay(ui);
                 });
@@ -419,9 +434,9 @@ impl Overlay {
             // to be awake to act on the command it is sent. Waking only the
             // main window leaves the command sitting until something else stirs
             // the overlay, which turns a 50 ms flip into seconds.
-            ui.ctx()
+            ctx
                 .request_repaint_after(std::time::Duration::from_millis(50));
-            ui.ctx().request_repaint_after_for(
+            ctx.request_repaint_after_for(
                 std::time::Duration::from_millis(50),
                 Self::viewport_id(),
             );
@@ -775,13 +790,32 @@ mod tests {
         overlay.0.lock().toggle_show();
         assert!(!overlay.is_shown());
         // Run the frame that follows the toggle; nothing may bring it back.
-        ctx.run(Default::default(), |ctx| {
-            eframe::egui::CentralPanel::default().show(ctx, |ui| overlay.show(ui));
-        });
+        overlay.update(&ctx);
         assert!(
             !overlay.is_shown(),
             "the overlay came back on the frame after it was switched off"
         );
+    }
+
+    /// The overlay is driven by `update`, which `App::update` calls every frame
+    /// whatever the main window is showing. It used to hang off the toolbar
+    /// that carries its button, and that toolbar is hidden while Compare
+    /// Combats is open — so comparing froze the overlay mid-fight.
+    ///
+    /// What can be checked here is the half that made that possible: `update`
+    /// asks for nothing but a context, so there is no `Ui` — and therefore no
+    /// toolbar — for it to be tied to again.
+    #[test]
+    fn the_overlay_is_driven_without_a_toolbar_to_hang_off() {
+        let overlay = test_overlay();
+        let ctx = Context::default();
+
+        overlay.0.lock().toggle_show();
+        assert!(overlay.is_shown());
+        // No panel and no toolbar: the frame draws nothing at all, and the
+        // overlay is still driven through it.
+        let _ = ctx.run_ui(Default::default(), |_| overlay.update(&ctx));
+        assert!(overlay.is_shown());
     }
 
     fn visuals_filled_with(color: Color32) -> Visuals {

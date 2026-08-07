@@ -1,5 +1,10 @@
 # Change Log
 
+# unreleased
+
+### Fixes
+- the overlay keeps following the fight while you have Compare Combats open. It used to stop dead the moment you opened a comparison and only pick up again after you closed it, so the figures on screen were whatever they had been minutes earlier
+
 ## v2.1.1
 
 ### Fixes

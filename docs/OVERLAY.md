@@ -10,7 +10,16 @@ crashing.
 
 Owned by `src/app/overlay/mod.rs` (`Overlay`, the app-side controller) and
 `src/app/overlay/layer_shell.rs` (`LayerOverlay`, the Wayland surface). Driven
-from the main tab UI via `Overlay::show()`.
+from `App::ui` via `Overlay::update()`, once a frame and unconditionally;
+`Overlay::show_button()` is only the toggle in the toolbar, and draws nothing
+else.
+
+**Why the split.** The overlay follows the newest combat on a handler of its
+own, whatever the main window is showing — so what drives it cannot hang off a
+piece of UI that comes and goes. It used to: both halves were one
+`Overlay::show(ui)` called from the single-combat toolbar, and that toolbar is
+hidden while Compare Combats is open, which froze the overlay mid-fight for as
+long as a comparison was up.
 
 ## Context
 
@@ -24,7 +33,7 @@ that stays above the game.
    │  App (main window)                                         │
    │    └─ Overlay  ── Arc<Mutex<OverlayInner>>                 │
    │          │                                                 │
-   │   session split in Overlay::show()                         │
+   │   session split in Overlay::update()                       │
    │          │                                                 │
    │   ┌──────┴───────────────┐                                 │
    │   │                      │                                 │
@@ -114,7 +123,7 @@ over a calloop channel.
                                             cla-layer-overlay thread: State
 ```
 
-`Overlay::show()` pumps this every frame while the overlay is visible and asks
+`Overlay::update()` pumps this every frame while the overlay is visible and asks
 the main context to repaint every 500 ms (`overlay/mod.rs`) so fresh data keeps
 flowing to the thread. `set_move` is sent every frame too; the thread ignores
 it unless the flag actually changed (`overlay/layer_shell.rs`, `Msg::Move` handler).
@@ -259,7 +268,7 @@ formatted strings when built (`ShieldAndHullTextValue::new`) rather than at draw
 time — but that path is effectively free.
 
 Restoring needs nothing beyond setting `show`: the render path in
-`Overlay::show` branches on `inner.show` alone, and the analysis handler is
+`Overlay::update` branches on `inner.show` alone, and the analysis handler is
 already created with auto-refresh on — the same state `toggle_show` would leave
 behind for a visible overlay. `set_gpu` still runs first, because `App::new`
 finishes before the first frame, so the layer-shell back end is selected
