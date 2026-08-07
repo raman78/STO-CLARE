@@ -229,6 +229,40 @@ step for a light one. Past eight the order starts again: how many series a chart
 holds is the user's choice, and every chart names its series in the legend and
 on hover, so colour is never the only thing telling two apart.
 
+### The colour-blind series
+
+That validation covers **neighbouring** hues, which is what a chart of two or
+three series draws. Across the whole eight the ordinary palette does collapse
+for a dichromat — its blue against its violet is ΔE 2 under protanopia, its aqua
+against its magenta ΔE 5 — and a chart of eight abilities draws all of them.
+
+`Palette::color_blind_series` is a second set for that case, switched on by
+`visuals.color_blind_series` in the settings and reaching the charts through
+`theme::set_color_blind_series` → the `COLOR_BLIND` flag → `theme::series()`.
+The flag sits beside `ACTIVE` and for the same reason: the overlay draws from
+these colours in its own egui context.
+
+|                          | ordinary                 | colour-blind              |
+|--------------------------|--------------------------|---------------------------|
+| worst pair, protanopia   | ΔE 2 (dark) / 16 (light) | ΔE 17 (dark) / 21 (light) |
+| worst pair, deuteranopia | ΔE 5 (dark) / 14 (light) | ΔE 16 (dark) / 19 (light) |
+
+Both sets are Okabe–Ito, the published colour-blind-safe eight, with the two
+changes our surfaces force: on a dark plate its blue is lightened (2.0:1 against
+the "Light Dark" chart plate at its published value) and its black becomes a
+light neutral; on a white plate its yellow is replaced by a dark red rather than
+darkened, because darkening walks it into the orange — for a dichromat those two
+differ only in lightness.
+
+The floors are asserted in `theme.rs`'s tests, which carry a Viénot/Brettel
+dichromat simulation and a CIELAB distance, so retuning either palette cannot
+quietly undo this. One test states the *relation* — the colour-blind set must be
+further apart than the ordinary one — rather than a second absolute number.
+
+Only the series move. `improve`/`worse` and the status marks keep their green
+and red: a delta carries its `+`/`-` sign and a mark its word, so colour is not
+what carries the meaning there.
+
 ## Log files on disk
 
 STO under Proton rotates its combat log. On Linux `app/log_consolidation` merges

@@ -28,6 +28,22 @@ impl VisualsTab {
                 }
             });
 
+        if ui
+            .checkbox(
+                &mut visuals.color_blind_series,
+                "Colour-blind friendly chart colours",
+            )
+            .on_hover_text(
+                "Draws chart lines and bars in a set of colours that stay apart for red-green \
+                 colour blindness, which the ordinary set only manages between neighbouring \
+                 series. Nothing else changes colour: the +/- differences in Compare and the \
+                 status marks already say which is which in words and signs.",
+            )
+            .changed()
+        {
+            Self::set_color_blind_series(ui.ctx(), visuals.color_blind_series);
+        }
+
         ui.add_space(10.0);
         ui.separator();
 
@@ -76,11 +92,20 @@ impl VisualsTab {
     ) {
         let visuals = &settings.visuals;
         Self::set_theme(ctx, visuals.theme);
+        Self::set_color_blind_series(ctx, visuals.color_blind_series);
         Self::set_ui_scale(ctx, native_pixels_per_point, visuals.ui_scale);
     }
 
     fn set_theme(ctx: &Context, selected: theme::Theme) {
         theme::apply(ctx, selected);
+        Overlay::request_repaint(ctx);
+    }
+
+    /// The charts read the colours as they draw, so switching the set only has
+    /// to reach the process-wide flag and ask for a repaint — the overlay
+    /// included, since it draws from the same colours in its own context.
+    fn set_color_blind_series(ctx: &Context, on: bool) {
+        theme::set_color_blind_series(on);
         Overlay::request_repaint(ctx);
     }
 

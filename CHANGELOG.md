@@ -1,5 +1,10 @@
 # Change Log
 
+# unreleased
+
+### Other Changes
+- **Settings → Visuals** has a **Colour-blind friendly chart colours** switch. Charts then draw their lines and bars in a set of colours chosen to stay apart for red-green colour blindness, which the ordinary set only manages between neighbouring series — on a chart with six or eight things drawn at once, two of them could look the same. Each theme keeps its own version, so the colours still suit a dark or a light background. Nothing else changes colour: the +/- differences in Compare and the status marks already say which is which in words and signs
+
 ## v2.1.1
 
 ### Fixes

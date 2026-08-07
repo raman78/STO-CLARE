@@ -86,6 +86,11 @@ pub struct Visuals {
     /// had.
     #[serde(default = "default_overlay_opacity")]
     pub overlay_opacity: f64,
+    /// Draw chart series in the theme's colour-blind set instead of its
+    /// ordinary one. Off in a settings file written before this existed, which
+    /// is what every reader who does not need it wants anyway.
+    #[serde(default)]
+    pub color_blind_series: bool,
 }
 
 fn default_overlay_opacity() -> f64 {
@@ -192,6 +197,7 @@ impl Default for Visuals {
             ui_scale: 1.0,
             theme: Default::default(),
             overlay_opacity: default_overlay_opacity(),
+            color_blind_series: false,
         }
     }
 }
