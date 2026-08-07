@@ -14,7 +14,7 @@
 //!
 //! [`apply`] is the only way any of it reaches the screen.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use eframe::{
     egui::{
@@ -51,6 +51,10 @@ pub struct Palette {
     pub error: Color32,
     /// Chart series, taken in order. See [`series_color`].
     pub series: &'static [Color32],
+    /// The same, for a reader with colour-vision deficiency. Picked to stay
+    /// apart under protanopia and deuteranopia across the *whole* set rather
+    /// than only between neighbours — see [`set_color_blind_series`].
+    pub color_blind_series: &'static [Color32],
 }
 
 /// One entry of the registry: everything a theme is.
@@ -139,6 +143,54 @@ const LIGHT_SERIES: &[Color32] = &[
     Color32::from_rgb(0xe3, 0x49, 0x48), // red
 ];
 
+/// Eight series for a dark chart surface that stay apart for a reader with
+/// colour-vision deficiency, offered instead of [`DARK_SERIES`] when the
+/// setting is on.
+///
+/// Seven of them are the Okabe–Ito set, which was designed and published for
+/// exactly this and is the one most widely checked against real viewers; only
+/// two changes were needed for this app:
+///
+/// - its blue is lightened from L\*46 to L\*56, because at its published value
+///   it sits at 2.0:1 against the lightest of our dark surfaces (the "Light
+///   Dark" chart plate) — below anything else the app draws there;
+/// - its eighth colour is black, which is invisible on a dark plate, so a light
+///   neutral takes that slot. It is not what sets the floor below, so the swap
+///   costs no separation.
+///
+/// Where the ordinary palette leans on hue, this one leans on **lightness**:
+/// that is the axis a dichromat keeps, so the set spans L\*54 to L\*89 instead
+/// of the ordinary palette's narrow band.
+const CVD_DARK_SERIES: &[Color32] = &[
+    Color32::from_rgb(0xe6, 0x9f, 0x00), // orange
+    Color32::from_rgb(0x56, 0xb4, 0xe9), // sky blue
+    Color32::from_rgb(0x00, 0x9e, 0x73), // bluish green
+    Color32::from_rgb(0xf0, 0xe4, 0x42), // yellow
+    Color32::from_rgb(0x3a, 0x8b, 0xce), // blue, lightened for the plate
+    Color32::from_rgb(0xd5, 0x5e, 0x00), // vermillion
+    Color32::from_rgb(0xcc, 0x79, 0xa7), // reddish purple
+    Color32::from_rgb(0xdc, 0xdc, 0xdc), // light neutral, in place of black
+];
+
+/// The same, for a light chart surface.
+///
+/// Okabe–Ito again, with its yellow replaced rather than darkened: on white
+/// that yellow is 1.3:1, and darkening it far enough to be seen walks it into
+/// the orange, since for a dichromat the two differ only in lightness. A dark
+/// red takes the slot instead — well clear of everything else, on the surface
+/// and under simulation alike — and the set keeps black, which a white plate
+/// makes the strongest colour of the eight.
+const CVD_LIGHT_SERIES: &[Color32] = &[
+    Color32::from_rgb(0xe6, 0x9f, 0x00), // orange
+    Color32::from_rgb(0x56, 0xb4, 0xe9), // sky blue
+    Color32::from_rgb(0x00, 0x9e, 0x73), // bluish green
+    Color32::from_rgb(0x78, 0x26, 0x2f), // dark red, in place of the yellow
+    Color32::from_rgb(0x00, 0x72, 0xb2), // blue
+    Color32::from_rgb(0xd5, 0x5e, 0x00), // vermillion
+    Color32::from_rgb(0xcc, 0x79, 0xa7), // reddish purple
+    Color32::from_rgb(0x00, 0x00, 0x00), // black
+];
+
 const DARK_PALETTE: Palette = Palette {
     improve: Color32::from_rgb(0x5c, 0xb8, 0x5c),
     worse: Color32::from_rgb(0xd9, 0x53, 0x4f),
@@ -147,6 +199,7 @@ const DARK_PALETTE: Palette = Palette {
     busy: Color32::from_rgb(0xd9, 0x95, 0x00),
     error: Color32::from_rgb(0xd9, 0x53, 0x4f),
     series: DARK_SERIES,
+    color_blind_series: CVD_DARK_SERIES,
 };
 
 const LIGHT_PALETTE: Palette = Palette {
@@ -158,12 +211,18 @@ const LIGHT_PALETTE: Palette = Palette {
     busy: Color32::from_rgb(0xa8, 0x6e, 0x00),
     error: Color32::from_rgb(0xc0, 0x28, 0x24),
     series: LIGHT_SERIES,
+    color_blind_series: CVD_LIGHT_SERIES,
 };
 
 /// Index into [`THEMES`] of the theme in use. The look is one per process — the
 /// overlay runs its own egui context and shares it — so it lives here rather
 /// than being carried to every call site that wants a colour.
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether charts take their series from [`Palette::color_blind_series`]. Kept
+/// beside [`ACTIVE`] and for the same reason: the overlay's own egui context
+/// draws from these colours too.
+static COLOR_BLIND: AtomicBool = AtomicBool::new(false);
 
 /// Put `theme` on screen: egui's widget colours, our own colours, the text
 /// sizes and the few style tweaks the app relies on.
@@ -213,8 +272,34 @@ pub fn palette() -> &'static Palette {
 /// no fixed set to design for. Every chart names its series in the legend and
 /// on hover, which is what keeps them apart when a hue comes round twice.
 pub fn series_color(index: usize) -> Color32 {
-    let series = palette().series;
+    let series = series();
     series[index % series.len()]
+}
+
+/// The series colours in force: the theme's own, or its colour-blind set when
+/// [`set_color_blind_series`] has switched them on.
+pub fn series() -> &'static [Color32] {
+    let palette = palette();
+    if COLOR_BLIND.load(Ordering::Relaxed) {
+        palette.color_blind_series
+    } else {
+        palette.series
+    }
+}
+
+/// Switch the charts between the theme's ordinary series colours and its
+/// colour-blind set.
+///
+/// A setting rather than a theme of its own: which colours read apart is about
+/// the eyes doing the reading, not about whether the app is dark or light, and
+/// making it a theme would have meant one colour-blind copy of every theme
+/// there is.
+///
+/// Only the chart series move. The deltas in the compare table and the status
+/// marks keep their green and red, because those never stand on colour alone —
+/// a delta carries its `+`/`-` sign and a status mark its word.
+pub fn set_color_blind_series(on: bool) {
+    COLOR_BLIND.store(on, Ordering::Relaxed);
 }
 
 fn index_of(theme: Theme) -> usize {
@@ -496,10 +581,11 @@ mod tests {
     #[test]
     fn the_series_of_a_palette_are_distinct() {
         for entry in THEMES {
-            let series = entry.palette.series;
-            for (i, a) in series.iter().enumerate() {
-                for b in series.iter().skip(i + 1) {
-                    assert_ne!(a, b, "{} repeats a series colour", entry.name);
+            for series in [entry.palette.series, entry.palette.color_blind_series] {
+                for (i, a) in series.iter().enumerate() {
+                    for b in series.iter().skip(i + 1) {
+                        assert_ne!(a, b, "{} repeats a series colour", entry.name);
+                    }
                 }
             }
         }
@@ -511,6 +597,11 @@ mod tests {
     fn a_palette_covers_at_least_eight_series() {
         for entry in THEMES {
             assert!(entry.palette.series.len() >= 8, "{}", entry.name);
+            assert!(
+                entry.palette.color_blind_series.len() >= 8,
+                "{} colour-blind set",
+                entry.name
+            );
         }
     }
 
@@ -521,6 +612,157 @@ mod tests {
         let len = palette().series.len();
         assert_eq!(series_color(0), series_color(len));
         assert_ne!(series_color(0), series_color(1));
+    }
+
+    /// The setting has to reach the colours the charts actually draw with, and
+    /// leave them as it found them when it is switched off again.
+    #[test]
+    fn the_setting_switches_which_series_the_charts_draw() {
+        let _active = ACTIVE_THEME.lock().unwrap();
+        apply_for_test(Theme::LightDark);
+        let ordinary = series_color(0);
+
+        set_color_blind_series(true);
+        assert_eq!(palette().color_blind_series[0], series_color(0));
+        assert_ne!(ordinary, series_color(0));
+
+        set_color_blind_series(false);
+        assert_eq!(ordinary, series_color(0));
+    }
+
+    /// The deltas and the status marks keep their colours: those never stand on
+    /// colour alone — a delta carries its sign, a mark its word — and swapping
+    /// them would be a change of look rather than a help to anybody.
+    #[test]
+    fn the_setting_leaves_everything_but_the_series_alone() {
+        let _active = ACTIVE_THEME.lock().unwrap();
+        apply_for_test(Theme::LightDark);
+        let (improve, worse, warn) = (palette().improve, palette().worse, palette().warn);
+
+        set_color_blind_series(true);
+        let after = palette();
+        set_color_blind_series(false);
+
+        assert_eq!(improve, after.improve);
+        assert_eq!(worse, after.worse);
+        assert_eq!(warn, after.warn);
+    }
+
+    /// Every pair of the colour-blind set has to stay apart under the two
+    /// common deficiencies — not just neighbouring pairs, which is all the
+    /// ordinary palette promises and all it manages. A chart can hold any
+    /// eight of them at once, and it is the far-apart pairs of the ordinary set
+    /// (its blue against its violet, its aqua against its magenta) that collapse.
+    ///
+    /// The floor is in CIELAB ΔE. Ten is roughly where two colours stop reading
+    /// as shades of one thing; the sets below clear fifteen.
+    #[test]
+    fn the_colour_blind_series_stay_apart_for_a_dichromat() {
+        for entry in THEMES {
+            for deficiency in [Deficiency::Protanopia, Deficiency::Deuteranopia] {
+                let worst = worst_pair(entry.palette.color_blind_series, deficiency);
+                assert!(
+                    worst >= 15.0,
+                    "{} under {deficiency:?}: two series only ΔE {worst:.1} apart",
+                    entry.name
+                );
+            }
+        }
+    }
+
+    /// The point of the set. Kept as a comparison rather than a second floor,
+    /// so retuning either palette cannot quietly leave the colour-blind one no
+    /// better than what it replaces.
+    #[test]
+    fn the_colour_blind_series_beat_the_ordinary_ones_for_a_dichromat() {
+        for entry in THEMES {
+            for deficiency in [Deficiency::Protanopia, Deficiency::Deuteranopia] {
+                let ordinary = worst_pair(entry.palette.series, deficiency);
+                let helped = worst_pair(entry.palette.color_blind_series, deficiency);
+                assert!(
+                    helped > ordinary,
+                    "{} under {deficiency:?}: the colour-blind set is no further apart \
+                     (ΔE {helped:.1}) than the ordinary one (ΔE {ordinary:.1})",
+                    entry.name
+                );
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Deficiency {
+        Protanopia,
+        Deuteranopia,
+    }
+
+    /// How far apart the closest two colours of `series` are, seen with
+    /// `deficiency`.
+    fn worst_pair(series: &[Color32], deficiency: Deficiency) -> f64 {
+        let mut worst = f64::INFINITY;
+        for (i, a) in series.iter().enumerate() {
+            for b in series.iter().skip(i + 1) {
+                let distance = delta_e(
+                    dichromat(*a, deficiency),
+                    dichromat(*b, deficiency),
+                );
+                worst = worst.min(distance);
+            }
+        }
+        worst
+    }
+
+    /// What a dichromat sees, after Viénot, Brettel & Mollon (1999): the colour
+    /// is taken to LMS, the missing cone's response is replaced by what the
+    /// other two imply, and the result is taken back to RGB.
+    fn dichromat(color: Color32, deficiency: Deficiency) -> [f64; 3] {
+        let [r, g, b] = linear(color);
+        let l = 17.8824 * r + 43.5161 * g + 4.11935 * b;
+        let m = 3.45565 * r + 27.1554 * g + 3.86714 * b;
+        let s = 0.0299566 * r + 0.184309 * g + 1.46709 * b;
+        let (l, m) = match deficiency {
+            Deficiency::Protanopia => (2.02344 * m - 2.52581 * s, m),
+            Deficiency::Deuteranopia => (l, 0.494207 * l + 1.24827 * s),
+        };
+        [
+            0.080_944_447_9 * l - 0.130_504_409 * m + 0.116_721_066 * s,
+            -0.010_248_533_5 * l + 0.054_019_326_6 * m - 0.113_614_708 * s,
+            -0.000_365_296_938 * l - 0.004_121_614_69 * m + 0.693_511_405 * s,
+        ]
+        .map(|c| c.clamp(0.0, 1.0))
+    }
+
+    fn linear(color: Color32) -> [f64; 3] {
+        [color.r(), color.g(), color.b()].map(|c| {
+            let c = c as f64 / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        })
+    }
+
+    /// Distance in CIELAB (the 1976 form — plain enough to read, and this is a
+    /// floor rather than a just-noticeable difference).
+    fn delta_e(a: [f64; 3], b: [f64; 3]) -> f64 {
+        let a = lab(a);
+        let b = lab(b);
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    fn lab([r, g, b]: [f64; 3]) -> [f64; 3] {
+        let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+        let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+        let f = |t: f64| {
+            if t > 216.0 / 24389.0 {
+                t.cbrt()
+            } else {
+                (841.0 / 108.0) * t + 4.0 / 29.0
+            }
+        };
+        let (fx, fy, fz) = (f(x), f(y), f(z));
+        [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
     }
 
     /// The text sizes must cover every style egui asks for, or text falls back

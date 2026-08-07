@@ -5,6 +5,7 @@
 ### Other Changes
 - when comparing runs, the note you wrote for a run now follows it through the whole comparison: it labels the run's line on the chart and sits under its column heading in the table, so you read "Cheops build" against "FAW build" instead of "#1" against "#2"
 - a run's number and note in a comparison are printed in the colour of that run's line on the chart — in the list at the top and in every column heading — so a column and a line can be paired up at a glance
+- **Settings → Visuals** has a **Colour-blind friendly chart colours** switch. Charts then draw their lines and bars in a set of colours chosen to stay apart for red-green colour blindness, which the ordinary set only manages between neighbouring series — on a chart with six or eight things drawn at once, two of them could look the same. Each theme keeps its own version, so the colours still suit a dark or a light background. Nothing else changes colour: the +/- differences in Compare and the status marks already say which is which in words and signs
 
 ## v2.1.1
 

@@ -353,6 +353,19 @@ Pick a theme and set the interface scale. The scale is a multiplier — raise it
 if the text is too small on a large screen. The themes are shown side by side in
 the [README](README.md#themes).
 
+**Colour-blind friendly chart colours** redraws the lines and bars of every
+chart in a set of colours chosen to stay apart for red-green colour blindness,
+which affects about one man in twelve. The ordinary set keeps neighbouring
+series apart, but a chart with six or eight things on it can put two of them
+side by side that look the same; this set is spaced out across the whole eight,
+mostly by using light and dark rather than hue. Each theme has its own version,
+so the colours still suit a dark or a light background.
+
+Nothing else changes colour. The green and red differences in Compare and the
+little status marks stay as they are — they already tell you which is which
+without the colour, by the `+` or `-` in front of the number and by what the
+mark says.
+
 ### Upload
 
 ![Settings, Upload](images/settings-upload.png)
