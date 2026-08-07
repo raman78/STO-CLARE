@@ -182,6 +182,11 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
         self.handle_analysis_infos();
         self.track_window_geometry(ui.ctx());
+        // Driven here rather than from the toolbar that carries its button: the
+        // overlay follows the newest combat on a handler of its own, whatever
+        // the main window is showing, and the single-combat toolbar is hidden
+        // while Compare Combats is open.
+        self.state.overlay.update(ui.ctx());
         // Remember where the overlay was dragged (persisted on exit).
         #[cfg(target_os = "linux")]
         if let Some(position) = self.state.overlay.position() {
@@ -368,7 +373,7 @@ impl eframe::App for App {
                         ui.separator();
                         self.summary_copy.show(self.selected_combat.as_deref(), ui);
                         ui.separator();
-                        self.state.overlay.show(ui);
+                        self.state.overlay.show_button(ui);
                     });
 
                     // Own row: a "Clear filter" button appearing next to the
