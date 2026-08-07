@@ -94,6 +94,14 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         }
     }
 
+    /// The series in draw order, which is the order [`theme::series_color`]
+    /// hands the colours out in. Lets a caller paint something outside the
+    /// chart — a table header, a legend of its own — in a series' own colour
+    /// without having to guess at that order.
+    pub fn series_names(&self) -> impl Iterator<Item = &str> {
+        self.lines.iter().map(|line| line.data.name.as_str())
+    }
+
     /// Largest total first, the same order the bar charts use, so a series
     /// keeps its colour and its place in the legend from one chart to the next.
     fn sort(&mut self) {

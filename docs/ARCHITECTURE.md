@@ -160,13 +160,45 @@ because formatting is baked into the row strings when a table is built.
 The `combat_notes` section (`app/settings/combat_notes.rs`) holds the user's own
 short description per combat, written in the Summary tab and repeated wherever a
 combat is listed: the main window's dropdown, the compare picker (whose search
-box reads it) and the compare legend. It is keyed by the combat's **start time**,
+box reads it), and all three parts of a comparison — its legend, its chart and
+its column headers (see below). It is keyed by the combat's **start time**,
 which the refresh messages carry alongside the list (`start_times`, aligned with
 `combats`) because those views hold parallel arrays rather than whole combats.
 The start time is the only identifier the log itself fixes — `Combat::identifier` carries whatever the name rules or
 the map detection produced, so a rename would orphan the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
+
+#### One combat, one name and one colour across a comparison
+
+`Comparison` (`app/compare/compare_table.rs`) keeps the notes of its slots in
+`notes`, refreshed from the settings every frame — the chart bakes its series
+names in when it is built, so a note written while a comparison is up has to be
+noticed and the chart rebuilt for it.
+
+| where             | what it shows                                  | built by                    |
+|-------------------|------------------------------------------------|-----------------------------|
+| chart series name | `"<slot> — <note>"`, or the slot number alone  | `chart_label`               |
+| column header     | metric name / `#<slot>` / note, on three lines | `header_text` → `LayoutJob` |
+| legend above      | `"<slot>: <identifier> — <note>"`              | `legend_text` → `LayoutJob` |
+
+Both the header and the legend are a `LayoutJob` rather than a string because
+their parts differ in colour: the **number and the note** are drawn in the
+colour of that combat's line on the chart, while what stands between them is
+not — the metric name belongs to the whole group of columns, and the identifier
+is long enough that a whole row of it in a chart colour reads as a warning.
+Those colours are **read off the chart** (`DamageDiagrams::series_color`,
+backed by
+`ValuePerSecondGraph::series_names`), not worked out again — `theme::
+series_color` hands colours out by the order the series sorted into (by total,
+largest first), which depends on the numbers and therefore changes with the
+ability row picked. Anything that recomputed that order by hand would drift out
+of step with the chart the moment two totals crossed.
+
+The note line is only added when some combat in the comparison carries one, and
+the header height follows (`header_height`): the table reserves the height
+before it draws, so `HEADER_LINE_HEIGHT` has to cover a row of the body font —
+which is asserted in a test rather than assumed.
 
 ### Why eframe/winit, and not SDL3
 
