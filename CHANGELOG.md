@@ -1,6 +1,6 @@
 # Change Log
 
-# unreleased
+## v2.2.0
 
 ### Other Changes
 - when comparing runs, the note you wrote for a run now follows it through the whole comparison: it labels the run's line on the chart and sits under its column heading in the table, so you read "Cheops build" against "FAW build" instead of "#1" against "#2"
