@@ -206,8 +206,9 @@ combats open on the same player, so you are looking at one player's runs rather
 than several people's.
 
 Your own notes come along for the ride. Where you have written one for a run, it
-is repeated under that run's column heading and on the chart, so a comparison
-reads "Cheops build" against "FAW build" rather than "#1" against "#2".
+is repeated under that run's column heading and on the chart — in the picture
+above the two runs read "warm-up run" and "Cheops build" rather than "#1" and
+"#2".
 
 The chart underneath draws one line per run for whichever ability row you have
 selected, and each run's number and note are printed in the colour of its own
