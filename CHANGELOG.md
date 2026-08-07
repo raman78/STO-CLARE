@@ -1,5 +1,11 @@
 # Change Log
 
+# unreleased
+
+### Other Changes
+- when comparing runs, the note you wrote for a run now follows it through the whole comparison: it labels the run's line on the chart and sits under its column heading in the table, so you read "Cheops build" against "FAW build" instead of "#1" against "#2"
+- a run's number and note in a comparison are printed in the colour of that run's line on the chart — in the list at the top and in every column heading — so a column and a line can be paired up at a glance
+
 ## v2.1.1
 
 ### Fixes

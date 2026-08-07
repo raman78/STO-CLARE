@@ -205,6 +205,20 @@ The **Columns** menu decides which metrics are shown. All of the compared
 combats open on the same player, so you are looking at one player's runs rather
 than several people's.
 
+Your own notes come along for the ride. Where you have written one for a run, it
+is repeated under that run's column heading and on the chart, so a comparison
+reads "Cheops build" against "FAW build" rather than "#1" against "#2".
+
+The chart underneath draws one line per run for whichever ability row you have
+selected, and each run's number and note are printed in the colour of its own
+line — in the list at the top, and in every column heading. Pick a column, look
+for the line in the same colour.
+
+One thing to expect: those colours are handed out by size, biggest first, and
+the chart follows whichever ability row you select. Select a different row and
+the colours can swap around — the table and the legend swap with it, so they
+always agree with the chart in front of you.
+
 Tip: a DPS difference on its own can hide what changed — firing more often while
 each hit lands softer can come out looking like nothing happened. Switch the
 breakdown on in the Columns menu and each difference is split into the part that

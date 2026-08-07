@@ -163,7 +163,7 @@ impl CompareView {
 
     /// Receive the combats fetched for comparison and build the table.
     pub fn set_combats(&mut self, combats: Vec<(usize, Arc<Combat>)>, settings: &Settings) {
-        self.comparison = Some(Comparison::new(combats, &settings.compare.columns));
+        self.comparison = Some(Comparison::new(combats, settings));
     }
 
     // Drawing context threaded through; a struct of the same fields would
