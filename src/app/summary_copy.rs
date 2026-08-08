@@ -81,23 +81,21 @@ impl SummaryCopy {
                     })
                     .join("|");
 
-                format!(
-                    "{} {}",
-                    String::from_iter(
+                player_entry(
+                    &String::from_iter(
                         p.damage_in
                             .name()
                             .get(&combat.name_manager)
                             .chars()
-                            .skip_while(|c| *c != '@')
+                            .skip_while(|c| *c != '@'),
                     ),
-                    aspects
+                    &aspects,
                 )
             });
 
-        let aspects = aspects.clone().map(|a| a.header).join("|");
-        let aspects_header = format!("Name {}", aspects);
+        let header = heading(&aspects.clone().map(|a| a.header).join("|"));
 
-        let header_and_players = std::iter::once(aspects_header).chain(players).join(" / ");
+        let header_and_players = std::iter::once(header).chain(players).join(" / ");
 
         let duration = format_duration(time_range_to_duration_or_zero(&combat.combat_time));
 
@@ -195,6 +193,22 @@ impl Default for SummaryCopy {
     }
 }
 
+/// The heading the entries after it are read against: it names the first field
+/// of every entry (the player) and then each figure, in the order they come.
+///
+/// Bracketed and colon-separated so it reads as a key rather than as another
+/// player's line — the whole summary is one line of game chat, where the only
+/// punctuation available to tell one part from another is punctuation.
+fn heading(aspects: &str) -> String {
+    format!("[PlayerName: {aspects}]")
+}
+
+/// One player's entry: their handle, then their figures in the order the
+/// heading names them.
+fn player_entry(name: &str, aspects: &str) -> String {
+    format!("{name}: {aspects}")
+}
+
 fn aspect(
     name: &'static str,
     header: &'static str,
@@ -216,6 +230,44 @@ fn aspect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The heading is a key for the entries after it, told apart from them by
+    /// its brackets — the whole summary is one line of chat.
+    #[test]
+    fn the_heading_names_the_fields_of_an_entry() {
+        assert_eq!("[PlayerName: DPS]", heading("DPS"));
+        assert_eq!("[PlayerName: DPS|Dmg|Crit%]", heading("DPS|Dmg|Crit%"));
+    }
+
+    /// An entry reads as "who: what", and its figures come in the order the
+    /// heading names them.
+    #[test]
+    fn an_entry_is_the_handle_then_the_figures() {
+        assert_eq!(
+            "@handle: 436k",
+            player_entry("@handle", "436k")
+        );
+        assert_eq!(
+            "@handle: 436k|41.5M|38.2",
+            player_entry("@handle", "436k|41.5M|38.2")
+        );
+    }
+
+    /// The two together are what gets pasted, and the separators have to stay
+    /// distinct: `/` between entries, `|` between figures, `:` after a name.
+    #[test]
+    fn the_heading_and_the_entries_read_as_one_line() {
+        let line = [
+            heading("DPS|Dmg"),
+            player_entry("@handle", "436k|41.5M"),
+            player_entry("@somebody", "210k|20.1M"),
+        ]
+        .join(" / ");
+        assert_eq!(
+            "[PlayerName: DPS|Dmg] / @handle: 436k|41.5M / @somebody: 210k|20.1M",
+            line
+        );
+    }
 
     /// The note is on to begin with — it is the one thing in the line the
     /// numbers cannot say.
