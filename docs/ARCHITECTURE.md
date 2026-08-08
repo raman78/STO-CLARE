@@ -119,12 +119,35 @@ name next to the settings overrides it without a rebuild. See
 | per-combat tabs             | `app/main_tabs`          | Summary, Damage Dealt/Taken, the three healing tabs              |
 | tables                      | `app/main_tabs/tables`   | one generic `MetricsTable<T>` driven by a static column list     |
 | charts                      | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts      |
-| compare                     | `app/compare`            | several combats side by side with coloured deltas                |
+| compare                     | `app/compare`            | several combats side by side, averaged, or written to a workbook |
+| spreadsheet export          | `app/export.rs`          | the workbook writer both the compare view and the tabs use       |
+| which columns are shown     | `app/settings/columns.rs`| per table kind, and what the picker in the tab row writes         |
 | settings                    | `app/settings`           | split into analysis settings (invalidate the parse) and the rest |
 | how it looks                | `app/theme.rs`           | the themes on offer, the app's own colours, the text sizes       |
 | overlay                     | `app/overlay`            | separate always-on-top window; see `docs/OVERLAY.md`             |
 
-Two conventions worth knowing before changing a table or a chart:
+Three conventions worth knowing before changing a table or a chart:
+
+- **A toggle is a button, not a `selectable_label`.** `custom_widgets::toggle`
+  offers `Ui::steady_toggle` / `Ui::steady_toggle_value`, and the tab strips,
+  chart pickers and toolbar toggles use them. egui's own pair draws no frame
+  while resting and works the button's inner margin out as `button_padding -
+  the frame's stroke width`, which only comes out even when the resting state
+  has no stroke — egui's themes have none, this app's do (`glassify`). The
+  widget was therefore two points narrower resting than hovered, and pointing
+  at one nudged the rest of the row along. The frame is now drawn in every
+  state; `egui_s_own_selectable_label_is_what_moves` holds the diagnosis, and
+  fails if a future egui fixes it. List rows inside a `ComboBox` or a context
+  menu are left as they were: they are not a row of buttons, and nothing sits
+  beside them to be pushed.
+
+- **A hidden column is a setting, not a rebuild.** `ColumnVisibility` (in the
+  settings, keyed by `TableKind` — summary, damage, heal) records what the user
+  **hid**, so a metric added later is on screen rather than missing from a list
+  written before it existed. `MetricsTable::show` and `SummaryTable::show` take
+  a `shown` predicate and gather the visible columns per frame, so the picker
+  in the tab row takes effect at once. The two damage tabs share a kind and the
+  three healing tabs share another, because they are the same table.
 
 - **Columns are data.** A table is a `&'static [ColumnDescriptor<T>]`; a column
   carries its label, its sort function and its render function. A metric that
@@ -168,6 +191,128 @@ The start time is the only identifier the log itself fixes — `Combat::identifi
 the map detection produced, so a rename would orphan the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
+
+### Comparing several combats — `app/compare`
+
+`CompareView` (`app/compare/mod.rs`) is a picker plus a table. The picker works
+on the parallel arrays a refresh message carries (`combats`, `difficulties`,
+`base_names`, `environments`, `start_times`), so it never holds a combat; the
+selection is a `Vec<usize>` of indices into them. Pressing **Compare selected**
+sends those indices as `Instruction::GetCombats`, and the answer
+(`AnalysisInfo::Combats`) builds a `Comparison` (`compare_table.rs`).
+
+Three filters narrow the picker, and all three also decide what **Select all**
+adds — the button takes exactly the list on screen, adding to the selection
+rather than replacing it, so a selection can be built from one filtered list
+after another.
+
+A **ticked combat is never filtered out** (`CompareView::visible_combats`
+returns it with `matches = false`, and the row carries a `⚠` in
+`Palette::warn`). It is going into the comparison either way, so hiding it —
+narrowing the level to Elite over a selection that holds an Advanced run —
+would leave a combat being compared that cannot be seen or unticked.
+
+| filter      | type           | shared with the main window | notes                        |
+|-------------|----------------|-----------------------------|------------------------------|
+| search box  | `String`       | no                          | matches identifier **and** the user's note |
+| type/level/map | `CombatFilter` | yes (`app/combat_filter.rs`) | each menu offers only what the other two leave reachable |
+| date window | `DateRange`    | no                          | `app/compare/date_range.rs`  |
+
+`DateRange` is two `%Y-%m-%d %H:%M` fields, either of which may be empty (no
+bound at that end) or half-typed (bounds nothing, drawn in `Palette::worse`
+until it parses). Two decisions are worth keeping:
+
+- **The upper bound covers its whole minute.** The fields are typed to the
+  minute; a combat that started at `20:07:45` is inside a window ending at
+  `20:07`, or the run whose time the user typed would be the one dropped.
+- **The presets count back from the newest combat in the list, not from the
+  wall clock.** `chrono` is built here without its `clock` feature, so there is
+  no local `now()` to count from — and the times in a log are the game's, so a
+  log copied from another machine would answer "the last 24 hours" with an
+  empty list.
+
+#### What a selected combat costs
+
+Nothing caps the selection (`MAX_COMBATS` is gone). What gives way instead is
+stated in the picker by `selection_hint`, because both limits are gradual:
+
+| past | what happens | why |
+|------|--------------|-----|
+| 8 combats  | chart line colours start over | `theme::series_color` cycles a palette of eight |
+| 50 combats | a word about build time and width | a column per combat per metric |
+
+`AnalysisContext::get_combats` deep-clones each `Combat` (its `HitsManager`
+included), and `build_series` copies the hits of every tree node it builds —
+`Values::Branch` is a range into the manager, but `SeriesData` holds a
+`Vec<Hit>`, so a combat's hits are copied once per tree level.
+
+Measured on a real log (18 combats, release build): `Hit` is 40 bytes, the
+heaviest run — a 7½-minute Infected Space Elite — carries 24 673 hits, and one
+such combat in a comparison costs **≈ 3.4 MB** (1.0 MB of clone, 2.4 MB of
+series copies). All 18 at once came to 26 MB. Holding `Values<Hit>` in
+`SeriesData` and resolving it against the slot's manager at chart time would
+remove the 2.4 MB share, but at that scale it buys little and the charts have no
+automated coverage to catch a mistake with; the copies stay.
+
+#### Averages
+
+`build_row` returns both shapes of a row in one pass: a `SlotCell` per combat,
+and a `Vec<Option<AverageCell>>` — one entry per configured column, averaged
+across the slots. The average is always built (a division per column), so
+`CompareSettings::show_averages` is a redraw and not a rebuild.
+
+The mean is plain: every combat counts once, percentages included, so the column
+states what the columns above it average out to rather than a differently
+weighted figure that no column shows. A row absent from a combat is left out
+instead of counted as zero — an ability flown in two runs out of twelve would
+otherwise read as a collapse. `AverageCell` therefore carries `count`, `min` and
+`max`, and `average_tooltip` says which of the two cases a number is.
+
+Averaged columns belong to every combat at once, so in that mode the note line
+and the ΔDPS breakdown columns are suppressed (`Comparison::show_table`): both
+are about one combat measured against the reference.
+
+The chart follows the toggle too (`average_series`): one line instead of one per
+combat. Every combat's hits are pooled onto a single axis — a hit already
+carries its offset from the start of its own combat — and every figure is scaled
+by `1/n`. The charts are linear in the point values (a smoothed sum for the
+per-second lines, a bucketed sum for the bars), so the pooled-and-scaled series
+**is** the mean of the individual lines at every point, not an approximation.
+The window is the longest of the pooled combats, so no hit falls outside it; the
+tail is then an average of fewer runs than the head, which is unavoidable when
+runs differ in length.
+
+Two consequences worth knowing:
+
+- `PreparedHitValue::hits_count` is `f64`, not `u64`. A hit out of a combat
+  contributes a whole 1.0, but a hit inside an average contributes `1/n` —
+  without that, the hits-per-second and hits-count charts would draw the runs
+  added up rather than averaged.
+- The averaged series is built from `PreparedHit` points through
+  `PreparedDataSet::base_new` rather than from `Hit`s through
+  `PreparedDamageDataSet::new`, because the count only exists on the prepared
+  point. `average_series` therefore repeats that constructor's `ValueFlags::
+  IMMUNE` filter.
+
+#### The workbook export
+
+`app/export.rs` owns the layout and takes a `&[Sheet]`, one worksheet each. The
+compare view hands it one sheet; the main window hands it six —
+`main_tabs::export::all_sheets` builds one per tab, named after the tab
+(`MainTab::name`, which a test holds to Excel's rules for a sheet name). Both
+fill a `Sheet` from the analyzer's groups rather than from the built tables,
+since a table cell holds text and a spreadsheet wants a number.
+`Comparison::export_sheet` builds the compare view's data. The sheet is the table on screen minus the deltas — a spreadsheet can
+subtract two of its own columns, and a delta arrives as text nothing can
+compute with.
+
+| decision | why |
+|----------|-----|
+| `MetricCell::value` carries the raw `f64` beside the formatted text | a workbook wants a number it can add up, not `"1.2M"` |
+| every row of the tree is written, `open` or not | the file is the comparison; a spreadsheet has its own way of hiding rows |
+| a missing value writes no cell at all | a zero would average and chart as a real number |
+| the name column is indented with spaces | survives a copy into anything else, unlike a cell indent |
+| `Column::decimals` mirrors `CompareMetric::precision` | the file rounds the way the table does |
 
 #### One combat, one name and one colour across a comparison
 

@@ -353,7 +353,7 @@ mod tests {
                     base_damage: damage_per_hit,
                     drain_damage: 0.0,
                     damage_prevented_to_hull: 0.0,
-                    hits_count: 1,
+                    hits_count: 1.0,
                 },
                 time_millis: i * 100,
             })

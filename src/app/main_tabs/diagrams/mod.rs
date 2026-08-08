@@ -7,10 +7,13 @@ mod values_chart;
 pub use crate::app::main_tabs::diagrams::common::DiagramType;
 use crate::app::settings::Settings;
 use crate::app::theme;
-use eframe::egui::Color32;
 pub use common::HealComponents;
 pub use common::PreparedDamageDataSet;
 pub use common::PreparedHealDataSet;
+use eframe::egui::Color32;
+// The compare view builds its averaged series point by point, because averaging
+// scales the hit count as well as the damage and a hit carries a whole count.
+pub use common::PreparedHit;
 pub use common::combat_duration_seconds;
 use eframe::egui::Ui;
 use itertools::Itertools;

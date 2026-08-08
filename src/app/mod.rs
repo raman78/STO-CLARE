@@ -6,6 +6,7 @@ use rfd::FileDialog;
 
 use crate::{
     analyzer::{Combat, Difficulty},
+    custom_widgets::toggle::Toggle,
     upload::{Records, Upload},
 };
 
@@ -28,6 +29,7 @@ const COMBATS_SHOWN_AT_ONCE: usize = 15;
 const COMBATS_LIST_WIDTH: f32 = 900.0;
 mod compare;
 pub mod desktop_install;
+mod export;
 mod fonts;
 #[cfg(target_os = "linux")]
 mod log_consolidation;
@@ -209,7 +211,7 @@ impl eframe::App for App {
                     // stays put regardless of mode. Rendered as a frameless toggle to
                     // match the Settings and Records buttons (highlighted while active).
                     if ui
-                        .selectable_label(self.compare.is_open(), "Compare Combats 🆚")
+                        .steady_toggle(self.compare.is_open(), "Compare Combats")
                         .clicked()
                     {
                         self.compare.toggle();
@@ -371,7 +373,11 @@ impl eframe::App for App {
                         );
 
                         ui.separator();
-                        self.summary_copy.show(self.selected_combat.as_deref(), ui);
+                        self.summary_copy.show(
+                            self.selected_combat.as_deref(),
+                            &self.state.settings.combat_notes,
+                            ui,
+                        );
                         ui.separator();
                         self.state.overlay.show_button(ui);
                     });
@@ -418,9 +424,15 @@ impl eframe::App for App {
                         &self.combat_environments,
                         &self.combat_start_times,
                         ui,
+                        frame,
                     );
                 } else {
-                    self.main_tabs.show(&mut self.state.settings, ui);
+                    self.main_tabs.show(
+                        &mut self.state.settings,
+                        self.selected_combat.as_deref(),
+                        frame,
+                        ui,
+                    );
                 }
             });
         });

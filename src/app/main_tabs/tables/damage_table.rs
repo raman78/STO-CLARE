@@ -9,6 +9,11 @@ use crate::{
 
 use super::{common::Kills, metrics_table::*};
 
+/// Every column of this table, for the column picker.
+pub fn column_names() -> Vec<&'static str> {
+    COLUMNS.iter().map(|column| column.name).collect()
+}
+
 static COLUMNS: &[ColumnDescriptor<DamageTablePartData>] = &[
     shield_hull_col!(
         "DPS",

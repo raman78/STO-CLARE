@@ -2,12 +2,13 @@ use eframe::egui::*;
 
 use crate::{
     analyzer::*,
-    app::settings::{CombatNotes, MAX_NOTE_CHARS, Settings},
+    app::settings::{CombatNotes, MAX_NOTE_CHARS, Settings, TableKind},
     custom_widgets::{splitter::Splitter, table::*},
     helpers::{number_formatting::NumberFormatter, *},
 };
 
 use super::{common::*, diagrams::SummaryChart, tables::SummaryTable};
+use crate::custom_widgets::toggle::Toggle;
 
 pub struct SummaryTab {
     identifier: String,
@@ -187,13 +188,19 @@ impl SummaryTab {
 
                         ui.add_space(20.0);
 
-                        self.summary_table.show(ui);
+                        self.summary_table.show(ui, |column| {
+                            settings.columns.is_shown(TableKind::Summary, column)
+                        });
                     });
 
                 bottom_ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.chart_tab, ChartTab::Dps, "DPS");
-                    ui.selectable_value(&mut self.chart_tab, ChartTab::DamageOut, "Damage Dealt");
-                    ui.selectable_value(&mut self.chart_tab, ChartTab::DamageIn, "Damage Taken");
+                    ui.steady_toggle_value(&mut self.chart_tab, ChartTab::Dps, "DPS");
+                    ui.steady_toggle_value(
+                        &mut self.chart_tab,
+                        ChartTab::DamageOut,
+                        "Damage Dealt",
+                    );
+                    ui.steady_toggle_value(&mut self.chart_tab, ChartTab::DamageIn, "Damage Taken");
                 });
 
                 match self.chart_tab {

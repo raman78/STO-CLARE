@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 
 pub use app_settings::{Settings, WindowGeometry};
+pub use columns::{ColumnVisibility, TableKind};
 pub use combat_notes::{CombatNotes, MAX_NOTE_CHARS};
 use eframe::{Frame, egui::*};
 
@@ -12,9 +13,11 @@ use self::{
 };
 
 use super::{analysis_handling::AnalysisHandler, overlay::Overlay, state::AppState};
+use crate::custom_widgets::toggle::Toggle;
 
 mod analysis;
 mod app_settings;
+mod columns;
 mod combat_notes;
 mod debug;
 mod general;
@@ -72,7 +75,7 @@ impl SettingsWindow {
         ui: &mut Ui,
         frame: &Frame,
     ) {
-        if ui.selectable_label(self.is_open, "Settings").clicked() && !self.is_open {
+        if ui.steady_toggle(self.is_open, "Settings").clicked() && !self.is_open {
             self.initialize(state);
         }
 
@@ -109,11 +112,15 @@ impl SettingsWindow {
             .constrain(true)
             .show(ui.ctx(), |ui| {
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.selected_tab, SettingsTab::General, "General");
-                    ui.selectable_value(&mut self.selected_tab, SettingsTab::Analysis, "Analysis");
-                    ui.selectable_value(&mut self.selected_tab, SettingsTab::Visuals, "Visuals");
-                    ui.selectable_value(&mut self.selected_tab, SettingsTab::Upload, "Upload");
-                    ui.selectable_value(&mut self.selected_tab, SettingsTab::Debug, "Debug");
+                    ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::General, "General");
+                    ui.steady_toggle_value(
+                        &mut self.selected_tab,
+                        SettingsTab::Analysis,
+                        "Analysis",
+                    );
+                    ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Visuals, "Visuals");
+                    ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Upload, "Upload");
+                    ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Debug, "Debug");
                 });
 
                 ui.separator();

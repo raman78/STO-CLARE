@@ -1,13 +1,21 @@
 use eframe::egui::*;
 
-use crate::{analyzer::Combat, app::settings::Settings};
+use eframe::Frame;
+use rfd::FileDialog;
+
+use crate::{
+    analyzer::{Combat, HealGrouping},
+    app::settings::{Settings, TableKind},
+};
 
 use self::{damage_tab::DamageTab, heal_tab::HealTab, summary_tab::SummaryTab};
+use crate::custom_widgets::toggle::Toggle;
 
 mod common;
 mod damage_tab;
 // Exposed so the compare view can reuse the same charts.
 pub(crate) mod diagrams;
+pub mod export;
 mod heal_tab;
 mod summary_tab;
 // Exposed so the compare view can reuse the tables' column separator.
@@ -34,6 +42,21 @@ pub enum MainTab {
     SelfHealing,
     HealingAlly,
     HealingReceived,
+}
+
+impl MainTab {
+    /// What the tab is called on screen, reused as the sheet's name in an
+    /// export and in the log line that records one.
+    pub fn name(self) -> &'static str {
+        match self {
+            MainTab::Summary => "Summary",
+            MainTab::DamageDealt => "Damage Dealt",
+            MainTab::DamageTaken => "Damage Taken",
+            MainTab::SelfHealing => "Self Healing",
+            MainTab::HealingAlly => "Healing Ally",
+            MainTab::HealingReceived => "Healing Received",
+        }
+    }
 }
 
 /// What each healing tab holds. Shown as tooltips, because the three pools are
@@ -69,6 +92,60 @@ impl MainTabs {
         }
     }
 
+    /// Which columns the open tab shows. Only the tab on screen is offered:
+    /// the menu is about what is in front of the user, and a list of every
+    /// column of every tab would be sixty entries long.
+    fn show_column_picker(&mut self, settings: &mut Settings, ui: &mut Ui) {
+        let (kind, names) = self.active_columns();
+        let hidden = settings.columns.hidden_count(kind, &names);
+        let label = if hidden == 0 {
+            "Columns ⏷".to_string()
+        } else {
+            format!("Columns ⏷ ({hidden} hidden)")
+        };
+        ui.menu_button(label, |ui| {
+            let mut changed = false;
+            for name in names.iter() {
+                let mut shown = settings.columns.is_shown(kind, name);
+                if ui.checkbox(&mut shown, *name).changed() {
+                    settings.columns.set_shown(kind, name, shown);
+                    changed = true;
+                }
+            }
+            ui.separator();
+            if ui.button("Show all").clicked() {
+                settings.columns.show_all(kind);
+                changed = true;
+            }
+            if changed {
+                settings.save();
+            }
+        })
+        .response
+        .on_hover_text(
+            "Which columns this table shows. The two damage tabs share their choice, and so do \
+             the three healing ones.",
+        );
+    }
+
+    /// Writes the whole combat to a spreadsheet, a sheet per tab.
+    fn export(&self, combat: &Combat, frame: &Frame) {
+        let Some(path) = FileDialog::new()
+            .set_title("Export Combat")
+            .add_filter("Excel workbook", &["xlsx"])
+            .set_file_name(crate::app::export::default_file_name(combat))
+            .set_parent(frame)
+            .save_file()
+        else {
+            return;
+        };
+        let sheets = export::all_sheets(combat, self.heal_grouping());
+        match crate::app::export::write(&path, &sheets) {
+            Ok(()) => log::info!("exported the combat to {}", path.display()),
+            Err(error) => log::error!("failed to export to {}: {error}", path.display()),
+        }
+    }
+
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
         self.identifier = combat.identifier();
         self.summary_tab.update(settings, combat);
@@ -79,25 +156,74 @@ impl MainTabs {
         self.heal_self_tab.update(settings, combat);
     }
 
-    pub fn show(&mut self, settings: &mut Settings, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.active_tab, MainTab::Summary, "Summary");
+    /// Which nesting the healing tabs are showing, which the export follows.
+    fn heal_grouping(&self) -> HealGrouping {
+        match self.active_tab {
+            MainTab::SelfHealing => self.heal_self_tab.grouping(),
+            MainTab::HealingAlly => self.heal_ally_tab.grouping(),
+            MainTab::HealingReceived => self.heal_received_tab.grouping(),
+            _ => HealGrouping::ByAbility,
+        }
+    }
 
-            ui.selectable_value(&mut self.active_tab, MainTab::DamageDealt, "Damage Dealt")
+    /// Which column set the open tab draws from. The two damage tabs share one
+    /// and the three healing tabs share another, so hiding a column in one of a
+    /// pair hides it in the other.
+    fn active_columns(&self) -> (TableKind, Vec<&'static str>) {
+        match self.active_tab {
+            MainTab::Summary => (TableKind::Summary, tables::SummaryTable::column_names()),
+            MainTab::DamageDealt | MainTab::DamageTaken => {
+                (TableKind::Damage, tables::damage_column_names())
+            }
+            _ => (TableKind::Heal, tables::heal_column_names()),
+        }
+    }
+
+    pub fn show(
+        &mut self,
+        settings: &mut Settings,
+        combat: Option<&Combat>,
+        frame: &Frame,
+        ui: &mut Ui,
+    ) {
+        ui.horizontal(|ui| {
+            ui.steady_toggle_value(&mut self.active_tab, MainTab::Summary, "Summary");
+
+            ui.steady_toggle_value(&mut self.active_tab, MainTab::DamageDealt, "Damage Dealt")
                 .on_hover_text("Damage you dealt to others.");
-            ui.selectable_value(&mut self.active_tab, MainTab::DamageTaken, "Damage Taken")
+            ui.steady_toggle_value(&mut self.active_tab, MainTab::DamageTaken, "Damage Taken")
                 .on_hover_text("Damage others dealt to you.");
 
-            ui.selectable_value(&mut self.active_tab, MainTab::SelfHealing, "Self Healing")
+            ui.steady_toggle_value(&mut self.active_tab, MainTab::SelfHealing, "Self Healing")
                 .on_hover_text(SELF_HEALING_INFO);
-            ui.selectable_value(&mut self.active_tab, MainTab::HealingAlly, "Healing Ally")
+            ui.steady_toggle_value(&mut self.active_tab, MainTab::HealingAlly, "Healing Ally")
                 .on_hover_text(HEALING_ALLY_INFO);
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_tab,
                 MainTab::HealingReceived,
                 "Healing Received",
             )
             .on_hover_text(HEALING_RECEIVED_INFO);
+
+            self.show_column_picker(settings, ui);
+
+            // The export belongs to the whole combat rather than to the tab
+            // that happens to be open, so it sits away from the tabs, at the
+            // far end of their row.
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .add_enabled(combat.is_some(), Button::new("Export XLSX 🖹"))
+                    .on_hover_text(
+                        "Save the whole combat as a spreadsheet: one sheet per tab, every \
+                         player, every row of the breakdown, and every metric — not only the \
+                         columns on screen.",
+                    )
+                    .clicked()
+                    && let Some(combat) = combat
+                {
+                    self.export(combat, frame);
+                }
+            });
         });
 
         match self.active_tab {
