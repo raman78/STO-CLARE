@@ -357,6 +357,30 @@ mod tests {
         );
     }
 
+    /// A hidden column stays hidden across a restart, and a settings file
+    /// written before the picker existed still loads — the section defaults to
+    /// "nothing hidden" rather than failing to parse.
+    #[test]
+    fn hidden_columns_survive_a_save_and_load() {
+        let mut settings = Settings::default();
+        settings
+            .columns
+            .set_shown(crate::app::settings::TableKind::Damage, "Flanking %", false);
+
+        let json = serde_json::to_string(&settings).unwrap();
+        let loaded: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(settings.columns, loaded.columns);
+        assert!(!loaded
+            .columns
+            .is_shown(crate::app::settings::TableKind::Damage, "Flanking %"));
+
+        // A file written before the picker existed has no such section at all.
+        let mut older: serde_json::Value = serde_json::from_str(&json).unwrap();
+        older.as_object_mut().unwrap().remove("columns");
+        let older: Settings = serde_json::from_value(older).unwrap();
+        assert_eq!(ColumnVisibility::default(), older.columns);
+    }
+
     #[test]
     fn window_geometry_survives_a_save_and_load() {
         let settings = Settings {
