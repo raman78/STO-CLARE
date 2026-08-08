@@ -1,8 +1,13 @@
 use eframe::egui::Ui;
 
-use crate::{analyzer::*, app::settings::Settings, custom_widgets::splitter::Splitter};
+use crate::{
+    analyzer::*,
+    app::settings::{Settings, TableKind},
+    custom_widgets::splitter::Splitter,
+};
 
 use super::{common::*, diagrams::*, tables::*};
+use crate::custom_widgets::toggle::Toggle;
 
 pub struct HealTab {
     /// The same healing, nested both ways. Both are built up front so the
@@ -81,16 +86,21 @@ impl HealTab {
                 };
                 let combat_duration_s = self.combat_duration_s;
                 let components = self.components;
-                table.show(top_ui, |p| {
-                    Self::process_diagram_change(
-                        &mut self.selection_diagrams,
-                        p,
-                        self.filter,
-                        self.diagram_time_slice,
-                        combat_duration_s,
-                        components,
-                    );
-                });
+                let columns = &settings.columns;
+                table.show(
+                    top_ui,
+                    |column| columns.is_shown(TableKind::Heal, column),
+                    |p| {
+                        Self::process_diagram_change(
+                            &mut self.selection_diagrams,
+                            p,
+                            self.filter,
+                            self.diagram_time_slice,
+                            combat_duration_s,
+                            components,
+                        );
+                    },
+                );
 
                 self.show_diagrams(settings, bottom_ui);
             });
@@ -99,6 +109,11 @@ impl HealTab {
     /// Switches how the tree is nested. Both nestings are already built, so this
     /// only picks which one to draw — no rebuild, no lost data. Tabs without a
     /// second level to group by (self healing) show nothing here.
+    /// Which nesting this tab is showing, for the export.
+    pub fn grouping(&self) -> HealGrouping {
+        self.grouping
+    }
+
     fn show_grouping_picker(&mut self, ui: &mut Ui) {
         let Some(other_level) = self.other_level else {
             return;
@@ -108,7 +123,7 @@ impl HealTab {
             // "⏵" is the same glyph the tree rows use for their expander, so it
             // is known to exist in the bundled font — "→" renders as a blank box.
             let changed = ui
-                .selectable_value(
+                .steady_toggle_value(
                     &mut self.grouping,
                     HealGrouping::ByPerson,
                     format!("{} ⏵ Ability", other_level),
@@ -118,7 +133,7 @@ impl HealTab {
                     other_level.to_lowercase()
                 ))
                 .clicked()
-                | ui.selectable_value(
+                | ui.steady_toggle_value(
                     &mut self.grouping,
                     HealGrouping::ByAbility,
                     format!("Ability ⏵ {}", other_level),
@@ -281,25 +296,25 @@ impl HealTab {
 
     fn show_diagrams(&mut self, settings: &Settings, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::Hps,
                 DiagramType::Hps.name(),
             )
             .on_hover_text(DiagramType::Hps.tooltip());
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::Heal,
                 DiagramType::Heal.name(),
             )
             .on_hover_text(DiagramType::Heal.tooltip());
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HealTicksPerSecond,
                 DiagramType::HealTicksPerSecond.name(),
             )
             .on_hover_text(DiagramType::HealTicksPerSecond.tooltip());
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HealTicksCount,
                 DiagramType::HealTicksCount.name(),

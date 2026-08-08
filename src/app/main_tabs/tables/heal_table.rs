@@ -8,6 +8,11 @@ use crate::{
 
 use super::metrics_table::*;
 
+/// Every column of this table, for the column picker.
+pub fn column_names() -> Vec<&'static str> {
+    COLUMNS.iter().map(|column| column.name).collect()
+}
+
 static COLUMNS: &[ColumnDescriptor<HealTablePartData>] = &[
     shield_hull_col!(
         "HPS",

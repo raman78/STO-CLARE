@@ -19,6 +19,7 @@ use crate::{
 };
 
 use super::common::*;
+use crate::custom_widgets::toggle::Toggle;
 
 const PAGE_SIZE: i32 = 50;
 static REDUCED_COLUMNS: &[&str] = &[
@@ -50,7 +51,7 @@ impl Records {
                 return;
             }
         };
-        if ui.selectable_label(!self.collapsed(), "Records").clicked() {
+        if ui.steady_toggle(!self.collapsed(), "Records").clicked() {
             *self = Self::begin_load_ladders(ui.ctx().clone(), url.clone());
         }
 

@@ -1,5 +1,22 @@
 # Change Log
 
+# unreleased
+
+### Major Changes
+- Compare Combats is no longer limited to three runs. Any number can be ticked, and **Select all** ticks everything the filters have left in the list, so a whole evening of Infected Space goes into one comparison. Past eight runs the chart's line colours start over, and a very wide comparison takes a moment to build — the picker says so before it is built
+- a comparison can be read as one averaged column per metric instead of one column per run, which is what makes a pile of runs readable at all. Every run counts once, and a run that never used an ability is left out of that ability's average rather than counted as a zero; hovering an average says how many runs went into it, and the best and worst of them. The chart follows: one line for what the runs average out to, over the length of the longest of them — an average and not a total, so two runs of 90k DPS come out at 90k
+- a comparison can be saved as a spreadsheet, ready to sort, total or chart anywhere else. The file holds the plain numbers without the coloured differences, every ability row including the ones folded away on screen, and a note of which runs it is of
+
+### Other Changes
+- a whole combat can be saved as a spreadsheet from the main window, one sheet per tab: Summary, Damage Dealt, Damage Taken and the three healing ones, each with every player, every row of the breakdown and every metric it has — not only the columns that fit on screen
+- the main window's tables have a **Columns** menu of their own, at the end of the tab row: hide the metrics you never read, and the button says how many are hidden so a missing column is never a mystery. The two damage tabs share their choice and the three healing tabs share theirs, and it is remembered between runs
+- **Copy Combat Summary** puts the note you wrote for the run after its name, so a summary pasted into the game chat says which build it was. It can be switched off next to the other elements in the ⛭ menu
+- the ⛭ next to **Copy Combat Summary** — and the ✏ in the naming rules — work as switches now: they stay lit while their little window is up, and pressing them again puts it away. Before, the only way to close one was to click somewhere else entirely
+- pointing at a button no longer nudges it and everything next to it sideways. The tab strips, the chart pickers and the toolbar toggles are now ordinary buttons that light up when picked, and they keep their size whatever the mouse is doing
+- the compare picker can be narrowed to when the runs were played, down to the minute, with buttons for the last 24 hours, 7 days and 30 days. Clicking into an empty field fills it with the oldest or newest run in the list, ready to edit
+- **Compare selected** moved to a line of its own, below the buttons that only tick and untick
+- a ticked run no longer vanishes from the compare list when the filters stop matching it — narrowing the level to Elite used to hide an Advanced run that was still going into the comparison, with no way to see or untick it. It now stays on screen with a warning mark beside it
+
 ## v2.2.0
 
 ### Other Changes

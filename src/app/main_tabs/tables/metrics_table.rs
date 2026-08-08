@@ -11,6 +11,14 @@ use crate::{
     helpers::{F64TotalOrd, number_formatting::NumberFormatter},
 };
 
+/// The size the open/close arrow of a tree row is drawn at.
+///
+/// Pinned rather than left to the text in it: the arrow is frameless while
+/// resting and framed under the pointer, and egui sizes those two differently
+/// under this app's themes (see `custom_widgets::toggle`), so without a fixed
+/// size pointing at an arrow nudged the name beside it.
+const ARROW_SIZE: Vec2 = vec2(22.0, 18.0);
+
 #[macro_export]
 macro_rules! col {
     ($name:expr, $sort:expr, $show:expr $(,)?) => {
@@ -164,7 +172,15 @@ impl<T: 'static> MetricsTable<T> {
         table
     }
 
-    pub fn show(&mut self, ui: &mut Ui, mut on_selected: impl FnMut(TableSelectionEvent<T>)) {
+    /// `shown` decides which columns are drawn, and is asked every frame rather
+    /// than baked in when the table is built, so the picker takes effect at
+    /// once instead of at the next refresh.
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        shown: impl Fn(&str) -> bool,
+        mut on_selected: impl FnMut(TableSelectionEvent<T>),
+    ) {
         let modifiers = ui.input(|i| i.modifiers);
         let split = self.split_shield_hull;
         // Split columns need a second header line for the All/Hull/Shield labels.
@@ -173,6 +189,13 @@ impl<T: 'static> MetricsTable<T> {
         } else {
             HEADER_HEIGHT
         };
+        // The visible ones, gathered once so the header and every row walk the
+        // same list in step.
+        let columns: Vec<&ColumnDescriptor<T>> = self
+            .columns
+            .iter()
+            .filter(|column| shown(column.name))
+            .collect();
         ScrollArea::horizontal().show(ui, |ui| {
             Table::new(ui)
                 .cell_spacing(10.0)
@@ -181,9 +204,9 @@ impl<T: 'static> MetricsTable<T> {
                         ui.label("Name");
                     });
 
-                    for (index, column) in self.columns.iter().enumerate() {
+                    for (index, column) in columns.iter().enumerate() {
                         self.show_column_header(r, column, split);
-                        if closes_group(self.columns, index, split) {
+                        if closes_group(&columns, index, split) {
                             show_group_separator(r);
                         }
                     }
@@ -191,7 +214,7 @@ impl<T: 'static> MetricsTable<T> {
                 .body(ROW_HEIGHT, |t| {
                     for player in self.players.iter_mut() {
                         player.show(
-                            self.columns,
+                            &columns,
                             t,
                             0.0,
                             &mut self.selection,
@@ -318,7 +341,7 @@ impl<T> MetricsTablePart<T> {
     #[allow(clippy::too_many_arguments)]
     fn show(
         &mut self,
-        columns: &[ColumnDescriptor<T>],
+        columns: &[&ColumnDescriptor<T>],
         table: &mut TableBody,
         indent: f32,
         selection: &mut SelectionTracker,
@@ -333,7 +356,10 @@ impl<T> MetricsTablePart<T> {
                     let symbol = if self.open { "⏷" } else { "⏵" };
                     let can_open = !self.sub_parts.is_empty();
                     if ui
-                        .add_visible(can_open, Button::selectable(false, symbol))
+                        .add_visible(
+                            can_open,
+                            Button::selectable(false, symbol).min_size(ARROW_SIZE),
+                        )
                         .clicked()
                     {
                         self.open = !self.open;
@@ -368,19 +394,12 @@ impl<T> MetricsTablePart<T> {
         }
 
         response.context_menu(|ui| {
-            if ui
-                .selectable_label(false, "copy name to clipboard")
-                .clicked()
-            {
+            if ui.button("copy name to clipboard").clicked() {
                 ui.ctx().copy_text(self.name.clone());
                 ui.close_kind(UiKind::Menu);
             }
 
-            if ui
-                .selectable_label(false, "show diagrams for this")
-                .clicked()
-                && !selection.is_selected(self.id)
-            {
+            if ui.button("show diagrams for this").clicked() && !selection.is_selected(self.id) {
                 selection.select_or_unselect_single(self, on_selected);
                 ui.close_kind(UiKind::Menu);
             }
@@ -418,7 +437,7 @@ impl<T> MetricsTablePart<T> {
 /// group and what follows is not another one. Between two adjacent groups the
 /// next group's opening rule already separates them, so only the last of a run
 /// is closed.
-pub fn closes_group<T>(columns: &[ColumnDescriptor<T>], index: usize, split: bool) -> bool {
+pub fn closes_group<T>(columns: &[&ColumnDescriptor<T>], index: usize, split: bool) -> bool {
     if !split || columns[index].parts.is_empty() {
         return false;
     }

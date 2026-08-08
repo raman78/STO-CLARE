@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     analyzer::settings::AnalysisSettings,
-    app::{compare::CompareSettings, settings::CombatNotes},
+    app::{
+        compare::CompareSettings,
+        settings::{ColumnVisibility, CombatNotes},
+    },
     helpers::paths,
 };
 
@@ -31,6 +34,11 @@ pub struct Settings {
     /// re-read the whole log.
     #[serde(default)]
     pub combat_notes: CombatNotes,
+    /// Which columns the main window's tables show. Its own section for the
+    /// same reason as the notes: hiding a column is no reason to re-read the
+    /// log.
+    #[serde(default)]
+    pub columns: ColumnVisibility,
 }
 
 /// Size and maximized state of the main window, remembered between runs.

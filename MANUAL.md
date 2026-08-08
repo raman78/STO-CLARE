@@ -36,7 +36,7 @@ Everything lives in one window. From top to bottom:
 │ Auto Refresh  Save Combat  Upload  Copy Combat Summary  Overlay     │
 │ Show only: [type ▼] [level ▼] [map ▼]                  ← filters    │
 ├─────────────────────────────────────────────────────────────────────┤
-│ Summary │ Damage Dealt │ Damage Taken │ Self Healing │ …  ← tabs    │
+│ Summary │ Damage Dealt │ … │ Columns ▾ │      [Export XLSX] ← tabs   │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │   the table for the tab you picked                                  │
@@ -106,13 +106,32 @@ and you can tell at a glance which column is which build.
 | Auto Refresh when log changes | Keeps the list and the numbers current by itself while you play.                                                               |
 | Save Combat                   | Writes the selected combat to a log file of its own, so you can keep or share it.                                              |
 | Clear Log File                | Opens a list of every combat with tick boxes, and deletes only the ones you tick. Everything but the newest is ticked for you. |
-| Copy Combat Summary           | Puts a short text summary on your clipboard, ready to paste into the game chat.                                                |
+| Copy Combat Summary           | Puts a short text summary on your clipboard, ready to paste into the game chat. It carries the note you wrote for the run.     |
 | Upload                        | Sends the combat to the OSCR ladder — see [Uploading](#uploading-to-the-oscr-ladder).                                          |
 | Overlay                       | Opens the small always-on-top window — see [The overlay](#the-overlay).                                                        |
 
 ---
 
 ## Reading one combat
+
+### Choosing which columns you see
+
+The tables carry more columns than most people want at once. **Columns** at the
+end of the tab row hides the ones you do not use; the button says how many are
+hidden, so a missing metric is never a mystery. **Show all** brings them back.
+
+The two damage tabs share one choice and the three healing tabs share another —
+they are the same table with the same metrics — and the choice is remembered
+between runs.
+
+### Saving a whole combat as a spreadsheet
+
+**Export XLSX**, at the right-hand end of the tab row, writes the combat to a
+spreadsheet you can open in Excel, LibreOffice or Google Sheets. The file holds
+**one sheet per tab** — Summary, Damage Dealt, Damage Taken and the three
+healing ones — each with every player, every row of the breakdown and every
+metric that tab has, whether or not it is on screen. The numbers arrive as
+numbers, so you can sort, total and chart them yourself.
 
 ### Summary
 
@@ -187,10 +206,46 @@ when in the fight it was actually doing something.
 
 ## Comparing combats
 
-**Compare Combats** in the top row puts up to three runs side by side. First
-tick the ones you want:
+**Compare Combats** in the top row puts runs side by side. First tick the ones
+you want:
 
 ![Picking combats to compare](images/compare-pick.png)
+
+There is no limit on how many you tick. Two runs read most clearly side by side,
+but a whole evening's worth is a fair thing to ask for — see
+[Averages](#one-average-instead-of-many-columns) for reading a big pile of runs
+at once.
+
+### Narrowing the list
+
+Above the list are the same **Show only** menus as in the main window — the kind
+of map, the difficulty, and which map — plus a **Played** window for when the
+runs were fought:
+
+| Field or button       | What it does                                                   |
+|-----------------------|----------------------------------------------------------------|
+| Search                | Matches the name of the run and the note you wrote for it.     |
+| Show only             | The kind of map, the difficulty, and which map.                |
+| Played                | The window the runs were fought in, as `2026-07-23 20:07`.     |
+| 24 h, 7 days, 30 days | Fill the window in for you, counting back from the newest run. |
+| Select all            | Ticks every run the filters have left on screen.               |
+| Clear selection       | Unticks everything.                                            |
+
+Click into an empty **Played** field and it fills in with the oldest — or, on the
+right-hand side, the newest — run in the list, ready to edit. Leave one side
+empty for "anything before that" or "anything after that".
+
+A run you have ticked never disappears from the list, even when the filters no
+longer match it — it is going into the comparison either way, so it stays on
+screen with a warning mark beside it. Untick it, or widen the filters to see it
+back in place.
+
+**Select all** adds to what you have already ticked rather than replacing it, so
+you can pick a few Infected runs, change the filters, and add a few Hive ones.
+
+Tip: a date typed halfway does nothing until it is complete, so the list does not
+empty out under your hands while you are still typing. While it is incomplete it
+is shown in red.
 
 Then press **Compare selected**:
 
@@ -225,6 +280,42 @@ each hit lands softer can come out looking like nothing happened. Switch the
 breakdown on in the Columns menu and each difference is split into the part that
 came from landing hits more often and the part that came from each hit landing
 harder. The two always add up to the whole difference.
+
+### One average instead of many columns
+
+With more than a handful of runs on screen there are more columns than anyone
+can read across. The **Averages** button beside the Columns menu folds them
+together: one column per metric, averaged over every run in the comparison.
+
+Every run counts once, and a run that never used an ability is left out of that
+ability's average rather than counted as a zero — two runs with the Kemocite
+proc average those two, not two out of twelve. Hover an averaged value and it
+tells you how many runs went into it, and the best and worst of them.
+
+The chart follows: instead of one line per run it draws the single line those
+runs average out to, over the length of the longest of them. It is a true
+average and not a total — two runs of 90k DPS average to 90k, not 180k — and the
+same goes for the hits charts.
+
+The differences disappear in this mode: an average has nothing to be measured
+against. Press the button again to go back to the columns.
+
+### Saving a comparison as a spreadsheet
+
+**Export XLSX** on the right of the same row writes what you are looking at to a
+spreadsheet file you can open in Excel, LibreOffice or Google Sheets.
+
+What lands in the file:
+
+| In the file                                           | Not in the file                                                       |
+|-------------------------------------------------------|-----------------------------------------------------------------------|
+| Which runs it is of, with your notes and the player   | The coloured differences — a spreadsheet subtracts two columns itself |
+| One column per metric per run, or one averaged column | The chart                                                             |
+| Every ability row, folded away on screen or not       |                                                                       |
+
+The numbers arrive as numbers, so you can sort, total and chart them yourself.
+Where a run has nothing for a row, that cell is left empty rather than filled
+with a zero, so an average or a chart in the spreadsheet does not count it.
 
 ---
 

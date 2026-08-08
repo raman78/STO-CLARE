@@ -1,32 +1,51 @@
 //! Builds and renders the side-by-side comparison of the outgoing damage ability
-//! tree of a chosen player across up to a few combats, plus a chart (reusing the
+//! tree of a chosen player across the picked combats, plus a chart (reusing the
 //! main window's diagrams) of the selected ability branch across those combats.
 //!
 //! The trees are aligned by ability name (name handles differ per combat, so we
 //! key on the resolved name string). Rows are sorted by the first (reference)
 //! combat's DPS, and every value in combats 2+ carries a colored +/- delta
 //! against the reference.
+//!
+//! Two ways out of the table: the averages toggle, which collapses the columns
+//! into one mean per metric, and the export, which writes the same table to a
+//! spreadsheet (`export`).
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
-use eframe::egui::{text::LayoutJob, *};
+use eframe::{
+    Frame,
+    egui::{text::LayoutJob, *},
+};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    analyzer::{AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager},
+    analyzer::{
+        AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager, ValueFlags,
+    },
     app::main_tabs::diagrams::{
-        DamageDiagrams, DiagramType, PreparedDamageDataSet, combat_duration_seconds,
+        DamageDiagrams, DiagramType, PreparedDamageDataSet, PreparedHit, combat_duration_seconds,
     },
     app::main_tabs::tables::show_group_separator,
     app::settings::{CombatNotes, Settings},
     app::theme,
-    custom_widgets::{slider_text_edit::SliderTextEdit, splitter::Splitter, table::*},
+    custom_widgets::{
+        slider_text_edit::SliderTextEdit, splitter::Splitter, table::*, toggle::Toggle,
+    },
     helpers::number_formatting::NumberFormatter,
 };
 
 use super::CompareMetric;
+use crate::app::export;
 
 const ROW_HEIGHT: f32 = 25.0;
+/// The size the open/close arrow of a tree row is drawn at.
+///
+/// Pinned rather than left to the text in it: the arrow is frameless while
+/// resting and framed under the pointer, and egui sizes those two differently
+/// under this app's themes (see `custom_widgets::toggle`), so without a fixed
+/// size pointing at an arrow nudged the name beside it.
+const ARROW_SIZE: Vec2 = vec2(22.0, 18.0);
 // The header is two lines — the metric name on top, the combat number below —
 // and a third when any combat carries a note.
 const HEADER_LINE_HEIGHT: f32 = 17.0;
@@ -75,8 +94,14 @@ pub struct Comparison {
     selected: Option<u32>,
     diagrams: Option<DamageDiagrams>,
     active_diagram: DiagramType,
+    /// Whether the chart currently holds the averaged line rather than one line
+    /// per combat. Followed from the settings so the toggle rebuilds it.
+    averages: bool,
     filter: f64,
     time_slice: f64,
+    /// What came of the last export, shown beside the button: where the file
+    /// went, or why it did not.
+    export_status: Option<Result<PathBuf, String>>,
 }
 
 struct CompareNode {
@@ -84,6 +109,10 @@ struct CompareNode {
     id: u32,
     /// One entry per slot; `None` when that combat's player has no such node.
     cells: Vec<Option<SlotCell>>,
+    /// One entry per configured column: this row averaged across the combats.
+    /// Always built (it costs a division per column) so the averages toggle is
+    /// a redraw rather than a rebuild.
+    averages: Vec<Option<AverageCell>>,
     /// Per-slot hit series for charting (`None` when the slot lacks this node).
     series: Vec<Option<SeriesData>>,
     /// Reference (first slot) DPS, used to sort rows; `-inf` when absent.
@@ -128,8 +157,25 @@ struct DpsBreakdown {
 
 struct MetricCell {
     text: String,
+    /// The number behind the text, kept for the spreadsheet export — a
+    /// spreadsheet wants a number it can add up, not "1.2M".
+    value: Option<f64>,
     /// Delta versus the reference combat (only for slots after the first).
     delta: Option<DeltaCell>,
+}
+
+/// One metric of one row, averaged over the combats that have that row.
+///
+/// A plain mean of the combats, each counting once — the number a player means
+/// by "my average DPS on this map". Combats the row is absent from are left out
+/// rather than counted as zero, which is why the count is carried and shown:
+/// an ability flown in two runs out of ten averages the two, and says so.
+struct AverageCell {
+    value: f64,
+    text: String,
+    count: usize,
+    min: f64,
+    max: f64,
 }
 
 struct DeltaCell {
@@ -160,8 +206,10 @@ impl Comparison {
             selected: None,
             diagrams: None,
             active_diagram: DiagramType::Dps,
+            averages: settings.compare.show_averages,
             filter: 0.4,
             time_slice: 1.0,
+            export_status: None,
         };
         comparison.rebuild();
         comparison
@@ -189,7 +237,7 @@ impl Comparison {
 
         // Top row is the player's overall total (root of the damage tree); the
         // ability groups hang under it, expanded by default.
-        let cells = build_cells(&parents, &self.columns);
+        let (cells, averages) = build_row(&parents, &self.columns);
         let series = build_series(&parents, &hits_managers, &durations);
         let sub_nodes = build_level(
             &parents,
@@ -208,6 +256,7 @@ impl Comparison {
             name: "Total".to_string(),
             id: root_id,
             cells,
+            averages,
             series,
             sort_key,
             sub_nodes,
@@ -220,7 +269,8 @@ impl Comparison {
     }
 
     /// (Re)build the chart for the currently selected ability node: one line per
-    /// combat over that branch's hits.
+    /// combat over that branch's hits — or, with the averages on, the one line
+    /// those lines average out to.
     fn rebuild_diagram(&mut self) {
         let id = match self.selected {
             Some(id) => id,
@@ -233,7 +283,12 @@ impl Comparison {
         let filter = self.filter;
         let time_slice = self.time_slice;
         let notes = &self.notes;
+        let averages = self.averages;
         self.diagrams = find_node(&self.nodes, id).map(|node| {
+            if averages {
+                let data = average_series(node).into_iter();
+                return DamageDiagrams::from_data(data, filter, time_slice);
+            }
             let data = (0..n_slots).filter_map(|slot_i| {
                 let series = node.series.get(slot_i)?.as_ref()?;
                 Some(PreparedDamageDataSet::new(
@@ -247,7 +302,7 @@ impl Comparison {
         });
     }
 
-    pub fn show(&mut self, ui: &mut Ui, settings: &mut Settings) {
+    pub fn show(&mut self, ui: &mut Ui, settings: &mut Settings, frame: &Frame) {
         if self.slots.is_empty() {
             ui.label("No combats selected.");
             return;
@@ -262,12 +317,19 @@ impl Comparison {
             self.rebuild_diagram();
         }
 
-        self.show_column_picker(ui, settings);
+        self.show_toolbar(ui, settings, frame);
 
         // Pick up column changes from the picker (or an external settings edit).
         if self.columns != settings.compare.columns {
             self.columns = settings.compare.columns.clone();
             self.rebuild();
+        }
+        // The chart follows the toggle as well as the table: with the averages
+        // on it draws the one line the combats average out to, so switching has
+        // to rebuild it. Only the chart — the table's averages are always built.
+        if self.averages != settings.compare.show_averages {
+            self.averages = settings.compare.show_averages;
+            self.rebuild_diagram();
         }
 
         // Legend + per-combat player picker.
@@ -323,11 +385,15 @@ impl Comparison {
         }
 
         ui.label(
-            RichText::new(
+            RichText::new(if settings.compare.show_averages {
+                "Each column holds one metric averaged over the combats above — every combat \
+                 counting once, and only those a row appears in. Hover a value for how many \
+                 combats went into it, and its best and worst."
+            } else {
                 "Each column group holds one metric, one column per combat. The small coloured \
                  number beside a value is its difference against combat #1 — green when it moved \
-                 the better way.",
-            )
+                 the better way."
+            })
             .weak(),
         );
 
@@ -352,7 +418,12 @@ impl Comparison {
             .initial_ratio(0.6)
             .ratio_bounds(0.15..=0.9)
             .show(ui, |top_ui, bottom_ui| {
-                self.show_table(top_ui, settings.compare.show_dps_breakdown, &colors);
+                self.show_table(
+                    top_ui,
+                    settings.compare.show_dps_breakdown,
+                    settings.compare.show_averages,
+                    &colors,
+                );
                 self.show_diagram(bottom_ui, settings);
             });
     }
@@ -375,8 +446,130 @@ impl Comparison {
             .collect()
     }
 
+    /// The row above the legend: which columns to show, whether to average them,
+    /// and the export. The export sits on the right, away from the two menus
+    /// that change what is on screen — it only takes a copy of it.
+    fn show_toolbar(&mut self, ui: &mut Ui, settings: &mut Settings, frame: &Frame) {
+        ui.horizontal(|ui| {
+            self.show_column_picker(ui, settings);
+
+            // A framed button that lights up when it is on, rather than a
+            // frameless toggle: it stands between two ordinary buttons, and the
+            // frameless kind reads as a stray label between them. (The top bar
+            // uses the frameless kind because there it stands among its own.)
+            if ui
+                .add(Button::new("Σ Averages").selected(settings.compare.show_averages))
+                .on_hover_text(
+                    "Collapse the per-combat columns into one average per metric, over every \
+                     combat in the comparison. Useful once there are more runs on screen than \
+                     can be read side by side.",
+                )
+                .clicked()
+            {
+                settings.compare.show_averages = !settings.compare.show_averages;
+                settings.save();
+            }
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .button("Export XLSX 🖹")
+                    .on_hover_text(
+                        "Save what the table shows as a spreadsheet — the plain numbers, without \
+                         the differences.",
+                    )
+                    .clicked()
+                {
+                    self.export(settings.compare.show_averages, frame);
+                }
+                match &self.export_status {
+                    Some(Ok(path)) => {
+                        ui.label(RichText::new(format!("Saved to {}", path.display())).weak());
+                    }
+                    Some(Err(error)) => {
+                        ui.label(
+                            RichText::new(format!("Export failed: {error}"))
+                                .color(theme::palette().worse),
+                        );
+                    }
+                    None => (),
+                }
+            });
+        });
+    }
+
+    /// Asks for a file and writes the table into it. Whatever comes of it is
+    /// kept for the toolbar to show: a save dialog closing on its own says
+    /// nothing about whether anything was written.
+    fn export(&mut self, averages: bool, frame: &Frame) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Export Comparison")
+            .add_filter("Excel workbook", &["xlsx"])
+            .set_file_name(export::default_file_name(&self.slots[0].combat))
+            .set_parent(frame)
+            .save_file()
+        else {
+            return;
+        };
+        let sheet = self.export_sheet(averages);
+        self.export_status = Some(match export::write(&path, std::slice::from_ref(&sheet)) {
+            Ok(()) => {
+                log::info!("exported comparison to {}", path.display());
+                Ok(path)
+            }
+            Err(error) => {
+                log::error!("failed to export comparison to {}: {error}", path.display());
+                Err(error.to_string())
+            }
+        });
+    }
+
+    /// The table as plain data: the combats it is about, one column per metric
+    /// (per combat, or one averaged), and every row of the tree — including the
+    /// ones collapsed on screen, since a spreadsheet has its own way of hiding
+    /// what is not wanted.
+    fn export_sheet(&self, averages: bool) -> export::Sheet {
+        let combats = self
+            .slots
+            .iter()
+            .enumerate()
+            .map(|(slot_i, slot)| export::Combat {
+                identifier: slot.combat.identifier(),
+                note: note_of(&self.notes, slot_i).to_string(),
+                player: slot.player.get(&slot.combat.name_manager).to_string(),
+            })
+            .collect();
+
+        let mut columns = Vec::new();
+        for column in self.columns.iter() {
+            if averages {
+                columns.push(export::Column {
+                    header: format!("{} (avg)", column.label()),
+                    decimals: column.precision(),
+                });
+            } else {
+                for slot_i in 0..self.slots.len() {
+                    columns.push(export::Column {
+                        header: format!("{} #{}", column.label(), slot_i + 1),
+                        decimals: column.precision(),
+                    });
+                }
+            }
+        }
+
+        let mut rows = Vec::new();
+        collect_export_rows(&self.nodes, 0, self.slots.len(), averages, &mut rows);
+        export::Sheet {
+            name: "Comparison".to_string(),
+            combats,
+            columns,
+            rows,
+        }
+    }
+
     fn show_column_picker(&self, ui: &mut Ui, settings: &mut Settings) {
-        ui.menu_button("Columns ▾", |ui| {
+        // ⏷ rather than ▾: the bundled fonts have no U+25BE, which drew as an
+        // empty box. This is the same arrow the tree rows open with.
+        ui.menu_button("Columns ⏷", |ui| {
             let mut changed = false;
             for &metric in CompareMetric::ALL {
                 let mut on = settings.compare.columns.contains(&metric);
@@ -415,12 +608,21 @@ impl Comparison {
         });
     }
 
-    fn show_table(&mut self, ui: &mut Ui, show_breakdown: bool, colors: &[Option<Color32>]) {
+    fn show_table(
+        &mut self,
+        ui: &mut Ui,
+        show_breakdown: bool,
+        show_averages: bool,
+        colors: &[Option<Color32>],
+    ) {
         let n_slots = self.slots.len();
         let n_metrics = self.columns.len();
+        // Averaged columns belong to every combat at once, so there is no note
+        // and no breakdown against a reference to put under them.
+        let show_breakdown = show_breakdown && !show_averages;
         // The note line is only there when some combat carries a note, so a
         // comparison of runs nobody named keeps the two-line header it had.
-        let with_notes = self.notes.iter().any(|note| !note.is_empty());
+        let with_notes = !show_averages && self.notes.iter().any(|note| !note.is_empty());
         let font = TextStyle::Body.resolve(ui.style());
         let text_color = ui.visuals().text_color();
         // Columns are grouped by metric: the metric name spans its group (shown
@@ -430,6 +632,17 @@ impl Comparison {
         let mut headers: Vec<HeaderCell> = Vec::new();
         for column in self.columns.iter() {
             headers.push(HeaderCell::Separator);
+            if show_averages {
+                headers.push(HeaderCell::Cell {
+                    text: header_text(&font, text_color, column.label(), "Avg", None, None),
+                    tooltip: format!(
+                        "{} averaged over the {} combats in this comparison",
+                        column.label(),
+                        n_slots
+                    ),
+                });
+                continue;
+            }
             for slot_i in 0..n_slots {
                 headers.push(HeaderCell::Cell {
                     text: header_text(
@@ -514,6 +727,7 @@ impl Comparison {
                                 n_slots,
                                 n_metrics,
                                 show_breakdown,
+                                show_averages,
                                 &mut selected,
                                 &mut selection_changed,
                             );
@@ -537,7 +751,7 @@ impl Comparison {
                 DiagramType::HitsPerSecond,
                 DiagramType::HitsCount,
             ] {
-                ui.selectable_value(&mut self.active_diagram, diagram, diagram.name())
+                ui.steady_toggle_value(&mut self.active_diagram, diagram, diagram.name())
                     .on_hover_text(diagram.tooltip());
             }
         });
@@ -572,6 +786,7 @@ impl CompareNode {
         n_slots: usize,
         n_metrics: usize,
         show_breakdown: bool,
+        show_averages: bool,
         selected: &mut Option<u32>,
         selection_changed: &mut bool,
     ) {
@@ -583,7 +798,7 @@ impl CompareNode {
                     let symbol = if self.open { "⏷" } else { "⏵" };
                     let can_open = !self.sub_nodes.is_empty();
                     if ui
-                        .add_visible(can_open, Button::selectable(false, symbol))
+                        .add_visible(can_open, Button::selectable(false, symbol).min_size(ARROW_SIZE))
                         .clicked()
                     {
                         self.open = !self.open;
@@ -592,9 +807,24 @@ impl CompareNode {
                 });
             });
 
-            // Column groups by metric: for each metric, one cell per combat.
+            // Column groups by metric: for each metric, one cell per combat —
+            // or a single averaged cell standing for all of them.
             for metric_i in 0..n_metrics {
                 show_group_separator(r);
+                if show_averages {
+                    match self.averages.get(metric_i).and_then(|a| a.as_ref()) {
+                        Some(average) => {
+                            let tooltip = average_tooltip(average, n_slots);
+                            r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.label(&average.text).on_hover_text(tooltip);
+                            });
+                        }
+                        None => {
+                            r.cell(|_| {});
+                        }
+                    }
+                    continue;
+                }
                 for slot_i in 0..n_slots {
                     match self
                         .cells
@@ -693,11 +923,137 @@ impl CompareNode {
                     n_slots,
                     n_metrics,
                     show_breakdown,
+                    show_averages,
                     selected,
                     selection_changed,
                 );
             }
         }
+    }
+}
+
+/// What an averaged value is made of: how many of the combats had this row at
+/// all, and how far apart the best and the worst of them were. An average of
+/// two runs out of twelve means something quite different from an average of
+/// all twelve, and the number alone cannot say which it is.
+fn average_tooltip(average: &AverageCell, n_slots: usize) -> String {
+    let mut formatter = NumberFormatter::new();
+    format!(
+        "Average of {} of the {} combats\nlowest {}, highest {}",
+        average.count,
+        n_slots,
+        formatter.format(average.min, 2),
+        formatter.format(average.max, 2)
+    )
+}
+
+/// Every row of the tree, in the order it is drawn, flattened for the export.
+/// Collapsed rows are taken too: the file is the whole comparison, not the part
+/// that happened to be unfolded when the button was pressed.
+fn collect_export_rows(
+    nodes: &[CompareNode],
+    level: usize,
+    n_slots: usize,
+    averages: bool,
+    rows: &mut Vec<export::Row>,
+) {
+    for node in nodes {
+        let mut values = Vec::new();
+        // One entry per configured column, whether or not this row has a value
+        // for it, so every row lines up under the same headers.
+        for metric_i in 0..node.averages.len() {
+            if averages {
+                values.push(node.averages[metric_i].as_ref().map(|a| a.value));
+            } else {
+                for slot_i in 0..n_slots {
+                    values.push(
+                        node.cells
+                            .get(slot_i)
+                            .and_then(|c| c.as_ref())
+                            .and_then(|c| c.metrics.get(metric_i))
+                            .and_then(|m| m.value),
+                    );
+                }
+            }
+        }
+        rows.push(export::Row {
+            name: node.name.clone(),
+            level,
+            values,
+        });
+        collect_export_rows(&node.sub_nodes, level + 1, n_slots, averages, rows);
+    }
+}
+
+/// The one line the combats average out to, for the chart in averages mode.
+///
+/// Every combat's hits are pooled onto one time axis — each hit already carries
+/// its offset from the start of its own combat — and every value is divided by
+/// the number of combats that have this row. The charts are linear in the hit
+/// values (a smoothed sum for the per-second lines, a bucketed sum for the
+/// bars), so a pooled series scaled by `1/n` *is* the mean of the individual
+/// lines, at every point, rather than an approximation of it.
+///
+/// Combats without the selected ability are left out of `n`, exactly as the
+/// table's averages leave them out: charting a run that never fired the thing
+/// as a zero would drag the line down for a reason that never happened.
+///
+/// The window is the longest of the pooled combats, so no hit falls outside it.
+/// The tail is then the average of fewer runs than the head — unavoidable when
+/// runs differ in length, and the alternative (cutting at the shortest) throws
+/// away the end of every longer fight.
+fn average_series(node: &CompareNode) -> Option<PreparedDamageDataSet> {
+    let present: Vec<&SeriesData> = node.series.iter().flatten().collect();
+    let n = present.len();
+    if n == 0 {
+        return None;
+    }
+    let scale = 1.0 / n as f64;
+    let points: Vec<PreparedHit> = present
+        .iter()
+        .flat_map(|series| series.hits.iter())
+        // The same hits the ordinary series drop: one that did nothing because
+        // the target was immune is not damage that happened.
+        .filter(|hit| !hit.flags.contains(ValueFlags::IMMUNE))
+        .map(|hit| scaled_point(hit.into(), scale))
+        .collect();
+    let total = present.iter().map(|series| series.total).sum::<f64>() * scale;
+    let duration = present
+        .iter()
+        .map(|series| series.combat_duration_s)
+        .fold(0.0, f64::max);
+    Some(PreparedDamageDataSet::base_new(
+        &average_label(n),
+        total,
+        points.into_iter(),
+        duration,
+    ))
+}
+
+/// One hit's share of an average: every figure it carries scaled the same way —
+/// the hit count included, which is what makes the hits-per-second chart show
+/// an average rather than the runs added up. Scaling all of them together keeps
+/// the parts adding up to the whole, and leaves the resistance chart (a ratio
+/// of two of them) unchanged.
+fn scaled_point(mut point: PreparedHit, scale: f64) -> PreparedHit {
+    point.value.damage *= scale;
+    point.value.hull_damage *= scale;
+    point.value.shield_damage *= scale;
+    point.value.base_damage *= scale;
+    point.value.drain_damage *= scale;
+    point.value.damage_prevented_to_hull *= scale;
+    point.value.hits_count *= scale;
+    point
+}
+
+/// What the averaged line is called. It says how many combats went into it,
+/// because that is the one thing the line itself cannot show — and it is not
+/// always every combat in the comparison.
+fn average_label(n: usize) -> String {
+    if n == 1 {
+        "average of 1 combat".to_string()
+    } else {
+        format!("average of {n} combats")
     }
 }
 
@@ -912,7 +1268,7 @@ fn build_level(
             let id = *id_source;
             *id_source += 1;
             let sort_key = per_slot[0].map(|g| g.dps.all).unwrap_or(f64::NEG_INFINITY);
-            let cells = build_cells(per_slot, columns);
+            let (cells, averages) = build_row(per_slot, columns);
             let series = build_series(per_slot, hits_managers, durations);
             let sub_nodes = build_level(
                 per_slot,
@@ -926,6 +1282,7 @@ fn build_level(
                 name,
                 id,
                 cells,
+                averages,
                 series,
                 sort_key,
                 sub_nodes,
@@ -985,10 +1342,13 @@ fn split_dps_difference(r1: f64, m1: f64, r2: f64, m2: f64) -> DpsBreakdown {
     }
 }
 
-fn build_cells(
+/// One row of the table: a cell per slot, and the same row averaged across the
+/// slots. Both come out of one pass over the metrics, since they read the same
+/// numbers.
+fn build_row(
     per_slot: &[Option<&DamageGroup>],
     columns: &[CompareMetric],
-) -> Vec<Option<SlotCell>> {
+) -> (Vec<Option<SlotCell>>, Vec<Option<AverageCell>>) {
     let mut formatter = NumberFormatter::new();
 
     // Raw metric values per slot, so combats 2+ can be compared to slot 0.
@@ -998,7 +1358,8 @@ fn build_cells(
         .collect();
     let base = raw.first().and_then(|o| o.as_ref());
 
-    raw.iter()
+    let cells = raw
+        .iter()
         .enumerate()
         .map(|(slot_i, values)| {
             values.as_ref().map(|values| {
@@ -1015,7 +1376,11 @@ fn build_cells(
                         } else {
                             make_delta(base.and_then(|b| b[m]), *value, column, &mut formatter)
                         };
-                        MetricCell { text, delta }
+                        MetricCell {
+                            text,
+                            value: *value,
+                            delta,
+                        }
                     })
                     .collect();
                 SlotCell {
@@ -1024,6 +1389,43 @@ fn build_cells(
                         dps_breakdown(per_slot.first().copied().flatten(), per_slot[slot_i])
                     }),
                 }
+            })
+        })
+        .collect();
+
+    let averages = build_averages(&raw, columns, &mut formatter);
+    (cells, averages)
+}
+
+/// Each column averaged over the combats that have a value for this row.
+///
+/// A plain mean, every combat counting once — including for the percentages,
+/// so what the column shows is the average of the numbers above it rather than
+/// a differently-weighted figure that no column states.
+fn build_averages(
+    raw: &[Option<Vec<Option<f64>>>],
+    columns: &[CompareMetric],
+    formatter: &mut NumberFormatter,
+) -> Vec<Option<AverageCell>> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(m, column)| {
+            let values: Vec<f64> = raw
+                .iter()
+                .filter_map(|slot| slot.as_ref()?.get(m).copied().flatten())
+                .collect();
+            let count = values.len();
+            if count == 0 {
+                return None;
+            }
+            let value = values.iter().sum::<f64>() / count as f64;
+            Some(AverageCell {
+                value,
+                text: formatter.format(value, column.precision()),
+                count,
+                min: values.iter().copied().fold(f64::INFINITY, f64::min),
+                max: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             })
         })
         .collect()
@@ -1161,14 +1563,7 @@ mod tests {
     }
 
     fn header(note: Option<&str>, color: Option<Color32>) -> LayoutJob {
-        header_text(
-            &FontId::default(),
-            Color32::WHITE,
-            "DPS",
-            "#2",
-            note,
-            color,
-        )
+        header_text(&FontId::default(), Color32::WHITE, "DPS", "#2", note, color)
     }
 
     /// The note is a line of its own under the combat number, so a column says
@@ -1261,7 +1656,261 @@ mod tests {
     #[test]
     fn a_combat_the_chart_has_no_line_for_is_left_uncoloured() {
         let job = header(None, None);
-        assert!(job.sections.iter().all(|s| s.format.color == Color32::WHITE));
+        assert!(
+            job.sections
+                .iter()
+                .all(|s| s.format.color == Color32::WHITE)
+        );
+    }
+
+    /// Every character the compare view draws has to exist in the fonts the app
+    /// bundles, or it comes out as an empty box that says nothing.
+    ///
+    /// This caught two: the arrow between the two date fields (U+2192) and the
+    /// one the Columns menu was labelled with (U+25BE, `▾`). Known missing:
+    /// `▾`, `→`, `🗎`, `⇒`. Known present: the ones asserted below — check a new
+    /// one here before drawing it.
+    #[test]
+    fn every_glyph_the_compare_view_draws_exists_in_the_font() {
+        let ctx = Context::default();
+        crate::app::fonts::install(&ctx);
+        // The fonts only exist once a pass has run.
+        let _ = ctx.run_ui(Default::default(), |_| {});
+        let font = TextStyle::Body.resolve(&Style::default());
+        for glyph in "Σ🖹⚠🆚◀⏷⏵".chars() {
+            assert!(
+                ctx.fonts_mut(|fonts| fonts.has_glyph(&font, glyph)),
+                "'{glyph}' (U+{:04X}) has no glyph and would draw as an empty box",
+                glyph as u32
+            );
+        }
+    }
+
+    fn averages_of(raw: &[Option<Vec<Option<f64>>>]) -> Vec<Option<AverageCell>> {
+        build_averages(
+            raw,
+            &[CompareMetric::Dps, CompareMetric::Critical],
+            &mut NumberFormatter::new(),
+        )
+    }
+
+    /// Every combat counts once, including for the percentages — the column
+    /// says what the numbers above it average out to.
+    #[test]
+    fn an_average_counts_every_combat_once() {
+        let raw = vec![
+            Some(vec![Some(100.0), Some(40.0)]),
+            Some(vec![Some(200.0), Some(44.0)]),
+            Some(vec![Some(300.0), Some(48.0)]),
+        ];
+        let averages = averages_of(&raw);
+
+        let dps = averages[0].as_ref().unwrap();
+        assert_eq!(200.0, dps.value);
+        assert_eq!(3, dps.count);
+        assert_eq!(100.0, dps.min);
+        assert_eq!(300.0, dps.max);
+
+        assert_eq!(44.0, averages[1].as_ref().unwrap().value);
+    }
+
+    /// An ability flown in two runs out of five averages those two rather than
+    /// counting the other three as zero, which would read as a nerf that never
+    /// happened. The count is carried so the tooltip can say which it is.
+    #[test]
+    fn an_absent_row_is_left_out_rather_than_counted_as_zero() {
+        let raw = vec![
+            Some(vec![Some(100.0), Some(40.0)]),
+            None,
+            Some(vec![Some(200.0), None]),
+        ];
+        let averages = averages_of(&raw);
+
+        let dps = averages[0].as_ref().unwrap();
+        assert_eq!(150.0, dps.value, "the two combats that have it, not three");
+        assert_eq!(2, dps.count);
+
+        let critical = averages[1].as_ref().unwrap();
+        assert_eq!(40.0, critical.value, "a metric can be missing on its own");
+        assert_eq!(1, critical.count);
+    }
+
+    /// Nothing to average is an empty cell, not a zero.
+    #[test]
+    fn a_metric_no_combat_has_leaves_the_cell_empty() {
+        let raw = vec![Some(vec![None, Some(40.0)]), None];
+        assert!(averages_of(&raw)[0].is_none());
+    }
+
+    /// The tooltip says how much of the comparison went into the number, which
+    /// is what tells an average of everything from an average of a corner of it.
+    #[test]
+    fn the_tooltip_says_how_many_combats_the_average_is_of() {
+        let raw = vec![
+            Some(vec![Some(100.0), None]),
+            None,
+            Some(vec![Some(300.0), None]),
+        ];
+        let tooltip = average_tooltip(averages_of(&raw)[0].as_ref().unwrap(), 3);
+        assert!(tooltip.contains("2 of the 3"), "{tooltip}");
+        assert!(tooltip.contains("100"), "{tooltip}");
+        assert!(tooltip.contains("300"), "{tooltip}");
+    }
+
+    fn hit(damage: f64, time_millis: u32) -> Hit {
+        use crate::analyzer::{BaseHit, SpecificHit};
+        Hit {
+            hit: BaseHit {
+                damage,
+                flags: ValueFlags::NONE,
+                specific: SpecificHit::Hull {
+                    base_damage: damage,
+                },
+            },
+            time_millis,
+        }
+    }
+
+    fn charted(node: &CompareNode) -> PreparedDamageDataSet {
+        average_series(node).expect("the row has a series to average")
+    }
+
+    /// The averaged line is the mean of the combats' lines: their hits pooled
+    /// onto one axis with every value divided by how many combats there were.
+    /// The charts sum the values, so a pooled series scaled that way is the
+    /// mean at every point rather than three runs stacked on top of each other.
+    #[test]
+    fn the_charted_average_scales_the_pooled_hits_down() {
+        let mut node = node("Total", vec![Some(0.0)], Vec::new());
+        node.series = vec![
+            Some(SeriesData {
+                hits: vec![hit(100.0, 0), hit(100.0, 1000)],
+                total: 200.0,
+                combat_duration_s: 10.0,
+            }),
+            Some(SeriesData {
+                hits: vec![hit(300.0, 0)],
+                total: 300.0,
+                combat_duration_s: 20.0,
+            }),
+        ];
+
+        let data = charted(&node);
+        assert_eq!(250.0, data.total_value, "the mean of 200 and 300");
+        assert_eq!(20.0, data.duration_s, "the window covers the longer run");
+        let damage: f64 = data
+            .values
+            .iter()
+            .map(|point| point.value.damage)
+            .sum::<f64>();
+        assert_eq!(250.0, damage, "500 of pooled damage over two combats");
+        let hits: f64 = data.values.iter().map(|point| point.value.hits_count).sum();
+        assert_eq!(1.5, hits, "three pooled hits over two combats");
+    }
+
+    /// A combat that never used the ability is left out of the average rather
+    /// than charted as a flat zero, which would drag the line down for a reason
+    /// that never happened — the same rule the table's averages follow.
+    #[test]
+    fn a_combat_without_the_ability_is_not_charted_as_zero() {
+        let mut node = node("Kemocite", vec![Some(0.0)], Vec::new());
+        node.series = vec![
+            Some(SeriesData {
+                hits: vec![hit(100.0, 0)],
+                total: 100.0,
+                combat_duration_s: 10.0,
+            }),
+            None,
+        ];
+
+        let data = charted(&node);
+        assert_eq!(100.0, data.total_value, "one combat, not halved");
+        assert_eq!("average of 1 combat", data.name);
+    }
+
+    /// Nothing to average is no line at all, not an empty one.
+    #[test]
+    fn a_row_no_combat_has_is_not_charted() {
+        let mut node = node("Nothing", vec![None], Vec::new());
+        node.series = vec![None, None];
+        assert!(average_series(&node).is_none());
+    }
+
+    fn node(name: &str, values: Vec<Option<f64>>, sub_nodes: Vec<CompareNode>) -> CompareNode {
+        CompareNode {
+            name: name.to_string(),
+            id: 0,
+            cells: vec![Some(SlotCell {
+                metrics: values
+                    .iter()
+                    .map(|value| MetricCell {
+                        text: String::new(),
+                        value: *value,
+                        delta: None,
+                    })
+                    .collect(),
+                breakdown: None,
+            })],
+            averages: values
+                .iter()
+                .map(|value| {
+                    value.map(|value| AverageCell {
+                        value,
+                        text: String::new(),
+                        count: 1,
+                        min: value,
+                        max: value,
+                    })
+                })
+                .collect(),
+            series: vec![None],
+            sort_key: 0.0,
+            sub_nodes,
+            open: false,
+        }
+    }
+
+    /// The export takes the whole tree in the order it is drawn, collapsed rows
+    /// included — the file is the comparison, not the part that happened to be
+    /// unfolded when the button was pressed.
+    #[test]
+    fn the_export_takes_every_row_of_the_tree() {
+        let nodes = vec![node(
+            "Total",
+            vec![Some(85231.0)],
+            vec![node(
+                "Phaser Beam",
+                vec![Some(21004.0)],
+                vec![node("Overload", vec![None], Vec::new())],
+            )],
+        )];
+        let mut rows = Vec::new();
+        collect_export_rows(&nodes, 0, 1, false, &mut rows);
+
+        let shape: Vec<(&str, usize)> = rows.iter().map(|r| (r.name.as_str(), r.level)).collect();
+        assert_eq!(
+            vec![("Total", 0), ("Phaser Beam", 1), ("Overload", 2)],
+            shape
+        );
+        assert_eq!(vec![Some(85231.0)], rows[0].values);
+        // A row a combat has no value for leaves an empty cell rather than a
+        // zero, which would average and chart as a real number in the sheet.
+        assert_eq!(vec![None], rows[2].values);
+    }
+
+    /// In averages mode the file holds the same one column per metric that the
+    /// table does, not one per combat.
+    #[test]
+    fn the_export_follows_the_averages_toggle() {
+        let nodes = vec![node("Total", vec![Some(100.0), Some(40.0)], Vec::new())];
+
+        let mut per_combat = Vec::new();
+        collect_export_rows(&nodes, 0, 1, false, &mut per_combat);
+        assert_eq!(2, per_combat[0].values.len());
+
+        let mut averaged = Vec::new();
+        collect_export_rows(&nodes, 0, 1, true, &mut averaged);
+        assert_eq!(vec![Some(100.0), Some(40.0)], averaged[0].values);
     }
 
     #[test]
