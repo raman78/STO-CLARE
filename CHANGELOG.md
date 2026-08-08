@@ -9,12 +9,13 @@
 
 ### Other Changes
 - a whole combat can be saved as a spreadsheet from the main window, one sheet per tab: Summary, Damage Dealt, Damage Taken and the three healing ones, each with every player, every row of the breakdown and every metric it has — not only the columns that fit on screen
-- the main window's tables have a **Columns** menu of their own, at the end of the tab row: hide the metrics you never read, and the button says how many are hidden so a missing column is never a mystery. The two damage tabs share their choice and the three healing tabs share theirs, and it is remembered between runs
+- the main window's tables have a **Columns** menu of their own, at the end of the tab row: hide the metrics you never read, and the button says how many are hidden so a missing column is never a mystery. It carries the theme's own accent colour, so it does not read as a seventh tab. The two damage tabs share their choice and the three healing tabs share theirs, and it is remembered between runs
 - **Copy Combat Summary** puts the note you wrote for the run after its name, so a summary pasted into the game chat says which build it was. It can be switched off next to the other elements in the ⛭ menu
 - the summary reads more clearly in chat: it now goes `[PlayerName: DPS|Dmg] / @you: 436k|41.5M / @teammate: 210k|20.1M`, with the key in brackets and a colon after each name, instead of a bare `Name DPS` in front of entries that used a space
 - the ⛭ next to **Copy Combat Summary** — and the ✏ in the naming rules — work as switches now: they stay lit while their little window is up, and pressing them again puts it away. Before, the only way to close one was to click somewhere else entirely
 - pointing at a button no longer nudges it and everything next to it sideways. The tab strips, the chart pickers and the toolbar toggles are now ordinary buttons that light up when picked, and they keep their size whatever the mouse is doing
 - the compare picker can be narrowed to when the runs were played, down to the minute, with buttons for the last 24 hours, 7 days and 30 days. Clicking into an empty field fills it with the oldest or newest run in the list, ready to edit
+- the list of runs above a comparison scrolls inside itself once there are more than six of them, instead of pushing the table and the chart off the bottom of the window — where nothing could scroll to them
 - **Compare selected** moved to a line of its own, below the buttons that only tick and untick
 - a ticked run no longer vanishes from the compare list when the filters stop matching it — narrowing the level to Elite used to hide an Advanced run that was still going into the comparison, with no way to see or untick it. It now stays on screen with a warning mark beside it
 

@@ -147,7 +147,10 @@ Three conventions worth knowing before changing a table or a chart:
   written before it existed. `MetricsTable::show` and `SummaryTable::show` take
   a `shown` predicate and gather the visible columns per frame, so the picker
   in the tab row takes effect at once. The two damage tabs share a kind and the
-  three healing tabs share another, because they are the same table.
+  three healing tabs share another, because they are the same table. That
+  button is rimmed in the theme's `hyperlink_color` (`main_tabs::accent_rim`)
+  to tell it from the tabs beside it — colour only, since a wider stroke would
+  come off the button's inner margin and bring the size shift back.
 
 - **Columns are data.** A table is a `&'static [ColumnDescriptor<T>]`; a column
   carries its label, its sort function and its render function. A metric that
@@ -253,6 +256,21 @@ series copies). All 18 at once came to 26 MB. Holding `Values<Hit>` in
 `SeriesData` and resolving it against the slot's manager at chart time would
 remove the 2.4 MB share, but at that scale it buys little and the charts have no
 automated coverage to catch a mistake with; the copies stay.
+
+#### What a big comparison does to the layout
+
+The compare view is drawn straight into the central panel; nothing around it
+scrolls vertically. The table scrolls sideways on its own
+(`ScrollArea::horizontal`), so more columns only ever means more scrolling —
+but the legend is a row per combat, and a row measures 21 points under the
+default style, so an uncapped legend filled a 720-point window at 34 combats
+and left the table and the chart drawn past the bottom edge with no way to
+reach them. `legend_height` caps it at `LEGEND_ROWS` (6) and lets it scroll
+inside itself; below that it still shrinks to what it holds.
+
+The one thing left uneven is the table's `Name` column, which scrolls away with
+everything else — the averages toggle is the answer to a table too wide to
+read, not a frozen first column.
 
 #### Averages
 

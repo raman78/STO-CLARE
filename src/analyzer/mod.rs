@@ -975,7 +975,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let log = dir.join("combatlog.log");
 
-        let me = "Raman,P[1@2 Kestrel@handle]";
+        let me = "Kestrel,P[1@2 Kestrel@handle]";
         let mate = "Sirak,P[3@4 Sirak@other]";
         let console = "Bio-Molecular Shield Generator,C[77 Space_Console_Bio]";
         std::fs::write(

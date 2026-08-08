@@ -244,12 +244,12 @@ mod tests {
     #[test]
     fn an_entry_is_the_handle_then_the_figures() {
         assert_eq!(
-            "@handle: 436k",
-            player_entry("@handle", "436k")
+            "@player: 436k",
+            player_entry("@player", "436k")
         );
         assert_eq!(
-            "@handle: 436k|41.5M|38.2",
-            player_entry("@handle", "436k|41.5M|38.2")
+            "@player: 436k|41.5M|38.2",
+            player_entry("@player", "436k|41.5M|38.2")
         );
     }
 
@@ -259,12 +259,12 @@ mod tests {
     fn the_heading_and_the_entries_read_as_one_line() {
         let line = [
             heading("DPS|Dmg"),
-            player_entry("@handle", "436k|41.5M"),
+            player_entry("@player", "436k|41.5M"),
             player_entry("@somebody", "210k|20.1M"),
         ]
         .join(" / ");
         assert_eq!(
-            "[PlayerName: DPS|Dmg] / @handle: 436k|41.5M / @somebody: 210k|20.1M",
+            "[PlayerName: DPS|Dmg] / @player: 436k|41.5M / @somebody: 210k|20.1M",
             line
         );
     }

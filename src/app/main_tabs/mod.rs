@@ -75,6 +75,31 @@ const SELF_HEALING_INFO: &str = "Healing you did to yourself: self-buffs, your o
      Counted here only — it is deliberately left out of the other two tabs, so \
      the three add up without counting anything twice.";
 
+/// How faint the accent rim is on a widget nobody is pointing at. Enough to be
+/// picked out of a row of ordinary buttons, not so much that it reads as the
+/// pressed state the accent otherwise means.
+const RESTING_ACCENT: f32 = 0.7;
+
+/// Paints every state of `ui`'s buttons with the theme's accent rim.
+///
+/// The accent is the theme's own `hyperlink_color` — the one colour every theme
+/// declares as bright enough for its background — which is also what a pressed
+/// widget's rim is painted with (`theme::glassify`). The widths are left at
+/// 1.0: egui takes the frame's stroke width off the button's inner margin, so a
+/// wider rim here would make the button change size the moment it is hovered.
+fn accent_rim(ui: &mut Ui) {
+    let accent = ui.visuals().hyperlink_color;
+    let widgets = &mut ui.visuals_mut().widgets;
+    widgets.inactive.bg_stroke = Stroke::new(1.0, accent.gamma_multiply(RESTING_ACCENT));
+    for state in [
+        &mut widgets.hovered,
+        &mut widgets.active,
+        &mut widgets.open,
+    ] {
+        state.bg_stroke = Stroke::new(1.0, accent);
+    }
+}
+
 impl MainTabs {
     pub fn empty() -> Self {
         Self {
@@ -103,29 +128,37 @@ impl MainTabs {
         } else {
             format!("Columns ⏷ ({hidden} hidden)")
         };
-        ui.menu_button(label, |ui| {
-            let mut changed = false;
-            for name in names.iter() {
-                let mut shown = settings.columns.is_shown(kind, name);
-                if ui.checkbox(&mut shown, *name).changed() {
-                    settings.columns.set_shown(kind, name, shown);
+        // Rimmed in the theme's accent, because it stands in a row of buttons
+        // that all pick *what* is on screen while this one changes *how much*
+        // of it is. Only the colour differs — the widths stay at 1.0, or the
+        // button would change size under the pointer (see
+        // `custom_widgets::toggle`).
+        ui.scope(|ui| {
+            accent_rim(ui);
+            ui.menu_button(label, |ui| {
+                let mut changed = false;
+                for name in names.iter() {
+                    let mut shown = settings.columns.is_shown(kind, name);
+                    if ui.checkbox(&mut shown, *name).changed() {
+                        settings.columns.set_shown(kind, name, shown);
+                        changed = true;
+                    }
+                }
+                ui.separator();
+                if ui.button("Show all").clicked() {
+                    settings.columns.show_all(kind);
                     changed = true;
                 }
-            }
-            ui.separator();
-            if ui.button("Show all").clicked() {
-                settings.columns.show_all(kind);
-                changed = true;
-            }
-            if changed {
-                settings.save();
-            }
-        })
-        .response
-        .on_hover_text(
-            "Which columns this table shows. The two damage tabs share their choice, and so do \
-             the three healing ones.",
-        );
+                if changed {
+                    settings.save();
+                }
+            })
+            .response
+            .on_hover_text(
+                "Which columns this table shows. The two damage tabs share their choice, and so \
+                 do the three healing ones.",
+            );
+        });
     }
 
     /// Writes the whole combat to a spreadsheet, a sheet per tab.
@@ -233,6 +266,53 @@ impl MainTabs {
             MainTab::SelfHealing => self.heal_self_tab.show(settings, ui),
             MainTab::HealingAlly => self.heal_ally_tab.show(settings, ui),
             MainTab::HealingReceived => self.heal_received_tab.show(settings, ui),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::theme;
+    use eframe::egui::{Context, RawInput};
+
+    /// The accent rim has to differ from an ordinary button's in colour and in
+    /// nothing else. A wider stroke would come off the button's inner margin
+    /// and make it change size under the pointer, which is the very thing
+    /// `custom_widgets::toggle` exists to stop.
+    #[test]
+    fn the_accent_rim_changes_the_colour_and_not_the_width() {
+        for theme in theme::THEMES.iter() {
+            let ctx = Context::default();
+            theme::apply(&ctx, theme.theme);
+            let mut ordinary = None;
+            let mut accented = None;
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                ordinary = Some(ui.visuals().widgets.clone());
+                ui.scope(|ui| {
+                    accent_rim(ui);
+                    accented = Some(ui.visuals().widgets.clone());
+                });
+            });
+            let (ordinary, accented) = (ordinary.unwrap(), accented.unwrap());
+
+            for (ordinary, accented) in [
+                (&ordinary.inactive, &accented.inactive),
+                (&ordinary.hovered, &accented.hovered),
+                (&ordinary.active, &accented.active),
+                (&ordinary.open, &accented.open),
+            ] {
+                assert_eq!(
+                    ordinary.bg_stroke.width, accented.bg_stroke.width,
+                    "{}: an accented button must be the same size as an ordinary one",
+                    theme.name
+                );
+                assert_ne!(
+                    ordinary.bg_stroke.color, accented.bg_stroke.color,
+                    "{}: the accent has to be visible against the ordinary rim",
+                    theme.name
+                );
+            }
         }
     }
 }

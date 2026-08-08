@@ -332,46 +332,57 @@ impl Comparison {
             self.rebuild_diagram();
         }
 
-        // Legend + per-combat player picker.
+        // Legend + per-combat player picker, one row per combat. Past a few
+        // combats the list would push the table and the chart off the bottom of
+        // the window, which has no scrolling of its own to reach them by, so it
+        // scrolls inside itself instead and never takes more than its share.
         let colors = self.slot_colors();
         let mut player_change: Option<(usize, NameHandle)> = None;
-        for (slot_i, slot) in self.slots.iter().enumerate() {
-            ui.horizontal(|ui| {
-                // The user's own note, where they wrote one, tells apart runs
-                // the identifier alone cannot.
-                let note = note_of(&self.notes, slot_i);
-                // The number and the note are drawn in the colour this combat
-                // has on the chart, so the legend, the table and the chart all
-                // say the same thing about which run is which.
-                ui.label(legend_text(
-                    &TextStyle::Body.resolve(ui.style()),
-                    ui.visuals().text_color(),
-                    slot_i,
-                    &slot.combat.identifier(),
-                    note,
-                    colors[slot_i],
-                ));
-                let current = slot.player.get(&slot.combat.name_manager).to_string();
-                ComboBox::new(("compare player", slot_i), "player")
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for (handle, name) in players_by_dps(&slot.combat) {
-                            if ui.selectable_label(handle == slot.player, name).clicked() {
-                                player_change = Some((slot_i, handle));
-                            }
+        let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+        ScrollArea::vertical()
+            .id_salt("compare legend")
+            .max_height(legend_height(row, self.slots.len()))
+            .show(ui, |ui| {
+                for (slot_i, slot) in self.slots.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        // The user's own note, where they wrote one, tells apart
+                        // runs the identifier alone cannot.
+                        let note = note_of(&self.notes, slot_i);
+                        // The number and the note are drawn in the colour this
+                        // combat has on the chart, so the legend, the table and
+                        // the chart all say the same thing about which run is
+                        // which.
+                        ui.label(legend_text(
+                            &TextStyle::Body.resolve(ui.style()),
+                            ui.visuals().text_color(),
+                            slot_i,
+                            &slot.combat.identifier(),
+                            note,
+                            colors[slot_i],
+                        ));
+                        let current = slot.player.get(&slot.combat.name_manager).to_string();
+                        ComboBox::new(("compare player", slot_i), "player")
+                            .selected_text(current)
+                            .show_ui(ui, |ui| {
+                                for (handle, name) in players_by_dps(&slot.combat) {
+                                    if ui.selectable_label(handle == slot.player, name).clicked() {
+                                        player_change = Some((slot_i, handle));
+                                    }
+                                }
+                            });
+                        if slot_i == 0 {
+                            ui.label(
+                                RichText::new(
+                                    "(reference — every difference is measured against this \
+                                     combat, and changing the player here moves the others to the \
+                                     same player)",
+                                )
+                                .weak(),
+                            );
                         }
                     });
-                if slot_i == 0 {
-                    ui.label(
-                        RichText::new(
-                            "(reference — every difference is measured against this combat, and \
-                             changing the player here moves the others to the same player)",
-                        )
-                        .weak(),
-                    );
                 }
             });
-        }
         if let Some((slot_i, handle)) = player_change {
             self.slots[slot_i].player = handle;
             // Changing who the reference is about moves the others with it,
@@ -398,18 +409,11 @@ impl Comparison {
         );
 
         // Comparing two different people's numbers looks like a build changed
-        // when nothing did, so say so rather than let it pass unnoticed.
-        let names = slot_player_names(&self.slots);
-        if names.iter().any(|n| n != &names[0]) {
-            ui.label(
-                RichText::new(format!(
-                    "⚠ The combats are showing different players ({}). The differences compare \
-                     those players against each other, not one player's runs — pick the same \
-                     player above to compare like with like.",
-                    names.join(", ")
-                ))
-                .color(theme::palette().worse),
-            );
+        // when nothing did, so say so rather than let it pass unnoticed — in
+        // one short line, with the particulars a hover away.
+        if let Some(warning) = odd_player_warning(&slot_player_names(&self.slots)) {
+            ui.label(RichText::new(warning.line).color(theme::palette().worse))
+                .on_hover_text(warning.detail);
         }
 
         ui.separator();
@@ -1117,6 +1121,18 @@ fn note_suffix(note: &str) -> String {
     }
 }
 
+/// How many legend rows are on show before it starts to scroll inside itself.
+/// Six: enough that an ordinary comparison never scrolls at all, few enough
+/// that a session's worth still leaves the table and the chart their room.
+const LEGEND_ROWS: usize = 6;
+
+/// How tall the legend is allowed to be, for `row` points per row. It shrinks
+/// to what it holds — three combats are three rows and no scroll bar — and
+/// stops growing at [`LEGEND_ROWS`].
+fn legend_height(row: f32, combats: usize) -> f32 {
+    row * combats.min(LEGEND_ROWS) as f32
+}
+
 /// The height of the header: two lines, and a third when the notes are shown.
 fn header_height(with_notes: bool) -> f32 {
     HEADER_LINE_HEIGHT * if with_notes { 3.0 } else { 2.0 }
@@ -1194,6 +1210,51 @@ fn chart_label(slot_i: usize, note: &str) -> String {
     } else {
         format!("{number} — {note}")
     }
+}
+
+/// A warning that not every combat is showing the reference's player: the line
+/// on screen, and what a hover says.
+struct OddPlayerWarning {
+    line: String,
+    detail: String,
+}
+
+/// Whether the comparison is about one player's runs, and what to say when it
+/// is not.
+///
+/// A slot falls back to its own top-DPS player when the reference player was
+/// not in that fight (`follow_the_reference_player`), and then a difference is
+/// one person measured against another rather than one person's build against
+/// itself — which reads exactly like a build that changed. Worth a word, but
+/// only a word: the line names how many and the hover names which, because a
+/// comparison of a whole session would otherwise put a paragraph of handles
+/// above the table.
+fn odd_player_warning(names: &[String]) -> Option<OddPlayerWarning> {
+    let reference = names.first()?;
+    let odd: Vec<String> = names
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(_, name)| *name != reference)
+        .map(|(slot_i, name)| format!("#{} is {name}", slot_i + 1))
+        .collect();
+    if odd.is_empty() {
+        return None;
+    }
+    Some(OddPlayerWarning {
+        line: format!(
+            "⚠ {} of {} combats {} not showing {reference}",
+            odd.len(),
+            names.len(),
+            if odd.len() == 1 { "is" } else { "are" }
+        ),
+        detail: format!(
+            "{}.\nTheir figures are compared against {reference}'s, so a difference here can be \
+             one player against another rather than one player's runs. Where that player took \
+             part, pick them in the list above.",
+            odd.join(", ")
+        ),
+    })
 }
 
 /// The players a comparison is showing, one per slot, for the warning above the
@@ -1686,6 +1747,78 @@ mod tests {
         }
     }
 
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    /// One player's runs are what the comparison is normally about, and that
+    /// says nothing at all.
+    #[test]
+    fn one_player_throughout_is_not_worth_a_warning() {
+        assert!(odd_player_warning(&names(&["Kestrel", "Kestrel", "Kestrel"])).is_none());
+        assert!(odd_player_warning(&names(&["Kestrel"])).is_none());
+        assert!(odd_player_warning(&[]).is_none());
+    }
+
+    /// The line is a count, not a list: a session's worth of handles above the
+    /// table was a paragraph nobody read.
+    #[test]
+    fn the_warning_counts_on_screen_and_names_on_hover() {
+        let warning = odd_player_warning(&names(&[
+            "Kestrel", "Kestrel", "Somebody", "Kestrel", "Else", "Kestrel",
+        ]))
+        .expect("two of them are showing somebody else");
+
+        assert_eq!("⚠ 2 of 6 combats are not showing Kestrel", warning.line);
+        assert!(warning.line.len() < 60, "{}", warning.line);
+        // Which ones, by the number the columns are labelled with.
+        assert!(warning.detail.starts_with("#3 is Somebody, #5 is Else"));
+    }
+
+    /// One odd combat reads as one, not as "1 combats are".
+    #[test]
+    fn a_single_odd_combat_reads_as_one() {
+        let warning = odd_player_warning(&names(&["Kestrel", "Somebody"])).unwrap();
+        assert_eq!("⚠ 1 of 2 combats is not showing Kestrel", warning.line);
+    }
+
+    /// A small comparison shows its whole legend and nothing more — no room
+    /// reserved for rows that are not there, and no scroll bar.
+    #[test]
+    fn a_short_legend_takes_only_the_rows_it_has() {
+        assert_eq!(0.0, legend_height(21.0, 0));
+        assert_eq!(63.0, legend_height(21.0, 3));
+        assert_eq!(126.0, legend_height(21.0, LEGEND_ROWS));
+    }
+
+    /// Past the cap it stops growing, whatever the selection. Measured at 21
+    /// points a row, a legend of fifty combats would otherwise fill a 1080-point
+    /// window on its own and leave the table and the chart drawn past the bottom
+    /// edge, with no way to scroll to them.
+    #[test]
+    fn a_long_legend_stops_at_the_cap() {
+        let capped = legend_height(21.0, LEGEND_ROWS);
+        for combats in [LEGEND_ROWS + 1, 20, 50, 500] {
+            assert_eq!(capped, legend_height(21.0, combats), "{combats} combats");
+        }
+        assert!(
+            capped < 720.0,
+            "the cap has to leave a short window something to draw the table in"
+        );
+    }
+
+    /// The row height is asked of the style rather than written down, so the
+    /// cap follows the UI scale instead of being six rows at one zoom level and
+    /// four at another.
+    #[test]
+    fn the_cap_follows_the_row_height_it_is_given() {
+        assert_eq!(
+            2.0 * legend_height(10.0, 4),
+            legend_height(20.0, 4),
+            "twice the row height is twice the height"
+        );
+    }
+
     fn averages_of(raw: &[Option<Vec<Option<f64>>>]) -> Vec<Option<AverageCell>> {
         build_averages(
             raw,
@@ -1956,3 +2089,4 @@ mod tests {
         assert!(!new_res.improvement);
     }
 }
+
