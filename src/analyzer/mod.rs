@@ -1158,9 +1158,10 @@ mod tests {
     }
 
     /// A heal routed through a pet or console must still nest ability first
-    /// under the ability order. Taken from a real log: Wren's Jem'hadar
-    /// Wingman casting Engineering Team III on Rook, which used to put the
-    /// pet on top because it was the last segment of the grouping path.
+    /// under the ability order. Taken from a real log, with the names changed:
+    /// a player's Jem'hadar Wingman casting Engineering Team III on a team
+    /// mate, which used to put the pet on top because it was the last segment
+    /// of the grouping path.
     #[test]
     fn the_ability_order_puts_the_ability_on_top_even_through_a_pet() {
         let dir = std::env::temp_dir().join("cla-heal-pet-order-test");
