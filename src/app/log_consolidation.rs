@@ -1,10 +1,15 @@
-//! Consolidation of STO's rotating combat logs into a single file (Linux).
+//! Consolidation of STO's rotating combat logs into a single file.
 //!
-//! Under Proton, STO writes combat data to a new `combatlog_<timestamp>.log`
-//! file every time it rotates the log (map change / relog / periodically),
-//! instead of the single `combatlog.log` it writes on Windows. That scatters
-//! combats across many files, breaking both browsing and the live overlay
-//! (which follows one file).
+//! STO rotates its combat log by the hour, writing a new
+//! `combatlog_<timestamp>.log` each time, and it does so on **every** system:
+//! the switch that stops it is `-NoAutoRotateLogs` on the launcher's command
+//! line, which is a client option and not a platform difference. This was
+//! written believing it to be a Proton quirk, and gated to Linux on that
+//! belief; the DPS League's own guide to turning rotation off, and the upstream
+//! analyzer telling its Windows users to follow it, say otherwise.
+//!
+//! Rotation scatters combats across many files, breaking both browsing and the
+//! live overlay (which follows one file).
 //!
 //! [`Consolidator`] rebuilds the Windows-like single `combatlog.log` in the
 //! same folder: it appends every *complete* rotated file into it (then deletes
@@ -137,7 +142,12 @@ impl Consolidator {
         for entry in fs::read_dir(&self.dir)? {
             let entry = entry?;
             let name = entry.file_name();
-            let name = name.to_string_lossy();
+            // Matched without regard to case. The game writes the name in
+            // lower case, but the guides that tell players about rotation show
+            // it as `Combatlog_..._.Log`, and Windows would not care either
+            // way — a case-sensitive test that happened to be wrong would find
+            // nothing at all and leave the whole feature quietly dead.
+            let name = name.to_string_lossy().to_lowercase();
             // The consolidated target ("combatlog.log") has no '_', so the
             // "combatlog_" prefix excludes it from being consumed.
             if name.starts_with("combatlog_") && name.ends_with(".log") {

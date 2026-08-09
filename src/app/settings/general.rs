@@ -103,16 +103,16 @@ impl GeneralTab {
             .weak(),
         );
 
-        #[cfg(target_os = "linux")]
         ui.checkbox(
             &mut modified_settings.analysis.consolidate_combatlog,
             "Merge rotating combat logs into one file",
         )
         .on_hover_text(
-            "STO under Proton creates a new combat log file every so often. When enabled, CLA \
-             keeps a single combatlog.log up to date in the same folder (merging completed logs, \
-             deleting the merged originals to save space). Open combatlog.log for the live overlay \
-             and all combats in one place; open a specific log to review just that file.",
+            "STO starts a new combat log every hour unless the launcher is given \
+             -NoAutoRotateLogs, which scatters your fights across many files. When enabled, \
+             CLARE keeps a single combatlog.log up to date in the same folder (merging completed \
+             logs, deleting the merged originals to save space). Open combatlog.log for the live \
+             overlay and all combats in one place; open a specific log to review just that file.",
         );
 
         ui.separator();

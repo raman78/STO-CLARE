@@ -31,7 +31,6 @@ mod compare;
 pub mod desktop_install;
 mod export;
 mod fonts;
-#[cfg(target_os = "linux")]
 mod log_consolidation;
 pub mod logging;
 mod main_tabs;
