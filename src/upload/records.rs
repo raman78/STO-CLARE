@@ -25,6 +25,42 @@ use super::common::*;
 use crate::custom_widgets::toggle::Toggle;
 
 const PAGE_SIZE: i32 = 50;
+
+/// The largest page the server will hand over, whatever is asked for
+/// (`core/pagination.py`: `max_page_size`). Asking for more is not an error —
+/// it is capped in silence, which is the part worth guarding against.
+const MAX_PAGE_SIZE: i32 = 10_000;
+
+/// Every request to the ladder is made with this.
+///
+/// Two things it settles. It names us: a server operator reading their logs can
+/// see which program is calling and, if it ever misbehaves, has something to
+/// block or somebody to tell — the default is an anonymous library string that
+/// says nothing. And it bounds the wait, so a connection that never answers
+/// cannot leave a thread and a window hanging for good, which is also how a
+/// stalled client turns into a pile of stalled clients.
+fn ladder_client() -> Client {
+    ClientBuilder::new()
+        .user_agent(concat!("sto-clare/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .unwrap()
+}
+
+/// Warns when the server sent fewer rows than it says it has.
+///
+/// Today's ladder is far below the cap, so this never fires — but a silently
+/// short list would not look wrong anywhere: the filters would simply stop
+/// offering maps nobody could then find.
+fn warn_if_truncated(what: &str, count: i32, received: usize) {
+    if (received as i32) < count {
+        log::warn!(
+            "ladder: the server sent {received} of {count} {what} — the page limit cut the rest, \
+             so anything after them is missing from the window"
+        );
+    }
+}
 static REDUCED_COLUMNS: &[&str] = &[
     "Rank",
     "Player",
@@ -63,7 +99,14 @@ impl Records {
             }
         };
         if ui.steady_toggle(!self.collapsed(), "Ladder").clicked() {
-            *self = Self::begin_load_ladders(ui.ctx().clone(), url.clone());
+            // A toggle both ways. It lit up while the window was open but
+            // pressing it again fetched the whole ladder afresh instead of
+            // putting the window away, which is not what a lit button offers.
+            *self = if self.collapsed() {
+                Self::begin_load_ladders(ui.ctx().clone(), url.clone())
+            } else {
+                Self::Collapsed
+            };
         }
 
         let mut open = !self.collapsed();
@@ -166,16 +209,17 @@ impl Records {
     }
 
     fn do_load_ladders(url: Url) -> Result<LaddersModel, RequestError> {
-        let client = ClientBuilder::new().build().unwrap();
+        let client = ladder_client();
         let ladders_url = url.join("/ladder/").unwrap();
         let response = client
             .get(ladders_url)
-            .query(&[("page_size", &i32::MAX.to_string())])
+            .query(&[("page_size", &MAX_PAGE_SIZE.to_string())])
             .send()?;
         if !response.status().is_success() {
             return Err(RequestError::from(response));
         }
         let mut ladders = response.json::<LaddersModel>()?;
+        warn_if_truncated("record tables", ladders.count, ladders.results.len());
         ladders.seasons_newest_first = Self::do_load_seasons(&client, url).unwrap_or_default();
         Ok(ladders)
     }
@@ -196,14 +240,15 @@ impl Records {
             .get(url)
             .query(&[
                 ("ordering", "-start_date"),
-                ("page_size", &i32::MAX.to_string()),
+                ("page_size", &MAX_PAGE_SIZE.to_string()),
             ])
             .send()?;
         if !response.status().is_success() {
             return Err(RequestError::from(response));
         }
-        Ok(response
-            .json::<SeasonsModel>()?
+        let seasons = response.json::<SeasonsModel>()?;
+        warn_if_truncated("seasons", seasons.count, seasons.results.len());
+        Ok(seasons
             .results
             .into_iter()
             .map(|season| season.name)
@@ -545,7 +590,7 @@ impl Entries {
         metric: &str,
         page: i32,
     ) -> Result<LadderEntriesModel, RequestError> {
-        let client = ClientBuilder::new().build().unwrap();
+        let client = ladder_client();
         let url = url.join("/ladder-entries/").unwrap();
         let mut query: Vec<(&str, String)> = vec![
             ("page_size", PAGE_SIZE.to_string()),
@@ -830,7 +875,7 @@ impl DownloadLogState {
     }
 
     fn do_download_log(url: Url, path: PathBuf, log_id: i32) -> Result<(), RequestError> {
-        let client = ClientBuilder::new().build().unwrap();
+        let client = ladder_client();
         let url = url
             .join(&format!("/combatlog/{}/download/", log_id))
             .unwrap();
@@ -851,6 +896,9 @@ impl DownloadLogState {
 
 #[derive(Deserialize, Debug)]
 struct LaddersModel {
+    /// How many the server has, against how many it sent. See [`sane_client`]:
+    /// a page size beyond what the server allows is capped in silence.
+    count: i32,
     results: Vec<LadderModel>,
     /// Filled in after the fact from the seasons endpoint — the ladders
     /// themselves carry no dates. Empty when that request failed.
@@ -860,6 +908,7 @@ struct LaddersModel {
 
 #[derive(Deserialize, Debug)]
 struct SeasonsModel {
+    count: i32,
     results: Vec<SeasonModel>,
 }
 
