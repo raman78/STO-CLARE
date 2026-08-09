@@ -32,7 +32,10 @@ start() {  # start(theme) -> sets $W to the window id
   xdotool windowactivate "$W"; sleep 1
 }
 stop() { kill "$APP" 2>/dev/null || true; wait "$APP" 2>/dev/null || true; }
-shot() { sleep 2; import -window "$W" "$OUT/$1.png"; echo "  $1"; }
+shot() { sleep 2; import -window "${2:-$W}" "$OUT/$1.png"; echo "  $1"; }
+# The Ladder is a window of its own (a viewport), so it is grabbed by name.
+ladder_win() { xdotool search --name "^Ladder$" | tail -1; }
+clickw() { xdotool mousemove --window "$1" "$2" "$3" click 1; sleep "${4:-1}"; }
 click() { xdotool mousemove --window "$W" "$1" "$2" click 1; sleep 1; }
 
 if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
@@ -67,6 +70,22 @@ if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
   click 124 68
   click 193 17
   click 95 17; sleep 9; shot records              # give the ladder time to load
+  stop
+fi
+
+if [ "$WHAT" = all ] || [ "$WHAT" = ladder ]; then
+  echo "the ladder:"
+  start LightDark
+  click 95 17; sleep 8                             # open the Ladder window
+  L=$(ladder_win)
+  shot ladder-window "$L"
+  clickw "$L" 694 130 12                           # the magnifier on the first entry
+  shot ladder-run                                  # the run, in the main window
+  click 431 17                                     # Compare Combats
+  click 15 133                                     # one of my own fights
+  shot ladder-compare-pick
+  click 295 103; sleep 12                          # Compare selected
+  shot ladder-compare
   stop
 fi
 

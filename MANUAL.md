@@ -30,7 +30,7 @@ Everything lives in one window. From top to bottom:
 
 ```
 ┌─ STO-CLARE ─────────────────────────────────────────────────────────┐
-│ Settings  Records  Compare Combats                     ← top row    │
+│ Settings  Ladder  Compare Combats                      ← top row    │
 ├─────────────────────────────────────────────────────────────────────┤
 │ [combat you are reading ▼]  Combats  Refresh Now  Clear Log File    │
 │ Auto Refresh  Save Combat  Upload  Copy Combat Summary  Overlay     │
@@ -400,14 +400,77 @@ the game in windowed mode is the reliable answer there.
 ## Uploading to the OSCR ladder
 
 **Upload** sends the selected combat to the OSCR ladder and shows you where the
-run placed. **Records** in the top row browses the ladder itself: pick a season
-and a table, and read the standings.
+run placed. When it works, the window says so in the ladder's own words and
+offers a link straight to your run on the ladder site. When it does not, it now
+tells you why — "Combat log is empty", or that the map and difficulty have no
+ladder for that period — instead of a bare failure.
 
-![The Records window](images/records.png)
+An upload can also succeed and produce no ladder entries at all. That usually
+means the map and difficulty have no ladder for this period, or the ladder only
+accepts solo runs.
 
-A combat can come back rejected, or uploaded but with no ladder entries. That
-usually means the map and difficulty have no ladder for that period, or the
-ladder only accepts solo runs.
+---
+
+## The Ladder
+
+**Ladder** in the top row opens the standings in a window of its own, so you can
+read a run in the main window while it is up. Pressing the button again puts it
+away.
+
+![The Ladder window](images/ladder-window.png)
+
+### Finding a table
+
+Instead of one long list of tables, five menus narrow it down:
+
+| Menu             | What it picks                                                     |
+|------------------|-------------------------------------------------------------------|
+| Season           | Newest first. **All seasons** searches the whole ladder at once.   |
+| Map              | Choosing one also settles whether it was space or ground.          |
+| Space and ground | Where the fight was.                                               |
+| Solo and team    | The ladder keeps separate tables for solo runs.                    |
+| All levels       | Normal, Advanced, Elite, or Any for tables that are not split.     |
+
+Each menu only offers what the other four leave reachable, so no combination you
+can pick empties the list. A choice that cannot survive your next one is let go —
+pick a map with no Elite table and the level goes back to all levels rather than
+showing you nothing.
+
+Under the menus is what is left: the table's name when one table matches, or how
+many when several do. Several is normal when you are looking for a player rather
+than a table.
+
+**Search** finds a player by any part of their handle, and it stays put while you
+narrow everything else — so you can follow one person from season to season, or
+across every map at once.
+
+### Reading a run from the ladder
+
+Two icons sit at the end of every row: 📥 saves that run as a log file, and 🔍
+opens it in the main window with everything the program can show — all the tabs,
+the charts, the ability breakdown.
+
+![A run from the ladder, opened](images/ladder-run.png)
+
+Your own log is not touched or changed. A mark at the top says whose fight you
+are looking at, and **Back to my log** puts yours back.
+
+### Comparing it with your own
+
+With a run on screen, press **Compare Combats** as usual. The run is already in
+the comparison — ticked, greyed out, and not for unticking, because it is what
+you opened. Beside it is your own list, narrowed to the same map and level as the
+run, since that is nearly always what you want to compare against. Where you have
+never played that map, it falls back to the same level.
+
+![Choosing what to compare the run against](images/ladder-compare-pick.png)
+
+Tick one of your own fights — one is enough — and press **Compare selected**.
+
+![A ladder run beside your own](images/ladder-compare.png)
+
+One thing to expect: the two runs are by different people, so each column has its
+own player picker in the heading. Your column opens on you, theirs on them.
 
 ---
 
