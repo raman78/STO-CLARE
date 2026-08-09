@@ -605,6 +605,7 @@ impl Entries {
         // The question is settled here, where both the filter and the tables
         // are to hand; the thread only carries it to the server.
         let query = filter.query(&ladders.all);
+        let team_only = filter.solo == Some(false);
         let metric = ladders
             .matching(filter)
             .first()
@@ -628,7 +629,16 @@ impl Entries {
             })
             .collect();
         let join_handle = spawn_request(move || {
-            Self::load_ladder_entries(ctx, url, query, metric, page, tables, show_full_data)
+            Self::load_ladder_entries(
+                ctx,
+                url,
+                query,
+                metric,
+                page,
+                tables,
+                team_only,
+                show_full_data,
+            )
         });
         Entries::Loading(Some(join_handle))
     }
@@ -640,12 +650,17 @@ impl Entries {
         metric: String,
         page: i32,
         tables: FxHashMap<i32, LadderFacts>,
+        team_only: bool,
         show_full_data: bool,
     ) -> Entries {
         let state = match Self::do_load_ladder_entries(url, &query, &metric, page) {
-            Ok(entries) => {
-                Entries::Loaded(LoadedEntries::new(page, entries, &tables, show_full_data))
-            }
+            Ok(entries) => Entries::Loaded(LoadedEntries::new(
+                page,
+                entries,
+                &tables,
+                team_only,
+                show_full_data,
+            )),
             Err(err) => Entries::LoadError(format!(
                 "{}",
                 err.action_error("Failed to load record table entries.")
@@ -699,11 +714,12 @@ impl LoadedEntries {
         page: i32,
         model: LadderEntriesModel,
         tables: &FxHashMap<i32, LadderFacts>,
+        team_only: bool,
         show_full_data: bool,
     ) -> Self {
         let mut formatter = NumberFormatter::new();
         let (reduced_columns_count, entries) =
-            TableColumn::build_table(&model, tables, &mut formatter);
+            TableColumn::build_table(&model, tables, team_only, &mut formatter);
         let combat_log_ids = model.results.iter().map(|e| e.combatlog).collect();
         Self {
             page_count: model.count / PAGE_SIZE + if model.count % PAGE_SIZE > 0 { 1 } else { 0 },
@@ -1273,6 +1289,7 @@ impl TableColumn {
     fn build_table(
         entries: &LadderEntriesModel,
         tables: &FxHashMap<i32, LadderFacts>,
+        team_only: bool,
         formatter: &mut NumberFormatter,
     ) -> (usize, Vec<Self>) {
         // Rank is per table, so a page drawn from several of them repeats "1"
@@ -1297,16 +1314,6 @@ impl TableColumn {
         // which level (the one that is not the catch-all) and whether it was
         // solo (a run in a solo table was solo — the team entry is the
         // catch-all), which no single row can say.
-        let folded: Vec<&LadderEntryModel> = if mixed {
-            let mut seen = std::collections::BTreeSet::new();
-            entries
-                .results
-                .iter()
-                .filter(|entry| seen.insert(entry.combatlog))
-                .collect()
-        } else {
-            entries.results.iter().collect()
-        };
         let mut tables_of: FxHashMap<i32, Vec<&LadderFacts>> = FxHashMap::default();
         if mixed {
             for entry in entries.results.iter() {
@@ -1315,6 +1322,27 @@ impl TableColumn {
                 }
             }
         }
+        // Asked for team, a run is only team where it is in no solo table: the
+        // server admits one to a solo table exactly when the log held a single
+        // player, and every run is in the team tables regardless. This is why
+        // the query was not narrowed to team tables — with the solo ones out of
+        // the answer there would be nothing left to recognise a solo run by.
+        let solo_run = |combatlog: &i32| {
+            tables_of
+                .get(combatlog)
+                .is_some_and(|facts| facts.iter().any(|f| f.solo))
+        };
+        let folded: Vec<&LadderEntryModel> = if mixed {
+            let mut seen = std::collections::BTreeSet::new();
+            entries
+                .results
+                .iter()
+                .filter(|entry| !team_only || !solo_run(&entry.combatlog))
+                .filter(|entry| seen.insert(entry.combatlog))
+                .collect()
+        } else {
+            entries.results.iter().collect()
+        };
         let mut from = Vec::new();
         let mut ranks = Vec::new();
         let mut players = Vec::new();
@@ -1463,11 +1491,15 @@ impl LadderFilter {
             if let Some(season) = &self.season {
                 query.push(("ladder__variant__name".to_owned(), season.clone()));
             }
-            if let Some(solo) = self.solo {
-                query.push((
-                    "ladder__is_solo".to_owned(),
-                    if solo { "True" } else { "False" }.to_owned(),
-                ));
+            // Solo is exact on the server: a run is in a solo table only where
+            // the log held exactly one player. Team is not — every run is in a
+            // team table, solo ones included — so asking for team tables would
+            // hand back the very runs it is meant to exclude, with nothing left
+            // in the answer to recognise them by. Team is therefore asked for as
+            // "any table" and the solo runs are dropped once the tables each run
+            // is in can be seen (see `build_table`).
+            if self.solo == Some(true) {
+                query.push(("ladder__is_solo".to_owned(), "True".to_owned()));
             }
             if let Some(level) = self.difficulty.and_then(LadderDifficulty::api_value) {
                 query.push(("ladder__difficulty".to_owned(), level.to_owned()));
@@ -1630,18 +1662,44 @@ mod tests {
         assert_eq!(None, value(&query, "ladder__name__iregex"));
     }
 
-    /// Lowercase `true` makes the server answer 500 (STOCD/OSCR-server#113), so
-    /// this is not a style choice.
+    /// Solo is exact on the server — a run is in a solo table only where the log
+    /// held one player — so it is asked for directly. Lowercase `true` makes the
+    /// server answer 500 (STOCD/OSCR-server#113), so the spelling is not a style
+    /// choice.
     #[test]
-    fn booleans_are_sent_the_way_the_server_accepts_them() {
+    fn solo_is_asked_for_the_way_the_server_accepts_it() {
+        // Two solo tables, so the answer is not one table — narrowed to a single
+        // one it would be asked for by id and need nothing else.
+        let mut ladders = ladders();
+        ladders.push(ladder(
+            6,
+            "Hive: Onslaught",
+            LadderDifficulty::Elite,
+            true,
+            true,
+        ));
+        let filter = LadderFilter {
+            solo: Some(true),
+            ..filter()
+        };
+        assert_eq!(
+            Some("True"),
+            value(&filter.query(&ladders), "ladder__is_solo")
+        );
+    }
+
+    /// Team is not asked for at all. Every run is in a team table, solo ones
+    /// included, so narrowing to them would hand back the runs it is meant to
+    /// exclude — with the solo tables out of the answer, nothing would be left
+    /// to recognise them by. They are dropped once the tables each run is in can
+    /// be seen.
+    #[test]
+    fn team_is_not_narrowed_on_the_server() {
         let filter = LadderFilter {
             solo: Some(false),
             ..filter()
         };
-        assert_eq!(
-            Some("False"),
-            value(&filter.query(&ladders()), "ladder__is_solo")
-        );
+        assert_eq!(None, value(&filter.query(&ladders()), "ladder__is_solo"));
     }
 
     /// The server carries `is_space` but ignores it as a filter, so the
