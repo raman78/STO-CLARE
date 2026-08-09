@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 
-pub use app_settings::{Settings, WindowGeometry};
+pub use app_settings::{DebugSettings, Settings, WindowGeometry};
 pub use columns::{ColumnVisibility, TableKind};
 pub use combat_notes::{CombatNotes, MAX_NOTE_CHARS};
 use eframe::{Frame, egui::*};
@@ -12,7 +12,7 @@ use self::{
     visuals::VisualsTab,
 };
 
-use super::{analysis_handling::AnalysisHandler, overlay::Overlay, state::AppState};
+use super::{analysis_handling::AnalysisHandler, logging, overlay::Overlay, state::AppState};
 use crate::custom_widgets::toggle::Toggle;
 
 mod analysis;
@@ -264,6 +264,12 @@ impl SettingsWindow {
             state
                 .analysis_handler
                 .enable_auto_refresh(self.modified_settings.auto_refresh.enable);
+        }
+
+        // Logging is switched here rather than at the next start: the log is
+        // wanted for whatever is happening now (see `logging::apply`).
+        if self.modified_settings.debug != state.settings.debug {
+            logging::apply(&self.modified_settings.debug);
         }
 
         state.settings = self.modified_settings.clone();
