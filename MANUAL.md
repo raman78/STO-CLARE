@@ -314,6 +314,8 @@ With more than a handful of runs on screen there are more columns than anyone
 can read across. The **Averages** button beside the Columns menu folds them
 together: one column per metric, averaged over every run in the comparison.
 
+![The same comparison, averaged](images/compare-averages.png)
+
 Every run counts once, and a run that never used an ability is left out of that
 ability's average rather than counted as a zero — two runs with the Kemocite
 proc average those two, not two out of twelve. Hover an averaged value and it
