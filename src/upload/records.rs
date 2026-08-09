@@ -48,6 +48,56 @@ fn ladder_client() -> Client {
         .unwrap()
 }
 
+/// What a table says about the runs in it, for naming them.
+#[derive(Clone)]
+struct LadderFacts {
+    map: String,
+    space: bool,
+    difficulty: LadderDifficulty,
+    solo: bool,
+}
+
+/// A run from the ladder, named the way the program names a combat of its own:
+/// `[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
+///
+/// Whether it was solo is the server's own test — a run enters a solo table only
+/// where the log held exactly one player (`combatlog/models/combatlog.py`:
+/// `if ladder.is_solo and len(players) != 1: continue`) — so being in one is
+/// decisive and being in a team table says nothing, since every run is in those.
+///
+/// The ladder keeps the pieces apart — the map on the table, the level and
+/// whether it was solo on which tables the run was entered into — and spells
+/// some maps differently from us ("Hive: Onslaught" against our "Hive
+/// Onslaught"). So the map is matched against our own curated names, ignoring
+/// punctuation and case, and the rest is appended in the order the program uses.
+/// A map we do not know keeps the ladder's spelling rather than being dropped.
+fn ladder_combat_name(map: &str, space: bool, level: LadderDifficulty, solo: bool) -> String {
+    let ours = crate::analyzer::curated_map_names()
+        .into_iter()
+        .find(|name| {
+            let bare = name.rsplit("] ").next().unwrap_or(name);
+            squashed(bare) == squashed(map)
+        })
+        .unwrap_or_else(|| map.to_owned());
+    let mut name = String::new();
+    name.push_str(if solo { "[Solo] " } else { "[Team] " });
+    name.push_str(&ours);
+    name.push_str(if space { " (Space)" } else { " (Ground)" });
+    if let Some(level) = level.api_value() {
+        name.push_str(&format!(" [{level}]"));
+    }
+    name
+}
+
+/// Letters and digits only, folded to lower case: what two spellings of the same
+/// map have in common.
+fn squashed(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
 /// Warns when the server sent fewer rows than it says it has.
 ///
 /// Today's ladder is far below the cap, so this never fires — but a silently
@@ -63,6 +113,7 @@ fn warn_if_truncated(what: &str, count: i32, received: usize) {
 }
 static REDUCED_COLUMNS: &[&str] = &[
     "Rank",
+    "Combat",
     "Player",
     "DPS",
     "debuff",
@@ -559,8 +610,25 @@ impl Entries {
             .first()
             .map(|ladder| ladder.metric.clone())
             .unwrap_or_else(|| "DPS".to_owned());
+        // What each table is called, for the rows to point back at when the
+        // answer spans more than one of them.
+        let tables: FxHashMap<i32, LadderFacts> = ladders
+            .all
+            .iter()
+            .map(|ladder| {
+                (
+                    ladder.id,
+                    LadderFacts {
+                        map: ladder.map.clone(),
+                        space: ladder.is_space,
+                        difficulty: ladder.difficulty,
+                        solo: ladder.is_solo,
+                    },
+                )
+            })
+            .collect();
         let join_handle = spawn_request(move || {
-            Self::load_ladder_entries(ctx, url, query, metric, page, show_full_data)
+            Self::load_ladder_entries(ctx, url, query, metric, page, tables, show_full_data)
         });
         Entries::Loading(Some(join_handle))
     }
@@ -571,10 +639,13 @@ impl Entries {
         query: Vec<(String, String)>,
         metric: String,
         page: i32,
+        tables: FxHashMap<i32, LadderFacts>,
         show_full_data: bool,
     ) -> Entries {
         let state = match Self::do_load_ladder_entries(url, &query, &metric, page) {
-            Ok(entries) => Entries::Loaded(LoadedEntries::new(page, entries, show_full_data)),
+            Ok(entries) => {
+                Entries::Loaded(LoadedEntries::new(page, entries, &tables, show_full_data))
+            }
             Err(err) => Entries::LoadError(format!(
                 "{}",
                 err.action_error("Failed to load record table entries.")
@@ -624,9 +695,15 @@ struct LoadedEntries {
 }
 
 impl LoadedEntries {
-    fn new(page: i32, model: LadderEntriesModel, show_full_data: bool) -> Self {
+    fn new(
+        page: i32,
+        model: LadderEntriesModel,
+        tables: &FxHashMap<i32, LadderFacts>,
+        show_full_data: bool,
+    ) -> Self {
         let mut formatter = NumberFormatter::new();
-        let (reduced_columns_count, entries) = TableColumn::build_table(&model, &mut formatter);
+        let (reduced_columns_count, entries) =
+            TableColumn::build_table(&model, tables, &mut formatter);
         let combat_log_ids = model.results.iter().map(|e| e.combatlog).collect();
         Self {
             page_count: model.count / PAGE_SIZE + if model.count % PAGE_SIZE > 0 { 1 } else { 0 },
@@ -943,6 +1020,9 @@ struct LadderEntriesModel {
 
 #[derive(Deserialize, Debug)]
 struct LadderEntryModel {
+    /// Which table the entry is in. Only worth showing when the filters leave
+    /// more than one, which is what a player search across a season does.
+    ladder: i32,
     #[serde(deserialize_with = "null_to_default")]
     date: String,
     #[serde(deserialize_with = "null_to_default")]
@@ -1192,14 +1272,77 @@ struct TableColumn {
 impl TableColumn {
     fn build_table(
         entries: &LadderEntriesModel,
+        tables: &FxHashMap<i32, LadderFacts>,
         formatter: &mut NumberFormatter,
     ) -> (usize, Vec<Self>) {
+        // Rank is per table, so a page drawn from several of them repeats "1"
+        // with nothing to say which race each was won. Named only then: with one
+        // table in play the column would say the same thing on every row.
+        let mixed = entries
+            .results
+            .iter()
+            .map(|entry| entry.ladder)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            > 1;
+        // One fight is entered into several tables — the catch-all for its map
+        // and the one for its level, and a solo run into the team table as
+        // well — so a page drawn from more than one of them repeats it, rank
+        // and figures identical. Folded back into one row here, which loses
+        // nothing: measured over a season's page, no two of those rows ever
+        // disagreed on rank or on a single figure.
+        //
+        // It gains something, in fact. A row carries no map and no level of its
+        // own; both live on the tables it is in. The set of them says which map,
+        // which level (the one that is not the catch-all) and whether it was
+        // solo (a run in a solo table was solo — the team entry is the
+        // catch-all), which no single row can say.
+        let folded: Vec<&LadderEntryModel> = if mixed {
+            let mut seen = std::collections::BTreeSet::new();
+            entries
+                .results
+                .iter()
+                .filter(|entry| seen.insert(entry.combatlog))
+                .collect()
+        } else {
+            entries.results.iter().collect()
+        };
+        let mut tables_of: FxHashMap<i32, Vec<&LadderFacts>> = FxHashMap::default();
+        if mixed {
+            for entry in entries.results.iter() {
+                if let Some(facts) = tables.get(&entry.ladder) {
+                    tables_of.entry(entry.combatlog).or_default().push(facts);
+                }
+            }
+        }
+        let mut from = Vec::new();
         let mut ranks = Vec::new();
         let mut players = Vec::new();
         let mut dates = Vec::new();
         let mut columns: FxHashMap<&str, Vec<DataValue>> = FxHashMap::default();
 
-        for (i, entry) in entries.results.iter().enumerate() {
+        for (i, entry) in folded.iter().enumerate() {
+            if mixed {
+                let of = tables_of.get(&entry.combatlog);
+                let name = match of.and_then(|facts| facts.first()) {
+                    Some(first) => ladder_combat_name(
+                        &first.map,
+                        first.space,
+                        of.map(|facts| {
+                            facts
+                                .iter()
+                                .map(|f| f.difficulty)
+                                .filter(|d| *d != LadderDifficulty::Any)
+                                .min()
+                                .unwrap_or(LadderDifficulty::Any)
+                        })
+                        .unwrap_or(LadderDifficulty::Any),
+                        of.is_some_and(|facts| facts.iter().any(|f| f.solo)),
+                    ),
+                    None => "—".to_owned(),
+                };
+                from.push(DataValue::non_number(name));
+            }
             ranks.push(DataValue::number(entry.rank.to_string()));
             players.push(DataValue::non_number(entry.player.clone()));
             let date_time = DateTime::parse_from_str(&entry.date, "%+")
@@ -1220,7 +1363,17 @@ impl TableColumn {
                 .for_each(|c| c.push(DataValue::empty()));
         }
 
-        let mut columns: Vec<Self> = [("Rank", ranks), ("Player", players), ("Date", dates)]
+        let named = if mixed {
+            vec![
+                ("Rank", ranks),
+                ("Combat", from),
+                ("Player", players),
+                ("Date", dates),
+            ]
+        } else {
+            vec![("Rank", ranks), ("Player", players), ("Date", dates)]
+        };
+        let mut columns: Vec<Self> = named
             .into_iter()
             .chain(columns)
             .map(|(n, c)| Self {
@@ -1422,6 +1575,48 @@ mod tests {
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
+    }
+
+    /// A run from the ladder should read like one of your own combats, so the
+    /// two sit side by side in a comparison without looking like they came from
+    /// different programs.
+    #[test]
+    fn a_ladder_run_is_named_the_way_the_program_names_a_combat() {
+        assert_eq!(
+            "[Team] [TFO] Hive Onslaught (Space) [Elite]",
+            ladder_combat_name("Hive: Onslaught", true, LadderDifficulty::Elite, false)
+        );
+    }
+
+    /// The ladder spells some maps differently from the curated names — a colon
+    /// here, none there — so the match ignores punctuation rather than failing
+    /// and falling back to the ladder's spelling.
+    #[test]
+    fn a_map_spelled_differently_still_finds_our_name() {
+        assert!(
+            ladder_combat_name("Hive: Onslaught", true, LadderDifficulty::Any, false)
+                .starts_with("[Team] [TFO] Hive Onslaught")
+        );
+    }
+
+    /// Solo goes in front, the way the ladder itself writes it, and a table
+    /// with no level of its own adds nothing.
+    #[test]
+    fn solo_leads_and_an_unsplit_level_adds_nothing() {
+        assert_eq!(
+            "[Solo] [TFO] Bug Hunt (Ground)",
+            ladder_combat_name("Bug Hunt", false, LadderDifficulty::Any, true)
+        );
+    }
+
+    /// A map nobody has curated keeps the ladder's own spelling rather than
+    /// disappearing from the row.
+    #[test]
+    fn an_unknown_map_keeps_the_ladders_spelling() {
+        assert_eq!(
+            "[Team] Fictional Map (Space) [Elite]",
+            ladder_combat_name("Fictional Map", true, LadderDifficulty::Elite, false)
+        );
     }
 
     #[test]
