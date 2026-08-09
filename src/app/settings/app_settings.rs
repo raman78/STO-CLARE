@@ -76,6 +76,13 @@ pub struct General {
     // reason for.
     #[serde(default)]
     pub overlay_shown: bool,
+    /// A combat log to come back to, remembered so switching away from it and
+    /// back is two clicks instead of a trip through the file dialog. Kept here
+    /// rather than beside `combatlog_file` in the analysis settings on purpose:
+    /// a difference there replaces the analyzer and re-reads the whole log, and
+    /// noting down a path is no reason to re-read 300 MB.
+    #[serde(default)]
+    pub default_combatlog_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -186,6 +193,7 @@ impl Default for General {
             settings_window_size: None,
             overlay_position: None,
             overlay_shown: false,
+            default_combatlog_file: None,
         }
     }
 }
@@ -228,6 +236,15 @@ impl Default for UploadSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Settings written before there was a file to come back to must keep
+    /// loading, with nothing remembered — not with an empty path, which would
+    /// read as "come back to nowhere".
+    #[test]
+    fn settings_file_without_a_remembered_combatlog_still_loads() {
+        let settings: Settings = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
+        assert_eq!(None, settings.general.default_combatlog_file);
+    }
 
     #[test]
     fn settings_file_without_window_section_still_loads() {

@@ -57,6 +57,52 @@ impl GeneralTab {
             .desired_width(f32::MAX)
             .show(ui);
 
+        // A log to come back to. Reading someone else's run, or a single fight
+        // saved out of the way, means pointing this at another file — and
+        // finding your own again meant walking the file dialog back to it every
+        // time.
+        ui.horizontal(|ui| {
+            let current = modified_settings.analysis.combatlog_file.clone();
+            let default = modified_settings.general.default_combatlog_file.clone();
+            let is_default = default.as_deref() == Some(current.as_str());
+
+            if ui
+                .add_enabled(!current.is_empty() && !is_default, Button::new("Remember"))
+                .on_hover_text("Remember the file above as the one to come back to.")
+                .clicked()
+            {
+                modified_settings.general.default_combatlog_file = Some(current);
+            }
+
+            if let Some(default) = &default {
+                if ui
+                    .add_enabled(!is_default, Button::new("Go back to default"))
+                    .clicked()
+                {
+                    modified_settings.analysis.combatlog_file = default.clone();
+                }
+                if ui.button("Forget").clicked() {
+                    modified_settings.general.default_combatlog_file = None;
+                }
+            }
+        });
+
+        // The path gets a line to itself, under a heading of its own. A combat
+        // log path is long enough that sharing a row with the buttons cut it
+        // off, which left the one thing this has to say — where it goes back
+        // to — as something you had to hover a button to find out.
+        ui.label("Default combatlog path:");
+        ui.label(
+            RichText::new(
+                modified_settings
+                    .general
+                    .default_combatlog_file
+                    .as_deref()
+                    .unwrap_or("none yet — Remember stores the file above"),
+            )
+            .weak(),
+        );
+
         #[cfg(target_os = "linux")]
         ui.checkbox(
             &mut modified_settings.analysis.consolidate_combatlog,

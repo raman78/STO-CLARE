@@ -54,12 +54,12 @@ impl Records {
                 return;
             }
         };
-        if ui.steady_toggle(!self.collapsed(), "Records").clicked() {
+        if ui.steady_toggle(!self.collapsed(), "Ladder").clicked() {
             *self = Self::begin_load_ladders(ui.ctx().clone(), url.clone());
         }
 
         let mut open = !self.collapsed();
-        Window::new("Records")
+        Window::new("Ladder")
             .collapsible(false)
             .constrain(true)
             .open(&mut open)
