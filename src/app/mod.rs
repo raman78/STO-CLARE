@@ -89,6 +89,16 @@ pub struct App {
     summary_copy: SummaryCopy,
     upload: Upload,
     records: Records,
+    /// Set while the main window is showing a run fetched from the ladder
+    /// instead of the reader's own log: the log to go back to. The settings are
+    /// left alone throughout — this is a look at somebody else's fight, not a
+    /// change of which log is theirs.
+    ladder_run: Option<String>,
+    /// The fight that was open when the ladder run was, kept as the bytes it
+    /// occupies in the reader's own log. Taken then and not later, because by
+    /// the time the ladder run is on screen the analyzer no longer holds their
+    /// log to take it from.
+    ladder_compare_with: Option<Vec<u8>>,
     state: AppState,
     // Deferred persistence of the window size: written once resizing settles
     // (see track_window_geometry).
@@ -142,6 +152,8 @@ impl App {
             summary_copy: Default::default(),
             upload: Default::default(),
             records: Default::default(),
+            ladder_run: None,
+            ladder_compare_with: None,
             window_geometry: state.settings.window,
             state,
             window_geometry_dirty: false,
@@ -204,12 +216,47 @@ impl eframe::App for App {
                         ui,
                         frame,
                     );
-                    self.records.show(
+                    if let Some(run) = self.records.show(
                         ui,
                         frame,
                         &self.state.settings.upload.oscr_url,
                         &mut self.state.settings.general.ladder_window_position,
-                    );
+                    ) {
+                        self.show_ladder_run(run);
+                    }
+
+                    // Says whose fight is on screen, and offers the way back.
+                    // Without it the window would look like the reader's own log
+                    // had been replaced, which is exactly what has not happened.
+                    if self.ladder_run.is_some() {
+                        ui.label(
+                            RichText::new("⚑ a run from the ladder")
+                                .color(theme::palette().busy),
+                        );
+                        if ui
+                            .button("Back to my log")
+                            .on_hover_text("Reads your own combat log again.")
+                            .clicked()
+                        {
+                            self.leave_ladder_run();
+                        }
+                        // Only where there is something to compare it with: the
+                        // fight that was open when this one was fetched.
+                        if let Some(run) = self.ladder_run.as_ref().and_then(|_| {
+                            self.ladder_compare_with
+                                .is_some()
+                                .then(|| self.state.settings.analysis.combatlog_file.clone())
+                        }) && ui
+                            .button("Compare with my combat")
+                            .on_hover_text(
+                                "Writes this run and the fight you had open into one log, and \
+                                 opens Compare Combats on the two of them.",
+                            )
+                            .clicked()
+                        {
+                            self.compare_with_own_combat(std::path::Path::new(&run));
+                        }
+                    }
 
                     // Compare toggle (ON/OFF) as the last item on the top bar so it
                     // stays put regardless of mode. Rendered as a frameless toggle to
@@ -464,9 +511,84 @@ impl eframe::App for App {
         self.state.settings.general.overlay_shown = self.state.overlay.is_shown();
         self.state.settings.save();
     }
+
 }
 
 impl App {
+    /// Points the analysis at a run fetched from the ladder, remembering the log
+    /// to come back to.
+    ///
+    /// The settings are not touched. `set_settings` takes what it is given and
+    /// replaces the analyzer with it; saving is a separate step that happens
+    /// when the settings dialog is applied. So the reader's own log stays their
+    /// log, and looking at somebody else's fight does not quietly become a
+    /// change of which log the program reads.
+    fn show_ladder_run(&mut self, run: std::path::PathBuf) {
+        let own_log = self.state.settings.analysis.combatlog_file.clone();
+        let run = run.display().to_string();
+        if run == own_log {
+            return;
+        }
+        if self.ladder_run.is_none() {
+            self.ladder_compare_with = self
+                .selected_combat
+                .as_ref()
+                .and_then(|combat| combat.read_log_combat_data(std::path::Path::new(&own_log)));
+        }
+        self.ladder_run.get_or_insert(own_log);
+        let mut analysis = self.state.settings.analysis.clone();
+        analysis.combatlog_file = run;
+        // Merging rotating logs is about the reader's own game folder; a fetched
+        // run is a single fight in a scratch directory and has nothing to merge.
+        analysis.consolidate_combatlog = false;
+        self.state.analysis_handler.set_settings(analysis);
+        // `set_settings` only puts a new analyzer in place; nothing is read
+        // until it is asked to. The settings dialog does both, which is why
+        // doing only the first left the window saying it was showing a ladder
+        // run while still holding the previous log's figures.
+        self.state.analysis_handler.refresh();
+    }
+
+    /// Writes the two fights into one log and reads that, so the comparison has
+    /// both to work with. Neither the reader's log nor the fetched run is
+    /// touched — this is a third file, made for the question and thrown away
+    /// with the rest of the scratch directory.
+    fn compare_with_own_combat(&mut self, run: &std::path::Path) {
+        let Some(mine) = self.ladder_compare_with.clone() else {
+            return;
+        };
+        let Ok(theirs) = std::fs::read(run) else {
+            return;
+        };
+        let composed = crate::helpers::compose_comparison_log(&mine, &theirs);
+        let path = crate::helpers::paths::comparison_log();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if std::fs::write(&path, composed).is_err() {
+            return;
+        }
+        let mut analysis = self.state.settings.analysis.clone();
+        analysis.combatlog_file = path.display().to_string();
+        analysis.consolidate_combatlog = false;
+        self.state.analysis_handler.set_settings(analysis);
+        self.state.analysis_handler.refresh();
+        if !self.compare.is_open() {
+            self.compare.toggle();
+        }
+    }
+
+    /// Puts the reader's own log back.
+    fn leave_ladder_run(&mut self) {
+        self.ladder_compare_with = None;
+        if self.ladder_run.take().is_some() {
+            self.state
+                .analysis_handler
+                .set_settings(self.state.settings.analysis.clone());
+            self.state.analysis_handler.refresh();
+        }
+    }
+
     /// Remembers the main window's size and maximized state so the next launch
     /// restores them (see main.rs).
     ///

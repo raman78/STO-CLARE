@@ -41,17 +41,25 @@ pub enum Records {
     Collapsed,
     Loading(Option<JoinHandle<Self>>),
     #[allow(private_interfaces)]
-    Loaded(LoadedLadders),
+    Loaded(Box<LoadedLadders>),
     LoadError(String),
 }
 
 impl Records {
-    pub fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &str, position: &mut Option<[f32; 2]>) {
+    /// Returns the run the reader asked to look at, once it is on disk.
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        frame: &Frame,
+        url: &str,
+        position: &mut Option<[f32; 2]>,
+    ) -> Option<PathBuf> {
+        let mut open_run = None;
         let url = match Url::parse(url) {
             Ok(u) => u,
             Err(_) => {
                 ui.label("the provided upload URL is invalid (change in Settings->Upload)");
-                return;
+                return None;
             }
         };
         if ui.steady_toggle(!self.collapsed(), "Ladder").clicked() {
@@ -59,45 +67,68 @@ impl Records {
         }
 
         let mut open = !self.collapsed();
-        // In the middle until it has been moved, and wherever it was left after
-        // that. A window this size opening at the top-left corner covers the
-        // controls you opened it from.
-        let size = vec2(1280.0, 720.0);
-        let centred = (ui.ctx().content_rect().center() - size * 0.5).max(pos2(0.0, 0.0));
-        let response = Window::new("Ladder")
-            .collapsible(false)
-            .constrain(true)
-            .open(&mut open)
-            .default_pos(position.map(|p| pos2(p[0], p[1])).unwrap_or(centred))
-            .default_size(size)
-            .max_size(ui.ctx().content_rect().size() - vec2(120.0, 120.0))
-            .show(ui.ctx(), |ui| match self {
-                Self::Collapsed => (),
-                Self::Loading(join_handle) => {
-                    if join_handle.as_ref().unwrap().is_finished() {
-                        *self = join_handle.take().unwrap().join().unwrap();
-                        ui.ctx().request_repaint_of(ViewportId::ROOT);
+        // A window of its own, not one drawn inside the main one: the whole
+        // point of opening a run from here is to read it in the main window,
+        // which cannot happen while this sits on top of it.
+        //
+        // `show_viewport_immediate` runs the contents there and then, on this
+        // thread, so the state stays plain `&mut self` — a deferred viewport
+        // would want all of it `Send + Sync`.
+        //
+        // The viewport id is its own, because that is what tells egui the two
+        // windows apart. The **app id is deliberately the main window's**: on
+        // Wayland a window carries no icon of its own, the compositor looks up
+        // `<app id>.desktop` for one, and that is also what it groups by on the
+        // task bar. A window with an app id nothing is installed under gets the
+        // generic icon and a place of its own — which is what a suffixed one
+        // did here. The icon below is for X11, where it does come from the
+        // window.
+        if open {
+            let saved = position.map(|p| pos2(p[0], p[1]));
+            let mut builder = ViewportBuilder::default()
+                .with_title("Ladder")
+                .with_app_id(crate::app::desktop_install::APP_ID)
+                .with_icon(crate::app::app_icon::window_icon())
+                .with_inner_size(vec2(1280.0, 720.0));
+            if let Some(saved) = saved {
+                builder = builder.with_position(saved);
+            }
+            ui.ctx().show_viewport_immediate(
+                ViewportId::from_hash_of("sto-clare-ladder"),
+                builder,
+                |viewport_ui, _class| {
+                    CentralPanel::default().show_inside(viewport_ui, |ui| match self {
+                        Self::Collapsed => (),
+                        Self::Loading(join_handle) => {
+                            if join_handle.as_ref().unwrap().is_finished() {
+                                *self = join_handle.take().unwrap().join().unwrap();
+                                ui.ctx().request_repaint_of(ViewportId::ROOT);
+                            }
+                            Self::show_loading_ladders(ui);
+                        }
+                        Self::Loaded(loaded_ladders) => {
+                            loaded_ladders.show(ui, frame, url.clone(), &mut open_run)
+                        }
+                        Self::LoadError(err) => {
+                            ui.label(&*err);
+                        }
+                    });
+                    // The window's own close button, and where it was left.
+                    let ctx = viewport_ui.ctx();
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        open = false;
                     }
-
-                    Self::show_loading_ladders(ui);
-                }
-                Self::Loaded(loaded_ladders) => loaded_ladders.show(ui, frame, url),
-                Self::LoadError(err) => {
-                    ui.label(&*err);
-                }
-            });
-
-        // Where it ended up, remembered for the next time it is opened. Written
-        // every frame it is on screen, which is what makes dragging it stick;
-        // the settings only reach the disk when the program closes.
-        if let Some(response) = response {
-            let left_top = response.response.rect.left_top();
-            *position = Some([left_top.x, left_top.y]);
+                    if let Some(outer) = ctx.input(|i| i.viewport().outer_rect) {
+                        *position = Some([outer.min.x, outer.min.y]);
+                    }
+                },
+            );
         }
 
         if !open {
             *self = Self::Collapsed;
         }
+        open_run
     }
 
     fn collapsed(&self) -> bool {
@@ -123,7 +154,7 @@ impl Records {
                 if ladders.results.is_empty() {
                     return Self::LoadError("Failed to load records tables.".into());
                 }
-                Self::Loaded(LoadedLadders::new(ladders, &ctx, url))
+                Self::Loaded(Box::new(LoadedLadders::new(ladders, &ctx, url)))
             }
             Err(err) => Self::LoadError(format!(
                 "{}",
@@ -189,8 +220,11 @@ struct LoadedLadders {
 impl LoadedLadders {
     fn new(ladders: LaddersModel, ctx: &Context, url: Url) -> Self {
         let ladders = Ladders::from(ladders);
+        // Opens on the newest season, which is what somebody opening this window
+        // is almost always after; "All seasons" is one click away for the times
+        // it is a player being looked for rather than a table.
         let filter = LadderFilter {
-            season: ladders.seasons.first().cloned().unwrap_or_default(),
+            season: ladders.seasons.first().cloned(),
             ..Default::default()
         };
         Self {
@@ -200,7 +234,7 @@ impl LoadedLadders {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url) {
+    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url, open_run: &mut Option<PathBuf>) {
         let changed = self.show_filters(ui);
         // What the filters left, so a search across several tables does not look
         // like one table with a strange number of first places in it.
@@ -215,7 +249,9 @@ impl LoadedLadders {
         );
         ui.separator();
 
-        let page = self.entries.show(ui, frame, &url, &mut self.filter);
+        let page = self
+            .entries
+            .show(ui, frame, &url, &mut self.filter, open_run);
         // A changed filter starts again at the first page; a changed page keeps
         // the filter, player and all.
         if let Some(page) = changed.then_some(1).or(page) {
@@ -236,14 +272,23 @@ impl LoadedLadders {
         let mut changed = false;
         ui.horizontal(|ui| {
             changed |= ComboBox::new("ladder_season", "")
-                .selected_text(&self.filter.season)
+                .selected_text(self.filter.season.as_deref().unwrap_or("All seasons"))
                 .width(260.0)
                 .show_ui(ui, |ui| {
-                    let mut changed = false;
+                    let mut changed = ui
+                        .selectable_label(self.filter.season.is_none(), "All seasons")
+                        .clicked();
+                    if changed {
+                        self.filter.season = None;
+                    }
                     for season in &self.ladders.seasons {
-                        changed |= ui
-                            .selectable_value(&mut self.filter.season, season.clone(), season)
-                            .changed();
+                        if ui
+                            .selectable_label(self.filter.season.as_ref() == Some(season), season)
+                            .clicked()
+                        {
+                            self.filter.season = Some(season.clone());
+                            changed = true;
+                        }
                     }
                     changed
                 })
@@ -374,6 +419,7 @@ impl Entries {
         frame: &Frame,
         url: &Url,
         filter: &mut LadderFilter,
+        open_run: &mut Option<PathBuf>,
     ) -> Option<i32> {
         let mut reload = None;
         match self {
@@ -432,7 +478,7 @@ impl Entries {
                     ui.add_space(20.0);
                     ui.checkbox(&mut entries.show_full_data, "Show full data");
                 });
-                entries.show(ui, frame, url);
+                entries.show(ui, frame, url, open_run);
                 if search {
                     reload = Some(1);
                 } else if let Some(change_page) = change_page {
@@ -550,7 +596,7 @@ impl LoadedEntries {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &Url) {
+    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &Url, open_run: &mut Option<PathBuf>) {
         if self.entries.is_empty() {
             ui.label("no entries");
             return;
@@ -574,6 +620,10 @@ impl LoadedEntries {
                         ui.label("📥");
                     })
                     .on_hover_text("download log");
+                    r.cell(|ui| {
+                        ui.label("🔍");
+                    })
+                    .on_hover_text("open this run in the main window");
                 })
                 .body(25.0, |b| {
                     for index in 0..entries_count {
@@ -600,6 +650,12 @@ impl LoadedEntries {
                                 url,
                                 self.combat_log_ids[index],
                             );
+                            self.download_log_state.show_open_button(
+                                r,
+                                url,
+                                self.combat_log_ids[index],
+                                open_run,
+                            );
                         })
                         .clicked()
                         {
@@ -613,19 +669,68 @@ impl LoadedEntries {
                 });
         });
 
-        self.download_log_state.show_download(ui);
+        self.download_log_state.show_download(ui, open_run);
     }
 }
 
 enum DownloadLogState {
     Idle,
     Downloading(String, Option<JoinHandle<Self>>),
+    /// A fetch made so the run could be looked at here, rather than saved
+    /// somewhere of the reader's choosing. It carries where it was put, and is
+    /// handed on the moment the file is there.
+    Opening(PathBuf, Option<JoinHandle<Self>>),
     DownloadFailed(String),
 }
 
 impl DownloadLogState {
     fn is_idle(&self) -> bool {
         matches!(self, DownloadLogState::Idle)
+    }
+
+    /// Fetches the run and hands its path back, for the main window to show.
+    /// Downloaded to a scratch file named after the run, so asking twice costs
+    /// one fetch.
+    fn show_open_button(
+        &mut self,
+        row: &mut TableRow,
+        url: &Url,
+        log_id: i32,
+        open_run: &mut Option<PathBuf>,
+    ) {
+        if row
+            .selectable_cell(false, |ui| {
+                ui.add_enabled_ui(self.is_idle(), |ui| {
+                    ui.label("🔍");
+                });
+            })
+            .on_hover_text("open this run in the main window")
+            .clicked()
+        {
+            let path = crate::helpers::paths::ladder_run(log_id);
+            if path.is_file() {
+                // Fetched once already; asking again costs nothing.
+                *open_run = Some(path);
+            } else {
+                if let Some(dir) = path.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let url = url.clone();
+                let fetching = path.clone();
+                *self = DownloadLogState::Opening(
+                    path,
+                    Some(spawn_request(move || {
+                        match Self::do_download_log(url, fetching, log_id) {
+                            Ok(()) => DownloadLogState::Idle,
+                            Err(err) => DownloadLogState::DownloadFailed(format!(
+                                "{}",
+                                err.action_error("Failed to download the combatlog.")
+                            )),
+                        }
+                    })),
+                );
+            }
+        }
     }
 
     fn show_download_button(&mut self, row: &mut TableRow, frame: &Frame, url: &Url, log_id: i32) {
@@ -647,9 +752,32 @@ impl DownloadLogState {
         }
     }
 
-    fn show_download(&mut self, ui: &Ui) {
+    fn show_download(&mut self, ui: &Ui, open_run: &mut Option<PathBuf>) {
         match self {
             DownloadLogState::Idle => (),
+            DownloadLogState::Opening(path, join_handle) => {
+                Window::new("Download log")
+                    .auto_sized()
+                    .constrain(true)
+                    .collapsible(false)
+                    .show(ui.ctx(), |ui| {
+                        ui.add_space(20.0);
+                        ui.label("fetching the run...");
+                        ui.add_space(40.0);
+                        ui.label(WidgetText::from("⏳").color(theme::palette().busy));
+                        ui.add_space(20.0);
+                    });
+                if join_handle.as_ref().unwrap().is_finished() {
+                    let path = path.clone();
+                    let finished = join_handle.take().unwrap().join().unwrap();
+                    // Only a fetch that worked has a file to show.
+                    if matches!(finished, DownloadLogState::Idle) {
+                        *open_run = Some(path);
+                    }
+                    *self = finished;
+                    ui.ctx().request_repaint_of(ViewportId::ROOT);
+                }
+            }
             DownloadLogState::Downloading(message, join_handle) => {
                 Window::new("Download log")
                     .auto_sized()
@@ -838,7 +966,7 @@ impl Ladders {
         {
             filter.environment = Some(ladder.is_space);
         }
-        if self.matching(&filter).is_empty() {
+        if self.matching(filter).is_empty() {
             for drop in [
                 |f: &mut LadderFilter| f.difficulty = None,
                 |f: &mut LadderFilter| f.solo = None,
@@ -846,7 +974,7 @@ impl Ladders {
                 |f: &mut LadderFilter| f.map = None,
             ] {
                 drop(filter);
-                if !self.matching(&filter).is_empty() {
+                if !self.matching(filter).is_empty() {
                     break;
                 }
             }
@@ -1082,7 +1210,9 @@ fn str_equal_ignore_case(str1: &str, str2: &str) -> bool {
 /// for as the set of maps that are of it, which the server does understand.
 #[derive(Clone, Default, PartialEq)]
 struct LadderFilter {
-    season: String,
+    /// Unset to look across every season at once, which is how you find a
+    /// player who has not been near this one.
+    season: Option<String>,
     /// `Some(true)` for space, `Some(false)` for ground.
     environment: Option<bool>,
     /// `Some(true)` for solo tables, `Some(false)` for team ones.
@@ -1096,7 +1226,9 @@ struct LadderFilter {
 
 impl LadderFilter {
     fn matches(&self, ladder: &Ladder) -> bool {
-        ladder.season == self.season
+        self.season
+            .as_ref()
+            .is_none_or(|season| *season == ladder.season)
             && self
                 .environment
                 .is_none_or(|space| space == ladder.is_space)
@@ -1126,7 +1258,9 @@ impl LadderFilter {
         if let [only] = matching.as_slice() {
             query.push(("ladder".to_owned(), only.id.to_string()));
         } else {
-            query.push(("ladder__variant__name".to_owned(), self.season.clone()));
+            if let Some(season) = &self.season {
+                query.push(("ladder__variant__name".to_owned(), season.clone()));
+            }
             if let Some(solo) = self.solo {
                 query.push((
                     "ladder__is_solo".to_owned(),
@@ -1141,7 +1275,11 @@ impl LadderFilter {
             let maps: Vec<_> = matching.iter().map(|l| l.map.as_str()).unique().collect();
             let all_maps = ladders
                 .iter()
-                .filter(|l| l.season == self.season)
+                .filter(|l| {
+                    self.season
+                        .as_ref()
+                        .is_none_or(|season| *season == l.season)
+                })
                 .map(|l| l.map.as_str())
                 .unique()
                 .count();
@@ -1225,7 +1363,7 @@ mod tests {
 
     fn filter() -> LadderFilter {
         LadderFilter {
-            season: SEASON.into(),
+            season: Some(SEASON.into()),
             ..Default::default()
         }
     }
@@ -1329,6 +1467,20 @@ mod tests {
 
     /// A map is space or ground by its nature, so choosing one answers that
     /// question too.
+    /// Looking across every season at once is how you find a player who has not
+    /// been near the newest one, so the season has to be droppable like the rest.
+    #[test]
+    fn every_season_at_once_asks_for_no_season() {
+        let filter = LadderFilter {
+            season: None,
+            player: "somebody".into(),
+            ..filter()
+        };
+        let query = filter.query(&ladders());
+        assert_eq!(None, value(&query, "ladder__variant__name"));
+        assert_eq!(Some("somebody"), value(&query, "player__icontains"));
+    }
+
     #[test]
     fn choosing_a_map_settles_where_it_is_fought() {
         let ladders = Ladders {
