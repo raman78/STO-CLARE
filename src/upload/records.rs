@@ -46,7 +46,7 @@ pub enum Records {
 }
 
 impl Records {
-    pub fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &str) {
+    pub fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &str, position: &mut Option<[f32; 2]>) {
         let url = match Url::parse(url) {
             Ok(u) => u,
             Err(_) => {
@@ -59,11 +59,17 @@ impl Records {
         }
 
         let mut open = !self.collapsed();
-        Window::new("Ladder")
+        // In the middle until it has been moved, and wherever it was left after
+        // that. A window this size opening at the top-left corner covers the
+        // controls you opened it from.
+        let size = vec2(1280.0, 720.0);
+        let centred = (ui.ctx().content_rect().center() - size * 0.5).max(pos2(0.0, 0.0));
+        let response = Window::new("Ladder")
             .collapsible(false)
             .constrain(true)
             .open(&mut open)
-            .default_size([1280.0, 720.0])
+            .default_pos(position.map(|p| pos2(p[0], p[1])).unwrap_or(centred))
+            .default_size(size)
             .max_size(ui.ctx().content_rect().size() - vec2(120.0, 120.0))
             .show(ui.ctx(), |ui| match self {
                 Self::Collapsed => (),
@@ -80,6 +86,14 @@ impl Records {
                     ui.label(&*err);
                 }
             });
+
+        // Where it ended up, remembered for the next time it is opened. Written
+        // every frame it is on screen, which is what makes dragging it stick;
+        // the settings only reach the disk when the program closes.
+        if let Some(response) = response {
+            let left_top = response.response.rect.left_top();
+            *position = Some([left_top.x, left_top.y]);
+        }
 
         if !open {
             *self = Self::Collapsed;
@@ -168,89 +182,181 @@ impl Records {
 
 struct LoadedLadders {
     ladders: Ladders,
-    selected_type: usize,
-    selected_ladder: usize,
+    filter: LadderFilter,
     entries: Entries,
 }
 
 impl LoadedLadders {
     fn new(ladders: LaddersModel, ctx: &Context, url: Url) -> Self {
         let ladders = Ladders::from(ladders);
-        let ladder = ladders.ladders.first().unwrap().first().unwrap();
+        let filter = LadderFilter {
+            season: ladders.seasons.first().cloned().unwrap_or_default(),
+            ..Default::default()
+        };
         Self {
-            entries: Entries::begin_load_ladder_entries(
-                ctx.clone(),
-                url,
-                ladder.clone(),
-                1,
-                String::new(),
-                false,
-            ),
-            selected_type: 0,
-            selected_ladder: 0,
+            entries: Entries::begin_load(ctx.clone(), url, &ladders, &filter, 1, false),
+            filter,
             ladders,
         }
     }
 
     fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url) {
-        if self.show_ladders_combo_boxes(ui) {
-            self.entries = Entries::begin_load_ladder_entries(
-                ui.ctx().clone(),
-                url.clone(),
-                self.ladders.ladders[self.selected_type][self.selected_ladder].clone(),
-                1,
-                String::new(),
-                false,
-            );
-        }
+        let changed = self.show_filters(ui);
+        // What the filters left, so a search across several tables does not look
+        // like one table with a strange number of first places in it.
+        let matching = self.ladders.matching(&self.filter);
+        ui.label(
+            RichText::new(match matching.as_slice() {
+                [] => "no table matches".to_owned(),
+                [only] => only.name.clone(),
+                several => format!("{} tables", several.len()),
+            })
+            .weak(),
+        );
         ui.separator();
 
-        self.entries.show(
-            ui,
-            frame,
-            url,
-            &self.ladders.ladders[self.selected_type][self.selected_ladder],
-        );
+        let page = self.entries.show(ui, frame, &url, &mut self.filter);
+        // A changed filter starts again at the first page; a changed page keeps
+        // the filter, player and all.
+        if let Some(page) = changed.then_some(1).or(page) {
+            self.entries = Entries::begin_load(
+                ui.ctx().clone(),
+                url,
+                &self.ladders,
+                &self.filter,
+                page,
+                self.entries.shows_full_data(),
+            );
+        }
     }
 
-    fn show_ladders_combo_boxes(&mut self, ui: &mut Ui) -> bool {
+    /// The four menus, each offering only what the other three leave reachable.
+    /// Returns whether any of them moved.
+    fn show_filters(&mut self, ui: &mut Ui) -> bool {
+        let mut changed = false;
         ui.horizontal(|ui| {
-            let type_changed = ComboBox::new("ladder_types", "Record Table Types")
-                .selected_text(&self.ladders.types[self.selected_type])
-                .width(200.0)
+            changed |= ComboBox::new("ladder_season", "")
+                .selected_text(&self.filter.season)
+                .width(260.0)
                 .show_ui(ui, |ui| {
-                    self.ladders
-                        .types
-                        .iter()
-                        .enumerate()
-                        .any(|(index, ladder_type)| {
-                            ui.selectable_value(&mut self.selected_type, index, ladder_type)
-                                .changed()
-                        })
+                    let mut changed = false;
+                    for season in &self.ladders.seasons {
+                        changed |= ui
+                            .selectable_value(&mut self.filter.season, season.clone(), season)
+                            .changed();
+                    }
+                    changed
                 })
                 .inner
                 .unwrap_or(false);
 
-            ui.add_space(20.0);
+            let mut maps =
+                self.ladders
+                    .reachable(&self.filter, |f| f.map = None, |l| l.map.clone());
+            maps.sort();
+            changed |= self.show_choice(
+                ui,
+                "ladder_map",
+                "Any map",
+                260.0,
+                maps,
+                |map| map.clone(),
+                |filter| &mut filter.map,
+            );
 
-            let table_changed = ComboBox::new("ladders", "Record Tables")
-                .selected_text(&self.ladders.ladders[self.selected_type][self.selected_ladder].name)
-                .width(400.0)
-                .show_ui(ui, |ui| {
-                    self.ladders.ladders[self.selected_type]
-                        .iter()
-                        .enumerate()
-                        .any(|(index, ladder)| {
-                            ui.selectable_value(&mut self.selected_ladder, index, &ladder.name)
-                                .changed()
-                        })
-                })
-                .inner
-                .unwrap_or(false);
+            // Space first, because that is where most of the ladder is.
+            let mut environments =
+                self.ladders
+                    .reachable(&self.filter, |f| f.environment = None, |l| l.is_space);
+            environments.sort_by(|a, b| b.cmp(a));
+            changed |= self.show_choice(
+                ui,
+                "ladder_environment",
+                "Space and ground",
+                90.0,
+                environments,
+                |space| if *space { "Space" } else { "Ground" }.to_owned(),
+                |filter| &mut filter.environment,
+            );
 
-            type_changed || table_changed
-        })
-        .inner
+            let mut sizes = self
+                .ladders
+                .reachable(&self.filter, |f| f.solo = None, |l| l.is_solo);
+            sizes.sort_by(|a, b| b.cmp(a));
+            changed |= self.show_choice(
+                ui,
+                "ladder_solo",
+                "Solo and team",
+                90.0,
+                sizes,
+                |solo| if *solo { "Solo" } else { "Team" }.to_owned(),
+                |filter| &mut filter.solo,
+            );
+
+            // The levels come from the fixed list rather than from whatever
+            // order the tables happened to arrive in, so the menu always reads
+            // Normal, Advanced, Elite, Any.
+            let reachable =
+                self.ladders
+                    .reachable(&self.filter, |f| f.difficulty = None, |l| l.difficulty);
+            let levels = LadderDifficulty::ALL
+                .iter()
+                .copied()
+                .filter(|level| reachable.contains(level))
+                .collect();
+            changed |= self.show_choice(
+                ui,
+                "ladder_difficulty",
+                "All levels",
+                100.0,
+                levels,
+                |difficulty| difficulty.label().to_owned(),
+                |filter| &mut filter.difficulty,
+            );
+        });
+        if changed {
+            self.ladders.settle(&mut self.filter);
+        }
+        changed
+    }
+
+    /// One menu: "everything" at the top, then whatever the other three leave.
+    #[allow(clippy::too_many_arguments)]
+    fn show_choice<T: PartialEq + Clone>(
+        &mut self,
+        ui: &mut Ui,
+        id: &str,
+        anything: &str,
+        width: f32,
+        options: Vec<T>,
+        label: impl Fn(&T) -> String,
+        field: impl Fn(&mut LadderFilter) -> &mut Option<T>,
+    ) -> bool {
+        let selected = field(&mut self.filter)
+            .as_ref()
+            .map(&label)
+            .unwrap_or_else(|| anything.to_owned());
+        ComboBox::new(id, "")
+            .selected_text(selected)
+            .width(width)
+            .show_ui(ui, |ui| {
+                let mut changed = ui
+                    .selectable_label(field(&mut self.filter).is_none(), anything)
+                    .clicked();
+                if changed {
+                    *field(&mut self.filter) = None;
+                }
+                for option in options {
+                    let picked = field(&mut self.filter).as_ref() == Some(&option);
+                    if ui.selectable_label(picked, label(&option)).clicked() {
+                        *field(&mut self.filter) = Some(option);
+                        changed = true;
+                    }
+                }
+                changed
+            })
+            .inner
+            .unwrap_or(false)
     }
 }
 
@@ -261,7 +367,15 @@ enum Entries {
 }
 
 impl Entries {
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url, selected_ladder: &Ladder) {
+    /// Returns the page to load again, when something here asked for one.
+    fn show(
+        &mut self,
+        ui: &mut Ui,
+        frame: &Frame,
+        url: &Url,
+        filter: &mut LadderFilter,
+    ) -> Option<i32> {
+        let mut reload = None;
         match self {
             Entries::Loading(join_handle) => {
                 if join_handle.as_ref().unwrap().is_finished() {
@@ -279,7 +393,7 @@ impl Entries {
             Entries::Loaded(entries) => {
                 let search = ui
                     .horizontal(|ui| {
-                        let mut search = TextEdit::singleline(&mut entries.search_player)
+                        let mut search = TextEdit::singleline(&mut filter.player)
                             .desired_width(400.0)
                             .hint_text("search for Player")
                             .show(ui)
@@ -318,43 +432,44 @@ impl Entries {
                     ui.add_space(20.0);
                     ui.checkbox(&mut entries.show_full_data, "Show full data");
                 });
-                entries.show(ui, frame, &url);
+                entries.show(ui, frame, url);
                 if search {
-                    *self = Self::begin_load_ladder_entries(
-                        ui.ctx().clone(),
-                        url.clone(),
-                        selected_ladder.clone(),
-                        1,
-                        entries.search_player.clone(),
-                        entries.show_full_data,
-                    );
+                    reload = Some(1);
                 } else if let Some(change_page) = change_page {
-                    *self = Self::begin_load_ladder_entries(
-                        ui.ctx().clone(),
-                        url,
-                        selected_ladder.clone(),
-                        change_page,
-                        entries.search_player.clone(),
-                        entries.show_full_data,
-                    );
+                    reload = Some(change_page);
                 }
             }
             Entries::LoadError(err) => {
                 ui.label(&*err);
             }
         }
+        reload
     }
 
-    fn begin_load_ladder_entries(
+    /// Whether the wide set of columns is on, so a reload comes back the same
+    /// way the reader left it.
+    fn shows_full_data(&self) -> bool {
+        matches!(self, Entries::Loaded(entries) if entries.show_full_data)
+    }
+
+    fn begin_load(
         ctx: Context,
         url: Url,
-        ladder: Ladder,
+        ladders: &Ladders,
+        filter: &LadderFilter,
         page: i32,
-        search_player: String,
         show_full_data: bool,
     ) -> Entries {
+        // The question is settled here, where both the filter and the tables
+        // are to hand; the thread only carries it to the server.
+        let query = filter.query(&ladders.all);
+        let metric = ladders
+            .matching(filter)
+            .first()
+            .map(|ladder| ladder.metric.clone())
+            .unwrap_or_else(|| "DPS".to_owned());
         let join_handle = spawn_request(move || {
-            Self::load_ladder_entries(ctx, url, ladder, page, search_player, show_full_data)
+            Self::load_ladder_entries(ctx, url, query, metric, page, show_full_data)
         });
         Entries::Loading(Some(join_handle))
     }
@@ -362,18 +477,13 @@ impl Entries {
     fn load_ladder_entries(
         ctx: Context,
         url: Url,
-        ladder: Ladder,
+        query: Vec<(String, String)>,
+        metric: String,
         page: i32,
-        search_player: String,
         show_full_data: bool,
     ) -> Entries {
-        let state = match Self::do_load_ladder_entries(url, ladder, page, &search_player) {
-            Ok(entries) => Entries::Loaded(LoadedEntries::new(
-                page,
-                entries,
-                search_player,
-                show_full_data,
-            )),
+        let state = match Self::do_load_ladder_entries(url, &query, &metric, page) {
+            Ok(entries) => Entries::Loaded(LoadedEntries::new(page, entries, show_full_data)),
             Err(err) => Entries::LoadError(format!(
                 "{}",
                 err.action_error("Failed to load record table entries.")
@@ -385,26 +495,22 @@ impl Entries {
 
     fn do_load_ladder_entries(
         url: Url,
-        ladder: Ladder,
+        filter_query: &[(String, String)],
+        metric: &str,
         page: i32,
-        search_player: &str,
     ) -> Result<LadderEntriesModel, RequestError> {
         let client = ClientBuilder::new().build().unwrap();
         let url = url.join("/ladder-entries/").unwrap();
-        let ladder_id = ladder.id.to_string();
-        let page_size = PAGE_SIZE.to_string();
-        let ordering = format!("-data__{}", ladder.metric);
-        let page_str = page.to_string();
-        let mut query = vec![
-            ("ladder", ladder_id.as_str()),
-            ("page_size", &page_size),
-            ("ordering", &ordering),
-            ("page", &page_str),
+        let mut query: Vec<(&str, String)> = vec![
+            ("page_size", PAGE_SIZE.to_string()),
+            ("ordering", format!("-data__{metric}")),
+            ("page", page.to_string()),
         ];
-
-        if !search_player.is_empty() {
-            query.push(("player__icontains", search_player)); // i for case insensitive
-        }
+        query.extend(
+            filter_query
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.clone())),
+        );
         let response = client.get(url).query(&query).send()?;
         if !response.status().is_success() {
             return Err(RequestError::from(response));
@@ -423,17 +529,11 @@ struct LoadedEntries {
     entries: Vec<TableColumn>,
     combat_log_ids: Vec<i32>,
     download_log_state: DownloadLogState,
-    search_player: String,
     show_full_data: bool,
 }
 
 impl LoadedEntries {
-    fn new(
-        page: i32,
-        model: LadderEntriesModel,
-        search_player: String,
-        show_full_data: bool,
-    ) -> Self {
+    fn new(page: i32, model: LadderEntriesModel, show_full_data: bool) -> Self {
         let mut formatter = NumberFormatter::new();
         let (reduced_columns_count, entries) = TableColumn::build_table(&model, &mut formatter);
         let combat_log_ids = model.results.iter().map(|e| e.combatlog).collect();
@@ -446,7 +546,6 @@ impl LoadedEntries {
             combat_log_ids,
             selected_row: None,
             download_log_state: DownloadLogState::Idle,
-            search_player,
             show_full_data,
         }
     }
@@ -651,6 +750,10 @@ struct LadderModel {
     #[serde(deserialize_with = "null_to_default")]
     metric: String,
     is_solo: bool,
+    /// Space rather than ground. The server has it on every table but does not
+    /// accept it as a filter — see [`LadderFilter::query`].
+    #[serde(default)]
+    is_space: bool,
     #[serde(deserialize_with = "null_to_default")]
     variant: String,
 }
@@ -672,9 +775,11 @@ struct LadderEntryModel {
     data: serde_json::Map<String, serde_json::Value>,
 }
 
+/// Every table the ladder holds, kept flat: what the window shows is decided by
+/// the filters, not by which bucket a table was put in when it arrived.
 struct Ladders {
-    types: Vec<String>,
-    ladders: Vec<Vec<Ladder>>,
+    seasons: Vec<String>,
+    all: Vec<Ladder>,
 }
 
 impl From<LaddersModel> for Ladders {
@@ -682,7 +787,7 @@ impl From<LaddersModel> for Ladders {
         // Newest season first, which is the one somebody opening this window is
         // almost always after. Seasons the dates did not cover keep their old
         // place, at the end, rather than disappearing from the picker.
-        let types: Vec<_> = value
+        let seasons: Vec<_> = value
             .seasons_newest_first
             .iter()
             .filter(|season| value.results.iter().any(|l| &l.variant == *season))
@@ -697,47 +802,164 @@ impl From<LaddersModel> for Ladders {
             .cloned()
             .collect();
         Self {
-            ladders: types
-                .iter()
-                .map(|t| {
-                    value
-                        .results
-                        .iter()
-                        .filter(|&l| l.variant == *t)
-                        .map(|l| l.into())
-                        .collect()
-                })
-                .collect(),
-            types,
+            all: value.results.iter().map(Ladder::from).collect(),
+            seasons,
         }
     }
 }
 
+impl Ladders {
+    /// The tables a filter leaves, in the order the picker offers them: by map,
+    /// then by level as the game orders it, then solo beside its team twin. The
+    /// server hands them over in no order worth keeping.
+    fn matching(&self, filter: &LadderFilter) -> Vec<&Ladder> {
+        self.all
+            .iter()
+            .filter(|ladder| filter.matches(ladder))
+            .sorted_by(|a, b| {
+                a.map
+                    .cmp(&b.map)
+                    .then(a.difficulty.cmp(&b.difficulty))
+                    .then(a.is_solo.cmp(&b.is_solo))
+            })
+            .collect()
+    }
+
+    /// Tidies the filter after a choice.
+    ///
+    /// A map is space or ground by its nature, so choosing one answers that
+    /// question too — the menu then shows what the map is rather than leaving
+    /// the reader to set it. And a choice made for one map need not hold for the
+    /// next: a level the new map has no table for is let go rather than left to
+    /// produce an empty list nothing on screen explains.
+    fn settle(&self, filter: &mut LadderFilter) {
+        if let Some(map) = filter.map.clone()
+            && let Some(ladder) = self.all.iter().find(|l| l.map == map)
+        {
+            filter.environment = Some(ladder.is_space);
+        }
+        if self.matching(&filter).is_empty() {
+            for drop in [
+                |f: &mut LadderFilter| f.difficulty = None,
+                |f: &mut LadderFilter| f.solo = None,
+                |f: &mut LadderFilter| f.environment = None,
+                |f: &mut LadderFilter| f.map = None,
+            ] {
+                drop(filter);
+                if !self.matching(&filter).is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// What one menu can still offer, given every *other* menu — so no choice
+    /// on offer can empty the list. Reads the same way as the main window's
+    /// combat filter, which has the same problem with three menus instead of
+    /// four.
+    fn reachable<T: PartialEq>(
+        &self,
+        filter: &LadderFilter,
+        without: impl Fn(&mut LadderFilter),
+        of: impl Fn(&Ladder) -> T,
+    ) -> Vec<T> {
+        let mut relaxed = filter.clone();
+        without(&mut relaxed);
+        let mut reachable = Vec::new();
+        for ladder in self.all.iter().filter(|ladder| relaxed.matches(ladder)) {
+            let value = of(ladder);
+            if !reachable.contains(&value) {
+                reachable.push(value);
+            }
+        }
+        reachable
+    }
+}
+
+/// A table on the ladder, with the pieces the filters work on kept apart from
+/// the line the picker shows.
 #[derive(Clone)]
 struct Ladder {
     id: i32,
     metric: String,
     name: String,
+    season: String,
+    map: String,
+    difficulty: LadderDifficulty,
+    is_solo: bool,
+    is_space: bool,
+}
+
+/// The level a table is for.
+///
+/// A table either names a level or does not, and one that does not is the map's
+/// unsplit table. The server writes that two ways — the string `Any` and no
+/// value at all — and never both for the same map, so they are the same thing
+/// and are read as one here. Ordered as the game orders them, which is the order
+/// the picker offers them in; alphabetically they would read Advanced, Any,
+/// Elite, Normal, which means nothing to anybody.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum LadderDifficulty {
+    Normal,
+    Advanced,
+    Elite,
+    Any,
+}
+
+impl LadderDifficulty {
+    const ALL: &'static [Self] = &[Self::Normal, Self::Advanced, Self::Elite, Self::Any];
+
+    fn from_api(difficulty: Option<&str>) -> Self {
+        match difficulty {
+            Some("Normal") => Self::Normal,
+            Some("Advanced") => Self::Advanced,
+            Some("Elite") => Self::Elite,
+            _ => Self::Any,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "Normal",
+            Self::Advanced => "Advanced",
+            Self::Elite => "Elite",
+            Self::Any => "Any",
+        }
+    }
+
+    /// What the server calls it, where it has a name to call it. The unsplit
+    /// tables have none — the column is empty for them, and no filter can ask
+    /// for an empty column here (see [`LadderFilter::query`]).
+    fn api_value(self) -> Option<&'static str> {
+        match self {
+            Self::Any => None,
+            other => Some(other.label()),
+        }
+    }
 }
 
 impl<'a> From<&'a LadderModel> for Ladder {
     fn from(value: &'a LadderModel) -> Self {
+        let difficulty = LadderDifficulty::from_api(value.difficulty.as_deref());
+        let level = match difficulty {
+            LadderDifficulty::Any => String::new(),
+            other => format!(" ({})", other.label()),
+        };
         Self {
-            name: if value.is_solo {
-                if let Some(difficulty) = &value.difficulty {
-                    format!("[Solo] {} ({}) - {}", value.name, difficulty, value.metric)
-                } else {
-                    format!("[Solo] {} - {}", value.name, value.metric)
-                }
-            } else {
-                if let Some(difficulty) = &value.difficulty {
-                    format!("{} ({}) - {}", value.name, difficulty, value.metric)
-                } else {
-                    format!("{} - {}", value.name, value.metric)
-                }
-            },
+            name: format!(
+                "{}{}{} - {}",
+                if value.is_solo { "[Solo] " } else { "" },
+                value.name,
+                level,
+                value.metric
+            ),
             id: value.id,
             metric: value.metric.clone(),
+            season: value.variant.clone(),
+            map: value.name.clone(),
+            difficulty,
+            is_solo: value.is_solo,
+            is_space: value.is_space,
         }
     }
 }
@@ -850,4 +1072,304 @@ fn str_equal_ignore_case(str1: &str, str2: &str) -> bool {
     str1.chars()
         .flat_map(|c| c.to_lowercase())
         .eq(str2.chars().flat_map(|c| c.to_lowercase()))
+}
+
+/// What the ladder has been narrowed to.
+///
+/// Everything here is answered by the server in one request. The environment is
+/// the odd one out: the server carries `is_space` on every table but does not
+/// accept it as a filter — sending it changes nothing at all — so it is asked
+/// for as the set of maps that are of it, which the server does understand.
+#[derive(Clone, Default, PartialEq)]
+struct LadderFilter {
+    season: String,
+    /// `Some(true)` for space, `Some(false)` for ground.
+    environment: Option<bool>,
+    /// `Some(true)` for solo tables, `Some(false)` for team ones.
+    solo: Option<bool>,
+    difficulty: Option<LadderDifficulty>,
+    map: Option<String>,
+    /// Kept across every other change: narrowing the level while looking for a
+    /// player is narrowing *that* search, not starting a new one.
+    player: String,
+}
+
+impl LadderFilter {
+    fn matches(&self, ladder: &Ladder) -> bool {
+        ladder.season == self.season
+            && self
+                .environment
+                .is_none_or(|space| space == ladder.is_space)
+            && self.solo.is_none_or(|solo| solo == ladder.is_solo)
+            && self
+                .difficulty
+                .is_none_or(|difficulty| difficulty == ladder.difficulty)
+            && self.map.as_ref().is_none_or(|map| *map == ladder.map)
+    }
+
+    /// The query for `/ladder-entries/`, given every table the ladder holds.
+    ///
+    /// Narrowed to a single table, it asks for that table by id, which is exact
+    /// and needs nothing else. Otherwise it sends what the server understands:
+    ///
+    /// * booleans as `True`/`False` — lowercase `true` makes the server answer
+    ///   `500` (reported as STOCD/OSCR-server#113);
+    /// * the level by name, but only where it has one. The unsplit tables have
+    ///   an empty level, and no filter can ask for an empty column, so those are
+    ///   reached through their map names instead;
+    /// * the maps as one regular expression, which is how the environment is
+    ///   asked for as well.
+    fn query(&self, ladders: &[Ladder]) -> Vec<(String, String)> {
+        let matching: Vec<_> = ladders.iter().filter(|l| self.matches(l)).collect();
+        let mut query = Vec::new();
+
+        if let [only] = matching.as_slice() {
+            query.push(("ladder".to_owned(), only.id.to_string()));
+        } else {
+            query.push(("ladder__variant__name".to_owned(), self.season.clone()));
+            if let Some(solo) = self.solo {
+                query.push((
+                    "ladder__is_solo".to_owned(),
+                    if solo { "True" } else { "False" }.to_owned(),
+                ));
+            }
+            if let Some(level) = self.difficulty.and_then(LadderDifficulty::api_value) {
+                query.push(("ladder__difficulty".to_owned(), level.to_owned()));
+            }
+            // Only when it says something: a pattern of every map the season has
+            // is a long way of saying nothing.
+            let maps: Vec<_> = matching.iter().map(|l| l.map.as_str()).unique().collect();
+            let all_maps = ladders
+                .iter()
+                .filter(|l| l.season == self.season)
+                .map(|l| l.map.as_str())
+                .unique()
+                .count();
+            if !maps.is_empty() && maps.len() < all_maps {
+                query.push((
+                    "ladder__name__iregex".to_owned(),
+                    format!("^({})$", maps.iter().map(|m| escape_regex(m)).join("|")),
+                ));
+            }
+        }
+
+        if !self.player.is_empty() {
+            query.push(("player__icontains".to_owned(), self.player.clone()));
+        }
+        query
+    }
+}
+
+/// Map names carry no regular-expression syntax today — there are ten of them
+/// and none has so much as a bracket — but one that did would quietly change
+/// what the pattern means rather than fail, so they are escaped anyway.
+fn escape_regex(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for character in text.chars() {
+        if r".^$*+?()[]{}|\".contains(character) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SEASON: &str = "Season 36 - Undiscovered";
+
+    fn ladder(
+        id: i32,
+        map: &str,
+        difficulty: LadderDifficulty,
+        is_solo: bool,
+        is_space: bool,
+    ) -> Ladder {
+        Ladder {
+            id,
+            metric: "DPS".into(),
+            name: map.into(),
+            season: SEASON.into(),
+            map: map.into(),
+            difficulty,
+            is_solo,
+            is_space,
+        }
+    }
+
+    /// Two space maps and one ground one, the space pair split by level the way
+    /// the real ladder splits them.
+    fn ladders() -> Vec<Ladder> {
+        vec![
+            ladder(
+                1,
+                "Infected: The Conduit",
+                LadderDifficulty::Elite,
+                false,
+                true,
+            ),
+            ladder(
+                2,
+                "Infected: The Conduit",
+                LadderDifficulty::Advanced,
+                false,
+                true,
+            ),
+            ladder(3, "Hive: Onslaught", LadderDifficulty::Elite, false, true),
+            ladder(4, "Bug Hunt", LadderDifficulty::Any, false, false),
+            ladder(5, "Bug Hunt", LadderDifficulty::Any, true, false),
+        ]
+    }
+
+    fn filter() -> LadderFilter {
+        LadderFilter {
+            season: SEASON.into(),
+            ..Default::default()
+        }
+    }
+
+    fn value<'a>(query: &'a [(String, String)], key: &str) -> Option<&'a str> {
+        query
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn one_table_is_asked_for_by_id() {
+        let filter = LadderFilter {
+            map: Some("Hive: Onslaught".into()),
+            ..filter()
+        };
+        let query = filter.query(&ladders());
+        assert_eq!(Some("3"), value(&query, "ladder"));
+        assert_eq!(None, value(&query, "ladder__name__iregex"));
+    }
+
+    /// Lowercase `true` makes the server answer 500 (STOCD/OSCR-server#113), so
+    /// this is not a style choice.
+    #[test]
+    fn booleans_are_sent_the_way_the_server_accepts_them() {
+        let filter = LadderFilter {
+            solo: Some(false),
+            ..filter()
+        };
+        assert_eq!(
+            Some("False"),
+            value(&filter.query(&ladders()), "ladder__is_solo")
+        );
+    }
+
+    /// The server carries `is_space` but ignores it as a filter, so the
+    /// environment is asked for as the maps that are of it.
+    #[test]
+    fn the_environment_is_asked_for_as_its_maps() {
+        let filter = LadderFilter {
+            environment: Some(true),
+            ..filter()
+        };
+        let query = filter.query(&ladders());
+        let regex = value(&query, "ladder__name__iregex").unwrap();
+        assert!(regex.contains("Infected: The Conduit"));
+        assert!(regex.contains("Hive: Onslaught"));
+        assert!(!regex.contains("Bug Hunt"));
+    }
+
+    /// A table with no level of its own cannot be asked for by level — the
+    /// column is empty and no filter matches an empty column — so the level is
+    /// left out and its maps carry the question instead.
+    #[test]
+    fn the_unsplit_level_is_not_asked_for_by_name() {
+        let filter = LadderFilter {
+            difficulty: Some(LadderDifficulty::Any),
+            ..filter()
+        };
+        let query = filter.query(&ladders());
+        assert_eq!(None, value(&query, "ladder__difficulty"));
+        assert_eq!(Some("^(Bug Hunt)$"), value(&query, "ladder__name__iregex"));
+    }
+
+    #[test]
+    fn a_named_level_is_asked_for_by_name() {
+        let filter = LadderFilter {
+            difficulty: Some(LadderDifficulty::Elite),
+            ..filter()
+        };
+        assert_eq!(
+            Some("Elite"),
+            value(&filter.query(&ladders()), "ladder__difficulty")
+        );
+    }
+
+    /// The player is part of the same question as the rest, not a separate one:
+    /// narrowing the level while looking for somebody narrows that search.
+    #[test]
+    fn the_player_survives_every_other_choice() {
+        let filter = LadderFilter {
+            player: "somebody".into(),
+            difficulty: Some(LadderDifficulty::Elite),
+            environment: Some(true),
+            ..filter()
+        };
+        assert_eq!(
+            Some("somebody"),
+            value(&filter.query(&ladders()), "player__icontains")
+        );
+    }
+
+    /// Naming every map the season has is a long way of saying nothing.
+    #[test]
+    fn nothing_narrowed_asks_for_no_maps() {
+        let query = filter().query(&ladders());
+        assert_eq!(None, value(&query, "ladder__name__iregex"));
+        assert_eq!(Some(SEASON), value(&query, "ladder__variant__name"));
+    }
+
+    /// A map is space or ground by its nature, so choosing one answers that
+    /// question too.
+    #[test]
+    fn choosing_a_map_settles_where_it_is_fought() {
+        let ladders = Ladders {
+            seasons: vec![SEASON.into()],
+            all: ladders(),
+        };
+        let mut filter = LadderFilter {
+            map: Some("Bug Hunt".into()),
+            ..filter()
+        };
+        ladders.settle(&mut filter);
+        assert_eq!(Some(false), filter.environment);
+    }
+
+    /// A level picked for one map need not exist on the next. Left alone it
+    /// would produce an empty list with nothing on screen to explain it, so the
+    /// choice that cannot hold is let go.
+    #[test]
+    fn a_level_the_new_map_has_no_table_for_is_let_go() {
+        let ladders = Ladders {
+            seasons: vec![SEASON.into()],
+            all: ladders(),
+        };
+        let mut filter = LadderFilter {
+            difficulty: Some(LadderDifficulty::Elite),
+            map: Some("Bug Hunt".into()),
+            ..filter()
+        };
+        ladders.settle(&mut filter);
+        assert_eq!(None, filter.difficulty);
+        assert_eq!(Some("Bug Hunt".to_owned()), filter.map);
+        assert!(!ladders.matching(&filter).is_empty());
+    }
+
+    /// Today's map names carry nothing a pattern would read as syntax, and must
+    /// come through untouched; one that did would change what the pattern means
+    /// rather than fail, so it is escaped.
+    #[test]
+    fn map_names_are_escaped_into_the_pattern() {
+        assert_eq!("Hive: Onslaught", escape_regex("Hive: Onslaught"));
+        assert_eq!(r"a\.b\+c", escape_regex("a.b+c"));
+        assert_eq!(r"\(x\)", escape_regex("(x)"));
+    }
 }

@@ -83,6 +83,10 @@ pub struct General {
     /// noting down a path is no reason to re-read 300 MB.
     #[serde(default)]
     pub default_combatlog_file: Option<String>,
+    /// Where the Ladder window was left, so it comes back there. Unset until it
+    /// has been moved, and it then opens in the middle of the main window.
+    #[serde(default)]
+    pub ladder_window_position: Option<[f32; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -194,6 +198,7 @@ impl Default for General {
             overlay_position: None,
             overlay_shown: false,
             default_combatlog_file: None,
+            ladder_window_position: None,
         }
     }
 }
@@ -348,7 +353,10 @@ mod tests {
         );
         assert_eq!(
             1,
-            settings.analysis.indirect_source_grouping_revers_rules.len()
+            settings
+                .analysis
+                .indirect_source_grouping_revers_rules
+                .len()
         );
         assert_eq!(Theme::LightDark, settings.visuals.theme);
         assert_eq!("https://oscr.stobuilds.com/", settings.upload.oscr_url);
@@ -387,9 +395,11 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let loaded: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(settings.columns, loaded.columns);
-        assert!(!loaded
-            .columns
-            .is_shown(crate::app::settings::TableKind::Damage, "Flanking %"));
+        assert!(
+            !loaded
+                .columns
+                .is_shown(crate::app::settings::TableKind::Damage, "Flanking %")
+        );
 
         // A file written before the picker existed has no such section at all.
         let mut older: serde_json::Value = serde_json::from_str(&json).unwrap();

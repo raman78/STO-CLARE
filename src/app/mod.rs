@@ -204,8 +204,12 @@ impl eframe::App for App {
                         ui,
                         frame,
                     );
-                    self.records
-                        .show(ui, frame, &self.state.settings.upload.oscr_url);
+                    self.records.show(
+                        ui,
+                        frame,
+                        &self.state.settings.upload.oscr_url,
+                        &mut self.state.settings.general.ladder_window_position,
+                    );
 
                     // Compare toggle (ON/OFF) as the last item on the top bar so it
                     // stays put regardless of mode. Rendered as a frameless toggle to
