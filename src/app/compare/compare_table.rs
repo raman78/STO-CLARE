@@ -401,11 +401,7 @@ impl Comparison {
     ///
     /// It scrolls inside whatever height the pane has been given, so a session's
     /// worth of runs is reachable without pushing the table off the window.
-    fn show_legend(
-        &self,
-        ui: &mut Ui,
-        colors: &[Option<Color32>],
-    ) -> Option<(usize, NameHandle)> {
+    fn show_legend(&self, ui: &mut Ui, colors: &[Option<Color32>]) -> Option<(usize, NameHandle)> {
         let mut player_change = None;
         ScrollArea::vertical()
             .id_salt("compare legend")
@@ -2163,4 +2159,3 @@ mod tests {
         assert!(!new_res.improvement);
     }
 }
-

@@ -91,11 +91,7 @@ fn accent_rim(ui: &mut Ui) {
     let accent = ui.visuals().hyperlink_color;
     let widgets = &mut ui.visuals_mut().widgets;
     widgets.inactive.bg_stroke = Stroke::new(1.0, accent.gamma_multiply(RESTING_ACCENT));
-    for state in [
-        &mut widgets.hovered,
-        &mut widgets.active,
-        &mut widgets.open,
-    ] {
+    for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
         state.bg_stroke = Stroke::new(1.0, accent);
     }
 }

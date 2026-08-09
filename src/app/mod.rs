@@ -267,8 +267,7 @@ impl eframe::App for App {
                     // had been replaced, which is exactly what has not happened.
                     if self.ladder_run.is_some() {
                         ui.label(
-                            RichText::new("⚑ a run from the ladder")
-                                .color(theme::palette().busy),
+                            RichText::new("⚑ a run from the ladder").color(theme::palette().busy),
                         );
                         if ui
                             .button("Back to my log")
@@ -555,7 +554,6 @@ impl eframe::App for App {
         self.state.settings.general.overlay_shown = self.state.overlay.is_shown();
         self.state.settings.save();
     }
-
 }
 
 impl App {

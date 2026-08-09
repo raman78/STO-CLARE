@@ -1,7 +1,10 @@
 use eframe::egui::{ComboBox, Context, Ui};
 
 use crate::{
-    app::{overlay::{MIN_OPACITY, Overlay}, theme},
+    app::{
+        overlay::{MIN_OPACITY, Overlay},
+        theme,
+    },
     custom_widgets::slider_text_edit::SliderTextEdit,
 };
 
@@ -59,9 +62,7 @@ impl VisualsTab {
         .display_precision(3)
         .desired_text_edit_width(40.0)
         .show(ui)
-        .on_hover_text(
-            "How solid the overlay is over the game. Only the overlay is affected.",
-        );
+        .on_hover_text("How solid the overlay is over the game. Only the overlay is affected.");
 
         ui.add_space(10.0);
         ui.separator();

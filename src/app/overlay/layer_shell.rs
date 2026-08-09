@@ -698,7 +698,10 @@ impl State {
         .into_iter()
         .find(|mode| caps.alpha_modes.contains(mode))
         .unwrap_or(caps.alpha_modes[0]);
-        log::info!("overlay surface alpha mode: {alpha_mode:?} (offered: {:?})", caps.alpha_modes);
+        log::info!(
+            "overlay surface alpha mode: {alpha_mode:?} (offered: {:?})",
+            caps.alpha_modes
+        );
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -1140,7 +1143,9 @@ impl State {
         // open/shut cycle is a handful of lines.
         let table_y = self.rendered_top + table_top.round() as i32;
         let toolbar_y = self.rendered_top + toolbar_rect.min.y.round() as i32;
-        let jumped = self.last_seen.is_some_and(|seen| seen != (table_y, toolbar_y));
+        let jumped = self
+            .last_seen
+            .is_some_and(|seen| seen != (table_y, toolbar_y));
         if jumped && !self.dragging {
             log::warn!(
                 "overlay f{}: JUMPED, table/toolbar {:?} -> {:?}",
@@ -1203,7 +1208,10 @@ impl LayerShellHandler for State {
         //   itself, and that gets through.
         let size = configure.new_size;
         let outstanding = self.committed_geometry.map(|g| (g.width, g.height));
-        if size.0 != 0 && size.1 != 0 && let Some(outstanding) = outstanding {
+        if size.0 != 0
+            && size.1 != 0
+            && let Some(outstanding) = outstanding
+        {
             if outstanding == size {
                 self.stale_configure = None;
                 return;
