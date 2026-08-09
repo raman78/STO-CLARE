@@ -54,6 +54,7 @@ use smithay_client_toolkit::{
 
 use crossbeam_channel::{Receiver as EventRx, Sender as EventTx, unbounded};
 
+use crate::app::overlay::{ListSide, list_side};
 use crate::custom_widgets::table::Table;
 
 /// Snapshot of what the overlay should display. Plain, `Send` data.
@@ -280,6 +281,13 @@ fn run(
         style_dirty: false,
         events_tx,
         settings_open: false,
+        settings_height: 0.0,
+        settings_side: ListSide::Below,
+        closed_height: MIN_H,
+        closed_toolbar_bottom: MIN_H as i32,
+        closed_toolbar_raw_bottom: MIN_H as f32,
+        rendered_top: margin.0,
+        settling: false,
         egui_events: Vec::new(),
         pointer_on_toolbar: false,
         toolbar_rect: (0, 0, 0, 0),
@@ -392,12 +400,49 @@ struct State {
     // so its buttons work; `pointer_on_toolbar` gates dragging vs clicking.
     events_tx: EventTx<OverlayEvent>,
     settings_open: bool,
+    // How tall the ⛭ list was the last time it was drawn, and which way it
+    // opens. The overlay's frame stays put either way (see `ListSide`): the
+    // list grows downwards when there is room under the overlay, and upwards
+    // when there is not — and then the surface's top edge moves up by as much
+    // as the list added, so its bottom, and with it the toolbar, stays where
+    // the pointer found it.
+    settings_height: f32,
+    settings_side: ListSide,
+    // The surface's height with the list shut, so the decision is made about
+    // the overlay itself rather than about the overlay plus an open list.
+    closed_height: u32,
+    // Where the toolbar's bottom edge sits inside the shut surface. What gets
+    // held still when the list opens upwards is that edge, not the surface's
+    // own: a shut overlay is padded up to `MIN_H`, so it carries slack under
+    // the toolbar that a taller one does not, and pinning the surface bottom
+    // would push the icons down by the difference.
+    closed_toolbar_bottom: i32,
+    // The same edge in egui's own coordinates (the stored rect above is padded
+    // for hit-testing), used to keep the slack under the toolbar identical in
+    // both states — see the padding in `render`.
+    closed_toolbar_raw_bottom: f32,
+    // The top edge the surface was last given, so a move can be measured and
+    // the pointer's surface-local position corrected by it.
+    rendered_top: i32,
+    // Set while the layout has changed but the surface has not caught up yet.
+    //
+    // Opening the list relaid the content a frame before the surface moved, so
+    // for that one frame egui's idea of where the pointer was (surface-local,
+    // and only ever updated by a pointer event) belonged to the old layout: a
+    // click without moving the mouse landed on whatever the new layout had put
+    // where the pointer used to be — the first row of the list. Presses are
+    // held back until the two agree again, which takes a frame.
+    settling: bool,
     egui_events: Vec<egui::Event>,
     pointer_on_toolbar: bool,
     // The icon toolbar's rect in surface pixels, measured each render, so the
     // input region and the drag/click hit-test match the icons exactly.
     toolbar_rect: (i32, i32, i32, i32),
 }
+
+/// A row of the ⛭ list, for deciding which way it opens the first time — see
+/// the estimate in `render`.
+const CHECKBOX_ROW: f32 = 20.0;
 
 /// Height (points, = pixels at scale 1) of the always-clickable toolbar strip
 /// at the bottom of the overlay.
@@ -441,6 +486,14 @@ impl State {
         self.drag_delta.1 -= iy as f64;
         self.margin.1 = (self.margin.1 + ix).clamp(0, max_left);
         self.margin.0 = (self.margin.0 + iy).clamp(0, max_top);
+        // The list cannot be open while dragging (a press goes to egui then),
+        // so the rendered top is the user's own. Recording it matters: the
+        // pointer's surface-local position is corrected by however far the
+        // surface moved between frames, and a drag that left this stale would
+        // have the next resize count the whole drag as a move and shift the
+        // pointer by it — which is what made the ⛭ miss by a few points after
+        // the overlay had been nudged.
+        self.rendered_top = self.margin.0;
         self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
         *self.position.lock().unwrap() = self.margin;
     }
@@ -472,8 +525,48 @@ impl State {
         }
     }
 
+    /// Puts the surface where it belongs for the state it is in.
+    ///
+    /// Shut, or with the list opening downwards, it hangs from the top-left at
+    /// the margin the user dragged it to. With the list opening upwards it is
+    /// anchored to the bottom-left instead, as far from the bottom as its shut
+    /// bottom edge was — so the compositor is the one holding that edge still
+    /// while the surface grows over it, rather than this code chasing the top
+    /// margin frame by frame against the compositor's own configure.
+    ///
+    /// `self.margin` — the user's position, and what gets persisted — is never
+    /// touched, so shutting the list puts the overlay back exactly where it was.
+    /// The bottom margin that leaves the toolbar exactly where it was while the
+    /// list was shut: the surface's own bottom goes as far below the toolbar's
+    /// old screen position as this frame's content puts it below the toolbar.
+    fn bottom_margin(&self, output_height: i32) -> i32 {
+        (output_height - self.margin.0 - self.closed_height as i32).max(0)
+    }
+
+    fn apply_geometry(&mut self, list_above: bool) {
+        match (list_above, self.output_size) {
+            (true, Some((_, output_height))) => {
+                self.layer.set_anchor(Anchor::BOTTOM | Anchor::LEFT);
+                self.layer
+                    .set_margin(0, 0, self.bottom_margin(output_height), self.margin.1);
+            }
+            _ => {
+                self.layer.set_anchor(Anchor::TOP | Anchor::LEFT);
+                self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
+            }
+        }
+    }
+
     fn commit_margin(&mut self) {
-        self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
+        let above = self.settings_open && self.settings_side.is_above();
+        self.rendered_top = if above {
+            self.output_size
+                .map(|(_, oh)| oh - self.bottom_margin(oh) - self.height as i32)
+                .unwrap_or(self.margin.0)
+        } else {
+            self.margin.0
+        };
+        self.apply_geometry(above);
         self.layer.commit();
         *self.position.lock().unwrap() = self.margin;
     }
@@ -553,7 +646,59 @@ impl State {
         let data = self.data.clone();
         let move_mode = self.move_mode;
         let settings_open = self.settings_open;
-        let input_events = std::mem::take(&mut self.egui_events);
+        // Which way the list will go this frame. The overlay cannot be dragged
+        // while the list is open, so the answer cannot change under it: the
+        // same decision comes out every frame until it is shut again.
+        if settings_open {
+            let output_height = self.output_size.map(|(_, oh)| oh as f32).unwrap_or(0.0);
+            // Before the list has been drawn once there is nothing measured to
+            // go on, and taking that for "no height at all" would send it
+            // downwards off the bottom of the screen for a frame and drag the
+            // overlay up to compensate — the very jump this avoids. A row per
+            // column is close enough to decide by.
+            let list = if self.settings_height > 0.0 {
+                self.settings_height
+            } else {
+                self.data.all_columns.len() as f32 * CHECKBOX_ROW
+            };
+            self.settings_side = list_side(
+                self.margin.0 as f32,
+                self.closed_height as f32,
+                list,
+                output_height,
+            );
+        } else {
+            self.settings_side = ListSide::Below;
+            self.closed_height = self.height;
+            self.closed_toolbar_bottom = self.toolbar_rect.1 + self.toolbar_rect.3;
+        }
+        let settings_above = self.settings_side.is_above();
+        // A shut overlay is padded up to `MIN_H`, so it carries slack under its
+        // toolbar that a taller one does not. Opening the list upwards keeps
+        // the surface's bottom edge where it was, so without the same slack the
+        // toolbar would ride down into it. Put it back explicitly instead.
+        let (closed_height, closed_toolbar_raw) =
+            (self.closed_height as f32, self.closed_toolbar_raw_bottom);
+        // Shutting the list took it off the screen a frame before the surface
+        // shrank back, and that gap is what showed as a flicker: for one frame
+        // the overlay stood at its full height with nothing in the space the
+        // list had filled, and then everything dropped into place at once.
+        //
+        // So the list stays drawn until the surface has caught up. The frame
+        // that shuts it asks for the smaller surface (whose height is known —
+        // it is the one the overlay had before the list opened) while still
+        // drawing the list into the surface it actually has; the frame after
+        // that draws without it, into a surface already the right size. Two
+        // frames, one change each, and nothing moves that the user did not ask
+        // to move.
+        let shrinking = !settings_open && self.height > self.closed_height;
+        let draw_list = settings_open || shrinking;
+        let mut input_events = std::mem::take(&mut self.egui_events);
+        if self.settling {
+            // Motion still goes through — it carries the compositor's own
+            // surface-local position, which is right by definition.
+            input_events.retain(|event| !matches!(event, egui::Event::PointerButton { .. }));
+        }
         // Adopt the main window's full style (colors, spacing, text) pushed via
         // set_style, so the overlay matches the main window.
         let new_style = self.style_dirty.then(|| self.style.clone()).flatten();
@@ -585,6 +730,11 @@ impl State {
         let mut toggle_settings = false;
         let mut toggled_columns: Vec<usize> = Vec::new();
         let mut toolbar_rect = egui::Rect::NOTHING;
+        // How tall the ⛭ list came out this frame, for next frame's decision.
+        let mut measured_list = 0.0f32;
+        // The upward list is drawn above the table, so its height is measured
+        // separately from what sits under it.
+        let mut above_list_height = 0.0f32;
         // apply_input_region borrows all of `self`; `gpu` is borrowed until the
         // end of render, so defer it behind this flag.
         let mut region_dirty = false;
@@ -596,6 +746,27 @@ impl State {
             egui::CentralPanel::default()
                 .frame(frame)
                 .show_inside(ui, |ui| {
+                    // Opening upwards, the list goes at the very top — above the
+                    // table, not between it and the icons.
+                    //
+                    // The surface grows and shrinks by its top edge in that
+                    // direction, so whatever sits under the list travels with
+                    // it. With the list in the middle that was the table, which
+                    // slid a couple of hundred points up on opening and back
+                    // down on shutting — the flicker. Above the table, the only
+                    // thing the top edge moves over is the list itself: the
+                    // table and the icons keep their place on screen, and
+                    // shutting simply takes the list's rows away.
+                    if draw_list && settings_above {
+                        let start = ui.cursor().top();
+                        for (index, (name, enabled)) in data.all_columns.iter().enumerate() {
+                            let mut enabled = *enabled;
+                            if ui.checkbox(&mut enabled, name).clicked() {
+                                toggled_columns.push(index);
+                            }
+                        }
+                        above_list_height = ui.cursor().top() - start;
+                    }
                     // The refreshing part: the DPS table. Its measured rect drives
                     // the surface size (content-sized, unlike ui.min_rect() which
                     // includes fill-width widgets and makes the surface oscillate).
@@ -634,14 +805,7 @@ impl State {
                     // the surface can size to table + toolbar without fill-width
                     // widgets feeding back into the width.
                     let bottom_start = ui.cursor().top();
-                    if settings_open {
-                        for (index, (name, enabled)) in data.all_columns.iter().enumerate() {
-                            let mut enabled = *enabled;
-                            if ui.checkbox(&mut enabled, name).clicked() {
-                                toggled_columns.push(index);
-                            }
-                        }
-                    }
+                    let mut list_height = 0.0;
                     toolbar_rect = ui
                         .horizontal(|ui| {
                             // Square, fully-clickable icon buttons (the plain label
@@ -662,16 +826,32 @@ impl State {
                         })
                         .response
                         .rect;
+                    if draw_list && !settings_above {
+                        let start = ui.cursor().top();
+                        for (index, (name, enabled)) in data.all_columns.iter().enumerate() {
+                            let mut enabled = *enabled;
+                            if ui.checkbox(&mut enabled, name).clicked() {
+                                toggled_columns.push(index);
+                            }
+                        }
+                        list_height = ui.cursor().top() - start;
+                    }
+                    measured_list = list_height.max(above_list_height);
                     let bottom_height = ui.cursor().top() - bottom_start;
 
-                    required = egui::vec2(table_rect.width(), table_rect.height() + bottom_height)
-                        + ui.spacing().window_margin.left_top()
+                    required = egui::vec2(
+                        table_rect.width(),
+                        above_list_height + table_rect.height() + bottom_height,
+                    ) + ui.spacing().window_margin.left_top()
                         + ui.spacing().window_margin.right_bottom();
                 });
         });
 
         // Remember the toolbar's rect (points == pixels at scale 1), padded a
         // little, so the input region and hit-test cover the icons exactly.
+        if toolbar_rect.is_finite() && toolbar_rect.area() > 0.0 && !settings_open {
+            self.closed_toolbar_raw_bottom = toolbar_rect.max.y;
+        }
         if toolbar_rect.is_finite() && toolbar_rect.area() > 0.0 {
             let pad = 2.0;
             self.toolbar_rect = (
@@ -695,6 +875,9 @@ impl State {
         }
         if toggle_settings {
             self.settings_open = !self.settings_open;
+            // The layout changes on the next frame and the surface a frame
+            // after that; hold presses until they line up again.
+            self.settling = true;
         }
         if toggle_move {
             self.move_mode = !self.move_mode;
@@ -714,23 +897,98 @@ impl State {
         }
 
         // Auto-size the layer surface to the content on the next commit.
-        let desired = (
+        //
+        // With the list open upwards the surface hangs from its bottom edge, so
+        // the height is what decides where the toolbar lands: whatever is left
+        // over between the toolbar and the bottom shows up as the icons riding
+        // up. A shut overlay is padded out to `MIN_H` and carries a few points
+        // of that slack; rounding the open height up to the next pixel adds
+        // another. So rather than sizing to the content and hoping, take the
+        // height that puts the toolbar exactly as far from the bottom edge as
+        // it was while shut.
+        let mut desired = (
             (required.x.ceil() as u32).max(MIN_W),
             (required.y.ceil() as u32).max(MIN_H),
         );
+        // The list is still on screen this frame but on its way out: ask for the
+        // height the overlay had before it opened, so the surface and the
+        // drawing lose it in the same step.
+        if shrinking {
+            desired.1 = self.closed_height;
+        }
+        if settings_open && settings_above && toolbar_rect.is_finite() {
+            let gap = closed_height - closed_toolbar_raw;
+            desired.1 = ((toolbar_rect.max.y + gap).round() as u32)
+                .max(desired.1)
+                .max(MIN_H);
+        }
+        self.settings_height = measured_list;
+        // Nothing to catch up with: the size the layout asked for is the size
+        // the surface already has.
+        if desired == (self.width, self.height) {
+            self.settling = false;
+        }
         if desired != (self.width, self.height) {
             self.width = desired.0;
             self.height = desired.1;
             // Growing (e.g. opening the settings popup) near an edge would push
             // the overlay off-screen; pull it back so it stays fully visible.
             // Inlined (clamp_margin borrows all of self while gpu is borrowed).
+            //
+            // Not when the list opened upwards: there the surface is *meant* to
+            // reach further up, and its bottom has not moved, so pulling it back
+            // would drag the overlay — and the icons under the pointer — with it.
             if let Some((ow, oh)) = self.output_size {
                 self.margin.1 = self.margin.1.clamp(0, (ow - self.width as i32).max(0));
-                self.margin.0 = self.margin.0.clamp(0, (oh - self.height as i32).max(0));
+                if !settings_above {
+                    self.margin.0 = self.margin.0.clamp(0, (oh - self.height as i32).max(0));
+                }
             }
-            self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
+            // Inlined for the same reason as the clamp above: `apply_geometry`
+            // borrows all of `self` while `gpu` is still borrowed.
+            match (settings_above, self.output_size) {
+                (true, Some((_, oh))) => {
+                    let bottom = (oh - self.margin.0 - self.closed_height as i32).max(0);
+                    self.layer.set_anchor(Anchor::BOTTOM | Anchor::LEFT);
+                    self.layer.set_margin(0, 0, bottom, self.margin.1);
+                }
+                _ => {
+                    self.layer.set_anchor(Anchor::TOP | Anchor::LEFT);
+                    self.layer.set_margin(self.margin.0, 0, 0, self.margin.1);
+                }
+            }
             self.layer.set_size(self.width, self.height);
             self.layer.commit();
+            // The surface's top edge just moved, but the pointer did not: with
+            // no motion event to correct it, egui would go on hit-testing the
+            // place the pointer used to be over — which after opening the list
+            // upwards is a row of the list, so clicking ⛭ again toggled a
+            // column instead of shutting the list. Tell it where the pointer
+            // now is inside the surface.
+            // Inlined for the same reason as the geometry above: `self` is
+            // still borrowed by `gpu`.
+            let new_top = match (settings_above, self.output_size) {
+                (true, Some((_, oh))) => {
+                    let bottom = (oh - self.margin.0 - self.closed_height as i32).max(0);
+                    oh - bottom - self.height as i32
+                }
+                _ => self.margin.0,
+            };
+            let moved = (self.rendered_top - new_top) as f64;
+            self.rendered_top = new_top;
+            if moved != 0.0 {
+                self.pointer_pos.1 += moved;
+                self.egui_events
+                    .push(egui::Event::PointerMoved(egui_pos(self.pointer_pos)));
+                let (tx, ty, tw, th) = self.toolbar_rect;
+                self.pointer_on_toolbar = tw > 0
+                    && th > 0
+                    && self.pointer_pos.0 >= tx as f64
+                    && self.pointer_pos.0 < (tx + tw) as f64
+                    && self.pointer_pos.1 >= ty as f64
+                    && self.pointer_pos.1 < (ty + th) as f64;
+                self.needs_redraw = true;
+            }
             *self.position.lock().unwrap() = self.margin;
             // The toolbar input strip spans the surface width; refresh it.
             region_dirty = true;
@@ -953,7 +1211,17 @@ impl PointerHandler for State {
         events: &[PointerEvent],
     ) {
         for event in events {
-            let pos = event.position;
+            // A button event carries no position of its own: the compositor
+            // fills it in from the last motion. That is stale the moment the
+            // surface has moved under a pointer that did not — opening the ⛭
+            // list upwards does exactly that — and taking it at face value put
+            // the click 253 points above where the pointer really was, on the
+            // first row of the list. Motion and enter do carry a fresh
+            // position; everything else uses the one kept up to date here.
+            let pos = match event.kind {
+                PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => event.position,
+                _ => self.pointer_pos,
+            };
             let (tx, ty, tw, th) = self.toolbar_rect;
             let on_toolbar = tw > 0
                 && th > 0

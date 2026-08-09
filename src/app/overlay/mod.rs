@@ -24,6 +24,46 @@ pub const MIN_OPACITY: f64 = 0.2;
 /// both back ends carry the same strip.
 const TOOLBAR_HEIGHT: f32 = 26.0;
 
+/// Which way the ⛭ column list opens out of the toolbar.
+///
+/// Whichever way it goes, the overlay's frame stays where it is: the table and
+/// the two icons keep the place on screen the user just pointed at, and only
+/// the edge the list grows towards moves. Downwards is the ordinary case;
+/// upwards is what an overlay parked at the bottom of the screen needs, since
+/// growing down there would put the list past the edge — and pulling the whole
+/// overlay up to make room is what used to move the icons out from under the
+/// pointer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ListSide {
+    Below,
+    Above,
+}
+
+impl ListSide {
+    pub(crate) fn is_above(self) -> bool {
+        self == ListSide::Above
+    }
+}
+
+/// Where the list has room to open. `top` is the overlay's top edge and
+/// `closed_height` its height with the list shut, both on an output
+/// `output_height` tall; `list` is how tall the list will be.
+///
+/// An output of unknown height (nothing has told us yet) answers `Below`: it is
+/// the ordinary case, and a wrong guess corrects itself on the next frame,
+/// whereas guessing `Above` would jump an overlay that had no reason to move.
+pub(crate) fn list_side(
+    top: f32,
+    closed_height: f32,
+    list: f32,
+    output_height: f32,
+) -> ListSide {
+    if output_height <= 0.0 || top + closed_height + list <= output_height {
+        return ListSide::Below;
+    }
+    ListSide::Above
+}
+
 /// `color` at the overlay's opacity.
 fn at_opacity(color: Color32, opacity: f64) -> Color32 {
     let alpha = (opacity.clamp(MIN_OPACITY, 1.0) * 255.0).round() as u8;
@@ -73,6 +113,14 @@ struct OverlayInner {
     // overlay keeps the same state on its thread).
     columns_open: bool,
     columns_changed: bool,
+    /// How tall the ⛭ list was last drawn, which way it opens, and how tall the
+    /// overlay is with it shut. Together they keep the frame in place while the
+    /// list grows: downwards where there is room, upwards where there is not —
+    /// and then the window's top edge moves up by what the list added, so its
+    /// bottom, and the two icons on it, stay put. See [`ListSide`].
+    columns_height: f32,
+    columns_side: ListSide,
+    closed_height: f32,
     /// Where the toolbar ended up last frame, in the overlay's own coordinates.
     /// Used to decide whether the pointer is over it — see `pointer_over_toolbar`.
     toolbar_rect: Rect,
@@ -251,6 +299,9 @@ impl Overlay {
         Self(Arc::new(Mutex::new(OverlayInner {
             move_around: true,
             columns_open: false,
+            columns_height: 0.0,
+            columns_side: ListSide::Below,
+            closed_height: 80.0,
             columns_changed: false,
             toolbar_rect: Rect::NOTHING,
             columns: COLUMNS.to_vec(),
@@ -417,7 +468,11 @@ impl Overlay {
                         && !inner.columns_open
                         && !inner.pointer_over_toolbar(ctx),
                 );
-            builder.position = inner.position;
+            // Held that much higher while the list is open upwards, so the
+            // window's bottom edge — and the toolbar on it — stays put.
+            builder.position = inner
+                .position
+                .map(|p| p - vec2(0.0, inner.upward_shift()));
             drop(inner);
             let inner = self.0.clone();
             ctx
@@ -533,6 +588,28 @@ impl OverlayInner {
     // The eframe-viewport render path, used everywhere except a Wayland
     // session, where the overlay is a layer-shell surface rendered on its own
     // thread instead (see layer_shell).
+    /// How far the window is currently held above the user's own position, so
+    /// that a list opening upwards leaves the frame — and the icons on it —
+    /// where they were. Zero whenever the list is shut or opens downwards.
+    fn upward_shift(&self) -> f32 {
+        if !self.columns_open || !self.columns_side.is_above() {
+            return 0.0;
+        }
+        (self.current_size.y - self.closed_height).max(0.0)
+    }
+
+    /// The ⛭ column list; returns how tall it came out, for the next frame's
+    /// decision about which way it opens.
+    fn show_column_list(&mut self, ui: &mut Ui) -> f32 {
+        let start = ui.cursor().top();
+        for column in self.columns.iter_mut() {
+            if ui.checkbox(&mut column.enabled, column.name).clicked() {
+                self.columns_changed = true;
+            }
+        }
+        ui.cursor().top() - start
+    }
+
     fn show_overlay(&mut self, ui: &mut Ui) {
         self.check_update(ui.ctx());
         // This path renders inside the app's own context, so the opacity is put
@@ -551,9 +628,32 @@ impl OverlayInner {
             {
                 self.toggle_show();
             }
-            self.position = ui.ctx().input_for(Overlay::viewport_id(), |i| {
-                i.viewport().outer_rect.map(|r| r.left_top())
-            });
+            let (actual_top_left, monitor_height) =
+                ui.ctx().input_for(Overlay::viewport_id(), |i| {
+                    (
+                        i.viewport().outer_rect.map(|r| r.left_top()),
+                        i.viewport().monitor_size.map(|s| s.y).unwrap_or(0.0),
+                    )
+                });
+            // Only read the window's own position back while the list is shut.
+            // While it is open the window may be held above the user's position
+            // to make room for the list, and the overlay cannot be moved then
+            // anyway — so what is remembered stays the place it will return to.
+            if !self.columns_open {
+                self.position = actual_top_left;
+            }
+            self.columns_side = if self.columns_open {
+                list_side(
+                    self.position.map(|p| p.y).unwrap_or(0.0),
+                    self.closed_height,
+                    self.columns_height,
+                    monitor_height,
+                )
+            } else {
+                self.closed_height = self.current_size.y;
+                ListSide::Below
+            };
+            let columns_above = self.columns_side.is_above();
             let required_size = Table::new(ui)
                 .min_scroll_height(f32::MAX)
                 .header(15.0, |h| {
@@ -589,16 +689,9 @@ impl OverlayInner {
             // height is measured off the cursor rather than `min_rect`, which
             // would fold in fill-width widgets and make the window oscillate.
             let bottom_start = ui.cursor().top();
-            if self.columns_open {
-                for column in self.columns.iter_mut() {
-                    if ui.checkbox(&mut column.enabled, column.name).clicked() {
-                        self.columns_changed = true;
-                    }
-                }
-            }
-            if self.columns_changed {
-                self.columns_changed = false;
-                self.force_update(ui.ctx());
+            let mut list_height = 0.0;
+            if self.columns_open && columns_above {
+                list_height = self.show_column_list(ui);
             }
             let toolbar_rect = ui
                 .horizontal(|ui| {
@@ -623,6 +716,14 @@ impl OverlayInner {
                 .response
                 .rect;
             self.toolbar_rect = toolbar_rect;
+            if self.columns_open && !columns_above {
+                list_height = self.show_column_list(ui);
+            }
+            self.columns_height = list_height;
+            if self.columns_changed {
+                self.columns_changed = false;
+                self.force_update(ui.ctx());
+            }
             let bottom_height = ui.cursor().top() - bottom_start;
 
             let required_size = vec2(
@@ -897,5 +998,40 @@ mod tests {
     fn opacity_above_one_is_just_solid() {
         let visuals = overlay_visuals(&visuals_filled_with(Color32::from_rgb(9, 9, 9)), 5.0);
         assert_eq!(255, visuals.panel_fill.a());
+    }
+
+    /// Room below is the ordinary case: an overlay near the top of a screen
+    /// opens its list downwards, and nothing else moves.
+    #[test]
+    fn a_list_with_room_below_opens_downwards() {
+        // 300 tall overlay 100 from the top of a 1080 screen, 200 of list.
+        assert_eq!(ListSide::Below, list_side(100.0, 300.0, 200.0, 1080.0));
+        // Exactly filling the screen still counts as room.
+        assert_eq!(ListSide::Below, list_side(580.0, 300.0, 200.0, 1080.0));
+    }
+
+    /// Parked at the bottom, the list has nowhere to go but up.
+    #[test]
+    fn a_list_without_room_below_opens_upwards() {
+        // The same overlay 700 from the top: 700 + 300 + 200 is past 1080.
+        assert_eq!(ListSide::Above, list_side(700.0, 300.0, 200.0, 1080.0));
+        // One point past is already past.
+        assert_eq!(ListSide::Above, list_side(581.0, 300.0, 200.0, 1080.0));
+    }
+
+    /// Before anything has said how big the output is, opening downwards is the
+    /// guess that moves nothing — a wrong one corrects itself next frame, while
+    /// guessing upwards would shift an overlay with no reason to.
+    #[test]
+    fn an_unknown_output_opens_downwards() {
+        assert_eq!(ListSide::Below, list_side(700.0, 300.0, 200.0, 0.0));
+        assert_eq!(ListSide::Below, list_side(700.0, 300.0, 200.0, -1.0));
+    }
+
+    /// A list taller than the whole screen has no good side; it opens upwards,
+    /// which at least puts its first rows where the pointer is.
+    #[test]
+    fn a_list_taller_than_the_screen_opens_upwards() {
+        assert_eq!(ListSide::Above, list_side(0.0, 300.0, 2000.0, 1080.0));
     }
 }
