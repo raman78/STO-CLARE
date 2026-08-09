@@ -113,6 +113,15 @@ def main() -> int:
     settings["combat_notes"] = {"notes": demo_notes(pathlib.Path(log), float(separation))}
     settings.setdefault("general", {})["overlay_shown"] = False
     settings["window"] = {"size": [1280.0, 720.0], "maximized": False}
+    # Compare opens in the state the manual describes, not in whatever mode the
+    # settings were copied from. Averages and the breakdown are shown in
+    # pictures of their own, by pressing their buttons — a picture that arrives
+    # already averaged contradicts the text next to it.
+    settings["compare"] = {
+        "columns": ["Dps", "Resistance", "Critical", "Accuracy"],
+        "show_dps_breakdown": False,
+        "show_averages": False,
+    }
 
     target = root / APP_DIR
     shutil.rmtree(root, ignore_errors=True)

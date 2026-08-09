@@ -44,6 +44,8 @@ if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
   click 220 101; shot damage-taken-tab
   click 393 101; shot healing-tab
   click 39 101
+  click 598 101; shot columns-menu                 # the Columns menu, open
+  click 598 101
   click 480 38;  shot combats-list
   stop
 fi
@@ -58,7 +60,11 @@ if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
   click 274 49;  shot settings-debug
   click 79 688                                   # Cancel
   click 193 17; sleep 1; shot compare-pick
-  click 15 111; click 15 216; click 152 81; shot compare-result
+  # Tick the first two runs, then Compare selected — which sits on a line of its
+  # own above the list, under the Selected/Select all row.
+  click 15 133; click 15 154; click 65 103; sleep 2; shot compare-result
+  click 124 68; shot compare-averages              # Σ Averages, on the same row
+  click 124 68
   click 193 17
   click 95 17; sleep 9; shot records              # give the ladder time to load
   stop

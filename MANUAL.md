@@ -110,6 +110,25 @@ and you can tell at a glance which column is which build.
 | Upload                        | Sends the combat to the OSCR ladder — see [Uploading](#uploading-to-the-oscr-ladder).                                          |
 | Overlay                       | Opens the small always-on-top window — see [The overlay](#the-overlay).                                                        |
 
+### What lands on your clipboard
+
+**Copy Combat Summary** builds a single line, ready to paste into the game chat:
+
+```
+CLA - [TFO] Infected: The Conduit (Space) [Elite] — Cheops build (12:32.200):
+[PlayerName: DPS|Dmg] / @you: 225k|169M / @teammate: 174k|130M
+```
+
+(It is one line, wrapped here to fit the page.) The name of the run comes first,
+then the note you wrote for it, then how long the fight lasted. The part in
+square brackets is the key: it says which numbers follow each name, in that
+order.
+
+The ⛭ beside the button decides what goes in. Untick your note if you would
+rather not share it, and untick metrics you do not need — the game cuts a long
+chat line off, so the fewer you send, the more likely the whole thing arrives.
+Players are listed in the order of the first metric you left ticked, best first.
+
 ---
 
 ## Reading one combat
@@ -119,6 +138,8 @@ and you can tell at a glance which column is which build.
 The tables carry more columns than most people want at once. **Columns** at the
 end of the tab row hides the ones you do not use; the button says how many are
 hidden, so a missing metric is never a mystery. **Show all** brings them back.
+
+![The Columns menu](images/columns-menu.png)
 
 The two damage tabs share one choice and the three healing tabs share another —
 they are the same table with the same metrics — and the choice is remembered
@@ -215,6 +236,12 @@ There is no limit on how many you tick. Two runs read most clearly side by side,
 but a whole evening's worth is a fair thing to ask for — see
 [Averages](#one-average-instead-of-many-columns) for reading a big pile of runs
 at once.
+
+Two things to know before you tick a dozen: past eight runs the chart's line
+colours start over, so two lines can share a colour — the number in the column
+heading is what tells them apart. And a very wide comparison takes a moment to
+build; the picker says so before you press the button, rather than appearing to
+hang.
 
 ### Narrowing the list
 
@@ -471,6 +498,11 @@ change it.
 
 Writes a diagnostic log next to your settings. Leave it off unless you are
 chasing a problem or someone has asked you for the file.
+
+**Enable Log** starts writing the moment you press OK, and the level you pick
+applies just as immediately — you do not have to start the program again, which
+matters when the thing you want a log of is happening right now. Turning it off
+closes the file straight away.
 
 ---
 
