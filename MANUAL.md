@@ -486,11 +486,27 @@ bottom.
 | Setting                                  | What it does                                                                                                                                                                                        |
 |------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Combatlog File                           | The path to the game's `combatlog.log`. Use **Browse** to find it; it sits in `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.                                                     |
-| Merge rotating combat logs into one file | If the game splits the log into many files, they are merged back into one so all your combats show up together. The originals are only removed once the merged file has been checked byte for byte. |
+| Remember / Go back to default / Forget   | Keeps one log as the one to come back to — see below.                                                                                                                                               |
+| Merge rotating combat logs into one file | The game starts a new log every hour, so your fights end up spread over many files. With this on, they are merged back into one so everything shows up together. The originals are only removed once the merged file has been checked byte for byte. |
 | Combat Separation Time                   | How long a lull has to last before the next fighting counts as a new combat.                                                                                                                        |
 | Auto Refresh / interval                  | Whether the numbers keep themselves current, and how often.                                                                                                                                         |
 | Show more decimals                       | More precision in the tables.                                                                                                                                                                       |
 | Show Hull and Shield as separate columns | Off gives you the compact table, with hull and shield only in the hover box.                                                                                                                        |
+
+#### A log to come back to
+
+Reading a run from the ladder, or a single fight you saved out of the way, points
+the program at another file. Finding your own again used to mean walking the file
+dialog back to it every time.
+
+**Remember** stores the file above as the one you come back to. **Go back to
+default** puts it back whenever you have wandered off, and **Forget** drops it.
+The remembered path is printed underneath in full, so it is never a guess which
+file that button leads to.
+
+Tip: the game's own hourly log rotation means the file you want is usually
+`combatlog.log` with the merging option on. Remember that one, and any excursion
+is one click from home.
 
 ### Analysis
 

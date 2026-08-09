@@ -112,6 +112,11 @@ def main() -> int:
     separation = settings.get("analysis", {}).get("combat_separation_time_seconds", 45.0)
     settings["combat_notes"] = {"notes": demo_notes(pathlib.Path(log), float(separation))}
     settings.setdefault("general", {})["overlay_shown"] = False
+    # The remembered log is a path on this machine — a home directory and a game
+    # folder — and it is printed in full in the General settings. Pointed at the
+    # demo log so the picture shows what the feature does without showing where
+    # anybody lives.
+    settings["general"]["default_combatlog_file"] = log
     settings["window"] = {"size": [1280.0, 720.0], "maximized": False}
     # Compare opens in the state the manual describes, not in whatever mode the
     # settings were copied from. Averages and the breakdown are shown in
