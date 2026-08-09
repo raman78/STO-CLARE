@@ -61,8 +61,23 @@ impl Upload {
                     });
                 });
             }
-            UploadState::UploadComplete(result) => {
+            UploadState::UploadComplete {
+                detail,
+                combatlog,
+                entries,
+            } => {
+                let result = entries;
+                // Built from the configured site rather than a fixed address, so
+                // a run uploaded to a test server links to that server.
+                let run_link = combatlog
+                    .and_then(|id| Url::parse(url).ok().map(|base| (id, base)))
+                    .and_then(|(id, base)| base.join(&format!("/ui/combatlog/{id}/")).ok());
                 if let Some(true) = Self::window(ui, false, |ui| {
+                    ui.label(&*detail);
+                    if let Some(link) = &run_link {
+                        ui.hyperlink_to("Open this run on the ladder site 🌎", link.as_str());
+                    }
+                    ui.add_space(10.0);
                     // The server accepts the log but can return no ladder rows at
                     // all — e.g. a solo-only ladder entered with a group. Without
                     // this the window would just show an empty table.
@@ -198,8 +213,13 @@ impl Upload {
 
     fn upload(ctx: Context, url: Url, combat_data: Vec<u8>, combat_name: String) -> UploadState {
         let state = match Self::do_upload(url, combat_data, combat_name) {
-            Ok(r) => {
-                for entry in r.iter() {
+            Ok(UploadOutcome::Uploaded {
+                detail,
+                combatlog,
+                entries,
+            }) => {
+                log::info!("upload: {detail} (stored as combat log {combatlog:?})");
+                for entry in entries.iter() {
                     log::info!(
                         "upload: {} — updated={} — {}",
                         entry.name,
@@ -207,10 +227,20 @@ impl Upload {
                         entry.detail
                     );
                 }
-                if r.is_empty() {
+                if entries.is_empty() {
                     log::info!("upload: accepted, but the server returned no ladder results");
                 }
-                UploadState::UploadComplete(r)
+                UploadState::UploadComplete {
+                    detail,
+                    combatlog,
+                    entries,
+                }
+            }
+            // A log the server took but could not read. It answers `200` for
+            // this, so nothing below the reason it gives is worth guessing at.
+            Ok(UploadOutcome::Rejected(detail)) => {
+                log::error!("upload: rejected — {detail}");
+                UploadState::UploadError(format!("The combat could not be uploaded:\n\n{detail}"))
             }
             Err(e) => {
                 log::error!("upload: failed — {e}");
@@ -228,40 +258,102 @@ impl Upload {
         url: Url,
         combat_data: Vec<u8>,
         combat_name: String,
-    ) -> Result<Vec<UploadResponse>, RequestError> {
+    ) -> Result<UploadOutcome, RequestError> {
+        // Gzipped, which is what the endpoint expects — the server hands the
+        // bytes straight to the OSCR parser, which recognises the compression
+        // by its leading magic bytes rather than by the file name, so the name
+        // the combat carries here does not have to end in `.gz`.
         let mut data = Vec::new();
         let mut encoder = flate2::GzBuilder::new().write(&mut data, flate2::Compression::best());
         encoder.write_all(combat_data.as_slice()).unwrap();
         encoder.finish().unwrap();
-        let client = ClientBuilder::new().build().unwrap();
-        let url = url.join("/combatlog/upload/").unwrap();
+        // Bounded like the official client's (3 s to connect, 60 s for the
+        // answer). Without them a connection that never answers leaves the
+        // upload thread waiting for good and the window saying "uploading..."
+        // with no way out.
+        let client = ClientBuilder::new()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(RESPONSE_TIMEOUT)
+            .build()
+            .unwrap();
+        let url = url.join(UPLOAD_PATH).unwrap();
         let form = Form::new().part("file", Part::bytes(data).file_name(combat_name));
         let response = client.post(url).multipart(form).send()?;
         if !response.status().is_success() {
             return Err(RequestError::from(response));
         }
 
-        let response: Vec<_> = response
-            .json::<Vec<UploadResponseModel>>()?
-            .into_iter()
-            .map(|r| r.into())
-            .collect();
-        Ok(response)
+        Ok(response.json::<UploadResponseV2>()?.into())
     }
 }
+
+/// The upload endpoint. The `v2` one, which is what the OSCR client itself
+/// uses: it answers a log it could not read with a plain reason instead of a
+/// server error, and it names the log it stored.
+const UPLOAD_PATH: &str = "/combatlog/uploadv2/";
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 enum UploadState {
     #[default]
     Idle,
     Uploading(Option<JoinHandle<Self>>),
-    UploadComplete(Vec<UploadResponse>),
+    UploadComplete {
+        /// The server's own word for what happened, shown as it came.
+        detail: String,
+        /// Which stored log the upload became, when the server said. It names a
+        /// page on the ladder site, so it becomes a link to the run itself.
+        combatlog: Option<i64>,
+        entries: Vec<UploadResponse>,
+    },
     UploadError(String),
 }
 
 impl UploadState {
     fn is_idle(&self) -> bool {
         matches!(self, UploadState::Idle)
+    }
+}
+
+/// What the `v2` endpoint answers with. It replies `200` whether or not the log
+/// could be read, so the status says nothing: `results` is what tells the two
+/// apart. Missing on the failure path — and `detail` then carries the reason,
+/// which is the whole point of this endpoint over the older one.
+///
+/// `results` present but empty is a third case, and a success: the log was
+/// accepted and produced no ladder rows.
+#[derive(Deserialize)]
+struct UploadResponseV2 {
+    #[serde(default)]
+    results: Option<Vec<UploadResponseModel>>,
+    /// Which stored log the upload became. Only reported so it reaches the log
+    /// file; nothing is built on it yet.
+    #[serde(default)]
+    combatlog: Option<i64>,
+    detail: String,
+}
+
+/// A read log, or the reason it could not be read.
+enum UploadOutcome {
+    Uploaded {
+        detail: String,
+        combatlog: Option<i64>,
+        entries: Vec<UploadResponse>,
+    },
+    Rejected(String),
+}
+
+impl From<UploadResponseV2> for UploadOutcome {
+    fn from(response: UploadResponseV2) -> Self {
+        match response.results {
+            Some(results) => Self::Uploaded {
+                detail: response.detail,
+                combatlog: response.combatlog,
+                entries: results.into_iter().map(Into::into).collect(),
+            },
+            None => Self::Rejected(response.detail),
+        }
     }
 }
 
@@ -288,6 +380,83 @@ impl From<UploadResponseModel> for UploadResponse {
             updated: value.updated,
             detail: value.detail,
             value: formatter.format(value.value, 2),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shape the server answers a log it read: the rows, the message, and
+    /// the id of what it stored.
+    #[test]
+    fn a_read_log_comes_back_with_its_ladder_rows() {
+        let response: UploadResponseV2 = serde_json::from_str(
+            r#"{"results":[{"name":"Infected Space Elite","updated":true,
+                "detail":"New personal best","value":123456.75}],
+                "combatlog":84973,"detail":"Combatlog uploaded successfully."}"#,
+        )
+        .unwrap();
+
+        match UploadOutcome::from(response) {
+            UploadOutcome::Uploaded {
+                detail,
+                combatlog,
+                entries,
+            } => {
+                assert_eq!(detail, "Combatlog uploaded successfully.");
+                assert_eq!(combatlog, Some(84973));
+                assert_eq!(entries.len(), 1);
+                assert!(entries[0].updated);
+            }
+            UploadOutcome::Rejected(detail) => panic!("read log reported as rejected: {detail}"),
+        }
+    }
+
+    /// The reason this endpoint is worth using: a log the server could not read
+    /// comes back as an ordinary answer carrying the reason, not as an error.
+    /// Only `detail` is present, so the two optional fields have to tolerate
+    /// being absent entirely.
+    #[test]
+    fn an_unreadable_log_comes_back_as_its_reason() {
+        let response: UploadResponseV2 =
+            serde_json::from_str(r#"{"detail":"Combat log is empty"}"#).unwrap();
+
+        match UploadOutcome::from(response) {
+            UploadOutcome::Rejected(detail) => assert_eq!(detail, "Combat log is empty"),
+            UploadOutcome::Uploaded { .. } => panic!("unreadable log reported as uploaded"),
+        }
+    }
+
+    /// Explicit nulls mean the same as the fields being missing — the server
+    /// declares both `allow_null` and `required=False`.
+    #[test]
+    fn explicit_nulls_read_the_same_as_missing_fields() {
+        let response: UploadResponseV2 =
+            serde_json::from_str(r#"{"results":null,"combatlog":null,"detail":"nope"}"#).unwrap();
+
+        assert!(matches!(
+            UploadOutcome::from(response),
+            UploadOutcome::Rejected(_)
+        ));
+    }
+
+    /// A log that was read but matched no ladder is a success with nothing in
+    /// it, and must not be mistaken for a rejection — the window says so in its
+    /// own words.
+    #[test]
+    fn an_accepted_log_with_no_ladder_rows_is_still_an_upload() {
+        let response: UploadResponseV2 = serde_json::from_str(
+            r#"{"results":[],"combatlog":12,"detail":"Combatlog uploaded successfully."}"#,
+        )
+        .unwrap();
+
+        match UploadOutcome::from(response) {
+            UploadOutcome::Uploaded { entries, .. } => assert!(entries.is_empty()),
+            UploadOutcome::Rejected(detail) => {
+                panic!("accepted log reported as rejected: {detail}")
+            }
         }
     }
 }

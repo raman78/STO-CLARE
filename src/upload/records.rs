@@ -4,7 +4,10 @@ use chrono::DateTime;
 use eframe::{Frame, egui::*};
 use flate2::write::GzDecoder;
 use itertools::{Either, Itertools};
-use reqwest::{Url, blocking::ClientBuilder};
+use reqwest::{
+    Url,
+    blocking::{Client, ClientBuilder},
+};
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use serde_json::Value;
@@ -119,16 +122,47 @@ impl Records {
 
     fn do_load_ladders(url: Url) -> Result<LaddersModel, RequestError> {
         let client = ClientBuilder::new().build().unwrap();
-        let url = url.join("/ladder/").unwrap();
+        let ladders_url = url.join("/ladder/").unwrap();
         let response = client
-            .get(url)
+            .get(ladders_url)
             .query(&[("page_size", &i32::MAX.to_string())])
             .send()?;
         if !response.status().is_success() {
             return Err(RequestError::from(response));
         }
-        let ladders = response.json::<LaddersModel>()?;
+        let mut ladders = response.json::<LaddersModel>()?;
+        ladders.seasons_newest_first = Self::do_load_seasons(&client, url).unwrap_or_default();
         Ok(ladders)
+    }
+
+    /// The seasons, newest first — the order the season picker is put in.
+    ///
+    /// A ladder names its season but says nothing about when the season was, and
+    /// the names cannot be sorted into any sensible order by themselves ("Season
+    /// 31", "Season 9", "Default", "Pre-OSCR records"). The dates live on the
+    /// season itself, so they are asked for separately; it is one small request
+    /// (a dozen rows) beside the several hundred ladders.
+    ///
+    /// A failure here is not worth failing the window for: the picker then keeps
+    /// the order the ladders arrived in, which is what it always used to have.
+    fn do_load_seasons(client: &Client, url: Url) -> Result<Vec<String>, RequestError> {
+        let url = url.join("/variant/").unwrap();
+        let response = client
+            .get(url)
+            .query(&[
+                ("ordering", "-start_date"),
+                ("page_size", &i32::MAX.to_string()),
+            ])
+            .send()?;
+        if !response.status().is_success() {
+            return Err(RequestError::from(response));
+        }
+        Ok(response
+            .json::<SeasonsModel>()?
+            .results
+            .into_iter()
+            .map(|season| season.name)
+            .collect())
     }
 }
 
@@ -591,6 +625,21 @@ impl DownloadLogState {
 #[derive(Deserialize, Debug)]
 struct LaddersModel {
     results: Vec<LadderModel>,
+    /// Filled in after the fact from the seasons endpoint — the ladders
+    /// themselves carry no dates. Empty when that request failed.
+    #[serde(skip)]
+    seasons_newest_first: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SeasonsModel {
+    results: Vec<SeasonModel>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SeasonModel {
+    #[serde(deserialize_with = "null_to_default")]
+    name: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -630,10 +679,20 @@ struct Ladders {
 
 impl From<LaddersModel> for Ladders {
     fn from(value: LaddersModel) -> Self {
+        // Newest season first, which is the one somebody opening this window is
+        // almost always after. Seasons the dates did not cover keep their old
+        // place, at the end, rather than disappearing from the picker.
         let types: Vec<_> = value
-            .results
+            .seasons_newest_first
             .iter()
-            .map(|l| &l.variant)
+            .filter(|season| value.results.iter().any(|l| &l.variant == *season))
+            .chain(
+                value
+                    .results
+                    .iter()
+                    .map(|l| &l.variant)
+                    .filter(|season| !value.seasons_newest_first.contains(season)),
+            )
             .unique()
             .cloned()
             .collect();

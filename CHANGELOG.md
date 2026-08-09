@@ -26,6 +26,9 @@
 - a run's number and note in a comparison are printed in the colour of that run's line on the chart — in the list at the top and in every column heading — so a column and a line can be paired up at a glance
 - **Settings → Visuals** has a **Colour-blind friendly chart colours** switch. Charts then draw their lines and bars in a set of colours chosen to stay apart for red-green colour blindness, which the ordinary set only manages between neighbouring series — on a chart with six or eight things drawn at once, two of them could look the same. Each theme keeps its own version, so the colours still suit a dark or a light background. Nothing else changes colour: the +/- differences in Compare and the status marks already say which is which in words and signs
 
+### Other Changes
+- when an upload cannot be used, the Upload window now says why — "Combat log is empty", or that the map and difficulty have no ladder — instead of a bare failure. A successful upload says so in the ladder's own words and offers a link straight to your run on the ladder site. An upload that cannot reach the server now gives up after a minute rather than leaving the window saying "uploading..." for good
+
 ### Fixes
 - turning on **Enable Log** under Settings → Debug starts writing the log the moment you press OK, and the level you pick applies just as immediately. It used to wait for the program to be started again — by which time whatever you wanted a log of had been and gone. Turning it off closes the file straight away too
 - opening and closing the overlay's column list no longer makes the overlay jump. With the overlay near the bottom of the screen, where the list has to open upwards, closing it flashed the whole overlay — list and all — a step down the screen, and opening it could flash the list below the overlay for a moment first. It now opens and closes in one clean step, with the figures and the two icons staying exactly where they were, however fast you click it
