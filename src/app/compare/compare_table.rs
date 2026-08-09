@@ -332,16 +332,83 @@ impl Comparison {
             self.rebuild_diagram();
         }
 
-        // Legend + per-combat player picker, one row per combat. Past a few
-        // combats the list would push the table and the chart off the bottom of
-        // the window, which has no scrolling of its own to reach them by, so it
-        // scrolls inside itself instead and never takes more than its share.
         let colors = self.slot_colors();
-        let mut player_change: Option<(usize, NameHandle)> = None;
+
+        ui.label(
+            RichText::new(if settings.compare.show_averages {
+                "Each column holds one metric averaged over the combats above — every combat \
+                 counting once, and only those a row appears in. Hover a value for how many \
+                 combats went into it, and its best and worst."
+            } else {
+                "Each column group holds one metric, one column per combat. The small coloured \
+                 number beside a value is its difference against combat #1 — green when it moved \
+                 the better way."
+            })
+            .weak(),
+        );
+
+        // Comparing two different people's numbers looks like a build changed
+        // when nothing did, so say so rather than let it pass unnoticed — in
+        // one short line, with the particulars a hover away.
+        if let Some(warning) = odd_player_warning(&slot_player_names(&self.slots)) {
+            ui.label(RichText::new(warning.line).color(theme::palette().worse))
+                .on_hover_text(warning.detail);
+        }
+
+        ui.separator();
+
+        // Three stacked panes, two draggable boundaries: the list of runs, the
+        // table, the chart. The list starts at the height of what it holds (up
+        // to a few rows) rather than at a fixed share, so an ordinary
+        // comparison of two runs does not open with a third of the window given
+        // to two lines — and a session's worth can be dragged open from there.
         let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+        let legend_ratio = legend_ratio(row, self.slots.len(), ui.available_height());
+        Splitter::horizontal()
+            .initial_ratio(legend_ratio)
+            .ratio_bounds(MIN_LEGEND_RATIO..=MAX_LEGEND_RATIO)
+            .show(ui, |legend_ui, rest_ui| {
+                if let Some((slot_i, handle)) = self.show_legend(legend_ui, &colors) {
+                    self.slots[slot_i].player = handle;
+                    // Changing who the reference is about moves the others with
+                    // it, where that player took part: the deltas are all
+                    // measured against the reference, so leaving them on
+                    // somebody else would compare two different people again.
+                    if slot_i == 0 {
+                        follow_the_reference_player(&mut self.slots);
+                    }
+                    self.rebuild();
+                }
+
+                Splitter::horizontal()
+                    .initial_ratio(0.6)
+                    .ratio_bounds(0.15..=0.9)
+                    .show(rest_ui, |top_ui, bottom_ui| {
+                        self.show_table(
+                            top_ui,
+                            settings.compare.show_dps_breakdown,
+                            settings.compare.show_averages,
+                            &colors,
+                        );
+                        self.show_diagram(bottom_ui, settings);
+                    });
+            });
+    }
+
+    /// The list of runs the comparison is of, one row each: which combat it is,
+    /// and whose numbers are being shown for it. Returns the slot whose player
+    /// was picked, if one was.
+    ///
+    /// It scrolls inside whatever height the pane has been given, so a session's
+    /// worth of runs is reachable without pushing the table off the window.
+    fn show_legend(
+        &self,
+        ui: &mut Ui,
+        colors: &[Option<Color32>],
+    ) -> Option<(usize, NameHandle)> {
+        let mut player_change = None;
         ScrollArea::vertical()
             .id_salt("compare legend")
-            .max_height(legend_height(row, self.slots.len()))
             .show(ui, |ui| {
                 for (slot_i, slot) in self.slots.iter().enumerate() {
                     ui.horizontal(|ui| {
@@ -383,53 +450,7 @@ impl Comparison {
                     });
                 }
             });
-        if let Some((slot_i, handle)) = player_change {
-            self.slots[slot_i].player = handle;
-            // Changing who the reference is about moves the others with it,
-            // where that player took part: the deltas are all measured against
-            // the reference, so leaving them on somebody else would compare two
-            // different people again.
-            if slot_i == 0 {
-                follow_the_reference_player(&mut self.slots);
-            }
-            self.rebuild();
-        }
-
-        ui.label(
-            RichText::new(if settings.compare.show_averages {
-                "Each column holds one metric averaged over the combats above — every combat \
-                 counting once, and only those a row appears in. Hover a value for how many \
-                 combats went into it, and its best and worst."
-            } else {
-                "Each column group holds one metric, one column per combat. The small coloured \
-                 number beside a value is its difference against combat #1 — green when it moved \
-                 the better way."
-            })
-            .weak(),
-        );
-
-        // Comparing two different people's numbers looks like a build changed
-        // when nothing did, so say so rather than let it pass unnoticed — in
-        // one short line, with the particulars a hover away.
-        if let Some(warning) = odd_player_warning(&slot_player_names(&self.slots)) {
-            ui.label(RichText::new(warning.line).color(theme::palette().worse))
-                .on_hover_text(warning.detail);
-        }
-
-        ui.separator();
-
-        Splitter::horizontal()
-            .initial_ratio(0.6)
-            .ratio_bounds(0.15..=0.9)
-            .show(ui, |top_ui, bottom_ui| {
-                self.show_table(
-                    top_ui,
-                    settings.compare.show_dps_breakdown,
-                    settings.compare.show_averages,
-                    &colors,
-                );
-                self.show_diagram(bottom_ui, settings);
-            });
+        player_change
     }
 
     /// The colour each slot's combat is drawn in on the chart, `None` for a
@@ -1121,16 +1142,33 @@ fn note_suffix(note: &str) -> String {
     }
 }
 
-/// How many legend rows are on show before it starts to scroll inside itself.
-/// Six: enough that an ordinary comparison never scrolls at all, few enough
-/// that a session's worth still leaves the table and the chart their room.
+/// How many legend rows the list opens at before the user drags its boundary.
+/// Six: enough that an ordinary comparison shows every run without scrolling,
+/// few enough that a session's worth still leaves the table its room.
 const LEGEND_ROWS: usize = 6;
 
-/// How tall the legend is allowed to be, for `row` points per row. It shrinks
-/// to what it holds — three combats are three rows and no scroll bar — and
-/// stops growing at [`LEGEND_ROWS`].
+/// How small and how large the list of runs may be dragged, as a share of the
+/// space the three panes share. The lower bound leaves a row visible rather
+/// than letting the list be closed by accident; the upper leaves the table
+/// something to be a table in.
+const MIN_LEGEND_RATIO: f32 = 0.05;
+const MAX_LEGEND_RATIO: f32 = 0.5;
+
+/// How tall the list of runs wants to be, for `row` points per row: the height
+/// of what it holds, capped at [`LEGEND_ROWS`].
 fn legend_height(row: f32, combats: usize) -> f32 {
     row * combats.min(LEGEND_ROWS) as f32
+}
+
+/// Where the boundary between the list and the table starts out, as a share of
+/// `available`. Sized to what the list holds, so two runs do not open with a
+/// third of the window under them, and thirty do not open with the table
+/// squeezed to nothing.
+fn legend_ratio(row: f32, combats: usize, available: f32) -> f32 {
+    if available <= 0.0 {
+        return MIN_LEGEND_RATIO;
+    }
+    (legend_height(row, combats) / available).clamp(MIN_LEGEND_RATIO, MAX_LEGEND_RATIO)
 }
 
 /// The height of the header: two lines, and a third when the notes are shown.
@@ -1782,8 +1820,8 @@ mod tests {
         assert_eq!("⚠ 1 of 2 combats is not showing Kestrel", warning.line);
     }
 
-    /// A small comparison shows its whole legend and nothing more — no room
-    /// reserved for rows that are not there, and no scroll bar.
+    /// The list opens at the height of what it holds — no room reserved for
+    /// rows that are not there.
     #[test]
     fn a_short_legend_takes_only_the_rows_it_has() {
         assert_eq!(0.0, legend_height(21.0, 0));
@@ -1807,9 +1845,45 @@ mod tests {
         );
     }
 
+    /// Two runs open with the list at a couple of rows, not at a fixed share of
+    /// the window — the boundary is there to be dragged, not to start in the
+    /// way.
+    #[test]
+    fn the_list_opens_at_the_height_of_what_it_holds() {
+        // Four rows of 21 points in a 900-point window is a tenth of it.
+        let ratio = legend_ratio(21.0, 4, 900.0);
+        assert!((ratio - 84.0 / 900.0).abs() < 1e-6, "{ratio}");
+
+        // Two rows want less than the floor allows, so they get the floor —
+        // which in that window is about two rows anyway.
+        assert_eq!(MIN_LEGEND_RATIO, legend_ratio(21.0, 2, 900.0));
+    }
+
+    /// However many runs are compared, the table keeps at least half the room
+    /// until the user says otherwise — and however few, the boundary stays
+    /// grabbable rather than collapsing onto the edge.
+    #[test]
+    fn the_opening_split_stays_between_its_bounds() {
+        for (combats, available) in [(1, 900.0), (50, 900.0), (500, 200.0), (3, 40.0)] {
+            let ratio = legend_ratio(21.0, combats, available);
+            assert!(
+                (MIN_LEGEND_RATIO..=MAX_LEGEND_RATIO).contains(&ratio),
+                "{combats} combats in {available}: {ratio}"
+            );
+        }
+    }
+
+    /// A window with no room yet — the first frame, before egui has laid
+    /// anything out — must not divide by zero or open at a NaN.
+    #[test]
+    fn a_window_with_no_room_opens_at_the_smallest_split() {
+        assert_eq!(MIN_LEGEND_RATIO, legend_ratio(21.0, 3, 0.0));
+        assert_eq!(MIN_LEGEND_RATIO, legend_ratio(21.0, 3, -10.0));
+    }
+
     /// The row height is asked of the style rather than written down, so the
-    /// cap follows the UI scale instead of being six rows at one zoom level and
-    /// four at another.
+    /// list follows the UI scale instead of being six rows at one zoom level
+    /// and four at another.
     #[test]
     fn the_cap_follows_the_row_height_it_is_given() {
         assert_eq!(
