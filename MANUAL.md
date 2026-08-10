@@ -59,9 +59,13 @@ first. Pick one and every tab below fills in with it.
 
 ![The combats list](images/combats-list.png)
 
-Each entry reads: map name, whether it was space or ground, the difficulty, and
-the time it started and ended — for example
-`[TFO] Infected: The Conduit (Space) [Elite] | 11:56:10 - 12:02:27`. The map and
+Each entry reads: whether you fought it alone or with others, the map name,
+whether it was space or ground, the difficulty, and the time it started and
+ended — for example
+`[Solo] [TFO] Infected: The Conduit (Space) [Elite] | 11:56:10 - 12:02:27`.
+**Solo** means one player in the log and **Team** more than one, which is the
+same test the OSCR ladder uses, so a run of yours and one read from the ladder
+say the same thing. The map and
 difficulty are worked out from what happened in the fight, so you do not have to
 name anything yourself.
 
@@ -70,9 +74,10 @@ look far too low, check the neighbouring entry.
 
 ### Narrowing the list
 
-The three menus under the toolbar — type, level and map — cut the list down.
-Each menu only offers what the other two leave reachable, so you cannot pick a
-combination that shows nothing. A **Clear filter** button appears once any of
+The menus under the toolbar — solo or team, type, level and map — cut the list
+down. Each only offers what the others leave reachable, so you cannot pick a
+combination that shows nothing. The solo/team menu appears only when your list
+holds both kinds. A **Clear filter** button appears once any of
 them is set.
 
 ### Describing a combat so you can find it again
@@ -439,6 +444,30 @@ showing you nothing.
 Under the menus is what is left: the table's name when one table matches, or how
 many when several do. Several is normal when you are looking for a player rather
 than a table.
+
+### One run, one row
+
+The ladder keeps a map's runs in several tables at once — a catch-all for the
+map, one for each level, and separate ones for solo runs — and a single fight is
+entered into all of the ones it qualifies for. Ask across several tables and the
+same run therefore comes back two to four times, with the same figures each
+time. They are folded into one row.
+
+That row can say more than any of the originals could. A ladder entry carries no
+map and no level of its own; both live on the tables it is in. So the folded row
+is named from the set of them, in the same shape the program names your own
+fights: `[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
+
+**Rank** is then the run's placing **in its own table**, not its position in the
+answer — which is why three rows in a row can all say 1. They are firsts in three
+different tables, and the name beside each says which.
+
+**Solo** and **Team** mean what they do everywhere else: one player in the log,
+or more. Solo is exact, because the ladder only admits a one-player run to a
+solo table. Team is worked out by a run *not* being in any solo table — which
+leaves one gap: twenty of the ladder's map-and-level combinations have no solo
+table at all, and a run fought alone on one of those reads as Team, because
+nothing in the ladder's data says otherwise.
 
 **Search** finds a player by any part of their handle, and it stays put while you
 narrow everything else — so you can follow one person from season to season, or
