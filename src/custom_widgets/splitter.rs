@@ -166,7 +166,17 @@ impl Splitter {
         let ratio = ratio + drag_delta;
         let ratio = ratio.clamp(*ratio_bounds.start(), *ratio_bounds.end());
 
-        ui.ctx().data_mut(|d| d.insert_temp(id, ratio));
+        // Remembered only once the user has taken hold of it. Storing it every
+        // frame meant the boundary was fixed by whatever `initial_ratio` came
+        // out as on the very first frame — before the space it is a share of
+        // was known — and no later frame could correct it. A caller that sizes
+        // the boundary to its contents (the compare view puts the list of runs
+        // at the height of what it holds) was therefore stuck with the answer
+        // for an unknown height, which is how two runs came to open with half
+        // the window under them.
+        if splitter_response.dragged() {
+            ui.ctx().data_mut(|d| d.insert_temp(id, ratio));
+        }
 
         let line_pos_1 = line_pos_1.round_to_pixels(ui.pixels_per_point());
         let line_pos_2 = line_pos_2.round_to_pixels(ui.pixels_per_point());

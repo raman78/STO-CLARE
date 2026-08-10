@@ -243,10 +243,7 @@ mod tests {
     /// heading names them.
     #[test]
     fn an_entry_is_the_handle_then_the_figures() {
-        assert_eq!(
-            "@player: 436k",
-            player_entry("@player", "436k")
-        );
+        assert_eq!("@player: 436k", player_entry("@player", "436k"));
         assert_eq!(
             "@player: 436k|41.5M|38.2",
             player_entry("@player", "436k|41.5M|38.2")

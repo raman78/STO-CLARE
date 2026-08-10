@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     analyzer::{Combat, DamageGroup, Difficulty},
     app::{
-        combat_filter::{CombatEntry, CombatFilter},
+        combat_filter::{CombatEntry, CombatFilter, DifficultyFilter},
         settings::{CombatNotes, Settings},
         state::AppState,
         theme,
@@ -185,6 +185,20 @@ impl CompareView {
         self.open = !self.open;
     }
 
+    /// Starts the picker on the map and level of the run being compared
+    /// against, because that is what a comparison is nearly always of — the
+    /// same fight fought differently. Nothing is locked: the pickers are the
+    /// ordinary ones and the reader can widen them the moment they want
+    /// something else.
+    ///
+    /// Only ever set once per run, so a reader who has widened the filters does
+    /// not find them narrowed again underneath them.
+    pub fn suggest_filter(&mut self, map: Option<String>, difficulty: DifficultyFilter) {
+        self.filter.map = map;
+        self.filter.difficulty = difficulty;
+        self.filter.environment = None;
+    }
+
     /// Receive the combats fetched for comparison and build the table.
     pub fn set_combats(&mut self, combats: Vec<(usize, Arc<Combat>)>, settings: &Settings) {
         self.comparison = Some(Comparison::new(combats, settings));
@@ -201,9 +215,14 @@ impl CompareView {
         base_names: &[String],
         environments: &[Option<String>],
         start_times: &[NaiveDateTime],
+        solos: &[bool],
+        // A fight that is in the comparison whatever the reader picks — the run
+        // fetched from the ladder, which is the reason the picker is open at
+        // all. Ticked, and not for unticking.
+        pinned: Option<String>,
         ui: &mut Ui,
         frame: &Frame,
-    ) {
+    ) -> Option<Vec<usize>> {
         match &mut self.comparison {
             Some(comparison) => {
                 if ui.button("◀ Change selection").clicked() {
@@ -219,11 +238,14 @@ impl CompareView {
                         base_names,
                         environments,
                         start_times,
+                        solos,
+                        pinned,
                         ui,
-                    );
+                    )
                 } else {
                     ui.separator();
                     comparison.show(ui, &mut state.settings, frame);
+                    None
                 }
             }
             None => self.show_selection(
@@ -233,6 +255,8 @@ impl CompareView {
                 base_names,
                 environments,
                 start_times,
+                solos,
+                pinned,
                 ui,
             ),
         }
@@ -249,13 +273,17 @@ impl CompareView {
         base_names: &[String],
         environments: &[Option<String>],
         start_times: &[NaiveDateTime],
+        solos: &[bool],
+        pinned: Option<String>,
         ui: &mut Ui,
-    ) {
+    ) -> Option<Vec<usize>> {
+        let mut picked = None;
         let entries: Vec<CombatEntry> = (0..combats.len())
             .map(|i| CombatEntry {
                 environment: environments.get(i).and_then(|e| e.as_deref()),
                 difficulty: difficulties.get(i).copied().flatten(),
                 base_name: base_names.get(i).map(String::as_str).unwrap_or(""),
+                solo: solos.get(i).copied().unwrap_or(false),
             })
             .collect();
 
@@ -292,7 +320,12 @@ impl CompareView {
         let visible = self.visible_combats(combats, &notes, &entries, start_times);
 
         ui.horizontal_wrapped(|ui| {
-            ui.label(format!("Selected {}", self.selected.len()));
+            // The pinned run counts: it is in the comparison whatever else is
+            // picked, and a count that left it out read as one short.
+            ui.label(format!(
+                "Selected {}",
+                self.selected.len() + usize::from(pinned.is_some())
+            ));
             // Adds to the selection rather than replacing it, so a selection
             // can be built up from one filtered list after another. Only what
             // the filters actually left in — a ticked combat that is only on
@@ -323,13 +356,35 @@ impl CompareView {
         // A line of its own: it is what the picker is for, and in the row above
         // it sat between the two buttons that only tick and untick.
         ui.horizontal(|ui| {
+            if let Some(pinned) = &pinned {
+                let mut always = true;
+                ui.add_enabled_ui(false, |ui| {
+                    ui.checkbox(&mut always, pinned).on_disabled_hover_text(
+                        "The run you opened from the ladder. It is what the \
+                             comparison is of, so it cannot be taken out of it.",
+                    );
+                });
+            }
+            // With a run pinned, one of the reader's own fights is enough to
+            // have something to compare it against.
+            let enough = if pinned.is_some() { 1 } else { 2 };
             if ui
-                .add_enabled(self.selected.len() >= 2, Button::new("Compare selected 🆚"))
+                .add_enabled(
+                    self.selected.len() >= enough,
+                    Button::new("Compare selected 🆚"),
+                )
                 .clicked()
             {
                 let mut indices = self.selected.clone();
                 indices.sort_unstable();
-                state.analysis_handler.get_combats(indices);
+                // With a run pinned the comparison cannot be built from this
+                // log at all — the fights live in two different ones, and the
+                // caller has to write them into a third first.
+                if pinned.is_some() {
+                    picked = Some(indices);
+                } else {
+                    state.analysis_handler.get_combats(indices);
+                }
             }
         });
 
@@ -358,6 +413,7 @@ impl CompareView {
                 });
             }
         });
+        picked
     }
 
     /// The combats the list shows, newest first, each with whether it matches
@@ -427,8 +483,12 @@ impl CompareView {
             return false;
         }
 
-        self.filter
-            .matches(entry.environment, entry.difficulty, entry.base_name)
+        self.filter.matches(
+            entry.environment,
+            entry.difficulty,
+            entry.base_name,
+            entry.solo,
+        )
     }
 }
 
@@ -456,6 +516,7 @@ mod tests {
             environment: Some("Space"),
             difficulty: Some(Difficulty::Elite),
             base_name: "Infected Space",
+            solo: false,
         }
     }
 
@@ -552,11 +613,13 @@ mod tests {
                 environment: Some("Space"),
                 difficulty: Some(Difficulty::Elite),
                 base_name: "Infected Space",
+                solo: false,
             },
             CombatEntry {
                 environment: Some("Space"),
                 difficulty: Some(Difficulty::Advanced),
                 base_name: "Infected Space",
+                solo: false,
             },
         ];
         let start_times = [at("2026-07-23 20:00"), at("2026-07-23 21:00")];

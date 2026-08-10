@@ -3,10 +3,15 @@
 
     ./demo/settings.py /tmp/clare-demo LightDark [/tmp/games/.../combatlog.log]
 
-Copies your live settings — so the naming and grouping rules come along and
-combats get their proper names — then overrides the log path, the theme and
-anything else that would put private data in a screenshot. Nothing is written
-to your real settings folder.
+Starts from the settings the program ships with and takes from yours only the
+rules that decide how combats are named and grouped — without those, pictures
+would show fights the program could not name. Nothing else of yours is copied.
+
+It used to work the other way round: copy everything, then patch out what must
+not be photographed. That leaked three times, each caught only by looking at the
+picture — a note you had written, the mode Compare happened to be left in, the
+path to your own game folder printed in full. A list of exceptions is only ever
+as good as the last thing somebody remembered to add to it.
 
 Run the program against it with:
 
@@ -20,6 +25,15 @@ import shutil
 import sys
 
 APP_DIR = "STO-CLARE"
+DEFAULTS = "src/app/settings/STO-CLARE_Settings.json"
+# What a picture needs from the live settings, and nothing besides: the rules
+# that name and group combats.
+CARRIED_OVER = (
+    "combat_name_rules",
+    "custom_group_rules",
+    "indirect_source_grouping_revers_rules",
+    "damage_out_exclusion_rules",
+)
 SETTINGS_FILE = "STO-CLARE_Settings.json"
 DEFAULT_LOG = "/tmp/games/Star Trek Online/Live/logs/GameClient/combatlog.log"
 
@@ -97,8 +111,18 @@ def main() -> int:
     root, theme = pathlib.Path(sys.argv[1]), sys.argv[2]
     log = sys.argv[3] if len(sys.argv) > 3 else DEFAULT_LOG
 
+    # The program's own defaults, as shipped.
+    defaults = pathlib.Path(__file__).resolve().parent.parent / DEFAULTS
+    settings = json.loads(defaults.read_text())
+
+    # The only thing worth having from the live settings: how combats get named
+    # and grouped. Everything else there is personal by default.
     source = live_settings()
-    settings = json.loads(source.read_text()) if source else {}
+    if source:
+        live = json.loads(source.read_text()).get("analysis", {})
+        for rules in CARRIED_OVER:
+            if rules in live:
+                settings.setdefault("analysis", {})[rules] = live[rules]
 
     settings.setdefault("analysis", {})["combatlog_file"] = log
     settings["analysis"]["consolidate_combatlog"] = True
@@ -112,7 +136,21 @@ def main() -> int:
     separation = settings.get("analysis", {}).get("combat_separation_time_seconds", 45.0)
     settings["combat_notes"] = {"notes": demo_notes(pathlib.Path(log), float(separation))}
     settings.setdefault("general", {})["overlay_shown"] = False
+    # The remembered log is a path on this machine — a home directory and a game
+    # folder — and it is printed in full in the General settings. Pointed at the
+    # demo log so the picture shows what the feature does without showing where
+    # anybody lives.
+    settings["general"]["default_combatlog_file"] = log
     settings["window"] = {"size": [1280.0, 720.0], "maximized": False}
+    # Compare opens in the state the manual describes, not in whatever mode the
+    # settings were copied from. Averages and the breakdown are shown in
+    # pictures of their own, by pressing their buttons — a picture that arrives
+    # already averaged contradicts the text next to it.
+    settings["compare"] = {
+        "columns": ["Dps", "Resistance", "Critical", "Accuracy"],
+        "show_dps_breakdown": False,
+        "show_averages": False,
+    }
 
     target = root / APP_DIR
     shutil.rmtree(root, ignore_errors=True)

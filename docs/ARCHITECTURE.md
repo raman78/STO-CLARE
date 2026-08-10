@@ -474,6 +474,13 @@ Settings and the log file go to the per-user config directory
 old next-to-the-executable location read as a fallback. See
 `app/settings/app_settings.rs` and `app/logging.rs`.
 
+Logging is opt-in (Debug → **Enable Log**) and mirrors to stderr at `Info` and to
+`STO-CLARE.log` at the chosen level. `log::set_logger` only takes effect once per
+process, so `app/logging.rs` installs one router at startup and the settings
+apply path swaps what it forwards to — the switch and the level therefore take
+effect on **OK**, not at the next start, and switched off it closes the file and
+drops `log::max_level()` to `Off` so every call site skips its formatting.
+
 ## Related documents
 
 | document                       | scope                                                 |

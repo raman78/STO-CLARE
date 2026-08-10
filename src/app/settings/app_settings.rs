@@ -76,6 +76,17 @@ pub struct General {
     // reason for.
     #[serde(default)]
     pub overlay_shown: bool,
+    /// A combat log to come back to, remembered so switching away from it and
+    /// back is two clicks instead of a trip through the file dialog. Kept here
+    /// rather than beside `combatlog_file` in the analysis settings on purpose:
+    /// a difference there replaces the analyzer and re-reads the whole log, and
+    /// noting down a path is no reason to re-read 300 MB.
+    #[serde(default)]
+    pub default_combatlog_file: Option<String>,
+    /// Where the Ladder window was left, so it comes back there. Unset until it
+    /// has been moved, and it then opens in the middle of the main window.
+    #[serde(default)]
+    pub ladder_window_position: Option<[f32; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -186,6 +197,8 @@ impl Default for General {
             settings_window_size: None,
             overlay_position: None,
             overlay_shown: false,
+            default_combatlog_file: None,
+            ladder_window_position: None,
         }
     }
 }
@@ -228,6 +241,15 @@ impl Default for UploadSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Settings written before there was a file to come back to must keep
+    /// loading, with nothing remembered — not with an empty path, which would
+    /// read as "come back to nowhere".
+    #[test]
+    fn settings_file_without_a_remembered_combatlog_still_loads() {
+        let settings: Settings = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
+        assert_eq!(None, settings.general.default_combatlog_file);
+    }
 
     #[test]
     fn settings_file_without_window_section_still_loads() {
@@ -331,7 +353,10 @@ mod tests {
         );
         assert_eq!(
             1,
-            settings.analysis.indirect_source_grouping_revers_rules.len()
+            settings
+                .analysis
+                .indirect_source_grouping_revers_rules
+                .len()
         );
         assert_eq!(Theme::LightDark, settings.visuals.theme);
         assert_eq!("https://oscr.stobuilds.com/", settings.upload.oscr_url);
@@ -370,9 +395,11 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let loaded: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(settings.columns, loaded.columns);
-        assert!(!loaded
-            .columns
-            .is_shown(crate::app::settings::TableKind::Damage, "Flanking %"));
+        assert!(
+            !loaded
+                .columns
+                .is_shown(crate::app::settings::TableKind::Damage, "Flanking %")
+        );
 
         // A file written before the picker existed has no such section at all.
         let mut older: serde_json::Value = serde_json::from_str(&json).unwrap();

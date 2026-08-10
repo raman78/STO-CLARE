@@ -701,10 +701,7 @@ mod tests {
         let mut worst = f64::INFINITY;
         for (i, a) in series.iter().enumerate() {
             for b in series.iter().skip(i + 1) {
-                let distance = delta_e(
-                    dichromat(*a, deficiency),
-                    dichromat(*b, deficiency),
-                );
+                let distance = delta_e(dichromat(*a, deficiency), dichromat(*b, deficiency));
                 worst = worst.min(distance);
             }
         }
@@ -803,7 +800,11 @@ mod tests {
                 visuals.widgets.inactive.bg_stroke.color.a() > 0,
                 "{name} draws no rim on a resting widget"
             );
-            assert_ne!(Shadow::NONE, visuals.window_shadow, "{name} casts no shadow");
+            assert_ne!(
+                Shadow::NONE,
+                visuals.window_shadow,
+                "{name} casts no shadow"
+            );
         }
     }
 
@@ -852,7 +853,10 @@ mod tests {
                 strength: 1.0,
             },
         );
-        assert_eq!(before.widgets.inactive.bg_fill, after.widgets.inactive.bg_fill);
+        assert_eq!(
+            before.widgets.inactive.bg_fill,
+            after.widgets.inactive.bg_fill
+        );
         assert_eq!(
             before.widgets.hovered.weak_bg_fill,
             after.widgets.hovered.weak_bg_fill

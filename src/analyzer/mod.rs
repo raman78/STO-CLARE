@@ -336,13 +336,30 @@ impl Combat {
         }
     }
 
+    /// Whether one player fought this, which is what the OSCR ladder means by a
+    /// solo run: it admits a fight to a solo table exactly when the log held a
+    /// single player (`combatlog/models/combatlog.py`: `if ladder.is_solo and
+    /// len(players) != 1`). Kept identical on purpose, so a fight of your own
+    /// and a run read from the ladder are sorted and named the same way.
+    pub fn is_solo(&self) -> bool {
+        self.players.len() == 1
+    }
+
     pub fn name(&self) -> String {
         // The detected difficulty is always appended on top of the base name —
         // it is computed from the log's entities, independent of naming, so the
         // tier shows even when a rule provides the name.
         let base =
             append_detected_combat_type(self.base_name(), self.detected_combat_type.as_deref());
-        append_detected_difficulty(base, self.detected_difficulty)
+        let named = append_detected_difficulty(base, self.detected_difficulty);
+        // Whether it was fought alone leads the name, the way the ladder writes
+        // it, so a fight of your own and one read from the ladder line up
+        // wherever they meet — the combats list, a comparison, a summary pasted
+        // into chat, a spreadsheet, the name of a saved log.
+        format!(
+            "{} {named}",
+            if self.is_solo() { "[Solo]" } else { "[Team]" }
+        )
     }
 
     pub fn file_identifier(&self) -> String {
@@ -921,6 +938,53 @@ impl CombatName {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fight fought alone is named the way the ladder names one, so a run of
+    /// your own and one read from the ladder line up wherever they meet. The
+    /// test is the ladder's own: one player in the log, not one player doing the
+    /// damage.
+    #[test]
+    fn a_combat_says_whether_it_was_fought_alone() {
+        fn name_of(dir: &str, records: &str) -> String {
+            let dir = std::env::temp_dir().join(dir);
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let log = dir.join("combatlog.log");
+            std::fs::write(&log, records).unwrap();
+            let mut analyzer = Analyzer::new(AnalysisSettings {
+                combatlog_file: log.to_string_lossy().into_owned(),
+                ..Default::default()
+            })
+            .unwrap();
+            analyzer.update();
+            let name = analyzer.result().first().expect("one combat").name();
+            let _ = std::fs::remove_dir_all(&dir);
+            name
+        }
+
+        let alone = concat!(
+            "26:07:28:22:20:17.5::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Talon Battleship,C[11759 Space_Nausicaan_Battleship],Phaser Array,Pn.Cedjls,",
+            "Phaser,,100.0,100.0\n",
+        );
+        let together = concat!(
+            "26:07:28:22:20:17.5::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Talon Battleship,C[11759 Space_Nausicaan_Battleship],Phaser Array,Pn.Cedjls,",
+            "Phaser,,100.0,100.0\n",
+            "26:07:28:22:20:18.5::Falcon,P[3@4 Falcon@handle],,*,",
+            "Talon Battleship,C[11759 Space_Nausicaan_Battleship],Phaser Array,Pn.Cedjls,",
+            "Phaser,,100.0,100.0\n",
+        );
+
+        assert!(
+            name_of("cla-solo-name-test", alone).starts_with("[Solo] "),
+            "one player in the log is a solo run"
+        );
+        assert!(
+            name_of("cla-team-name-test", together).starts_with("[Team] "),
+            "more than one player is a team run"
+        );
+    }
 
     /// A non-combatant ally that only ever *fires* — never takes damage — must
     /// still register as present, otherwise it cannot anchor a map. Real case:

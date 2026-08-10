@@ -52,12 +52,7 @@ impl ListSide {
 /// An output of unknown height (nothing has told us yet) answers `Below`: it is
 /// the ordinary case, and a wrong guess corrects itself on the next frame,
 /// whereas guessing `Above` would jump an overlay that had no reason to move.
-pub(crate) fn list_side(
-    top: f32,
-    closed_height: f32,
-    list: f32,
-    output_height: f32,
-) -> ListSide {
+pub(crate) fn list_side(top: f32, closed_height: f32, list: f32, output_height: f32) -> ListSide {
     if output_height <= 0.0 || top + closed_height + list <= output_height {
         return ListSide::Below;
     }
@@ -420,8 +415,7 @@ impl Overlay {
             // the surface it paints carries the alpha, so nothing in the main
             // window's own style has to be touched.
             let mut style = Style::clone(&ctx.global_style());
-            style.visuals =
-                overlay_visuals(&style.visuals, inner.settings.visuals.overlay_opacity);
+            style.visuals = overlay_visuals(&style.visuals, inner.settings.visuals.overlay_opacity);
             let style = Arc::new(style);
             if let Some(layer) = &inner.layer {
                 layer.update(data);
@@ -429,8 +423,7 @@ impl Overlay {
             }
             // Keep the main app repainting so we keep feeding the overlay and
             // polling its toolbar events (column toggles) promptly.
-            ctx
-                .request_repaint_after(std::time::Duration::from_millis(200));
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
             return;
         }
 
@@ -464,21 +457,16 @@ impl Overlay {
                 // toolbar strip, so the whole window takes the pointer then —
                 // the same exception the layer-shell input region makes.
                 .with_mouse_passthrough(
-                    !inner.move_around
-                        && !inner.columns_open
-                        && !inner.pointer_over_toolbar(ctx),
+                    !inner.move_around && !inner.columns_open && !inner.pointer_over_toolbar(ctx),
                 );
             // Held that much higher while the list is open upwards, so the
             // window's bottom edge — and the toolbar on it — stays put.
-            builder.position = inner
-                .position
-                .map(|p| p - vec2(0.0, inner.upward_shift()));
+            builder.position = inner.position.map(|p| p - vec2(0.0, inner.upward_shift()));
             drop(inner);
             let inner = self.0.clone();
-            ctx
-                .show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
-                    inner.lock().show_overlay(ui);
-                });
+            ctx.show_viewport_deferred(Self::viewport_id(), builder, move |ui, _| {
+                inner.lock().show_overlay(ui);
+            });
             // While it is click-through the overlay gets no pointer events, so
             // the only way to notice the pointer arriving at its toolbar is to
             // look. This is also what bounds how quickly the switch flips, so it
@@ -489,8 +477,7 @@ impl Overlay {
             // to be awake to act on the command it is sent. Waking only the
             // main window leaves the command sitting until something else stirs
             // the overlay, which turns a 50 ms flip into seconds.
-            ctx
-                .request_repaint_after(std::time::Duration::from_millis(50));
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
             ctx.request_repaint_after_for(
                 std::time::Duration::from_millis(50),
                 Self::viewport_id(),
@@ -802,6 +789,7 @@ impl OverlayInner {
                 base_names: _,
                 environments: _,
                 start_times: _,
+                solos: _,
                 file_size: _,
             }) => latest_combat,
             _ => return,

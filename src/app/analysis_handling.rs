@@ -20,7 +20,6 @@ use crate::{
     unwrap_or_return,
 };
 
-#[cfg(target_os = "linux")]
 use super::log_consolidation::Consolidator;
 
 pub struct AnalysisHandler {
@@ -46,7 +45,6 @@ struct AnalysisContext {
     last_file_size: Option<u64>,
     // Merges STO's rotating logs into one file the analyzer reads (see
     // set_analyzer); None when disabled or nothing to merge.
-    #[cfg(target_os = "linux")]
     consolidator: Option<Consolidator>,
 }
 
@@ -113,6 +111,8 @@ pub enum AnalysisInfo {
         /// Each combat's start time, aligned with `combats`. The views key the
         /// user's own note by it.
         start_times: Vec<NaiveDateTime>,
+        /// Whether each combat was fought alone, aligned with `combats`.
+        solos: Vec<bool>,
         file_size: Option<u64>,
     },
     // Like `Refreshed`, but without a combat to switch the main view to. Used
@@ -126,6 +126,8 @@ pub enum AnalysisInfo {
         base_names: Vec<String>,
         environments: Vec<Option<String>>,
         start_times: Vec<NaiveDateTime>,
+        /// Whether each combat was fought alone, aligned with `combats`.
+        solos: Vec<bool>,
         file_size: Option<u64>,
     },
     RefreshError,
@@ -278,7 +280,6 @@ impl AnalysisContext {
             auto_refresh_interval: AutoRefreshContext::interval(auto_refresh_interval_seconds),
             auto_refresh: None,
             last_file_size: None,
-            #[cfg(target_os = "linux")]
             consolidator: None,
         };
         _self.set_analyzer(settings);
@@ -301,7 +302,6 @@ impl AnalysisContext {
     /// combatlog.log up to date so the user can point at it for the live
     /// overlay / all-combats view; the file being read is left untouched.
     fn set_analyzer(&mut self, settings: AnalysisSettings) {
-        #[cfg(target_os = "linux")]
         {
             let dir = std::path::Path::new(&settings.combatlog_file)
                 .parent()
@@ -426,6 +426,7 @@ impl AnalysisContext {
                     base_names,
                     environments,
                     start_times,
+                    solos,
                     file_size,
                     ..
                 } => AnalysisInfo::CombatsListRefreshed {
@@ -434,6 +435,7 @@ impl AnalysisContext {
                     base_names,
                     environments,
                     start_times,
+                    solos,
                     file_size,
                 },
                 other => other,
@@ -445,7 +447,6 @@ impl AnalysisContext {
     fn try_refresh(&mut self, skip_when_unchanged: bool) -> Option<AnalysisInfo> {
         // Keep combatlog.log current in the background, but never touch the file
         // currently being read (the user may have opened a specific old log).
-        #[cfg(target_os = "linux")]
         {
             let protected = self
                 .analyzer
@@ -507,6 +508,7 @@ impl AnalysisContext {
                 .iter()
                 .map(|c| c.active_time.start)
                 .collect(),
+            solos: analyzer.result().iter().map(|c| c.is_solo()).collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
                 .map(|m| m.len()),
@@ -673,10 +675,7 @@ impl AnalysisContext {
         // file rather than the combatlog.log we read, so those writes would
         // never change the watched file. Watch the whole folder instead, so a
         // game write still triggers a refresh (which consolidates + reparses).
-        #[cfg(target_os = "linux")]
         let watch_dir = self.consolidator.is_some();
-        #[cfg(not(target_os = "linux"))]
-        let watch_dir = false;
         self.auto_refresh = AutoRefreshContext::new(
             self.instruction_tx.clone(),
             self.auto_refresh_interval,
@@ -755,6 +754,7 @@ impl HandlerContext {
 fn is_combatlog_path(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
+        .map(|n| n.to_lowercase())
         .is_some_and(|n| n.starts_with("combatlog") && n.ends_with(".log"))
 }
 
