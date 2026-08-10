@@ -41,7 +41,9 @@ mod platform {
 mod platform {
     use super::*;
     use std::sync::OnceLock;
-    use x11rb::{connection::Connection, protocol::xproto::ConnectionExt, rust_connection::RustConnection};
+    use x11rb::{
+        connection::Connection, protocol::xproto::ConnectionExt, rust_connection::RustConnection,
+    };
 
     /// The X connection and the root window to ask about the pointer. Opened
     /// once: a connection per frame would be an absurd price for one query, and

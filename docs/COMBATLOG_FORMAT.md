@@ -10,9 +10,8 @@ which.
 ## Source
 
 The community reference is the r/stobuilds wiki page `math/log_reading`,
-compiled by Mastajdog from a 2015 thread. Reddit,
-`stowiki.net` and the redlib mirrors all refuse automated requests, so fetch it
-from the archive:
+compiled by Mastajdog from a 2015 thread. Reddit, `stowiki.net` and the redlib
+mirrors all refuse automated requests, so fetch it from the archive:
 
 ```
 curl --compressed \

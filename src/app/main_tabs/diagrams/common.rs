@@ -42,7 +42,10 @@ pub struct PreparedHitValue {
     /// How much hull damage the shield stopped. Needed for the damage
     /// resistance chart, which uses the same formula as the table column.
     pub damage_prevented_to_hull: f64,
-    pub hits_count: u64,
+    /// Whole hits as they come out of a combat, but a fraction of one where a
+    /// series is an average of several combats (see the compare view), which is
+    /// why it is not an integer.
+    pub hits_count: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -245,7 +248,7 @@ impl<'a> From<&'a Hit> for PreparedHit {
                     base_damage: 0.0,
                     drain_damage: 0.0,
                     damage_prevented_to_hull,
-                    hits_count: 1,
+                    hits_count: 1.0,
                 },
                 time_millis: hit.time_millis,
             },
@@ -257,7 +260,7 @@ impl<'a> From<&'a Hit> for PreparedHit {
                     base_damage: 0.0,
                     drain_damage: hit.damage,
                     damage_prevented_to_hull: 0.0,
-                    hits_count: 1,
+                    hits_count: 1.0,
                 },
                 time_millis: hit.time_millis,
             },
@@ -269,7 +272,7 @@ impl<'a> From<&'a Hit> for PreparedHit {
                     base_damage,
                     drain_damage: 0.0,
                     damage_prevented_to_hull: 0.0,
-                    hits_count: 1,
+                    hits_count: 1.0,
                 },
                 time_millis: hit.time_millis,
             },
@@ -292,8 +295,8 @@ impl PreparedValue for PreparedHitValue {
         match diagram_type {
             DiagramType::Dps => self.damage,
             DiagramType::Damage => self.damage,
-            DiagramType::HitsPerSecond => self.hits_count as _,
-            DiagramType::HitsCount => self.hits_count as _,
+            DiagramType::HitsPerSecond => self.hits_count,
+            DiagramType::HitsCount => self.hits_count,
             _ => unreachable!(),
         }
     }

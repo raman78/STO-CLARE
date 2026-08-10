@@ -126,11 +126,11 @@ struct ColumnDescriptor {
 }
 
 /// See `metrics_table::closes_group`.
-fn closes_summary_group(index: usize, split: bool) -> bool {
-    if !split || COLUMNS[index].parts.is_empty() {
+fn closes_summary_group(columns: &[&ColumnDescriptor], index: usize, split: bool) -> bool {
+    if !split || columns[index].parts.is_empty() {
         return false;
     }
-    COLUMNS
+    columns
         .get(index + 1)
         .map(|next| next.parts.is_empty())
         .unwrap_or(true)
@@ -199,8 +199,16 @@ impl SummaryTable {
         table
     }
 
-    pub fn show(&mut self, ui: &mut Ui) {
+    /// Every column this table has, for the column picker.
+    pub fn column_names() -> Vec<&'static str> {
+        COLUMNS.iter().map(|column| column.name).collect()
+    }
+
+    /// `shown` decides which columns are drawn; see `MetricsTable::show`.
+    pub fn show(&mut self, ui: &mut Ui, shown: impl Fn(&str) -> bool) {
         let split = self.split_shield_hull;
+        let columns: Vec<&ColumnDescriptor> =
+            COLUMNS.iter().filter(|column| shown(column.name)).collect();
         let header_height = if split {
             SPLIT_HEADER_HEIGHT
         } else {
@@ -215,7 +223,7 @@ impl SummaryTable {
                         });
                     });
 
-                    for (index, column) in COLUMNS.iter().enumerate() {
+                    for (index, column) in columns.iter().enumerate() {
                         if split && !column.parts.is_empty() {
                             show_group_separator(r);
                         }
@@ -224,7 +232,7 @@ impl SummaryTable {
                                 (column.sort)(self);
                             });
                         }
-                        if closes_summary_group(index, split) {
+                        if closes_summary_group(&columns, index, split) {
                             show_group_separator(r);
                         }
                     }
@@ -232,7 +240,7 @@ impl SummaryTable {
                 .body(ROW_HEIGHT, |t| {
                     for (i, player) in self.players.iter().enumerate() {
                         let player_selected = Some(i) == self.selected_player;
-                        if player.show(t, player_selected, split).clicked() {
+                        if player.show(&columns, t, player_selected, split).clicked() {
                             self.selected_player = if player_selected { None } else { Some(i) };
                         }
                     }
@@ -358,13 +366,19 @@ impl Player {
         }
     }
 
-    pub fn show(&self, table: &mut TableBody, selected: bool, split: bool) -> Response {
+    pub fn show(
+        &self,
+        columns: &[&ColumnDescriptor],
+        table: &mut TableBody,
+        selected: bool,
+        split: bool,
+    ) -> Response {
         table.selectable_row(selected, |r| {
             r.cell(|ui| {
                 ui.label(&self.name);
             });
 
-            for (index, column) in COLUMNS.iter().enumerate() {
+            for (index, column) in columns.iter().enumerate() {
                 if split && !column.parts.is_empty() {
                     show_group_separator(r);
                 }
@@ -374,7 +388,7 @@ impl Player {
                         (part.show)(self, r);
                     }
                 }
-                if closes_summary_group(index, split) {
+                if closes_summary_group(columns, index, split) {
                     show_group_separator(r);
                 }
             }

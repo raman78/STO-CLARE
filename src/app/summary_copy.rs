@@ -3,6 +3,7 @@ use itertools::Itertools;
 
 use crate::{
     analyzer::*,
+    app::settings::CombatNotes,
     custom_widgets::popup_button::PopupButton,
     helpers::{
         format_duration, number_formatting::NumberFormatter, time_range_to_duration_or_zero,
@@ -11,6 +12,11 @@ use crate::{
 
 pub struct SummaryCopy {
     aspects: Vec<Aspect>,
+    /// Whether the user's own note for the combat goes into the summary. On by
+    /// default: a note says which build or which attempt the run was, which is
+    /// the one thing the numbers cannot say and the reason the summary is being
+    /// pasted at all.
+    include_note: bool,
 }
 
 struct Aspect {
@@ -23,18 +29,25 @@ struct Aspect {
 }
 
 impl SummaryCopy {
-    pub fn show(&mut self, combat: Option<&Combat>, ui: &mut Ui) {
+    pub fn show(&mut self, combat: Option<&Combat>, notes: &CombatNotes, ui: &mut Ui) {
         if ui
             .add_enabled(combat.is_some(), Button::new("Copy Combat Summary"))
             .clicked()
         {
-            ui.ctx().copy_text(self.build_summary(combat.unwrap()));
+            let combat = combat.unwrap();
+            ui.ctx()
+                .copy_text(self.build_summary(combat, notes.get(&CombatNotes::key(combat))));
         }
 
         ui.add_enabled(combat.is_some(), |ui: &mut Ui| {
             PopupButton::new("⛭")
                 .show(ui, |ui| {
                     ui.label("Configure copy elements");
+                    ui.checkbox(&mut self.include_note, "Your note for the combat")
+                        .on_hover_text(
+                            "Adds the note you wrote for this combat after its name. Nothing is \
+                             added when there is no note.",
+                        );
                     for aspect in self.aspects.iter_mut() {
                         ui.checkbox(&mut aspect.include, aspect.name);
                     }
@@ -45,7 +58,7 @@ impl SummaryCopy {
         });
     }
 
-    fn build_summary(&self, combat: &Combat) -> String {
+    fn build_summary(&self, combat: &Combat, note: &str) -> String {
         let mut number_formatter = NumberFormatter::new();
         let aspects = self.aspects.iter().filter(|a| a.include);
         let first_aspect = aspects.clone().nth(0).unwrap_or(&self.aspects[0]);
@@ -68,32 +81,41 @@ impl SummaryCopy {
                     })
                     .join("|");
 
-                format!(
-                    "{} {}",
-                    String::from_iter(
+                player_entry(
+                    &String::from_iter(
                         p.damage_in
                             .name()
                             .get(&combat.name_manager)
                             .chars()
-                            .skip_while(|c| *c != '@')
+                            .skip_while(|c| *c != '@'),
                     ),
-                    aspects
+                    &aspects,
                 )
             });
 
-        let aspects = aspects.clone().map(|a| a.header).join("|");
-        let aspects_header = format!("Name {}", aspects);
+        let header = heading(&aspects.clone().map(|a| a.header).join("|"));
 
-        let header_and_players = std::iter::once(aspects_header).chain(players).join(" / ");
+        let header_and_players = std::iter::once(header).chain(players).join(" / ");
 
         let duration = format_duration(time_range_to_duration_or_zero(&combat.combat_time));
 
         format!(
-            "CLA - {} ({}): {}",
+            "CLA - {}{} ({}): {}",
             combat.name(),
+            self.note_part(note),
             duration,
             header_and_players
         )
+    }
+
+    /// The note as it reads after the combat's name, or nothing at all — a run
+    /// nobody wrote a note for must not leave a dash hanging in the middle of a
+    /// line pasted into the game chat.
+    fn note_part(&self, note: &str) -> String {
+        if !self.include_note || note.trim().is_empty() {
+            return String::new();
+        }
+        format!(" — {}", note.trim())
     }
 }
 
@@ -166,8 +188,25 @@ impl Default for SummaryCopy {
                     true,
                 ),
             ],
+            include_note: true,
         }
     }
+}
+
+/// The heading the entries after it are read against: it names the first field
+/// of every entry (the player) and then each figure, in the order they come.
+///
+/// Bracketed and colon-separated so it reads as a key rather than as another
+/// player's line — the whole summary is one line of game chat, where the only
+/// punctuation available to tell one part from another is punctuation.
+fn heading(aspects: &str) -> String {
+    format!("[PlayerName: {aspects}]")
+}
+
+/// One player's entry: their handle, then their figures in the order the
+/// heading names them.
+fn player_entry(name: &str, aspects: &str) -> String {
+    format!("{name}: {aspects}")
 }
 
 fn aspect(
@@ -185,5 +224,80 @@ fn aspect(
         get,
         format,
         reverse_sort,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The heading is a key for the entries after it, told apart from them by
+    /// its brackets — the whole summary is one line of chat.
+    #[test]
+    fn the_heading_names_the_fields_of_an_entry() {
+        assert_eq!("[PlayerName: DPS]", heading("DPS"));
+        assert_eq!("[PlayerName: DPS|Dmg|Crit%]", heading("DPS|Dmg|Crit%"));
+    }
+
+    /// An entry reads as "who: what", and its figures come in the order the
+    /// heading names them.
+    #[test]
+    fn an_entry_is_the_handle_then_the_figures() {
+        assert_eq!("@player: 436k", player_entry("@player", "436k"));
+        assert_eq!(
+            "@player: 436k|41.5M|38.2",
+            player_entry("@player", "436k|41.5M|38.2")
+        );
+    }
+
+    /// The two together are what gets pasted, and the separators have to stay
+    /// distinct: `/` between entries, `|` between figures, `:` after a name.
+    #[test]
+    fn the_heading_and_the_entries_read_as_one_line() {
+        let line = [
+            heading("DPS|Dmg"),
+            player_entry("@player", "436k|41.5M"),
+            player_entry("@somebody", "210k|20.1M"),
+        ]
+        .join(" / ");
+        assert_eq!(
+            "[PlayerName: DPS|Dmg] / @player: 436k|41.5M / @somebody: 210k|20.1M",
+            line
+        );
+    }
+
+    /// The note is on to begin with — it is the one thing in the line the
+    /// numbers cannot say.
+    #[test]
+    fn the_note_is_included_by_default() {
+        let copy = SummaryCopy::default();
+        assert_eq!(" — Cheops build", copy.note_part("Cheops build"));
+    }
+
+    /// A run nobody named must not leave a dash hanging in the middle of a line
+    /// pasted into the game chat — nor must whitespace somebody typed by
+    /// accident count as a note.
+    #[test]
+    fn an_unnamed_run_adds_nothing() {
+        let copy = SummaryCopy::default();
+        assert_eq!("", copy.note_part(""));
+        assert_eq!("", copy.note_part("   "));
+    }
+
+    /// Switched off, the note stays out however long it is.
+    #[test]
+    fn the_note_can_be_switched_off() {
+        let copy = SummaryCopy {
+            include_note: false,
+            ..Default::default()
+        };
+        assert_eq!("", copy.note_part("Cheops build"));
+    }
+
+    /// A note is trimmed on the way in, so a stray space does not read as two.
+    #[test]
+    fn a_note_is_trimmed() {
+        let copy = SummaryCopy::default();
+        assert_eq!(" — FAW build", copy.note_part("  FAW build  "));
     }
 }

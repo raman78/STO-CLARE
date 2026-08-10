@@ -6,6 +6,7 @@ use super::Settings;
 use crate::analyzer::{Combat, curated_map_identifiers, curated_map_names};
 use crate::app::theme;
 use crate::custom_widgets::table::Table;
+use crate::custom_widgets::toggle::Toggle;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
@@ -108,7 +109,7 @@ impl AnalysisTab {
                 (CustomGrouping, "Custom Grouping"),
                 (DamageExclusion, "Damage Exclusion"),
             ] {
-                ui.selectable_value(&mut self.selected_section, section, label);
+                ui.steady_toggle_value(&mut self.selected_section, section, label);
             }
         });
         ui.separator();
@@ -580,7 +581,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         }
 
                         r.cell(|ui| {
-                            if ui.selectable_label(false, "🗑").clicked() {
+                            if ui.steady_toggle(false, "🗑").clicked() {
                                 to_remove.push(id);
                             }
                         });
@@ -710,7 +711,7 @@ impl<'a> RulesTable<'a> {
                             });
 
                             r.cell(|ui| {
-                                if ui.selectable_label(false, "🗑").clicked() {
+                                if ui.steady_toggle(false, "🗑").clicked() {
                                     to_remove.push(id);
                                 }
                             });

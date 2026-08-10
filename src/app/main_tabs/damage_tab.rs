@@ -1,8 +1,13 @@
 use eframe::egui::*;
 
-use crate::{analyzer::*, app::settings::Settings, custom_widgets::splitter::Splitter};
+use crate::{
+    analyzer::*,
+    app::settings::{Settings, TableKind},
+    custom_widgets::splitter::Splitter,
+};
 
 use super::{common::*, diagrams::*, tables::*};
+use crate::custom_widgets::toggle::Toggle;
 
 pub struct DamageTab {
     table: DamageTable,
@@ -48,15 +53,20 @@ impl DamageTab {
             .initial_ratio(0.6)
             .ratio_bounds(0.1..=0.9)
             .show(ui, |top_ui, bottom_ui| {
-                self.table.show(top_ui, |p| {
-                    Self::process_diagram_change(
-                        &mut self.dmg_selection_diagrams,
-                        p,
-                        self.filter,
-                        self.diagram_time_slice,
-                        self.combat_duration_s,
-                    );
-                });
+                let columns = &settings.columns;
+                self.table.show(
+                    top_ui,
+                    |column| columns.is_shown(TableKind::Damage, column),
+                    |p| {
+                        Self::process_diagram_change(
+                            &mut self.dmg_selection_diagrams,
+                            p,
+                            self.filter,
+                            self.diagram_time_slice,
+                            self.combat_duration_s,
+                        );
+                    },
+                );
 
                 self.show_diagrams(settings, bottom_ui);
             });
@@ -169,31 +179,31 @@ impl DamageTab {
 
     fn show_diagrams(&mut self, settings: &Settings, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::Dps,
                 DiagramType::Dps.name(),
             )
             .on_hover_text(DiagramType::Dps.tooltip());
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::Damage,
                 DiagramType::Damage.name(),
             )
             .on_hover_text(DiagramType::Damage.tooltip());
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::DamageResistance,
                 DiagramType::DamageResistance.name(),
             )
             .on_hover_text(DiagramType::DamageResistance.tooltip());
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HitsPerSecond,
                 DiagramType::HitsPerSecond.name(),
             )
             .on_hover_text(DiagramType::HitsPerSecond.tooltip());
-            ui.selectable_value(
+            ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HitsCount,
                 DiagramType::HitsCount.name(),

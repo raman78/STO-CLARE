@@ -3,8 +3,15 @@
 How a combat gets from this app onto the OSCR ladder, and every rule that can
 stop it. Sources: our `src/upload/upload.rs`, `STOCD/OSCR-server`
 (`combatlog/views/combatlog.py`, `combatlog/models/combatlog.py`,
-`ladder/models/ladder.py`) and `STOCD/OSCR` (`OSCR/iofunc.py`), read
-2026-07-30.
+`ladder/models/ladder.py`, `combatlog/serializers/combatlog.py`,
+`combatlog/urls/combatlog.py`, `api-spec.yaml`), `STOCD/OSCR`
+(`OSCR/iofunc.py`) and `STOCD/OSCR-UI` (`OSCRUI/apiclient.py`), read 2026-07-30
+and 2026-08-09.
+
+There is **no health or ping endpoint**. The whole API is `/combatlog/…`,
+`/ladder…`, `/variant…` and `/system/latest/` (OSCR's own update feed, which
+answers `500` on the live server). A cheap liveness check is therefore
+`GET /ladder/`, which the Records window already performs.
 
 ## It is manual, one combat at a time
 
@@ -19,8 +26,9 @@ containing a single fight — it does it itself:
 ```
 Combat::read_log_combat_data()   seek to log_pos.start, read to log_pos.end
    -> gzip (flate2, best)
-   -> multipart POST  <oscr_url>/combatlog/upload/
+   -> multipart POST  <oscr_url>/combatlog/uploadv2/
       part "file", filename = Combat::name()
+      3 s to connect, 60 s for the answer
 ```
 
 `log_pos` is the byte range the combat occupies in the original log, recorded
@@ -52,9 +60,35 @@ its own detection over the bytes (`combat.map`, `combat.difficulty`). Renaming a
 combat locally cannot influence the ladder — and our own map/difficulty detection
 has no bearing on it either.
 
+## Which endpoint, and why the status code is not the answer
+
+The server offers two, both live and both anonymous. We use **`uploadv2`**, which
+is also the only one the OSCR client itself calls
+(`OSCR-UI/OSCRUI/apiclient.py`). `upload` (v1) still answers, but nothing
+official exercises it any more.
+
+The difference is error handling. v1 has none: a log the parser cannot read
+raises out of the view and reaches the client as an HTTP error with no reason in
+it. v2 wraps the same work in `try/except` and answers **`200` either way**:
+
+| answer                                       | means                                      |
+|----------------------------------------------|--------------------------------------------|
+| `results: [...]`, `combatlog: <id>`, `detail`| read; the rows are the ladder outcome      |
+| `results: []`                                | read, but it matched no ladder — a success |
+| `results` absent or `null`, `detail: "..."`  | not read; `detail` is the reason           |
+
+So `results` — not the status code — is what tells success from failure. Treating
+`200` as success would report an unreadable log as an upload; that is the one
+mistake this endpoint makes easy, and `UploadResponseV2 -> UploadOutcome` in
+`src/upload/upload.rs` exists to make it once, in a tested place.
+
+`combatlog` is the id of the stored log. It names a page on the ladder site,
+`<oscr_url>/ui/combatlog/<id>/` (`combatlog/urls/combatlog.py`), which the upload
+window offers as a link once the server has said what it stored.
+
 ## Why an upload gets rejected
 
-Raised as an exception (v1 returns HTTP error, v2 returns `detail`):
+Raised as an exception, which v2 hands back as `detail`:
 
 | reason                                                            | message                                                            |
 |-------------------------------------------------------------------|--------------------------------------------------------------------|

@@ -30,13 +30,13 @@ Everything lives in one window. From top to bottom:
 
 ```
 ┌─ STO-CLARE ─────────────────────────────────────────────────────────┐
-│ Settings  Records  Compare Combats                     ← top row    │
+│ Settings  Ladder  Compare Combats                      ← top row    │
 ├─────────────────────────────────────────────────────────────────────┤
 │ [combat you are reading ▼]  Combats  Refresh Now  Clear Log File    │
 │ Auto Refresh  Save Combat  Upload  Copy Combat Summary  Overlay     │
 │ Show only: [type ▼] [level ▼] [map ▼]                  ← filters    │
 ├─────────────────────────────────────────────────────────────────────┤
-│ Summary │ Damage Dealt │ Damage Taken │ Self Healing │ …  ← tabs    │
+│ Summary │ Damage Dealt │ … │ Columns ▾ │      [Export XLSX] ← tabs   │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │   the table for the tab you picked                                  │
@@ -59,9 +59,13 @@ first. Pick one and every tab below fills in with it.
 
 ![The combats list](images/combats-list.png)
 
-Each entry reads: map name, whether it was space or ground, the difficulty, and
-the time it started and ended — for example
-`[TFO] Infected: The Conduit (Space) [Elite] | 11:56:10 - 12:02:27`. The map and
+Each entry reads: whether you fought it alone or with others, the map name,
+whether it was space or ground, the difficulty, and the time it started and
+ended — for example
+`[Solo] [TFO] Infected: The Conduit (Space) [Elite] | 11:56:10 - 12:02:27`.
+**Solo** means one player in the log and **Team** more than one, which is the
+same test the OSCR ladder uses, so a run of yours and one read from the ladder
+say the same thing. The map and
 difficulty are worked out from what happened in the fight, so you do not have to
 name anything yourself.
 
@@ -70,9 +74,10 @@ look far too low, check the neighbouring entry.
 
 ### Narrowing the list
 
-The three menus under the toolbar — type, level and map — cut the list down.
-Each menu only offers what the other two leave reachable, so you cannot pick a
-combination that shows nothing. A **Clear filter** button appears once any of
+The menus under the toolbar — solo or team, type, level and map — cut the list
+down. Each only offers what the others leave reachable, so you cannot pick a
+combination that shows nothing. The solo/team menu appears only when your list
+holds both kinds. A **Clear filter** button appears once any of
 them is set.
 
 ### Describing a combat so you can find it again
@@ -106,13 +111,53 @@ and you can tell at a glance which column is which build.
 | Auto Refresh when log changes | Keeps the list and the numbers current by itself while you play.                                                               |
 | Save Combat                   | Writes the selected combat to a log file of its own, so you can keep or share it.                                              |
 | Clear Log File                | Opens a list of every combat with tick boxes, and deletes only the ones you tick. Everything but the newest is ticked for you. |
-| Copy Combat Summary           | Puts a short text summary on your clipboard, ready to paste into the game chat.                                                |
+| Copy Combat Summary           | Puts a short text summary on your clipboard, ready to paste into the game chat. It carries the note you wrote for the run.     |
 | Upload                        | Sends the combat to the OSCR ladder — see [Uploading](#uploading-to-the-oscr-ladder).                                          |
 | Overlay                       | Opens the small always-on-top window — see [The overlay](#the-overlay).                                                        |
+
+### What lands on your clipboard
+
+**Copy Combat Summary** builds a single line, ready to paste into the game chat:
+
+```
+CLA - [TFO] Infected: The Conduit (Space) [Elite] — Cheops build (12:32.200):
+[PlayerName: DPS|Dmg] / @you: 225k|169M / @teammate: 174k|130M
+```
+
+(It is one line, wrapped here to fit the page.) The name of the run comes first,
+then the note you wrote for it, then how long the fight lasted. The part in
+square brackets is the key: it says which numbers follow each name, in that
+order.
+
+The ⛭ beside the button decides what goes in. Untick your note if you would
+rather not share it, and untick metrics you do not need — the game cuts a long
+chat line off, so the fewer you send, the more likely the whole thing arrives.
+Players are listed in the order of the first metric you left ticked, best first.
 
 ---
 
 ## Reading one combat
+
+### Choosing which columns you see
+
+The tables carry more columns than most people want at once. **Columns** at the
+end of the tab row hides the ones you do not use; the button says how many are
+hidden, so a missing metric is never a mystery. **Show all** brings them back.
+
+![The Columns menu](images/columns-menu.png)
+
+The two damage tabs share one choice and the three healing tabs share another —
+they are the same table with the same metrics — and the choice is remembered
+between runs.
+
+### Saving a whole combat as a spreadsheet
+
+**Export XLSX**, at the right-hand end of the tab row, writes the combat to a
+spreadsheet you can open in Excel, LibreOffice or Google Sheets. The file holds
+**one sheet per tab** — Summary, Damage Dealt, Damage Taken and the three
+healing ones — each with every player, every row of the breakdown and every
+metric that tab has, whether or not it is on screen. The numbers arrive as
+numbers, so you can sort, total and chart them yourself.
 
 ### Summary
 
@@ -187,10 +232,52 @@ when in the fight it was actually doing something.
 
 ## Comparing combats
 
-**Compare Combats** in the top row puts up to three runs side by side. First
-tick the ones you want:
+**Compare Combats** in the top row puts runs side by side. First tick the ones
+you want:
 
 ![Picking combats to compare](images/compare-pick.png)
+
+There is no limit on how many you tick. Two runs read most clearly side by side,
+but a whole evening's worth is a fair thing to ask for — see
+[Averages](#one-average-instead-of-many-columns) for reading a big pile of runs
+at once.
+
+Two things to know before you tick a dozen: past eight runs the chart's line
+colours start over, so two lines can share a colour — the number in the column
+heading is what tells them apart. And a very wide comparison takes a moment to
+build; the picker says so before you press the button, rather than appearing to
+hang.
+
+### Narrowing the list
+
+Above the list are the same **Show only** menus as in the main window — the kind
+of map, the difficulty, and which map — plus a **Played** window for when the
+runs were fought:
+
+| Field or button       | What it does                                                   |
+|-----------------------|----------------------------------------------------------------|
+| Search                | Matches the name of the run and the note you wrote for it.     |
+| Show only             | The kind of map, the difficulty, and which map.                |
+| Played                | The window the runs were fought in, as `2026-07-23 20:07`.     |
+| 24 h, 7 days, 30 days | Fill the window in for you, counting back from the newest run. |
+| Select all            | Ticks every run the filters have left on screen.               |
+| Clear selection       | Unticks everything.                                            |
+
+Click into an empty **Played** field and it fills in with the oldest — or, on the
+right-hand side, the newest — run in the list, ready to edit. Leave one side
+empty for "anything before that" or "anything after that".
+
+A run you have ticked never disappears from the list, even when the filters no
+longer match it — it is going into the comparison either way, so it stays on
+screen with a warning mark beside it. Untick it, or widen the filters to see it
+back in place.
+
+**Select all** adds to what you have already ticked rather than replacing it, so
+you can pick a few Infected runs, change the filters, and add a few Hive ones.
+
+Tip: a date typed halfway does nothing until it is complete, so the list does not
+empty out under your hands while you are still typing. While it is incomplete it
+is shown in red.
 
 Then press **Compare selected**:
 
@@ -206,8 +293,9 @@ combats open on the same player, so you are looking at one player's runs rather
 than several people's.
 
 Your own notes come along for the ride. Where you have written one for a run, it
-is repeated under that run's column heading and on the chart, so a comparison
-reads "Cheops build" against "FAW build" rather than "#1" against "#2".
+is repeated under that run's column heading and on the chart — in the picture
+above the two runs read "warm-up run" and "Cheops build" rather than "#1" and
+"#2".
 
 The chart underneath draws one line per run for whichever ability row you have
 selected, and each run's number and note are printed in the colour of its own
@@ -224,6 +312,44 @@ each hit lands softer can come out looking like nothing happened. Switch the
 breakdown on in the Columns menu and each difference is split into the part that
 came from landing hits more often and the part that came from each hit landing
 harder. The two always add up to the whole difference.
+
+### One average instead of many columns
+
+With more than a handful of runs on screen there are more columns than anyone
+can read across. The **Averages** button beside the Columns menu folds them
+together: one column per metric, averaged over every run in the comparison.
+
+![The same comparison, averaged](images/compare-averages.png)
+
+Every run counts once, and a run that never used an ability is left out of that
+ability's average rather than counted as a zero — two runs with the Kemocite
+proc average those two, not two out of twelve. Hover an averaged value and it
+tells you how many runs went into it, and the best and worst of them.
+
+The chart follows: instead of one line per run it draws the single line those
+runs average out to, over the length of the longest of them. It is a true
+average and not a total — two runs of 90k DPS average to 90k, not 180k — and the
+same goes for the hits charts.
+
+The differences disappear in this mode: an average has nothing to be measured
+against. Press the button again to go back to the columns.
+
+### Saving a comparison as a spreadsheet
+
+**Export XLSX** on the right of the same row writes what you are looking at to a
+spreadsheet file you can open in Excel, LibreOffice or Google Sheets.
+
+What lands in the file:
+
+| In the file                                           | Not in the file                                                       |
+|-------------------------------------------------------|-----------------------------------------------------------------------|
+| Which runs it is of, with your notes and the player   | The coloured differences — a spreadsheet subtracts two columns itself |
+| One column per metric per run, or one averaged column | The chart                                                             |
+| Every ability row, folded away on screen or not       |                                                                       |
+
+The numbers arrive as numbers, so you can sort, total and chart them yourself.
+Where a run has nothing for a row, that cell is left empty rather than filled
+with a zero, so an average or a chart in the spreadsheet does not count it.
 
 ---
 
@@ -279,14 +405,101 @@ the game in windowed mode is the reliable answer there.
 ## Uploading to the OSCR ladder
 
 **Upload** sends the selected combat to the OSCR ladder and shows you where the
-run placed. **Records** in the top row browses the ladder itself: pick a season
-and a table, and read the standings.
+run placed. When it works, the window says so in the ladder's own words and
+offers a link straight to your run on the ladder site. When it does not, it now
+tells you why — "Combat log is empty", or that the map and difficulty have no
+ladder for that period — instead of a bare failure.
 
-![The Records window](images/records.png)
+An upload can also succeed and produce no ladder entries at all. That usually
+means the map and difficulty have no ladder for this period, or the ladder only
+accepts solo runs.
 
-A combat can come back rejected, or uploaded but with no ladder entries. That
-usually means the map and difficulty have no ladder for that period, or the
-ladder only accepts solo runs.
+---
+
+## The Ladder
+
+**Ladder** in the top row opens the standings in a window of its own, so you can
+read a run in the main window while it is up. Pressing the button again puts it
+away.
+
+![The Ladder window](images/ladder-window.png)
+
+### Finding a table
+
+Instead of one long list of tables, five menus narrow it down:
+
+| Menu             | What it picks                                                     |
+|------------------|-------------------------------------------------------------------|
+| Season           | Newest first. **All seasons** searches the whole ladder at once.   |
+| Map              | Choosing one also settles whether it was space or ground.          |
+| Space and ground | Where the fight was.                                               |
+| Solo and team    | The ladder keeps separate tables for solo runs.                    |
+| All levels       | Normal, Advanced, Elite, or Any for tables that are not split.     |
+
+Each menu only offers what the other four leave reachable, so no combination you
+can pick empties the list. A choice that cannot survive your next one is let go —
+pick a map with no Elite table and the level goes back to all levels rather than
+showing you nothing.
+
+Under the menus is what is left: the table's name when one table matches, or how
+many when several do. Several is normal when you are looking for a player rather
+than a table.
+
+### One run, one row
+
+The ladder keeps a map's runs in several tables at once — a catch-all for the
+map, one for each level, and separate ones for solo runs — and a single fight is
+entered into all of the ones it qualifies for. Ask across several tables and the
+same run therefore comes back two to four times, with the same figures each
+time. They are folded into one row.
+
+That row can say more than any of the originals could. A ladder entry carries no
+map and no level of its own; both live on the tables it is in. So the folded row
+is named from the set of them, in the same shape the program names your own
+fights: `[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
+
+**Rank** is then the run's placing **in its own table**, not its position in the
+answer — which is why three rows in a row can all say 1. They are firsts in three
+different tables, and the name beside each says which.
+
+**Solo** and **Team** mean what they do everywhere else: one player in the log,
+or more. Solo is exact, because the ladder only admits a one-player run to a
+solo table. Team is worked out by a run *not* being in any solo table — which
+leaves one gap: twenty of the ladder's map-and-level combinations have no solo
+table at all, and a run fought alone on one of those reads as Team, because
+nothing in the ladder's data says otherwise.
+
+**Search** finds a player by any part of their handle, and it stays put while you
+narrow everything else — so you can follow one person from season to season, or
+across every map at once.
+
+### Reading a run from the ladder
+
+Two icons sit at the end of every row: 📥 saves that run as a log file, and 🔍
+opens it in the main window with everything the program can show — all the tabs,
+the charts, the ability breakdown.
+
+![A run from the ladder, opened](images/ladder-run.png)
+
+Your own log is not touched or changed. A mark at the top says whose fight you
+are looking at, and **Back to my log** puts yours back.
+
+### Comparing it with your own
+
+With a run on screen, press **Compare Combats** as usual. The run is already in
+the comparison — ticked, greyed out, and not for unticking, because it is what
+you opened. Beside it is your own list, narrowed to the same map and level as the
+run, since that is nearly always what you want to compare against. Where you have
+never played that map, it falls back to the same level.
+
+![Choosing what to compare the run against](images/ladder-compare-pick.png)
+
+Tick one of your own fights — one is enough — and press **Compare selected**.
+
+![A ladder run beside your own](images/ladder-compare.png)
+
+One thing to expect: the two runs are by different people, so each column has its
+own player picker in the heading. Your column opens on you, theirs on them.
 
 ---
 
@@ -302,11 +515,27 @@ bottom.
 | Setting                                  | What it does                                                                                                                                                                                        |
 |------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Combatlog File                           | The path to the game's `combatlog.log`. Use **Browse** to find it; it sits in `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.                                                     |
-| Merge rotating combat logs into one file | If the game splits the log into many files, they are merged back into one so all your combats show up together. The originals are only removed once the merged file has been checked byte for byte. |
+| Remember / Go back to default / Forget   | Keeps one log as the one to come back to — see below.                                                                                                                                               |
+| Merge rotating combat logs into one file | The game starts a new log every hour, so your fights end up spread over many files. With this on, they are merged back into one so everything shows up together. The originals are only removed once the merged file has been checked byte for byte. |
 | Combat Separation Time                   | How long a lull has to last before the next fighting counts as a new combat.                                                                                                                        |
 | Auto Refresh / interval                  | Whether the numbers keep themselves current, and how often.                                                                                                                                         |
 | Show more decimals                       | More precision in the tables.                                                                                                                                                                       |
 | Show Hull and Shield as separate columns | Off gives you the compact table, with hull and shield only in the hover box.                                                                                                                        |
+
+#### A log to come back to
+
+Reading a run from the ladder, or a single fight you saved out of the way, points
+the program at another file. Finding your own again used to mean walking the file
+dialog back to it every time.
+
+**Remember** stores the file above as the one you come back to. **Go back to
+default** puts it back whenever you have wandered off, and **Forget** drops it.
+The remembered path is printed underneath in full, so it is never a guess which
+file that button leads to.
+
+Tip: the game's own hourly log rotation means the file you want is usually
+`combatlog.log` with the merging option on. Remember that one, and any excursion
+is one click from home.
 
 ### Analysis
 
@@ -379,6 +608,11 @@ change it.
 
 Writes a diagnostic log next to your settings. Leave it off unless you are
 chasing a problem or someone has asked you for the file.
+
+**Enable Log** starts writing the moment you press OK, and the level you pick
+applies just as immediately — you do not have to start the program again, which
+matters when the thing you want a log of is happening right now. Turning it off
+closes the file straight away.
 
 ---
 

@@ -2,7 +2,7 @@
 
 [package]
 name = "sto-clare"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "STO-CLARE — Combat Log Analyzer ReMastered: parses and analyzes Star Trek Online combat logs"
@@ -46,6 +46,7 @@ reqwest = { version = "0.13", features = [
     "query",
 ] }
 flate2 = "1"
+rust_xlsxwriter = { version = "0.97.1", default-features = false }
 
 [profile.release]
 lto = "thin"

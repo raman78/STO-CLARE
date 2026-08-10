@@ -32,7 +32,10 @@ start() {  # start(theme) -> sets $W to the window id
   xdotool windowactivate "$W"; sleep 1
 }
 stop() { kill "$APP" 2>/dev/null || true; wait "$APP" 2>/dev/null || true; }
-shot() { sleep 2; import -window "$W" "$OUT/$1.png"; echo "  $1"; }
+shot() { sleep 2; import -window "${2:-$W}" "$OUT/$1.png"; echo "  $1"; }
+# The Ladder is a window of its own (a viewport), so it is grabbed by name.
+ladder_win() { xdotool search --name "^Ladder$" | tail -1; }
+clickw() { xdotool mousemove --window "$1" "$2" "$3" click 1; sleep "${4:-1}"; }
 click() { xdotool mousemove --window "$W" "$1" "$2" click 1; sleep 1; }
 
 if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
@@ -44,6 +47,8 @@ if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
   click 220 101; shot damage-taken-tab
   click 393 101; shot healing-tab
   click 39 101
+  click 598 101; shot columns-menu                 # the Columns menu, open
+  click 598 101
   click 480 38;  shot combats-list
   stop
 fi
@@ -58,9 +63,29 @@ if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
   click 274 49;  shot settings-debug
   click 79 688                                   # Cancel
   click 193 17; sleep 1; shot compare-pick
-  click 15 111; click 15 216; click 152 81; shot compare-result
+  # Tick the first two runs, then Compare selected — which sits on a line of its
+  # own above the list, under the Selected/Select all row.
+  click 15 133; click 15 154; click 65 103; sleep 2; shot compare-result
+  click 124 68; shot compare-averages              # Σ Averages, on the same row
+  click 124 68
   click 193 17
   click 95 17; sleep 9; shot records              # give the ladder time to load
+  stop
+fi
+
+if [ "$WHAT" = all ] || [ "$WHAT" = ladder ]; then
+  echo "the ladder:"
+  start LightDark
+  click 95 17; sleep 8                             # open the Ladder window
+  L=$(ladder_win)
+  shot ladder-window "$L"
+  clickw "$L" 694 130 12                           # the magnifier on the first entry
+  shot ladder-run                                  # the run, in the main window
+  click 431 17                                     # Compare Combats
+  click 15 133                                     # one of my own fights
+  shot ladder-compare-pick
+  click 295 103; sleep 12                          # Compare selected
+  shot ladder-compare
   stop
 fi
 

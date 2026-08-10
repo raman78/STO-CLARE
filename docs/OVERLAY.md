@@ -98,6 +98,12 @@ The selected back end is logged once at startup (`overlay backend: ...`).
   [Move mode](#move-mode-and-input-passthrough).
 - **I4 — All overlay-thread data is `Send` + plain.** Only `OverlayData`
   (`Vec<String>` columns + rows) crosses the channel; no `egui`/`Combat` types.
+- **I5 — Geometry travels with the buffer.** `set_size`, `set_anchor` and
+  `set_margin` are double-buffered surface state, applied by the next
+  `wl_surface.commit` — including one that carries no new buffer, which is then
+  the *old* picture under the *new* geometry. `render()` never commits the
+  surface itself; it leaves the state pending for `frame.present()`. See
+  [Render loop](#render-loop-and-auto-size).
 
 ## Data flow
 
@@ -194,11 +200,71 @@ let raw_window  = RawWindowHandle::Wayland(WaylandWindowHandle::new(surface_ptr)
 submits via `egui_wgpu::Renderer`. `pixels_per_point` is fixed at `1.0`.
 
 The surface sizes itself to its content: the `Table` returns its rect, and the
-required size (plus margins) is clamped to `MIN_W`×`MIN_H` (I2). When it differs
-from the current size, `render()` calls `layer.set_size()` + `commit()` and
-requests another redraw. Because the `Table` measures column widths over a few
-frames, `render()` also forces a redraw while
-`egui_ctx.has_requested_repaint()` is true, so the size settles.
+required size (plus margins) is clamped to `MIN_W`×`MIN_H` (I2). Because the
+`Table` measures column widths over a few frames, `render()` also forces a
+redraw while `egui_ctx.has_requested_repaint()` is true, so the size settles.
+
+**Geometry travels with the buffer (I5).** `set_size`, `set_anchor` and
+`set_margin` are double-buffered surface state: they take effect on the next
+`wl_surface.commit`, and a commit that carries no new buffer applies them to the
+picture already on screen. `render()` therefore never calls `layer.commit()`
+itself — it leaves the state pending and lets `frame.present()` (which attaches
+the buffer and commits) publish both in one go. The same rule covers
+`apply_drag()` and is why `apply_input_region()` runs *after* the present.
+
+One place sends it: `sync_geometry()`, at the head of `render()`, from the side
+and size *this* frame is about to be drawn with, and only when it differs from
+what the surface already has (`committed_geometry`). Sending it from the block
+that resizes instead published a frame under the anchor of the frame before it —
+an upward list drawn under a `TOP` anchor put the whole open overlay a list's
+height too low. The pointer's surface-local position is corrected here too, so
+the frame that moves the surface is also the frame that hit-tests correctly.
+
+A frame is only ever laid out for the surface the overlay currently has, so a
+frame that asks for a different size is the wrong picture for the geometry it
+requests. `render()` drops such a frame instead of presenting it: nothing is
+committed, the screen keeps the last good frame, and the redraw it requests lays
+out at the settled size and publishes buffer + size + anchor + margin in a single
+commit. Only one frame in a row is ever dropped (`settling`), so a size that
+somehow never settles costs a flicker rather than a frozen overlay. The measured
+requirement does not depend on the surface it was measured in — `Table` is built
+with `min_scroll_height(f32::MAX)`, so its rect is the content's, not the
+viewport's — which is what makes one retry enough.
+
+This is what keeps opening and shutting the ⛭ column list to a single visible
+step. Committing the geometry ahead of the repaint showed the *old* buffer under
+the *new* geometry for a frame: shutting an upward-opening list moved the whole
+overlay, list and all, down by the list's height before the list disappeared.
+
+**A `configure` is an answer to a question already asked.** It arrives a round
+trip after the `set_size` that prompted it, by which time a frame laid out in the
+meantime has often settled on a different size. `LayerShellHandler::configure`
+therefore measures it against the outstanding request (`committed_geometry`):
+
+| configure vs. request | meaning                                    | what happens          |
+|-----------------------|--------------------------------------------|-----------------------|
+| equal                 | confirms a question already answered       | nothing               |
+| differs, first time   | stale echo of an older request             | left alone            |
+| differs, repeated     | the compositor overriding (clamping, say)  | adopted               |
+
+Taking a confirming answer at face value is what was left of the flicker: it put
+`width`/`height` back to the size the ⛭ list had just left, so the next frame was
+laid out for one size and published at another, and the open list hung below the
+shut overlay for a frame. It only bit when the echo landed in the window between
+a dropped frame and its redraw, which is why it took anywhere from 6 to 12
+toggles to catch — and why the fix is confirmed by 105 clean open/shut cycles in
+the log rather than by watching.
+
+**Which way the list opens is decided once**, in the ⛭ toggle, and held until it
+shuts (`settings_side`, `list_side()` in `overlay/mod.rs`). It used to be
+recomputed every frame, from `settings_height` — which was overwritten with the
+zero a shut list measures, so *every* open decided from the fallback estimate
+rather than the measurement, and near the bottom edge the first frame could go
+`Below` and the second `Above`. `settings_height` is now only taken from a frame
+that drew the list, and the estimate for the very first open is a style row
+(`interact_size.y + item_spacing.y`) rather than a bare constant. `closed_height`
+is likewise only recorded from a frame that went out, so the surface the open
+list left behind is never mistaken for the shut overlay's own height.
 
 ### Failure modes
 
@@ -208,6 +274,8 @@ frames, `render()` also forces a redraw while
 | `layer overlay: ...` logged, no overlay  | Wayland connect/bind failed (not a Wayland session, no layer-shell) | `run()` return path, `spawn()` error log            |
 | Overlay eats clicks meant for the game   | input region left non-empty (I3)                                    | `apply_input_region()`, move-mode plumbing          |
 | Overlay stuck at 240×80 or oversized     | auto-size not converging                                            | `render()` size block, `Table::size()`              |
+| One-frame jump when the ⛭ list opens/shuts | I5 violated (geometry committed without a matching buffer)        | `render()` size block — no `layer.commit()` there   |
+| Same, but only now and then                | a stale `configure` overwrote the size being worked towards       | `LayerShellHandler::configure`; log says `published at ... while asking for ...` |
 
 ## Move mode and input passthrough
 

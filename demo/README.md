@@ -11,13 +11,13 @@ from scratch every time. Two jobs:
 
 Nothing here is part of the program, and nothing here runs in CI.
 
-| Script                | What it is for                                                                                                                           |
-|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------|
-| `make-demo-log.py`    | Copies the tail of a real combat log and renames every player in it. Screenshots can then show real numbers without showing real people. |
-| `settings.py`         | Builds a throwaway settings folder pointing at that log, with a chosen theme. Never touches your own settings.                           |
-| `screenshots.sh`      | Runs the program and grabs the pictures used by the docs: the tabs, the settings sections, compare, records, the theme gallery.          |
-| `probe-overlay.sh`    | Measures the overlay: opacity through the compositor, click-through, and the Overlay button.                                             |
-| `format-md-tables.py` | Lines up the columns in markdown tables. Cosmetic; the rendered output does not change.                                                  |
+| Script                | What it is for                                                                                                                                                   |
+|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `make-demo-log.py`    | Copies the tail of a real combat log and renames every player in it. Screenshots can then show real numbers without showing real people.                         |
+| `settings.py`         | Builds a throwaway settings folder pointing at that log, with a chosen theme, and labels its newest combats with made-up notes. Never touches your own settings. |
+| `screenshots.sh`      | Runs the program and grabs the pictures used by the docs: the tabs, the settings sections, compare, records, the theme gallery.                                  |
+| `probe-overlay.sh`    | Measures the overlay: opacity through the compositor, click-through, and the Overlay button.                                                                     |
+| `format-md-tables.py` | Lines up the columns in markdown tables. Cosmetic; the rendered output does not change.                                                                          |
 
 ## Taking the screenshots again
 
