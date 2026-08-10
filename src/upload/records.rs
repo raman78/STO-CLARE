@@ -1044,6 +1044,10 @@ struct LadderEntryModel {
     #[serde(deserialize_with = "null_to_default")]
     player: String,
     rank: i32,
+    /// Where the run placed **in its own table**, which is continuous there —
+    /// unlike `rank`, which numbers the rows of whatever was asked for and so
+    /// repeats and skips as soon as more than one table is in the answer.
+    ladder_rank: i32,
     combatlog: i32,
     data: serde_json::Map<String, serde_json::Value>,
 }
@@ -1332,14 +1336,33 @@ impl TableColumn {
                 .get(combatlog)
                 .is_some_and(|facts| facts.iter().any(|f| f.solo))
         };
+        // Of the several rows a run has, the kept one is the row from the table
+        // the folded row is named after — the one with a level of its own, and
+        // the solo one where there is one. Any other choice would have the row
+        // say "[Solo] … [Advanced]" while showing a placing from the catch-all
+        // table instead.
+        let specificity = |entry: &LadderEntryModel| {
+            tables.get(&entry.ladder).map_or(0, |facts| {
+                u8::from(facts.difficulty != LadderDifficulty::Any) * 2 + u8::from(facts.solo)
+            })
+        };
         let folded: Vec<&LadderEntryModel> = if mixed {
-            let mut seen = std::collections::BTreeSet::new();
-            entries
+            let mut best: Vec<&LadderEntryModel> = Vec::new();
+            for entry in entries
                 .results
                 .iter()
                 .filter(|entry| !team_only || !solo_run(&entry.combatlog))
-                .filter(|entry| seen.insert(entry.combatlog))
-                .collect()
+            {
+                match best
+                    .iter_mut()
+                    .find(|kept| kept.combatlog == entry.combatlog)
+                {
+                    Some(kept) if specificity(entry) > specificity(kept) => *kept = entry,
+                    Some(_) => (),
+                    None => best.push(entry),
+                }
+            }
+            best
         } else {
             entries.results.iter().collect()
         };
@@ -1371,7 +1394,14 @@ impl TableColumn {
                 };
                 from.push(DataValue::non_number(name));
             }
-            ranks.push(DataValue::number(entry.rank.to_string()));
+            // In its own table, where the numbering is continuous, rather than
+            // in the answer, where folding leaves gaps and several tables leave
+            // repeats.
+            ranks.push(DataValue::number(if mixed {
+                entry.ladder_rank.to_string()
+            } else {
+                entry.rank.to_string()
+            }));
             players.push(DataValue::non_number(entry.player.clone()));
             let date_time = DateTime::parse_from_str(&entry.date, "%+")
                 .map(|d| format!("{}", d.format("%v %T")))
