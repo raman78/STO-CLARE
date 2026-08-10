@@ -1,6 +1,6 @@
 # Change Log
 
-# unreleased
+## v2.3.0
 
 ### Major Changes
 - the ladder browser is now a window of its own, called **Ladder**, so you can read a run in the main window while the standings are up. Instead of scrolling one long list of tables, five menus narrow it down — season, map, space or ground, solo or team, and level — and each menu only offers what the others leave reachable, so no choice you can make empties the list. Picking a map settles space or ground with it. **All seasons** searches the whole ladder at once, and a player search stays put while you narrow everything else
