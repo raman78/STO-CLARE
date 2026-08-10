@@ -132,12 +132,12 @@ rounding, the edges and the shadows are the same throughout.
 
 ---
 
-## What STO-CLARE adds over the original
+## What STO-CLARE adds
 
-Everything from the original tool is still here; the tables below list what has
-been added since. Where a change was also proposed back to the original project,
-an "Offered back" column gives the pull request number. The
-[manual](MANUAL.md) shows all of it in use, with pictures.
+The tables below list what STO-CLARE brings on top of reading a combat log.
+Where a change was also proposed back to the original project, an "Offered back"
+column gives the pull request number. The [manual](MANUAL.md) shows all of it in
+use, with pictures.
 
 ### Reading your combats
 
