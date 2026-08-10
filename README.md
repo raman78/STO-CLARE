@@ -135,69 +135,99 @@ rounding, the edges and the shadows are the same throughout.
 ## What STO-CLARE adds over the original
 
 Everything from the original tool is still here; the tables below list what has
-been added or fixed since. The "Offered back" column says whether the change was
-also proposed to the original project — a number is a pull request there, a dash
-means it lives here only.
+been added since. Where a change was also proposed back to the original project,
+an "Offered back" column gives the pull request number. The
+[manual](MANUAL.md) shows all of it in use, with pictures.
 
 ### Reading your combats
 
-| Feature                                  | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                      | Offered back |
-|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
-| Compare Combats                          | Pick several combats — from any log in a folder — and see them side by side. The damage breakdown is lined up group by group, with green and red numbers showing how much better or worse each combat was than the first one. You choose which columns to compare, and any ability can be charted across all of them. All of the compared combats open on the same player, so the differences are one player's runs rather than several people's. | —            |
-| Where a DPS difference came from         | A DPS difference on its own hides what changed: firing more often while each hit lands softer can add up to almost nothing. Switch on the breakdown in the Columns menu and each difference is split into the part that came from landing more often and the part that came from each hit landing harder. The two always add up to the whole difference.                                                                                          | —            |
-| Healing that adds up                     | Healing is split into three tabs that do not overlap: what you healed on other people, what they healed on you, and what you healed on yourself. Healing yourself used to be counted in two places at once, and on a normal run one gear proc was most of it — which buried everything your team actually did.                                                                                                                                    | —            |
-| Attacks are no longer counted as healing | Some abilities write the shield half of an attack in the same shape the game uses for shield repairs, so shooting an enemy showed up as healing it. On a normal run more than half of the healing listed as done to others was really damage.                                                                                                                                                                                                     | —            |
-| Hull and shield side by side             | Damage, hits, healing and heal ticks can show their hull and shield halves as columns of their own instead of only in a hover box, so you can see how much of an ability went where. Turn it off under Settings → General to get the compact table back.                                                                                                                                                                                          | —            |
-| Honest Resistance %                      | The Resistance column now measures what it says: how much the target's hull soaked up. It used to mix in the damage dealt to the target's shields, which a different stat stops entirely, and so read far too favourably.                                                                                                                                                                                                                         | —            |
-| Automatic map and difficulty             | A combat is named after what actually happened in the fight instead of being left as "Combat". You get the map, tagged as a TFO or a patrol, together with its Advanced or Elite level — for example "[TFO] Hive Onslaught [Elite]". Your own naming rules still decide the base name and no longer have to add the level themselves.                                                                                                             | —            |
-| Your own detection rules                 | A rules file next to your settings can adjust how maps and difficulties are recognised, so you do not have to wait for a new version when the game changes.                                                                                                                                                                                                                                                                                       | —            |
-| Correct average non-critical hit         | Fixes a wrong average on runs with abilities that scored criticals on shields.                                                                                                                                                                                                                                                                                                                                                                    | —            |
+| Feature | What it does |
+|---|---|
+| Automatic map and difficulty | A combat is named after what happened in the fight: the map, tagged as a TFO or a patrol, with its Normal, Advanced or Elite level — "[TFO] Hive Onslaught [Elite]". Your own naming rules still decide the base name. |
+| Solo or team | Every combat says whether you fought it alone — "[Solo] [TFO] Infected: The Conduit (Space) [Elite]" — and a menu keeps one kind or the other. The label follows the combat into a comparison, a summary pasted into chat and a saved file. |
+| [Three healing tabs](MANUAL.md#the-three-healing-tabs) | Healing is split into what you healed on others, what they healed on you, and what you healed on yourself, with nothing counted in two of them at once. Each can be grouped by person or by ability. |
+| Hull and shield side by side | Damage, hits, healing and heal ticks show their hull and shield halves as columns of their own, and a Drain column covers damage that strips shields directly. The split can be turned off under Settings → General. |
+| Resistance you can trust | The Resistance column measures how much of your damage the target's hull soaked up. Damage to shields and shield drains are kept out of it, since other stats govern those. |
+| [A note on every combat](MANUAL.md#describing-a-combat-so-you-can-find-it-again) | Up to 50 characters written under a combat's name, which then follow it through the combats list, the compare view and the chat summary. |
+| [Choose your columns](MANUAL.md#choosing-which-columns-you-see) | A Columns menu at the end of the tab row hides the metrics you never read. The damage tabs share one choice, the healing tabs another, and both are remembered. |
+| [Save a combat as a spreadsheet](MANUAL.md#saving-a-whole-combat-as-a-spreadsheet) | One sheet per tab, with every player, every row of the breakdown and every metric it has. |
+| Your own detection rules | A rules file next to your settings adjusts how maps and difficulties are recognised, so a new map does not have to wait for a new version. |
 
-### The combats list and clearing the log
+Smaller corrections along the way: the per-second charts draw at their true
+height and cover the whole fight, a player keeps one colour and one place in the
+legend across every chart, the average non-critical hit is right on abilities
+that score criticals on shields, stripping an enemy's shields counts as damage
+rather than healing, and combats in which nobody dealt any damage are left out
+of the list.
 
-| Feature                     | What it does                                                                                                                                                                                                                                                                                                 | Offered back                                                        |
-|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
-| Choose what to delete       | "Clear Log File" opens a list of every combat with checkboxes, so you delete exactly the ones you mean to. Select all or none, and everything but the newest is ticked for you.                                                                                                                              | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
-| List loads by itself        | The combats list fills in when the app starts, without pressing "Refresh Now".                                                                                                                                                                                                                               | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
-| Longer list                 | About 15 combats are shown at once, and the list scrolls when there are more.                                                                                                                                                                                                                                | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
-| Narrow the list             | Under the toolbar, three menus filter the combats by type (space or ground), by level and by map. Each menu only offers what the others leave, so you cannot pick a combination that shows nothing, and a "Clear filter" button appears once anything is set. The Compare view filters exactly the same way. | —                                                                   |
-| No pointless refreshing     | With auto refresh on, nothing reloads while the log is unchanged, so an expanded damage breakdown stays open while you look through it.                                                                                                                                                                      | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
-| The oldest combat works too | The first combat in a log can now be saved and deleted like any other.                                                                                                                                                                                                                                       | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
-| Your place is kept          | Opening "Clear Log File" no longer jumps you to the newest combat — the one you were reading stays open while the delete list refreshes.                                                                                                                                                                     | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
-| Merged split logs (Linux)   | If the game splits the combat log into many files, they are merged back into one so all your combats show up together. The originals are only removed once the merged log has been checked byte for byte, so nothing is lost.                                                                                | —                                                                   |
+### [Comparing runs](MANUAL.md#comparing-combats)
 
-### The overlay
+| Feature | What it does |
+|---|---|
+| Compare Combats | Pick runs from any log in a folder and read them side by side, the breakdown lined up group by group, with green and red numbers against the first one. Any ability can be charted across all of them, and every run opens on the same player. |
+| As many runs as you like | Tick any number, or **Select all** to take everything the filters have left, so a whole evening of one map goes into a single comparison. |
+| [One average instead of many columns](MANUAL.md#one-average-instead-of-many-columns) | A pile of runs can be read as one averaged column per metric. A run that never used an ability is left out of that ability's average, and hovering says how many runs went into it, with the best and the worst of them. |
+| Where a DPS difference came from | Each difference can be split into the part that came from firing more often and the part that came from each hit landing harder. The two always add up to the whole difference. |
+| Finding the runs to compare | The picker has the same type, level and map menus as the main window, a search box that reads your notes too, and a time range with buttons for the last 24 hours, 7 days and 30 days. |
+| [Save a comparison as a spreadsheet](MANUAL.md#saving-a-comparison-as-a-spreadsheet) | The plain numbers, every ability row including the ones folded away on screen, and a note of which runs it is of. |
 
-| Feature                      | What it does                                                                                                                                                             | Offered back                                                        |
-|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
-| Stays above the game (Linux) | On Linux the overlay keeps sitting on top of the game, including in full screen, which was not possible before.                                                          | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
-| Works in every Linux session | The Overlay button also works outside of a Wayland session. Over a full-screen game it then depends on your window manager, so a Wayland session stays the reliable one. | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
-| Controls on the overlay      | The move and column-picker buttons sit on the overlay itself rather than in the main window.                                                                             | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
-| Remembers where you left it  | Its position is kept between sessions, and it matches the colours of the main window.                                                                                    | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
-| No crash when opening it     | Switching the overlay on used to close the whole program on Linux/Wayland.                                                                                               | [#9](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/9) |
-| Shows data straight away     | The newest combat appears the moment you open the overlay, and the list keeps up while the overlay runs.                                                                 | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
-| Uses less memory             | The overlay shares the main window's graphics device instead of setting up a second one.                                                                                 | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
+### [The ladder](MANUAL.md#the-ladder)
+
+| Feature | What it does |
+|---|---|
+| A window of its own | The OSCR standings open beside the main window, so you can read a run while they are up. Five menus — season, map, space or ground, solo or team, level — narrow them down, and each only offers what the other four leave reachable. **All seasons** searches the whole ladder at once. |
+| [One run, one row](MANUAL.md#one-run-one-row) | A fight that is entered into several ladder tables is shown once, with its map, its level and whether it was solo all named, and its rank given as the placing in its own table. |
+| [Read a run from the ladder](MANUAL.md#reading-a-run-from-the-ladder) | Any run opens in the main window with everything the program shows — all the tabs, the charts, the ability breakdown. Your own log is untouched, and one button puts it back. |
+| [Compare it with your own](MANUAL.md#comparing-it-with-your-own) | Press Compare Combats with a ladder run open and it is already in the comparison, with your own list narrowed to the same map and level. |
+| Uploads that say what happened | The Upload window gives the reason when a run cannot be used, links straight to your run on the ladder when it can, and stops waiting after a minute when the server cannot be reached. |
+
+### The combats list and your log
+
+| Feature | What it does | Offered back |
+|---|---|---|
+| Narrow the list | Menus under the toolbar filter the combats by type, by level, by map and by solo or team. Each only offers what the others leave, so no combination shows nothing, and a "Clear filter" button appears once anything is set. | — |
+| Choose what to delete | "Clear Log File" opens a list of every combat with checkboxes, so you delete exactly the ones you mean to. Select all or none, and everything but the newest is ticked for you. | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
+| A list that looks after itself | It fills in when the app starts, shows about 15 combats and scrolls beyond that, keeps the combat you were reading open while it refreshes, and holds still while the log is unchanged. The first combat in a log can be saved and deleted like any other. | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
+| Merged split logs | When the game splits the combat log into hourly files — on Linux and on Windows — they are merged back into one so all your combats show up together. The originals are only removed once the merged log has been checked byte for byte. | — |
+| [A log to come back to](MANUAL.md#a-log-to-come-back-to) | **Remember** stores your usual combat log, so after reading somebody else's run one button puts yours back. | — |
+| Names with accents | Names containing non-English characters are shown correctly. | — |
+
+### [The overlay](MANUAL.md#the-overlay)
+
+| Feature | What it does | Offered back |
+|---|---|---|
+| Stays above the game (Linux) | On Linux the overlay keeps sitting on top of the game, including in full screen. | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
+| Works in every Linux session | The Overlay button also works outside of a Wayland session. Over a full-screen game it then depends on your window manager, so a Wayland session stays the reliable one. | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6), [#9](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/9) |
+| Controls on the overlay | The move handle and the column picker sit on the overlay itself on every system, and the rest of it stays click-through. | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
+| [See the game through it](MANUAL.md#seeing-the-game-through-it) | An **Overlay Opacity** slider under Settings → Visuals fades the background while the figures stay solid. | — |
+| Keeps up while you work | The newest combat appears the moment you open the overlay, and it keeps following the fight even with Compare Combats open. | [#7](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/7) |
+| Remembers where you left it | Its position and whether it was open are kept between sessions, and it matches the colours of the main window. It shares the main window's graphics device, so it costs little to have up. | [#6](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/6) |
+
+### The look of it
+
+| Feature | What it does |
+|---|---|
+| Five themes | Light Dark, Dark, Light, **Nebula** and **Frost Light**, picked under Settings → Visuals and shown side by side [above](#themes). |
+| A coat of paint | Rounded buttons and fields, an edge that firms up as you point at something, and shadows under the settings and popup windows. Buttons keep their size whatever the mouse is doing. |
+| Colour-blind friendly chart colours | A switch under Settings → Visuals draws the charts in a set of colours chosen to stay apart for red-green colour blindness, even with eight series at once. Each theme keeps its own version. |
 
 ### Windows and settings
 
-| Feature                         | What it does                                                                                                                                                                                                                     | Offered back                                                        |
-|---------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
-| The window remembers itself     | The main window opens at the size you left it, and comes back maximised if you closed it that way. It also follows your mouse smoothly while you resize it, and cannot be shrunk so far that its controls no longer fit.         | [#8](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/8) |
-| Correct size at any UI scale    | With the interface scale set to anything other than 100%, the remembered window no longer shrank a little on every start.                                                                                                        | [#8](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/8) |
-| Resizable Settings window       | The Settings window can be made as tall as you like, stays on the screen when a section is expanded, and remembers its size.                                                                                                     | —                                                                   |
-| Browse opens where you were     | The file dialog for the combat log starts in the folder you last picked one from.                                                                                                                                                | —                                                                   |
-| Settings kept with your account | Your settings and the log file are written to the place your system keeps program settings, so the tool also works when it is installed somewhere you cannot write to. Settings from older versions are picked up automatically. | —                                                                   |
-| Names with accents              | Names containing non-English characters are shown correctly.                                                                                                                                                                     | —                                                                   |
-| Scroll bars stay out of the way | A scroll bar no longer grows over the bottom row of a table when your pointer comes near it.                                                                                                                                     | —                                                                   |
+| Feature | What it does | Offered back |
+|---|---|---|
+| The window remembers itself | The main window opens at the size you left it, and comes back maximised if you closed it that way. It follows your mouse smoothly while you resize it, at any interface scale, and cannot be shrunk so far that its controls no longer fit. | [#8](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/8) |
+| Resizable Settings window | It can be made as tall as you like, stays on the screen when a section is expanded, and remembers its size. The Analysis rules sit in sub-tabs, so each rule table gets the window's full height. | — |
+| Settings kept with your account | Your settings and the log file are written to the place your system keeps program settings, so the tool also works when it is installed somewhere you cannot write to. Settings from older versions are picked up automatically. | — |
+| Small comforts | Browse opens in the folder you last picked a log from, rules can be duplicated with one button, and a scroll bar no longer grows over the bottom row of a table. | — |
 
 ### Installing and updating
 
-| Feature                     | What it does                                                                                                      | Offered back |
-|-----------------------------|-------------------------------------------------------------------------------------------------------------------|--------------|
-| One-command install (Linux) | A single command fetches the latest release, puts the program on your path and adds a menu entry.                 | —            |
-| Windows installer           | A regular setup program instead of unpacking an archive by hand.                                                  | —            |
-| Update from inside the app  | `sto-clare --upgrade` fetches and installs the newest release, and `sto-clare --version` tells you what you have. | —            |
-| Menu entry                  | The tool registers itself with your desktop, so you can start it from the applications menu.                      | —            |
+| Feature | What it does |
+|---|---|
+| One-command install (Linux) | A single command fetches the latest release, puts the program on your path and adds a menu entry. |
+| Windows installer | A regular setup program instead of unpacking an archive by hand. |
+| Update from inside the app | `sto-clare --upgrade` fetches and installs the newest release, and `sto-clare --version` tells you what you have. |
+| Menu entry | The tool registers itself with your desktop, so you can start it from the applications menu. |
 
 ---
 
