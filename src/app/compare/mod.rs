@@ -215,6 +215,7 @@ impl CompareView {
         base_names: &[String],
         environments: &[Option<String>],
         start_times: &[NaiveDateTime],
+        solos: &[bool],
         // A fight that is in the comparison whatever the reader picks — the run
         // fetched from the ladder, which is the reason the picker is open at
         // all. Ticked, and not for unticking.
@@ -237,6 +238,7 @@ impl CompareView {
                         base_names,
                         environments,
                         start_times,
+                        solos,
                         pinned,
                         ui,
                     )
@@ -253,6 +255,7 @@ impl CompareView {
                 base_names,
                 environments,
                 start_times,
+                solos,
                 pinned,
                 ui,
             ),
@@ -270,6 +273,7 @@ impl CompareView {
         base_names: &[String],
         environments: &[Option<String>],
         start_times: &[NaiveDateTime],
+        solos: &[bool],
         pinned: Option<String>,
         ui: &mut Ui,
     ) -> Option<Vec<usize>> {
@@ -279,6 +283,7 @@ impl CompareView {
                 environment: environments.get(i).and_then(|e| e.as_deref()),
                 difficulty: difficulties.get(i).copied().flatten(),
                 base_name: base_names.get(i).map(String::as_str).unwrap_or(""),
+                solo: solos.get(i).copied().unwrap_or(false),
             })
             .collect();
 
@@ -478,8 +483,12 @@ impl CompareView {
             return false;
         }
 
-        self.filter
-            .matches(entry.environment, entry.difficulty, entry.base_name)
+        self.filter.matches(
+            entry.environment,
+            entry.difficulty,
+            entry.base_name,
+            entry.solo,
+        )
     }
 }
 
@@ -507,6 +516,7 @@ mod tests {
             environment: Some("Space"),
             difficulty: Some(Difficulty::Elite),
             base_name: "Infected Space",
+            solo: false,
         }
     }
 
@@ -603,11 +613,13 @@ mod tests {
                 environment: Some("Space"),
                 difficulty: Some(Difficulty::Elite),
                 base_name: "Infected Space",
+                solo: false,
             },
             CombatEntry {
                 environment: Some("Space"),
                 difficulty: Some(Difficulty::Advanced),
                 base_name: "Infected Space",
+                solo: false,
             },
         ];
         let start_times = [at("2026-07-23 20:00"), at("2026-07-23 21:00")];

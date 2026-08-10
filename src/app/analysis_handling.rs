@@ -111,6 +111,8 @@ pub enum AnalysisInfo {
         /// Each combat's start time, aligned with `combats`. The views key the
         /// user's own note by it.
         start_times: Vec<NaiveDateTime>,
+        /// Whether each combat was fought alone, aligned with `combats`.
+        solos: Vec<bool>,
         file_size: Option<u64>,
     },
     // Like `Refreshed`, but without a combat to switch the main view to. Used
@@ -124,6 +126,8 @@ pub enum AnalysisInfo {
         base_names: Vec<String>,
         environments: Vec<Option<String>>,
         start_times: Vec<NaiveDateTime>,
+        /// Whether each combat was fought alone, aligned with `combats`.
+        solos: Vec<bool>,
         file_size: Option<u64>,
     },
     RefreshError,
@@ -422,6 +426,7 @@ impl AnalysisContext {
                     base_names,
                     environments,
                     start_times,
+                    solos,
                     file_size,
                     ..
                 } => AnalysisInfo::CombatsListRefreshed {
@@ -430,6 +435,7 @@ impl AnalysisContext {
                     base_names,
                     environments,
                     start_times,
+                    solos,
                     file_size,
                 },
                 other => other,
@@ -502,6 +508,7 @@ impl AnalysisContext {
                 .iter()
                 .map(|c| c.active_time.start)
                 .collect(),
+            solos: analyzer.result().iter().map(|c| c.is_solo()).collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
                 .map(|m| m.len()),

@@ -69,6 +69,7 @@ struct OwnCombatList {
     base_names: Vec<String>,
     environments: Vec<Option<String>>,
     start_times: Vec<NaiveDateTime>,
+    solos: Vec<bool>,
 }
 
 pub struct App {
@@ -81,6 +82,9 @@ pub struct App {
     combat_base_names: Vec<String>,
     /// Each combat's environment ("Space" / "Ground" / …), for the same.
     combat_environments: Vec<Option<String>>,
+    /// Whether each combat was fought alone, aligned with `combats` (the fourth
+    /// axis of the picker's filter).
+    combat_solos: Vec<bool>,
     /// Each combat's start time, aligned with `combats`. It is what a user note
     /// is keyed by, and the only per-combat value the log itself fixes.
     combat_start_times: Vec<NaiveDateTime>,
@@ -173,6 +177,7 @@ impl App {
             combat_base_names: Default::default(),
             combat_environments: Default::default(),
             combat_start_times: Default::default(),
+            combat_solos: Default::default(),
             combat_filter: Default::default(),
             combat_filter_generation: 0,
             selected_combat_index: None,
@@ -467,6 +472,7 @@ impl eframe::App for App {
                                     .get(i)
                                     .and_then(|e| e.as_deref()),
                                 difficulty: self.combat_difficulties.get(i).copied().flatten(),
+                                solo: self.combat_solos.get(i).copied().unwrap_or(false),
                                 base_name: self
                                     .combat_base_names
                                     .get(i)
@@ -513,6 +519,9 @@ impl eframe::App for App {
                         own.as_ref()
                             .map(|own| own.start_times.as_slice())
                             .unwrap_or(&self.combat_start_times),
+                        own.as_ref()
+                            .map(|own| own.solos.as_slice())
+                            .unwrap_or(&self.combat_solos),
                         pinned,
                         ui,
                         frame,
@@ -602,6 +611,7 @@ impl App {
                 base_names: self.combat_base_names.clone(),
                 environments: self.combat_environments.clone(),
                 start_times: self.combat_start_times.clone(),
+                solos: self.combat_solos.clone(),
             };
             log::info!(
                 "ladder: captured {} of my combats ({} with positions)",
@@ -832,6 +842,7 @@ impl App {
                 .get(index)
                 .map(String::as_str)
                 .unwrap_or(""),
+            self.combat_solos.get(index).copied().unwrap_or(false),
         )
     }
 
@@ -889,6 +900,7 @@ impl App {
                     base_names,
                     environments,
                     start_times,
+                    solos,
                     file_size,
                 } => {
                     self.main_tabs.update(&self.state.settings, &latest_combat);
@@ -897,6 +909,7 @@ impl App {
                     self.combat_base_names = base_names;
                     self.combat_environments = environments;
                     self.combat_start_times = start_times;
+                    self.combat_solos = solos;
                     self.selected_combat_index = Some(self.combats.len() - 1);
                     self.selected_combat = Some(latest_combat);
                     self.status_indicator.status = Status::Loaded {
@@ -931,6 +944,7 @@ impl App {
                     base_names,
                     environments,
                     start_times,
+                    solos,
                     file_size,
                 } => {
                     // Only the combats list is refreshed here (the "Clear Log
@@ -944,6 +958,7 @@ impl App {
                     self.combat_base_names = base_names;
                     self.combat_environments = environments;
                     self.combat_start_times = start_times;
+                    self.combat_solos = solos;
                     self.status_indicator.status = Status::Loaded {
                         combatlog_file: combatlog_file.clone(),
                         file_size,

@@ -49,6 +49,10 @@ impl DifficultyFilter {
 /// What a combat has to match to stay in the list. Every part defaults to "all".
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct CombatFilter {
+    /// `Some(true)` keeps the fights fought alone, `Some(false)` the rest. The
+    /// test is the ladder's — one player in the log — so the two agree about
+    /// which runs are which. See [`crate::analyzer::Combat::is_solo`].
+    pub solo: Option<bool>,
     /// "Space", "Ground", … — the curated environment of the detected map.
     /// `None` means any.
     pub environment: Option<String>,
@@ -59,7 +63,10 @@ pub struct CombatFilter {
 
 impl CombatFilter {
     pub fn is_active(&self) -> bool {
-        self.environment.is_some() || self.map.is_some() || self.difficulty != DifficultyFilter::Any
+        self.environment.is_some()
+            || self.map.is_some()
+            || self.solo.is_some()
+            || self.difficulty != DifficultyFilter::Any
     }
 
     pub fn clear(&mut self) {
@@ -71,7 +78,13 @@ impl CombatFilter {
         environment: Option<&str>,
         difficulty: Option<Difficulty>,
         base_name: &str,
+        solo: bool,
     ) -> bool {
+        if let Some(wanted) = self.solo
+            && wanted != solo
+        {
+            return false;
+        }
         if let Some(wanted) = &self.environment
             && environment != Some(wanted.as_str())
         {
@@ -94,10 +107,11 @@ impl CombatFilter {
             Dimension::Environment => without.environment = None,
             Dimension::Difficulty => without.difficulty = DifficultyFilter::Any,
             Dimension::Map => without.map = None,
+            Dimension::Solo => without.solo = None,
         }
         let matching = combats
             .iter()
-            .filter(|c| without.matches(c.environment, c.difficulty, c.base_name));
+            .filter(|c| without.matches(c.environment, c.difficulty, c.base_name, c.solo));
 
         let mut options = Options::default();
         for combat in matching {
@@ -106,6 +120,7 @@ impl CombatFilter {
             }
             options.maps.push(combat.base_name.to_string());
             options.difficulties.push(combat.difficulty);
+            options.solos.push(combat.solo);
         }
         options.environments.sort_unstable();
         options.environments.dedup();
@@ -117,6 +132,15 @@ impl CombatFilter {
     /// Drops a choice that the other filters have made impossible, so the list
     /// can never end up empty through a combination nothing matches.
     fn drop_impossible_choices(&mut self, combats: &[CombatEntry]) {
+        if let Some(solo) = self.solo
+            && !self
+                .options(combats, Dimension::Solo)
+                .solos
+                .iter()
+                .any(|s| *s == solo)
+        {
+            self.solo = None;
+        }
         if let Some(environment) = &self.environment
             && !self
                 .options(combats, Dimension::Environment)
@@ -150,9 +174,30 @@ impl CombatFilter {
     /// leave reachable, so no combination can empty the list.
     pub fn show(&mut self, id: &str, combats: &[CombatEntry], ui: &mut Ui) {
         self.drop_impossible_choices(combats);
+        let mut solos = self.options(combats, Dimension::Solo).solos;
+        solos.sort_unstable();
+        solos.dedup();
         let environments = self.options(combats, Dimension::Environment).environments;
         let maps = self.options(combats, Dimension::Map).maps;
         let difficulties = self.options(combats, Dimension::Difficulty).difficulties;
+        // Offered only where the list holds both kinds; with everything solo,
+        // or everything not, the menu would be a choice between one thing and
+        // the same thing.
+        if solos.len() > 1 {
+            ComboBox::new((id, "solo"), "")
+                .selected_text(match self.solo {
+                    Some(true) => "Solo",
+                    Some(false) => "Team",
+                    None => "Any size",
+                })
+                .width(90.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.solo, None, "Any size");
+                    ui.selectable_value(&mut self.solo, Some(true), "Solo");
+                    ui.selectable_value(&mut self.solo, Some(false), "Team");
+                });
+        }
+
         ComboBox::new((id, "environment"), "")
             .selected_text(self.environment.as_deref().unwrap_or("Any type"))
             .width(90.0)
@@ -208,6 +253,8 @@ impl CombatFilter {
 /// What the filter knows about one combat in the list.
 #[derive(Clone, Copy)]
 pub struct CombatEntry<'a> {
+    /// Whether one player fought it.
+    pub solo: bool,
     pub environment: Option<&'a str>,
     pub difficulty: Option<Difficulty>,
     pub base_name: &'a str,
@@ -218,10 +265,12 @@ enum Dimension {
     Environment,
     Difficulty,
     Map,
+    Solo,
 }
 
 #[derive(Default)]
 struct Options {
+    solos: Vec<bool>,
     environments: Vec<String>,
     maps: Vec<String>,
     difficulties: Vec<Option<Difficulty>>,
@@ -235,8 +284,13 @@ mod tests {
     fn an_empty_filter_matches_everything() {
         let filter = CombatFilter::default();
         assert!(!filter.is_active());
-        assert!(filter.matches(Some("Space"), Some(Difficulty::Elite), "Infected Space"));
-        assert!(filter.matches(None, None, "Combat"));
+        assert!(filter.matches(
+            Some("Space"),
+            Some(Difficulty::Elite),
+            "Infected Space",
+            false
+        ));
+        assert!(filter.matches(None, None, "Combat", false));
     }
 
     #[test]
@@ -245,24 +299,24 @@ mod tests {
             environment: Some("Ground".to_string()),
             ..Default::default()
         };
-        assert!(filter.matches(Some("Ground"), None, "Bug Hunt"));
-        assert!(!filter.matches(Some("Space"), None, "Bug Hunt"));
+        assert!(filter.matches(Some("Ground"), None, "Bug Hunt", false));
+        assert!(!filter.matches(Some("Space"), None, "Bug Hunt", false));
         // A combat whose map was never recognized has no environment at all.
-        assert!(!filter.matches(None, None, "Combat"));
+        assert!(!filter.matches(None, None, "Combat", false));
 
         let filter = CombatFilter {
             map: Some("Infected Space".to_string()),
             ..Default::default()
         };
-        assert!(filter.matches(Some("Space"), None, "Infected Space"));
-        assert!(!filter.matches(Some("Space"), None, "Hive Onslaught"));
+        assert!(filter.matches(Some("Space"), None, "Infected Space", false));
+        assert!(!filter.matches(Some("Space"), None, "Hive Onslaught", false));
 
         let filter = CombatFilter {
             difficulty: DifficultyFilter::Elite,
             ..Default::default()
         };
-        assert!(filter.matches(None, Some(Difficulty::Elite), "x"));
-        assert!(!filter.matches(None, Some(Difficulty::Normal), "x"));
+        assert!(filter.matches(None, Some(Difficulty::Elite), "x", false));
+        assert!(!filter.matches(None, Some(Difficulty::Normal), "x", false));
     }
 
     fn entries() -> Vec<CombatEntry<'static>> {
@@ -271,21 +325,25 @@ mod tests {
                 environment: Some("Space"),
                 difficulty: Some(Difficulty::Elite),
                 base_name: "Infected Space",
+                solo: false,
             },
             CombatEntry {
                 environment: Some("Space"),
                 difficulty: Some(Difficulty::Normal),
                 base_name: "Azure Nebula",
+                solo: false,
             },
             CombatEntry {
                 environment: Some("Ground"),
                 difficulty: Some(Difficulty::Advanced),
                 base_name: "Bug Hunt",
+                solo: false,
             },
             CombatEntry {
                 environment: None,
                 difficulty: None,
                 base_name: "Combat",
+                solo: false,
             },
         ]
     }
@@ -345,18 +403,24 @@ mod tests {
                 ..Default::default()
             };
             assert!(
-                !entries
-                    .iter()
-                    .any(|c| filter.matches(c.environment, c.difficulty, c.base_name)),
+                !entries.iter().any(|c| filter.matches(
+                    c.environment,
+                    c.difficulty,
+                    c.base_name,
+                    c.solo
+                )),
                 "the pair really is contradictory to begin with"
             );
 
             filter.drop_impossible_choices(&entries);
 
             assert!(
-                entries
-                    .iter()
-                    .any(|c| filter.matches(c.environment, c.difficulty, c.base_name)),
+                entries.iter().any(|c| filter.matches(
+                    c.environment,
+                    c.difficulty,
+                    c.base_name,
+                    c.solo
+                )),
                 "after resolving it, something matches again"
             );
             assert!(
