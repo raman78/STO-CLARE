@@ -365,22 +365,26 @@ is usually really about: not what these runs have in common, but what they do
 not.
 
 **Type** next to the `Name` heading lists the damage types the comparison
-holds — Phaser, Antiproton, Plasma, Polaron, Disruptor, Kinetic and so on — and
-shows only the rows that dealt the ones you pick. A row that dealt several types
-(a group holding more than one weapon) is shown for any of them. Pick nothing
-and you see everything, which is how it starts.
+holds — Phaser, Antiproton, Plasma, Polaron, Disruptor, Kinetic and so on. Pick
+one and the table shows **only that type's damage**: every figure in every row
+is recalculated to it. A weapon group that also procs something else shows just
+the proc when you pick the proc's type — "Polaron Beam Array" under `Cold` is
+the few hundred DPS its Frostbite did, not the beams around it. Pick nothing and
+you see everything, which is how it starts.
 
 **Δ Differences** in the toolbar hides the rows the runs agree on, leaving what
 they differ over. Two controls appear with it:
 
 | control | what it does |
 |---|---|
-| share of combat / DPS | what a difference is measured in |
-| the slider | how large a difference has to be for the row to stay |
+| Damage % / DPS | what a difference is measured in |
+| − and + and the slider | how large a difference has to be for the row to stay |
 
-Measured as a **share of combat**, a row is compared by how much of that run it
-was — so a shorter or weaker run does not look like a different build in every
-row at once. Measured in **DPS**, it is compared by what it was actually worth.
+Measured in **Damage %** — the same figure as the column of that name — a row is
+compared by how much of that run it was, so a shorter or weaker run does not
+look like a different build in every row at once. Measured in **DPS**, it is
+compared by what it was actually worth. The − and + buttons step by 0.1% and by
+50 DPS, for when the slider is too coarse.
 Neither is right for every question, so both are there, each with its own slider
 setting.
 
@@ -406,8 +410,10 @@ rainbow build and a single-flavour one, without reading a single number.
   Omni-Directional&Standard Phaser Beam Array  (in 2 of 5)
 ```
 
-Both of these only change what is on screen. The Total still counts whatever is
-ticked, whether or not you can see it.
+The Total above follows both of them: it counts the rows that are ticked **and**
+on screen. Narrow the table to one damage type and the Total is that type's;
+raise the difference slider and it is the total of what is left. What you read
+is what you see.
 
 ### The runs split by damage type
 

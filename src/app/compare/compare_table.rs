@@ -111,6 +111,9 @@ pub struct Comparison {
     /// The damage types the reader is looking at. Empty means every type, which
     /// is the state the picker opens in.
     types: FxHashSet<String>,
+    /// The player's damage narrowed to the picked types, one per slot, empty
+    /// while no type is picked. What the tree and the Total are built from.
+    of_type: Vec<Option<DamageGroup>>,
     /// Whether the rows the combats agree on are hidden, leaving what they
     /// differ over.
     show_differences: bool,
@@ -251,6 +254,7 @@ impl Comparison {
             excluded: Default::default(),
             hide_unticked: false,
             types: Default::default(),
+            of_type: Vec::new(),
             show_differences: false,
             show_type_summary: false,
             difference_measure: DifferenceMeasure::Share,
@@ -265,11 +269,18 @@ impl Comparison {
     }
 
     fn rebuild(&mut self) {
-        let parents: Vec<Option<&DamageGroup>> = self
-            .slots
-            .iter()
-            .map(|s| s.combat.players.get(&s.player).map(|p| &p.damage_out))
-            .collect();
+        // With a damage type picked, the tree is built from a copy of the
+        // player's damage holding only what was dealt in that type — so every
+        // row's figures are of the type rather than of the whole row it was
+        // part of. Held on the comparison because the Total is rebuilt from the
+        // same groups whenever a tick moves.
+        self.of_type = self.types.is_empty().then(Vec::new).unwrap_or_else(|| {
+            self.slots
+                .iter()
+                .map(|slot| of_type(slot, &self.types))
+                .collect()
+        });
+        let parents = self.parents();
         let name_managers: Vec<&NameManager> =
             self.slots.iter().map(|s| &s.combat.name_manager).collect();
         let hits_managers: Vec<&HitsManager> =
@@ -332,6 +343,19 @@ impl Comparison {
         self.rebuild_diagram();
     }
 
+    /// The damage group each slot's tree is built from: the player's own, or
+    /// the copy holding only the picked damage types.
+    fn parents(&self) -> Vec<Option<&DamageGroup>> {
+        if self.of_type.is_empty() {
+            self.slots
+                .iter()
+                .map(|s| s.combat.players.get(&s.player).map(|p| &p.damage_out))
+                .collect()
+        } else {
+            self.of_type.iter().map(|group| group.as_ref()).collect()
+        }
+    }
+
     /// (Re)build the Total row from the rows that are ticked — its values, the
     /// averages beside them, the series the chart draws it from, and the name
     /// that says how much of the tree went into it.
@@ -340,23 +364,26 @@ impl Comparison {
     /// so an unfiltered Total is the analyzer's own figure to the last digit
     /// rather than the pieces added back together in a different order.
     fn refresh_total(&mut self) {
-        let filtered: Vec<Option<DamageGroup>> = if self.excluded.is_empty() {
+        // What the Total is added up from: the rows that are ticked and on
+        // screen. Anything the reader has filtered away is not part of the
+        // figure they are reading, which is the whole point of filtering.
+        let left_out = self.rows_left_out_of_the_total();
+        let subsets: Vec<Option<DamageGroup>> = if left_out.is_empty() {
             Vec::new()
         } else {
+            let parents = self.parents();
             self.slots
                 .iter()
-                .map(|slot| subset_total(slot, &self.excluded))
+                .zip(parents)
+                .map(|(slot, parent)| subset_total(slot, parent?, &left_out))
                 .collect()
         };
 
         let (cells, averages, series) = {
-            let parents: Vec<Option<&DamageGroup>> = if filtered.is_empty() {
-                self.slots
-                    .iter()
-                    .map(|s| s.combat.players.get(&s.player).map(|p| &p.damage_out))
-                    .collect()
+            let parents: Vec<Option<&DamageGroup>> = if subsets.is_empty() {
+                self.parents()
             } else {
-                filtered.iter().map(|group| group.as_ref()).collect()
+                subsets.iter().map(|group| group.as_ref()).collect()
             };
             let hits_managers: Vec<&HitsManager> =
                 self.slots.iter().map(|s| &s.combat.hits_manger).collect();
@@ -370,17 +397,43 @@ impl Comparison {
             (cells, averages, series)
         };
 
-        let excluded = &self.excluded;
         let Some(total) = self.nodes.first_mut() else {
             return;
         };
         total.cells = cells;
         total.averages = averages;
         total.series = series;
-        total.name = total_row_name(
-            ticked_count(&total.sub_nodes, excluded),
-            total.sub_nodes.len(),
-        );
+        let kept = total.sub_nodes.len() - left_out.len();
+        total.name = total_row_name(kept, total.sub_nodes.len());
+    }
+
+    /// The rows under Total that are not in it: unticked, or filtered off the
+    /// screen. Taken by name, which is what the Total is added up by.
+    fn rows_left_out_of_the_total(&self) -> FxHashSet<String> {
+        let differences = self.differences();
+        self.nodes
+            .first()
+            .into_iter()
+            .flat_map(|total| total.sub_nodes.iter())
+            .filter(|node| {
+                self.excluded.contains(&node.name)
+                    || differences
+                        .is_some_and(|(measure, threshold)| node.difference(measure) < threshold)
+            })
+            .map(|node| node.name.clone())
+            .collect()
+    }
+
+    /// What a difference is measured in and how large one has to be, or `None`
+    /// while the toggle is off.
+    fn differences(&self) -> Option<(DifferenceMeasure, f64)> {
+        self.show_differences.then_some((
+            self.difference_measure,
+            match self.difference_measure {
+                DifferenceMeasure::Share => self.share_threshold,
+                DifferenceMeasure::Dps => self.dps_threshold,
+            },
+        ))
     }
 
     /// (Re)build the chart for the currently selected ability node: one line per
@@ -439,7 +492,7 @@ impl Comparison {
             self.rebuild_diagram();
         }
 
-        self.show_toolbar(ui, settings, frame);
+        let thresholds_changed = self.show_toolbar(ui, settings, frame);
 
         // Pick up column changes from the picker (or an external settings edit).
         if self.columns != settings.compare.columns {
@@ -452,6 +505,12 @@ impl Comparison {
         if self.averages != settings.compare.show_averages {
             self.averages = settings.compare.show_averages;
             self.rebuild_diagram();
+        }
+
+        // The Total is added up from the rows on screen, so moving the
+        // threshold — or the measure it is in — changes it.
+        if thresholds_changed {
+            self.refresh_total();
         }
 
         let colors = self.slot_colors();
@@ -616,7 +675,8 @@ impl Comparison {
     /// The row above the legend: which columns to show, whether to average them,
     /// and the export. The export sits on the right, away from the two menus
     /// that change what is on screen — it only takes a copy of it.
-    fn show_toolbar(&mut self, ui: &mut Ui, settings: &mut Settings, frame: &Frame) {
+    fn show_toolbar(&mut self, ui: &mut Ui, settings: &mut Settings, frame: &Frame) -> bool {
+        let mut differences_toggled = false;
         ui.horizontal(|ui| {
             self.show_column_picker(ui, settings);
 
@@ -638,6 +698,20 @@ impl Comparison {
             }
 
             if ui
+                .add(Button::new("Δ Differences").selected(self.show_differences))
+                .on_hover_text(
+                    "Hide the rows the combats agree on, leaving what they differ over — what a \
+                     run flew that the others did not, and what it leaned on far harder. The rows \
+                     stay in the order they are in, and the Total above is added up from what is \
+                     left on screen.",
+                )
+                .clicked()
+            {
+                self.show_differences = !self.show_differences;
+                differences_toggled = true;
+            }
+
+            if ui
                 .add(Button::new("🎯 By type").selected(self.show_type_summary))
                 .on_hover_text(
                     "Open a window with the comparison split by damage type — how much of each \
@@ -648,8 +722,6 @@ impl Comparison {
             {
                 self.show_type_summary = !self.show_type_summary;
             }
-
-            self.show_difference_controls(ui);
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
@@ -676,6 +748,8 @@ impl Comparison {
                 }
             });
         });
+
+        self.show_difference_controls(ui) || differences_toggled
     }
 
     /// The damage-type summary: a row per type, a column per combat, each
@@ -694,6 +768,10 @@ impl Comparison {
         let rows = damage_by_type(total, n_slots);
         let font = TextStyle::Body.resolve(ui.style());
         let text_color = ui.visuals().text_color();
+        // The same note line the table's own headers carry, and only when some
+        // combat has one — a comparison of runs nobody named keeps two lines.
+        let with_notes = self.notes.iter().any(|note| !note.is_empty());
+        let notes = self.notes.clone();
         let mut open = true;
 
         Window::new("Damage by type")
@@ -712,7 +790,7 @@ impl Comparison {
                 ScrollArea::vertical().show(ui, |ui| {
                     Table::new(ui)
                         .cell_spacing(10.0)
-                        .header(HEADER_LINE_HEIGHT * 2.0, |r| {
+                        .header(header_height(with_notes), |r| {
                             r.cell(|ui| {
                                 ui.label("Damage type");
                             });
@@ -723,8 +801,13 @@ impl Comparison {
                                         text_color,
                                         "",
                                         &format!("#{}", slot_i + 1),
-                                        None,
+                                        with_notes.then(|| note_of(&notes, slot_i)),
                                         colors.get(slot_i).copied().flatten(),
+                                    ))
+                                    .on_hover_text(format!(
+                                        "Combat #{}{}",
+                                        slot_i + 1,
+                                        note_suffix(note_of(&notes, slot_i))
                                     ));
                                 });
                             }
@@ -759,62 +842,66 @@ impl Comparison {
         }
     }
 
-    /// The differences toggle, and — while it is on — what a difference is
-    /// measured in and how large one has to be to stay on screen.
-    ///
-    /// The two controls only appear with the toggle, because they say nothing
-    /// while nothing is being hidden, and the toolbar is already a row of
-    /// things that are always there.
-    fn show_difference_controls(&mut self, ui: &mut Ui) {
-        if ui
-            .add(Button::new("Δ Differences").selected(self.show_differences))
-            .on_hover_text(
-                "Hide the rows the combats agree on, leaving what they differ over — what a run \
-                 flew that the others did not, and what it leaned on far harder. The rows stay in \
-                 the order they are in; only the ones nobody differs over go.",
-            )
-            .clicked()
-        {
-            self.show_differences = !self.show_differences;
-        }
+    /// What a difference is measured in and how large one has to be to stay on
+    /// screen — a line of its own under the toolbar, and only while the toggle
+    /// is on: they say nothing while nothing is being hidden. Answers whether
+    /// the reader moved either, which changes what the Total is added up from.
+    fn show_difference_controls(&mut self, ui: &mut Ui) -> bool {
         if !self.show_differences {
-            return;
+            return false;
         }
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            for measure in [DifferenceMeasure::Share, DifferenceMeasure::Dps] {
+                changed |= ui
+                    .steady_toggle_value(&mut self.difference_measure, measure, measure.label())
+                    .on_hover_text(match measure {
+                        DifferenceMeasure::Share => {
+                            "Measure a difference in what the row was of its own combat — the same \
+                             figure the Damage % column shows. A shorter or weaker run then does \
+                             not read as a different build in every row at once."
+                        }
+                        DifferenceMeasure::Dps => {
+                            "Measure a difference in DPS — what the row was actually worth, \
+                             whatever share of the run it came to."
+                        }
+                    })
+                    .changed();
+            }
 
-        for measure in [DifferenceMeasure::Share, DifferenceMeasure::Dps] {
-            ui.steady_toggle_value(&mut self.difference_measure, measure, measure.label())
-                .on_hover_text(match measure {
-                    DifferenceMeasure::Share => {
-                        "Measure a difference in what the row was of its own combat. A shorter or \
-                         weaker run then does not read as a different build in every row at once."
-                    }
-                    DifferenceMeasure::Dps => {
-                        "Measure a difference in DPS — what the row was actually worth, whatever \
-                         share of the run it came to."
-                    }
-                });
-        }
+            let measure = self.difference_measure;
+            let (threshold, range, step) = match measure {
+                DifferenceMeasure::Share => (&mut self.share_threshold, 0.1..=20.0, 0.1),
+                DifferenceMeasure::Dps => (&mut self.dps_threshold, 50.0..=50_000.0, 50.0),
+            };
+            // A step either side of the slider: the useful range is narrow at
+            // the bottom end, and dragging a slider that spans 50 to 50'000 is
+            // no way to move by fifty.
+            if ui.button("−").on_hover_text("One step less").clicked() {
+                *threshold = (*threshold - step).max(*range.start());
+                changed = true;
+            }
+            changed |= SliderTextEdit::new(threshold, range, "compare difference threshold")
+                .clamp_min(0.0)
+                .clamp_max(1e9)
+                .desired_text_edit_width(50.0)
+                .display_precision(6)
+                .step_by(step)
+                .show(ui)
+                .changed();
+            if ui.button("+").on_hover_text("One step more").clicked() {
+                *threshold = (*threshold + step).min(1e9);
+                changed = true;
+            }
 
-        let (threshold, range, step) = match self.difference_measure {
-            DifferenceMeasure::Share => (&mut self.share_threshold, 0.5..=20.0, 0.5),
-            DifferenceMeasure::Dps => (&mut self.dps_threshold, 500.0..=50_000.0, 500.0),
-        };
-        SliderTextEdit::new(threshold, range, "compare difference threshold")
-            .clamp_min(0.0)
-            .clamp_max(1e9)
-            .desired_text_edit_width(50.0)
-            .display_precision(6)
-            .step_by(step)
-            .show(ui);
-        ui.label(format!(
-            "min difference ({})",
-            self.difference_measure.unit()
-        ))
-        .on_hover_text(
-            "A row stays on screen when its largest combat and its smallest are at least this \
-                 far apart. A combat that does not have the row at all counts as zero, so a row \
-                 flown in some runs and not others is a difference of its whole size.",
-        );
+            ui.label(format!("min difference ({})", measure.unit()))
+                .on_hover_text(
+                    "A row stays on screen when its largest combat and its smallest are at least \
+                     this far apart. A combat that does not have the row at all counts as zero, \
+                     so a row flown in some runs and not others is a difference of its whole size.",
+                );
+        });
+        changed
     }
 
     /// Asks for a file and writes the table into it. Whatever comes of it is
@@ -1022,13 +1109,7 @@ impl Comparison {
         let hide_unticked = self.hide_unticked;
         let mut hide_toggled = false;
         let all_types = self.all_damage_types();
-        let differences = self.show_differences.then_some((
-            self.difference_measure,
-            match self.difference_measure {
-                DifferenceMeasure::Share => self.share_threshold,
-                DifferenceMeasure::Dps => self.dps_threshold,
-            },
-        ));
+        let differences = self.differences();
         // The picker writes to a copy: the set it edits is the one the rows are
         // being filtered by as it draws, and a pick takes effect on the next
         // pass — which egui runs anyway, having just been clicked.
@@ -1036,7 +1117,6 @@ impl Comparison {
         let mut ticks = Ticks {
             excluded: &mut self.excluded,
             hide_unticked,
-            types: &self.types,
             differences,
             changed: false,
         };
@@ -1098,18 +1178,23 @@ impl Comparison {
 
         let ticks_changed = ticks.changed;
         self.selected = selected;
-        self.types = picked_types;
         if hide_toggled {
             self.hide_unticked = !self.hide_unticked;
         }
-        if ticks_changed {
+        // A different damage type is a different tree — every row's figures are
+        // of the type — so it is a rebuild rather than a redraw.
+        let types_changed = picked_types != self.types;
+        if types_changed {
+            self.types = picked_types;
+            self.rebuild();
+        } else if ticks_changed {
             self.refresh_total();
         }
         // The chart follows the ticks only while it is the Total that is
         // charted — an ability's own line is the same line whether or not it is
         // counted in the total above it.
         let total_charted = self.selected == self.nodes.first().map(|node| node.id);
-        if selection_changed || (ticks_changed && total_charted) {
+        if !types_changed && (selection_changed || (ticks_changed && total_charted)) {
             self.rebuild_diagram();
         }
     }
@@ -1392,8 +1477,6 @@ impl CompareNode {
 struct Ticks<'a> {
     excluded: &'a mut FxHashSet<String>,
     hide_unticked: bool,
-    /// The damage types to show. Empty is every type.
-    types: &'a FxHashSet<String>,
     /// How far a row has to differ between the combats to stay on screen, and
     /// in what. `None` while the toggle is off.
     differences: Option<(DifferenceMeasure, f64)>,
@@ -1416,14 +1499,16 @@ enum DifferenceMeasure {
 impl DifferenceMeasure {
     fn label(self) -> &'static str {
         match self {
-            DifferenceMeasure::Share => "share of combat",
+            // The same figure the Damage % column holds, and named after it:
+            // two names for one number is one name too many.
+            DifferenceMeasure::Share => "Damage %",
             DifferenceMeasure::Dps => "DPS",
         }
     }
 
     fn unit(self) -> &'static str {
         match self {
-            DifferenceMeasure::Share => "pp",
+            DifferenceMeasure::Share => "%",
             DifferenceMeasure::Dps => "DPS",
         }
     }
@@ -1625,20 +1710,117 @@ fn total_row_name(kept: usize, rows: usize) -> String {
 /// pass, so every column — resistance, criticals, accuracy, the lot — comes out
 /// the way the analyzer would have it for a group holding exactly those rows,
 /// rather than out of an average of averages.
-fn subset_total(slot: &Slot, excluded: &FxHashSet<String>) -> Option<DamageGroup> {
+fn subset_total(
+    slot: &Slot,
+    parent: &DamageGroup,
+    left_out: &FxHashSet<String>,
+) -> Option<DamageGroup> {
     let player = slot.combat.players.get(&slot.player)?;
     let name_manager = &slot.combat.name_manager;
-    let rows = player.damage_out.sub_groups().values().map(|sub| {
+    let rows = parent.sub_groups().values().map(|sub| {
         (
             sub.name().get(name_manager),
             sub.hits.get(&slot.combat.hits_manger),
         )
     });
     Some(subset_group(
-        subset_hits(rows, excluded)?,
+        subset_hits(rows, left_out)?,
         metrics_duration(&player.combat_time),
         &slot.combat.total_damage_out,
     ))
+}
+
+/// The player's outgoing damage in one combat, holding only what was dealt in
+/// the picked damage types.
+///
+/// A row's own figures are then of the type: `Polaron Beam Array` under `Cold`
+/// is the 60k its Frostbite proc did, not the 4.3M the beams did around it.
+fn of_type(slot: &Slot, types: &FxHashSet<String>) -> Option<DamageGroup> {
+    let player = slot.combat.players.get(&slot.player)?;
+    let context = TypeFilter {
+        name_manager: &slot.combat.name_manager,
+        hits_manager: &slot.combat.hits_manger,
+        types,
+        duration: metrics_duration(&player.combat_time),
+    };
+    let mut group = context.keep(&player.damage_out)?;
+    // The percentages the table shows are of the whole fight for the top row
+    // and of the parent below it, the same as the analyzer states them.
+    group.damage_percentage = ShieldHullOptionalValues::percentage(
+        &group.damage_metrics.total_damage,
+        &slot.combat.total_damage_out,
+    );
+    set_child_percentages(&mut group);
+    Some(group)
+}
+
+/// What a walk down the tree needs to keep the picked types out of it.
+struct TypeFilter<'a> {
+    name_manager: &'a NameManager,
+    hits_manager: &'a HitsManager,
+    types: &'a FxHashSet<String>,
+    duration: f64,
+}
+
+impl TypeFilter<'_> {
+    /// This group with everything outside the picked types taken out of it, or
+    /// `None` when it dealt none of them.
+    ///
+    /// A group of one picked type is kept whole — nothing in it is of another
+    /// type, so there is nothing to recompute. A group of several is rebuilt
+    /// from the sub-groups that survive, since that is the only level the log
+    /// separates them at: a hit carries no damage type of its own, the group it
+    /// lands in does.
+    fn keep(&self, group: &DamageGroup) -> Option<DamageGroup> {
+        let mut own = group.damage_types.iter().map(|t| t.get(self.name_manager));
+        let picked = own.clone().filter(|t| self.types.contains(*t)).count();
+        let all = own.by_ref().count();
+
+        if picked == 0 {
+            return None;
+        }
+        if picked == all {
+            return Some(group.clone());
+        }
+
+        let sub_groups: Vec<DamageGroup> = group
+            .sub_groups
+            .values()
+            .filter_map(|sub| self.keep(sub))
+            .collect();
+        if sub_groups.is_empty() {
+            return None;
+        }
+
+        let hits: Vec<Hit> = sub_groups
+            .iter()
+            .flat_map(|sub| sub.hits.get(self.hits_manager).iter().copied())
+            .collect();
+        let mut kept = subset_group(hits, self.duration, &Default::default());
+        kept.segment = group.segment;
+        kept.damage_types = group
+            .damage_types
+            .iter()
+            .copied()
+            .filter(|t| self.types.contains(t.get(self.name_manager)))
+            .collect();
+        kept.sub_groups = sub_groups
+            .into_iter()
+            .map(|sub| (sub.name(), sub))
+            .collect();
+        Some(kept)
+    }
+}
+
+/// Each row's share of the row above it, down the tree — the figure the
+/// `Damage %` column shows, which a rebuilt group has no one to have set.
+fn set_child_percentages(group: &mut DamageGroup) {
+    let parent_total = group.damage_metrics.total_damage;
+    for sub in group.sub_groups.values_mut() {
+        sub.damage_percentage =
+            ShieldHullOptionalValues::percentage(&sub.damage_metrics.total_damage, &parent_total);
+        set_child_percentages(sub);
+    }
 }
 
 /// The hits of the ticked rows, pooled — or `None` when this combat holds none
@@ -1677,14 +1859,6 @@ fn is_hidden(parent_depth: usize, ticks: &Ticks, node: &CompareNode) -> bool {
         return false;
     }
     if ticks.hide_unticked && ticks.excluded.contains(&node.name) {
-        return true;
-    }
-    if !ticks.types.is_empty()
-        && !node
-            .damage_types
-            .iter()
-            .any(|damage_type| ticks.types.contains(damage_type))
-    {
         return true;
     }
     if let Some((measure, threshold)) = ticks.differences
@@ -2957,14 +3131,10 @@ mod tests {
         node
     }
 
-    fn filters<'a>(
-        excluded_names: &'a mut FxHashSet<String>,
-        types: &'a FxHashSet<String>,
-    ) -> Ticks<'a> {
+    fn filters(excluded_names: &mut FxHashSet<String>) -> Ticks<'_> {
         Ticks {
             excluded: excluded_names,
             hide_unticked: false,
-            types,
             differences: None,
             changed: false,
         }
@@ -2976,8 +3146,7 @@ mod tests {
     #[test]
     fn hiding_takes_out_the_unticked_rows_only() {
         let mut names = excluded(&["Photon Torpedo"]);
-        let no_types = FxHashSet::default();
-        let mut ticks = filters(&mut names, &no_types);
+        let mut ticks = filters(&mut names);
         ticks.hide_unticked = true;
 
         assert!(is_hidden(
@@ -3000,8 +3169,7 @@ mod tests {
     #[test]
     fn the_unticked_rows_stay_on_screen_until_the_toggle_is_on() {
         let mut names = excluded(&["Photon Torpedo"]);
-        let no_types = FxHashSet::default();
-        let ticks = filters(&mut names, &no_types);
+        let ticks = filters(&mut names);
         assert!(!is_hidden(
             0,
             &ticks,
@@ -3009,45 +3177,62 @@ mod tests {
         ));
     }
 
-    /// The type picker keeps the rows that dealt a picked type. A row of
-    /// several types — a group holding more than one weapon — is kept for any
-    /// one of them, since it is partly that type.
+    /// A group of one type is kept whole; a group of several is rebuilt from
+    /// the sub-groups that survive, so its figures are of the picked type and
+    /// not of everything it was part of. This is the Polaron Beam Array case:
+    /// under `Cold` it is the Frostbite proc, not the beams around it.
     #[test]
-    fn the_type_picker_keeps_the_rows_of_that_type() {
-        let mut names = FxHashSet::default();
-        let picked: FxHashSet<String> = ["Phaser".to_string()].into_iter().collect();
-        let ticks = filters(&mut names, &picked);
+    fn a_type_filter_rebuilds_a_mixed_group_from_what_survives() {
+        use crate::analyzer::NameFlags;
+        let mut names = NameManager::default();
+        let cold = names.insert("Cold", NameFlags::NONE);
+        let polaron = names.insert("Polaron", NameFlags::NONE);
+        let hits_manager = HitsManager::default();
 
-        assert!(!is_hidden(
-            0,
-            &ticks,
-            &filter_row("Beams", &["Phaser"], &[])
-        ));
-        assert!(!is_hidden(
-            0,
-            &ticks,
-            &filter_row("Rainbow", &["Phaser", "Polaron"], &[])
-        ));
-        assert!(is_hidden(
-            0,
-            &ticks,
-            &filter_row("Torpedo", &["Kinetic"], &[])
-        ));
-        // A row the log gave no type for is not claimed by any of them.
-        assert!(is_hidden(0, &ticks, &filter_row("Placate", &[], &[])));
-    }
+        let leaf = |damage: f64, damage_type: NameHandle| {
+            let mut group = DamageGroup {
+                hits: Hits::Leaf(vec![hit(damage, 0)]),
+                ..Default::default()
+            };
+            group.damage_types.insert(damage_type);
+            group.damage_metrics.total_damage.all = damage;
+            group
+        };
+        let beams = leaf(4_000.0, polaron);
+        let frostbite = leaf(60.0, cold);
 
-    /// An untouched picker is showing every type, not none of them.
-    #[test]
-    fn an_empty_type_picker_hides_nothing() {
-        let mut names = FxHashSet::default();
-        let none = FxHashSet::default();
-        let ticks = filters(&mut names, &none);
-        assert!(!is_hidden(
-            0,
-            &ticks,
-            &filter_row("Torpedo", &["Kinetic"], &[])
-        ));
+        let mut group = DamageGroup::default();
+        group.damage_types.insert(polaron);
+        group.damage_types.insert(cold);
+        group.sub_groups.insert(beams.name(), beams);
+        group.sub_groups.insert(frostbite.name(), frostbite);
+
+        let picked: FxHashSet<String> = ["Cold".to_string()].into_iter().collect();
+        let filter = TypeFilter {
+            name_manager: &names,
+            hits_manager: &hits_manager,
+            types: &picked,
+            duration: 10.0,
+        };
+
+        let kept = filter.keep(&group).expect("the group dealt some cold");
+        assert_eq!(60.0, kept.total_damage.all, "the proc, not the beams");
+        assert_eq!(
+            1,
+            kept.sub_groups.len(),
+            "the beams are gone with their type"
+        );
+        assert_eq!(6.0, kept.dps.all, "60 damage over 10 seconds");
+
+        // A group with none of the picked types drops out entirely.
+        let tetryon: FxHashSet<String> = ["Tetryon".to_string()].into_iter().collect();
+        let filter = TypeFilter {
+            name_manager: &names,
+            hits_manager: &hits_manager,
+            types: &tetryon,
+            duration: 10.0,
+        };
+        assert!(filter.keep(&group).is_none());
     }
 
     /// A difference is the largest combat less the smallest, and a combat
@@ -3071,11 +3256,10 @@ mod tests {
     #[test]
     fn the_differences_toggle_hides_what_the_combats_agree_on() {
         let mut names = FxHashSet::default();
-        let no_types = FxHashSet::default();
         let agreed = filter_row("Broadside", &["Phaser"], &[Some(15.0), Some(16.0)]);
         let differs = filter_row("Ba'ul", &["AntiProton"], &[Some(3.9), Some(27.4)]);
 
-        let mut ticks = filters(&mut names, &no_types);
+        let mut ticks = filters(&mut names);
         ticks.differences = Some((DifferenceMeasure::Share, 3.0));
         assert!(is_hidden(0, &ticks, &agreed), "one point apart");
         assert!(!is_hidden(0, &ticks, &differs));

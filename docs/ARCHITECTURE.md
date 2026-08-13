@@ -331,6 +331,21 @@ compares builds at.
 | `☰ Type` in the `Name` header | `types` | only the rows that dealt one of these damage types |
 | `Δ Differences` in the toolbar | `show_differences`, `difference_measure`, `share_threshold` / `dps_threshold` | only the rows the combats disagree over |
 
+The type picker is **not** a view filter: picking a type rebuilds the tree from
+a copy of the player's damage holding only what was dealt in it (`of_type`,
+`TypeFilter::keep`, kept per slot in `Comparison::of_type`). A group of one
+picked type is kept whole; a group of several is rebuilt from the sub-groups
+that survive, since a hit carries no damage type of its own — the group it lands
+in does, and that is the only level the log separates them at. So `Polaron Beam
+Array` under `Cold` shows the 60k its Frostbite proc did, not the 4.3M the beams
+did around it, and every column of that row — DPS, resistance, criticals — is of
+the proc, having been recomputed from its hits.
+
+Percentages are set by hand on the rebuilt tree (`set_child_percentages`): the
+analyzer's own pass is `pub(super)`, and a rebuilt group has nobody to have set
+them. The top row's is of the whole fight, each row below of its parent, which
+is what the analyzer states.
+
 `CompareNode::damage_types` is the union of `DamageGroup::damage_types` over the
 slots. The analyzer already keeps `Shield` out of a group that has a real type
 (`add_damage_type_non_pool`) — the log carries no energy type for a hit on
@@ -366,8 +381,13 @@ Measured on five runs of one map: at a 3 pp threshold the tree drops from 25 row
 to 9, and at 18.5 pp to the two the runs really differ over — the antiproton
 beams of one build and the phaser group of the other.
 
-The filters are the view only; the Total follows the ticks, not what is on
-screen.
+**The Total is added up from the rows that are ticked *and* on screen**
+(`rows_left_out_of_the_total`). A figure the reader has filtered away is not
+part of what they are reading, so narrowing to one damage type gives the Total
+of that type, and raising the difference threshold gives the Total of what is
+left. The two filters therefore reach the Total by different routes: the type
+through the tree it is built from, the differences through which rows are
+summed.
 
 #### The damage-type summary
 
