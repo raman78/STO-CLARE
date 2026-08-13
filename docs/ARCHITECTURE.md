@@ -389,6 +389,35 @@ left. The two filters therefore reach the Total by different routes: the type
 through the tree it is built from, the differences through which rows are
 summed.
 
+#### What one combat did differently
+
+`⚖ vs rest` puts a column at the end of the table saying what each row added to
+one combat, or cost it, against the other combats in the comparison
+(`CompareNode::impact`, `Comparison::impact_slot`). The rows under Total are
+then ordered by how much they weighed either way (`sort_rows`) — the ranking is
+the point of the column, unlike the differences toggle, which is a filter and
+deliberately leaves the order alone.
+
+The reference is the **mean** of the other combats, and that is not a matter of
+taste:
+
+```
+impact(row) = dps(row, this combat) - mean(dps(row, other combats))
+Σ impact(row) = impact(Total)      exactly, because a mean is additive
+```
+
+A median is steadier against one odd run but sums to nothing, and a column whose
+figures do not add up to the one above them invites arithmetic that is wrong.
+What a median is good for is said separately, in the tooltip:
+`CompareNode::typicality` reports `(value − median) / MAD` over the other
+combats — the median absolute deviation standing in for a standard deviation,
+since a comparison holds a handful of runs and one odd one drags a mean and an
+SD far enough to hide everything else. It is `None` when the others agree
+exactly, or when there are fewer than two of them to disagree.
+
+A combat without the row counts as zero on both measures: not having flown
+something is exactly the difference being looked for.
+
 #### The damage-type summary
 
 `🎯 By type` opens a window of its own (`Comparison::show_type_summary`) holding

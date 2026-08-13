@@ -415,6 +415,28 @@ on screen. Narrow the table to one damage type and the Total is that type's;
 raise the difference slider and it is the total of what is left. What you read
 is what you see.
 
+### What one run did differently from the rest
+
+**⚖ vs rest** answers the question a pile of runs is usually about: why is *this*
+one different? Press it, pick the run under the toolbar, and a column appears at
+the end of the table saying how much DPS each row added to that run — or cost
+it — against what the other runs did with the same row. The rows are put in the
+order of how much they weighed.
+
+It reads as an account, because the figures add up: the rows sum exactly to the
+difference shown on the Total. So a run that came out 47k DPS ahead of the
+others might read "Ba'ul beams +32k, Broadside +11k, Phaser overload −8k" — and
+those are the reasons, not a ranking of what was biggest.
+
+A run that never used a row counts as zero for it, so "flew this at all" shows
+up as the whole of that row's weight.
+
+Hover a figure and it spells out the arithmetic — what this run did, what the
+others averaged — and adds one more thing: how far out of line the row is
+compared with how much the other runs disagree among themselves. A row two or
+three times further out than the others' own spread is a real oddity; one at
+half of it is ordinary variation.
+
 ### The runs split by damage type
 
 **🎯 By type** in the toolbar opens a small window: one line per damage type, one

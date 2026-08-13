@@ -114,6 +114,9 @@ pub struct Comparison {
     /// The player's damage narrowed to the picked types, one per slot, empty
     /// while no type is picked. What the tree and the Total are built from.
     of_type: Vec<Option<DamageGroup>>,
+    /// The combat whose rows are being measured against the others, while the
+    /// reader is asking what that run did differently.
+    impact_slot: Option<usize>,
     /// Whether the rows the combats agree on are hidden, leaving what they
     /// differ over.
     show_differences: bool,
@@ -255,6 +258,7 @@ impl Comparison {
             hide_unticked: false,
             types: Default::default(),
             of_type: Vec::new(),
+            impact_slot: None,
             show_differences: false,
             show_type_summary: false,
             difference_measure: DifferenceMeasure::Share,
@@ -321,7 +325,9 @@ impl Comparison {
             // The Total is not a row anything is filtered by: it is what the
             // rows are filtered against, and is always drawn.
             shares: Vec::new(),
-            dps: Vec::new(),
+            // The Total's own DPS per combat, which is what the rows' impacts
+            // have to add up to.
+            dps: parents.iter().map(|g| g.map(|g| g.dps.all)).collect(),
             damage: parents
                 .iter()
                 .map(|g| g.map(|g| g.total_damage.all))
@@ -337,6 +343,8 @@ impl Comparison {
         if !self.excluded.is_empty() {
             self.refresh_total();
         }
+
+        self.sort_rows();
 
         // Chart the overall total by default so a chart shows immediately.
         self.selected = Some(root_id);
@@ -677,6 +685,7 @@ impl Comparison {
     /// that change what is on screen — it only takes a copy of it.
     fn show_toolbar(&mut self, ui: &mut Ui, settings: &mut Settings, frame: &Frame) -> bool {
         let mut differences_toggled = false;
+        let mut impact_changed = false;
         ui.horizontal(|ui| {
             self.show_column_picker(ui, settings);
 
@@ -709,6 +718,24 @@ impl Comparison {
             {
                 self.show_differences = !self.show_differences;
                 differences_toggled = true;
+            }
+
+            if ui
+                .add(Button::new("⚖ vs rest").selected(self.impact_slot.is_some()))
+                .on_hover_text(
+                    "Measure one combat against the others: every row says how much DPS it added \
+                     or cost that run compared with what the other runs did, and the rows are put \
+                     in the order of how much they weighed. The figures add up to the difference \
+                     on the Total, so the column reads as an account of where the run's DPS came \
+                     from.",
+                )
+                .clicked()
+            {
+                self.impact_slot = match self.impact_slot {
+                    Some(_) => None,
+                    None => Some(0),
+                };
+                impact_changed = true;
             }
 
             if ui
@@ -749,7 +776,62 @@ impl Comparison {
             });
         });
 
+        impact_changed |= self.show_impact_controls(ui);
+        if impact_changed {
+            self.sort_rows();
+        }
         self.show_difference_controls(ui) || differences_toggled
+    }
+
+    /// Which combat the impact column is about — a line of its own under the
+    /// toolbar, and only while the column is up.
+    fn show_impact_controls(&mut self, ui: &mut Ui) -> bool {
+        let Some(current) = self.impact_slot else {
+            return false;
+        };
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("Measuring");
+            for slot_i in 0..self.slots.len() {
+                let note = note_of(&self.notes, slot_i);
+                let label = if note.is_empty() {
+                    format!("#{}", slot_i + 1)
+                } else {
+                    format!("#{} {note}", slot_i + 1)
+                };
+                if ui.steady_toggle(slot_i == current, label).clicked() {
+                    self.impact_slot = Some(slot_i);
+                    changed = true;
+                }
+            }
+            ui.label("against the average of the others");
+        });
+        changed
+    }
+
+    /// The order the rows under Total are drawn in: by how much they weighed in
+    /// the combat being measured, largest either way first, or — with no combat
+    /// being measured — by the reference combat's DPS, as they are built.
+    ///
+    /// Sorting is the point of the impact column: it is a ranking of what made
+    /// the difference. The differences toggle deliberately leaves the order
+    /// alone, being a filter rather than a ranking.
+    fn sort_rows(&mut self) {
+        let impact_slot = self.impact_slot;
+        let Some(total) = self.nodes.first_mut() else {
+            return;
+        };
+        match impact_slot {
+            Some(slot) => total.sub_nodes.sort_by(|a, b| {
+                b.impact(slot)
+                    .unwrap_or(0.0)
+                    .abs()
+                    .total_cmp(&a.impact(slot).unwrap_or(0.0).abs())
+            }),
+            None => total
+                .sub_nodes
+                .sort_by(|a, b| b.sort_key.total_cmp(&a.sort_key)),
+        }
     }
 
     /// The damage-type summary: a row per type, a column per combat, each
@@ -1104,6 +1186,29 @@ impl Comparison {
             }
         }
 
+        // The impact column comes last, after every metric: it is about the
+        // whole row rather than about one of its figures.
+        if let Some(slot) = self.impact_slot {
+            headers.push(HeaderCell::Separator);
+            headers.push(HeaderCell::Cell {
+                text: header_text(
+                    &font,
+                    text_color,
+                    "ΔDPS vs rest",
+                    &format!("#{}", slot + 1),
+                    with_notes.then(|| note_of(&self.notes, slot)),
+                    colors.get(slot).copied().flatten(),
+                ),
+                tooltip: format!(
+                    "How much DPS each row added to combat #{}{}, or cost it, against the average \
+                     of the other combats. The rows add up to the figure on the Total.",
+                    slot + 1,
+                    note_suffix(note_of(&self.notes, slot))
+                ),
+            });
+        }
+
+        let impact_slot = self.impact_slot;
         let mut selected = self.selected;
         let mut selection_changed = false;
         let hide_unticked = self.hide_unticked;
@@ -1167,6 +1272,7 @@ impl Comparison {
                                 n_metrics,
                                 show_breakdown,
                                 show_averages,
+                                impact_slot,
                                 &mut ticks,
                                 &mut selected,
                                 &mut selection_changed,
@@ -1244,6 +1350,7 @@ impl CompareNode {
         n_metrics: usize,
         show_breakdown: bool,
         show_averages: bool,
+        impact_slot: Option<usize>,
         ticks: &mut Ticks,
         selected: &mut Option<u32>,
         selection_changed: &mut bool,
@@ -1377,6 +1484,35 @@ impl CompareNode {
                     }
                 }
             }
+
+            // What this row weighed in the combat being measured, against the
+            // average of the others. Green where it carried that run.
+            if let Some(slot) = impact_slot {
+                show_group_separator(r);
+                match self.impact(slot) {
+                    Some(impact) => {
+                        let palette = theme::palette();
+                        let color = if impact >= 0.0 {
+                            palette.improve
+                        } else {
+                            palette.worse
+                        };
+                        let mut formatter = NumberFormatter::new();
+                        let text = format!(
+                            "{}{}",
+                            if impact >= 0.0 { "+" } else { "-" },
+                            formatter.format(impact.abs(), 0)
+                        );
+                        let tooltip = self.impact_tooltip(slot, impact, &mut formatter);
+                        r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.colored_label(color, text).on_hover_text(tooltip);
+                        });
+                    }
+                    None => {
+                        r.cell(|_| {});
+                    }
+                }
+            }
         });
 
         // The tick sits inside the row, so ticking clicks the row as well —
@@ -1404,6 +1540,7 @@ impl CompareNode {
                     n_metrics,
                     show_breakdown,
                     show_averages,
+                    impact_slot,
                     ticks,
                     selected,
                     selection_changed,
@@ -1511,6 +1648,22 @@ impl DifferenceMeasure {
             DifferenceMeasure::Share => "%",
             DifferenceMeasure::Dps => "DPS",
         }
+    }
+}
+
+/// The middle of a set of values, the mean of the two middle ones where there
+/// is an even number of them.
+fn median(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let middle = sorted.len() / 2;
+    if sorted.len().is_multiple_of(2) {
+        (sorted[middle - 1] + sorted[middle]) / 2.0
+    } else {
+        sorted[middle]
     }
 }
 
@@ -1663,6 +1816,88 @@ impl CompareNode {
             DifferenceMeasure::Share => spread(&self.shares),
             DifferenceMeasure::Dps => spread(&self.dps),
         }
+    }
+
+    /// What this row added to — or took off — this combat, measured against the
+    /// other combats in the comparison.
+    ///
+    /// The reference is the **mean** of the others, not their median, and that
+    /// is not a matter of taste: a mean is additive, so the row impacts add up
+    /// to the Total's impact exactly, and the column can be read as an account
+    /// of where a run's DPS came from. A median would be steadier against one
+    /// odd run but would not add up to anything, and a column of numbers that
+    /// do not sum to the figure above them invites arithmetic that is wrong.
+    /// What a median is good for is said separately, by [`typicality`].
+    ///
+    /// A combat without the row counts as zero: not having flown something is
+    /// exactly the kind of difference this is about.
+    ///
+    /// [`typicality`]: CompareNode::typicality
+    fn impact(&self, slot: usize) -> Option<f64> {
+        let this = (*self.dps.get(slot)?).unwrap_or(0.0);
+        let others: Vec<f64> = self
+            .dps
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != slot)
+            .map(|(_, dps)| dps.unwrap_or(0.0))
+            .collect();
+        if others.is_empty() {
+            return None;
+        }
+        Some(this - others.iter().sum::<f64>() / others.len() as f64)
+    }
+
+    /// How far out of line this row is in this combat, in units of how much the
+    /// other combats disagree among themselves: `(value - median) / MAD`, the
+    /// median absolute deviation standing in for a standard deviation.
+    ///
+    /// The robust pair rather than mean and standard deviation, because a
+    /// comparison holds a handful of runs and a single odd one drags both of
+    /// those far enough to hide everything else. `None` when the others agree
+    /// exactly (a deviation of zero divides into nothing) or when there are
+    /// fewer than two of them to disagree.
+    fn typicality(&self, slot: usize) -> Option<f64> {
+        let this = (*self.dps.get(slot)?).unwrap_or(0.0);
+        let others: Vec<f64> = self
+            .dps
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != slot)
+            .map(|(_, dps)| dps.unwrap_or(0.0))
+            .collect();
+        if others.len() < 2 {
+            return None;
+        }
+        let middle = median(&others);
+        let deviation = median(
+            &others
+                .iter()
+                .map(|v| (v - middle).abs())
+                .collect::<Vec<_>>(),
+        );
+        (deviation > 0.0).then(|| (this - middle) / deviation)
+    }
+
+    /// What a row's impact is made of: this combat's DPS, what the others
+    /// averaged, and how far out of line it is against how much they disagree
+    /// among themselves.
+    fn impact_tooltip(&self, slot: usize, impact: f64, formatter: &mut NumberFormatter) -> String {
+        let this = self.dps.get(slot).copied().flatten().unwrap_or(0.0);
+        let mut tooltip = format!(
+            "{} DPS here, {} on average in the others\n= {}{} DPS",
+            formatter.format(this, 0),
+            formatter.format(this - impact, 0),
+            if impact >= 0.0 { "+" } else { "-" },
+            formatter.format(impact.abs(), 0)
+        );
+        if let Some(typicality) = self.typicality(slot) {
+            tooltip.push_str(&format!(
+                "\n{} times as far from the middle of the others as they are from each other",
+                formatter.format(typicality.abs(), 1)
+            ));
+        }
+        tooltip
     }
 
     /// In how many of the combats this row appears at all — the other half of
@@ -2755,7 +2990,7 @@ mod tests {
         // The fonts only exist once a pass has run.
         let _ = ctx.run_ui(Default::default(), |_| {});
         let font = TextStyle::Body.resolve(&Style::default());
-        for glyph in "Σ🖹⚠🆚◀⏷⏵👁Δ☰🎯".chars() {
+        for glyph in "Σ🖹⚠🆚◀⏷⏵👁Δ☰🎯⚖".chars() {
             assert!(
                 ctx.fonts_mut(|fonts| fonts.has_glyph(&font, glyph)),
                 "'{glyph}' (U+{:04X}) has no glyph and would draw as an empty box",
@@ -3233,6 +3468,80 @@ mod tests {
             duration: 10.0,
         };
         assert!(filter.keep(&group).is_none());
+    }
+
+    fn impact_row(name: &str, dps: &[Option<f64>]) -> CompareNode {
+        let mut node = node(name, vec![Some(0.0)], Vec::new());
+        node.dps = dps.to_vec();
+        node
+    }
+
+    /// The impacts of the rows add up to the impact of the Total, exactly.
+    /// That is what the mean of the others buys and a median would not: the
+    /// column can be read as an account of where the run's DPS came from.
+    #[test]
+    fn the_row_impacts_add_up_to_the_totals() {
+        let mut total = impact_row("Total", &[Some(110.0), Some(100.0), Some(110.0)]);
+        total.sub_nodes = vec![
+            impact_row("Beams", &[Some(100.0), Some(60.0), Some(20.0)]),
+            impact_row("Torpedo", &[Some(10.0), Some(30.0), Some(50.0)]),
+            impact_row("Proc", &[None, Some(10.0), Some(40.0)]),
+        ];
+
+        for slot in 0..3 {
+            let rows: f64 = total
+                .sub_nodes
+                .iter()
+                .map(|row| row.impact(slot).unwrap())
+                .sum();
+            assert!(
+                (rows - total.impact(slot).unwrap()).abs() < 1e-9,
+                "combat #{}: rows {rows}, total {}",
+                slot + 1,
+                total.impact(slot).unwrap()
+            );
+        }
+    }
+
+    /// A combat that never flew the row counts as zero rather than being left
+    /// out — not having flown something is the difference being measured.
+    #[test]
+    fn a_row_a_combat_never_flew_weighs_against_it() {
+        let row = impact_row("Proc", &[None, Some(60.0), Some(40.0)]);
+        assert_eq!(Some(-50.0), row.impact(0), "0 against an average of 50");
+        assert_eq!(Some(40.0), row.impact(1), "60 against an average of 20");
+    }
+
+    /// One combat cannot be measured against nobody.
+    #[test]
+    fn a_lone_combat_has_nothing_to_be_measured_against() {
+        assert_eq!(None, impact_row("Beams", &[Some(100.0)]).impact(0));
+        assert_eq!(None, impact_row("Beams", &[Some(100.0)]).impact(3));
+    }
+
+    /// How far out of line a row is, in units of how much the other combats
+    /// disagree among themselves — median and MAD, which one odd run does not
+    /// drag the way a mean and a standard deviation would.
+    #[test]
+    fn typicality_is_measured_against_how_much_the_others_disagree() {
+        // Others 10, 20, 30: middle 20, deviations 10/0/10, MAD 10.
+        let row = impact_row("Beams", &[Some(50.0), Some(10.0), Some(20.0), Some(30.0)]);
+        assert_eq!(Some(3.0), row.typicality(0), "30 above the middle, MAD 10");
+
+        // Others that agree exactly leave nothing to measure against.
+        let flat = impact_row("Beams", &[Some(50.0), Some(20.0), Some(20.0), Some(20.0)]);
+        assert_eq!(None, flat.typicality(0));
+
+        // And a single other combat is not a disagreement.
+        let pair = impact_row("Beams", &[Some(50.0), Some(20.0)]);
+        assert_eq!(None, pair.typicality(0));
+    }
+
+    #[test]
+    fn a_median_is_the_middle_of_the_values() {
+        assert_eq!(20.0, median(&[30.0, 10.0, 20.0]));
+        assert_eq!(25.0, median(&[30.0, 10.0, 20.0, 40.0]), "the middle two");
+        assert_eq!(0.0, median(&[]));
     }
 
     /// A difference is the largest combat less the smallest, and a combat
