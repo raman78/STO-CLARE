@@ -108,6 +108,19 @@ pub struct Comparison {
     /// Whether the rows that are out are hidden rather than only left out of
     /// the Total.
     hide_unticked: bool,
+    /// The damage types the reader is looking at. Empty means every type, which
+    /// is the state the picker opens in.
+    types: FxHashSet<String>,
+    /// Whether the rows the combats agree on are hidden, leaving what they
+    /// differ over.
+    show_differences: bool,
+    /// What "differ" is measured in, and by how much a row has to differ to
+    /// stay on screen. A threshold each, because one is percentage points of a
+    /// combat and the other is DPS — a number that means anything in one is
+    /// meaningless in the other.
+    difference_measure: DifferenceMeasure,
+    share_threshold: f64,
+    dps_threshold: f64,
     filter: f64,
     time_slice: f64,
     /// What came of the last export, shown beside the button: where the file
@@ -126,6 +139,15 @@ struct CompareNode {
     averages: Vec<Option<AverageCell>>,
     /// Per-slot hit series for charting (`None` when the slot lacks this node).
     series: Vec<Option<SeriesData>>,
+    /// What this row is of each combat, per slot: its share of that combat's
+    /// own total (percent) and its DPS. Held apart from `cells` because those
+    /// follow the reader's chosen columns, while these two decide which rows
+    /// are on screen and have to be there whether or not they are shown.
+    shares: Vec<Option<f64>>,
+    dps: Vec<Option<f64>>,
+    /// The damage types this row dealt, over all the combats — what the type
+    /// picker filters on. A group of several weapons carries all of theirs.
+    damage_types: Vec<String>,
     /// Reference (first slot) DPS, used to sort rows; `-inf` when absent.
     sort_key: f64,
     sub_nodes: Vec<CompareNode>,
@@ -220,6 +242,11 @@ impl Comparison {
             averages: settings.compare.show_averages,
             excluded: Default::default(),
             hide_unticked: false,
+            types: Default::default(),
+            show_differences: false,
+            difference_measure: DifferenceMeasure::Share,
+            share_threshold: 3.0,
+            dps_threshold: 5_000.0,
             filter: 0.4,
             time_slice: 1.0,
             export_status: None,
@@ -271,6 +298,11 @@ impl Comparison {
             cells,
             averages,
             series,
+            // The Total is not a row anything is filtered by: it is what the
+            // rows are filtered against, and is always drawn.
+            shares: Vec::new(),
+            dps: Vec::new(),
+            damage_types: Vec::new(),
             sort_key,
             sub_nodes,
             open: true,
@@ -551,6 +583,22 @@ impl Comparison {
             .collect()
     }
 
+    /// Every damage type the rows under Total dealt, in name order — what the
+    /// type picker offers. Taken from the rows rather than from a list of the
+    /// game's types, so it never offers a type this comparison has none of.
+    fn all_damage_types(&self) -> Vec<String> {
+        let mut types: Vec<String> = self
+            .nodes
+            .first()
+            .into_iter()
+            .flat_map(|total| total.sub_nodes.iter())
+            .flat_map(|node| node.damage_types.iter().cloned())
+            .collect();
+        types.sort_unstable();
+        types.dedup();
+        types
+    }
+
     /// The row above the legend: which columns to show, whether to average them,
     /// and the export. The export sits on the right, away from the two menus
     /// that change what is on screen — it only takes a copy of it.
@@ -574,6 +622,8 @@ impl Comparison {
                 settings.compare.show_averages = !settings.compare.show_averages;
                 settings.save();
             }
+
+            self.show_difference_controls(ui);
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
@@ -600,6 +650,64 @@ impl Comparison {
                 }
             });
         });
+    }
+
+    /// The differences toggle, and — while it is on — what a difference is
+    /// measured in and how large one has to be to stay on screen.
+    ///
+    /// The two controls only appear with the toggle, because they say nothing
+    /// while nothing is being hidden, and the toolbar is already a row of
+    /// things that are always there.
+    fn show_difference_controls(&mut self, ui: &mut Ui) {
+        if ui
+            .add(Button::new("Δ Differences").selected(self.show_differences))
+            .on_hover_text(
+                "Hide the rows the combats agree on, leaving what they differ over — what a run \
+                 flew that the others did not, and what it leaned on far harder. The rows stay in \
+                 the order they are in; only the ones nobody differs over go.",
+            )
+            .clicked()
+        {
+            self.show_differences = !self.show_differences;
+        }
+        if !self.show_differences {
+            return;
+        }
+
+        for measure in [DifferenceMeasure::Share, DifferenceMeasure::Dps] {
+            ui.steady_toggle_value(&mut self.difference_measure, measure, measure.label())
+                .on_hover_text(match measure {
+                    DifferenceMeasure::Share => {
+                        "Measure a difference in what the row was of its own combat. A shorter or \
+                         weaker run then does not read as a different build in every row at once."
+                    }
+                    DifferenceMeasure::Dps => {
+                        "Measure a difference in DPS — what the row was actually worth, whatever \
+                         share of the run it came to."
+                    }
+                });
+        }
+
+        let (threshold, range, step) = match self.difference_measure {
+            DifferenceMeasure::Share => (&mut self.share_threshold, 0.5..=20.0, 0.5),
+            DifferenceMeasure::Dps => (&mut self.dps_threshold, 500.0..=50_000.0, 500.0),
+        };
+        SliderTextEdit::new(threshold, range, "compare difference threshold")
+            .clamp_min(0.0)
+            .clamp_max(1e9)
+            .desired_text_edit_width(50.0)
+            .display_precision(6)
+            .step_by(step)
+            .show(ui);
+        ui.label(format!(
+            "min difference ({})",
+            self.difference_measure.unit()
+        ))
+        .on_hover_text(
+            "A row stays on screen when its largest combat and its smallest are at least this \
+                 far apart. A combat that does not have the row at all counts as zero, so a row \
+                 flown in some runs and not others is a difference of its whole size.",
+        );
     }
 
     /// Asks for a file and writes the table into it. Whatever comes of it is
@@ -806,9 +914,23 @@ impl Comparison {
         let mut selection_changed = false;
         let hide_unticked = self.hide_unticked;
         let mut hide_toggled = false;
+        let all_types = self.all_damage_types();
+        let differences = self.show_differences.then_some((
+            self.difference_measure,
+            match self.difference_measure {
+                DifferenceMeasure::Share => self.share_threshold,
+                DifferenceMeasure::Dps => self.dps_threshold,
+            },
+        ));
+        // The picker writes to a copy: the set it edits is the one the rows are
+        // being filtered by as it draws, and a pick takes effect on the next
+        // pass — which egui runs anyway, having just been clicked.
+        let mut picked_types = self.types.clone();
         let mut ticks = Ticks {
             excluded: &mut self.excluded,
             hide_unticked,
+            types: &self.types,
+            differences,
             changed: false,
         };
         {
@@ -835,6 +957,7 @@ impl Comparison {
                                 {
                                     hide_toggled = true;
                                 }
+                                show_type_picker(ui, &all_types, &mut picked_types);
                             });
                         });
                         for header in &headers {
@@ -868,6 +991,7 @@ impl Comparison {
 
         let ticks_changed = ticks.changed;
         self.selected = selected;
+        self.types = picked_types;
         if hide_toggled {
             self.hide_unticked = !self.hide_unticked;
         }
@@ -949,6 +1073,14 @@ impl CompareNode {
                         self.open = !self.open;
                     }
                     ui.label(&self.name);
+                    // While the differences are being read, a row missing from
+                    // some of the combats says so: "flown in two runs out of
+                    // five" and "flown in all five, unevenly" are different
+                    // findings, and the numbers alone do not tell them apart at
+                    // a glance.
+                    if let Some(missing) = self.missing_from(depth, n_slots, ticks) {
+                        ui.label(RichText::new(missing).weak());
+                    }
                 });
             });
 
@@ -1070,7 +1202,7 @@ impl CompareNode {
 
         if self.open {
             for sub in self.sub_nodes.iter_mut() {
-                if is_hidden(depth, ticks, &sub.name) {
+                if is_hidden(depth, ticks, sub) {
                     continue;
                 }
                 sub.show(
@@ -1148,12 +1280,126 @@ impl CompareNode {
 }
 
 /// What the tick column needs while the tree draws itself: which rows are out
-/// of the Total, whether those rows are hidden, and whether this pass changed
+/// of the Total, which rows are on screen at all, and whether this pass changed
 /// any of that.
 struct Ticks<'a> {
     excluded: &'a mut FxHashSet<String>,
     hide_unticked: bool,
+    /// The damage types to show. Empty is every type.
+    types: &'a FxHashSet<String>,
+    /// How far a row has to differ between the combats to stay on screen, and
+    /// in what. `None` while the toggle is off.
+    differences: Option<(DifferenceMeasure, f64)>,
     changed: bool,
+}
+
+/// What a difference between combats is measured in.
+///
+/// Neither is the right answer on its own. A share says what a row was *of* its
+/// combat, so a shorter or worse run does not read as a different build in
+/// every row at once; DPS says what it was worth, which is what a reader chasing
+/// a number wants. Both are offered rather than guessed at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DifferenceMeasure {
+    /// Percentage points of the combat's own damage.
+    Share,
+    Dps,
+}
+
+impl DifferenceMeasure {
+    fn label(self) -> &'static str {
+        match self {
+            DifferenceMeasure::Share => "share of combat",
+            DifferenceMeasure::Dps => "DPS",
+        }
+    }
+
+    fn unit(self) -> &'static str {
+        match self {
+            DifferenceMeasure::Share => "pp",
+            DifferenceMeasure::Dps => "DPS",
+        }
+    }
+}
+
+/// How far apart the combats are on one row: the largest of its values less the
+/// smallest, counting a combat that does not have the row at all as zero.
+///
+/// The zero is the point. A row flown in two runs out of five and absent from
+/// the rest is exactly the kind of difference this is looking for, and treating
+/// the absence as "no data" would rank it as agreement.
+fn spread(values: &[Option<f64>]) -> f64 {
+    let mut low = f64::INFINITY;
+    let mut high = f64::NEG_INFINITY;
+    for value in values.iter().map(|v| v.unwrap_or(0.0)) {
+        low = low.min(value);
+        high = high.max(value);
+    }
+    if low > high { 0.0 } else { high - low }
+}
+
+/// The damage type picker in the `Name` header: every type the comparison holds,
+/// each on or off, and a way back to all of them.
+///
+/// Off is drawn as "every type" rather than as "no types", because a picker
+/// nobody has touched is showing everything, and a list of empty boxes over a
+/// full table reads as the opposite.
+fn show_type_picker(ui: &mut Ui, all: &[String], picked: &mut FxHashSet<String>) {
+    if all.is_empty() {
+        return;
+    }
+    let label = if picked.is_empty() {
+        "☰ Type".to_string()
+    } else {
+        format!("☰ Type ({})", picked.len())
+    };
+    ui.menu_button(label, |ui| {
+        if !picked.is_empty() && ui.button("Every type").clicked() {
+            picked.clear();
+        }
+        for damage_type in all {
+            let mut on = picked.contains(damage_type);
+            if ui.checkbox(&mut on, damage_type).changed() {
+                if on {
+                    picked.insert(damage_type.clone());
+                } else {
+                    picked.remove(damage_type);
+                }
+            }
+        }
+    })
+    .response
+    .on_hover_text(
+        "Show only the rows that dealt a damage type you pick — the beams of one flavour out of a \
+         rainbow build, say. A row that dealt several types is shown for each of them.",
+    );
+}
+
+impl CompareNode {
+    /// How far the combats are apart on this row, in the given measure.
+    fn difference(&self, measure: DifferenceMeasure) -> f64 {
+        match measure {
+            DifferenceMeasure::Share => spread(&self.shares),
+            DifferenceMeasure::Dps => spread(&self.dps),
+        }
+    }
+
+    /// In how many of the combats this row appears at all — the other half of
+    /// what makes a row stand out, and the one a number alone cannot show.
+    fn present_in(&self) -> usize {
+        self.dps.iter().filter(|value| value.is_some()).count()
+    }
+
+    /// What to say beside the name about the combats this row is missing from,
+    /// while the differences are being read. `None` when it is in all of them,
+    /// when the toggle is off, or for a row the toggle is not about.
+    fn missing_from(&self, depth: usize, n_slots: usize, ticks: &Ticks) -> Option<String> {
+        if depth != 1 || ticks.differences.is_none() {
+            return None;
+        }
+        let present = self.present_in();
+        (present < n_slots).then(|| format!("(in {present} of {n_slots})"))
+    }
 }
 
 /// How many of the rows under Total are counted in it.
@@ -1224,11 +1470,33 @@ fn subset_hits<'a>(
     Some(kept.into_iter().flatten().copied().collect())
 }
 
-/// Whether a row is not drawn at all: only the rows under Total (`parent_depth`
-/// 0 is Total itself) can be hidden, and only while the toggle in the Name
-/// header is on.
-fn is_hidden(parent_depth: usize, ticks: &Ticks, name: &str) -> bool {
-    parent_depth == 0 && ticks.hide_unticked && ticks.excluded.contains(name)
+/// Whether a row is not drawn at all.
+///
+/// Only the rows under Total (`parent_depth` 0 is Total itself) can be hidden:
+/// they are the ones the three filters are about, and a sub-row is drawn with
+/// the branch it belongs to. The filters are `and`ed — each one is a separate
+/// question the reader asked.
+fn is_hidden(parent_depth: usize, ticks: &Ticks, node: &CompareNode) -> bool {
+    if parent_depth != 0 {
+        return false;
+    }
+    if ticks.hide_unticked && ticks.excluded.contains(&node.name) {
+        return true;
+    }
+    if !ticks.types.is_empty()
+        && !node
+            .damage_types
+            .iter()
+            .any(|damage_type| ticks.types.contains(damage_type))
+    {
+        return true;
+    }
+    if let Some((measure, threshold)) = ticks.differences
+        && node.difference(measure) < threshold
+    {
+        return true;
+    }
+    false
 }
 
 /// A damage group standing for a set of hits, with every metric recalculated
@@ -1691,6 +1959,12 @@ fn build_level(
                 cells,
                 averages,
                 series,
+                shares: per_slot
+                    .iter()
+                    .map(|g| g.and_then(|g| g.damage_percentage.all))
+                    .collect(),
+                dps: per_slot.iter().map(|g| g.map(|g| g.dps.all)).collect(),
+                damage_types: damage_types(per_slot, name_managers),
                 sort_key,
                 sub_nodes,
                 open: false,
@@ -1704,6 +1978,29 @@ fn build_level(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     nodes
+}
+
+/// Every damage type this row dealt, over all the combats, in name order.
+///
+/// The analyzer already keeps `Shield` out of a group that has a real type of
+/// its own (`DamageGroup::add_damage_type_non_pool`) — the log gives no energy
+/// type for a hit on shields — so what comes out here is the weapon types, and
+/// a group of several weapons carries all of theirs.
+fn damage_types(per_slot: &[Option<&DamageGroup>], name_managers: &[&NameManager]) -> Vec<String> {
+    let mut types: Vec<String> = per_slot
+        .iter()
+        .enumerate()
+        .filter_map(|(slot_i, group)| Some((slot_i, (*group)?)))
+        .flat_map(|(slot_i, group)| {
+            group
+                .damage_types
+                .iter()
+                .map(move |t| t.get(name_managers[slot_i]).to_string())
+        })
+        .collect();
+    types.sort_unstable();
+    types.dedup();
+    types
 }
 
 fn build_series(
@@ -2084,7 +2381,7 @@ mod tests {
         // The fonts only exist once a pass has run.
         let _ = ctx.run_ui(Default::default(), |_| {});
         let font = TextStyle::Body.resolve(&Style::default());
-        for glyph in "Σ🖹⚠🆚◀⏷⏵👁".chars() {
+        for glyph in "Σ🖹⚠🆚◀⏷⏵👁Δ☰".chars() {
             assert!(
                 ctx.fonts_mut(|fonts| fonts.has_glyph(&font, glyph)),
                 "'{glyph}' (U+{:04X}) has no glyph and would draw as an empty box",
@@ -2450,22 +2747,51 @@ mod tests {
         );
     }
 
+    /// A row as the filters see it: what it is called, what it dealt, and what
+    /// it was worth in each combat.
+    fn filter_row(name: &str, types: &[&str], shares: &[Option<f64>]) -> CompareNode {
+        let mut node = node(name, vec![Some(0.0)], Vec::new());
+        node.damage_types = types.iter().map(|t| t.to_string()).collect();
+        node.shares = shares.to_vec();
+        node.dps = shares.iter().map(|s| s.map(|s| s * 1_000.0)).collect();
+        node
+    }
+
+    fn filters<'a>(
+        excluded_names: &'a mut FxHashSet<String>,
+        types: &'a FxHashSet<String>,
+    ) -> Ticks<'a> {
+        Ticks {
+            excluded: excluded_names,
+            hide_unticked: false,
+            types,
+            differences: None,
+            changed: false,
+        }
+    }
+
     /// The toggle in the Name header hides the rows that are out, and nothing
     /// else: Total stays, the ticked rows stay, and a sub-row is never hidden
     /// on account of a name that matches its own branch's.
     #[test]
     fn hiding_takes_out_the_unticked_rows_only() {
         let mut names = excluded(&["Photon Torpedo"]);
-        let ticks = Ticks {
-            excluded: &mut names,
-            hide_unticked: true,
-            changed: false,
-        };
+        let no_types = FxHashSet::default();
+        let mut ticks = filters(&mut names, &no_types);
+        ticks.hide_unticked = true;
 
-        assert!(is_hidden(0, &ticks, "Photon Torpedo"));
-        assert!(!is_hidden(0, &ticks, "Phaser Beam Array"));
+        assert!(is_hidden(
+            0,
+            &ticks,
+            &filter_row("Photon Torpedo", &[], &[])
+        ));
+        assert!(!is_hidden(
+            0,
+            &ticks,
+            &filter_row("Phaser Beam Array", &[], &[])
+        ));
         assert!(
-            !is_hidden(1, &ticks, "Photon Torpedo"),
+            !is_hidden(1, &ticks, &filter_row("Photon Torpedo", &[], &[])),
             "a row deeper in the tree is drawn with the branch it belongs to"
         );
     }
@@ -2474,12 +2800,103 @@ mod tests {
     #[test]
     fn the_unticked_rows_stay_on_screen_until_the_toggle_is_on() {
         let mut names = excluded(&["Photon Torpedo"]);
-        let ticks = Ticks {
-            excluded: &mut names,
-            hide_unticked: false,
-            changed: false,
-        };
-        assert!(!is_hidden(0, &ticks, "Photon Torpedo"));
+        let no_types = FxHashSet::default();
+        let ticks = filters(&mut names, &no_types);
+        assert!(!is_hidden(
+            0,
+            &ticks,
+            &filter_row("Photon Torpedo", &[], &[])
+        ));
+    }
+
+    /// The type picker keeps the rows that dealt a picked type. A row of
+    /// several types — a group holding more than one weapon — is kept for any
+    /// one of them, since it is partly that type.
+    #[test]
+    fn the_type_picker_keeps_the_rows_of_that_type() {
+        let mut names = FxHashSet::default();
+        let picked: FxHashSet<String> = ["Phaser".to_string()].into_iter().collect();
+        let ticks = filters(&mut names, &picked);
+
+        assert!(!is_hidden(
+            0,
+            &ticks,
+            &filter_row("Beams", &["Phaser"], &[])
+        ));
+        assert!(!is_hidden(
+            0,
+            &ticks,
+            &filter_row("Rainbow", &["Phaser", "Polaron"], &[])
+        ));
+        assert!(is_hidden(
+            0,
+            &ticks,
+            &filter_row("Torpedo", &["Kinetic"], &[])
+        ));
+        // A row the log gave no type for is not claimed by any of them.
+        assert!(is_hidden(0, &ticks, &filter_row("Placate", &[], &[])));
+    }
+
+    /// An untouched picker is showing every type, not none of them.
+    #[test]
+    fn an_empty_type_picker_hides_nothing() {
+        let mut names = FxHashSet::default();
+        let none = FxHashSet::default();
+        let ticks = filters(&mut names, &none);
+        assert!(!is_hidden(
+            0,
+            &ticks,
+            &filter_row("Torpedo", &["Kinetic"], &[])
+        ));
+    }
+
+    /// A difference is the largest combat less the smallest, and a combat
+    /// without the row counts as zero — a row flown in two runs out of five is
+    /// a difference of its whole size, which is the case this is looking for.
+    #[test]
+    fn a_difference_is_the_spread_across_the_combats() {
+        assert_eq!(0.0, spread(&[]));
+        assert_eq!(0.0, spread(&[Some(5.0), Some(5.0)]));
+        assert_eq!(3.0, spread(&[Some(5.0), Some(2.0), Some(4.0)]));
+        assert_eq!(
+            22.0,
+            spread(&[None, None, Some(22.0)]),
+            "absent from a combat is a difference, not missing data"
+        );
+    }
+
+    /// The rows the combats agree on go; the ones they differ over stay. The
+    /// two measures are read off the row separately, so a threshold in one is
+    /// never applied to the other.
+    #[test]
+    fn the_differences_toggle_hides_what_the_combats_agree_on() {
+        let mut names = FxHashSet::default();
+        let no_types = FxHashSet::default();
+        let agreed = filter_row("Broadside", &["Phaser"], &[Some(15.0), Some(16.0)]);
+        let differs = filter_row("Ba'ul", &["AntiProton"], &[Some(3.9), Some(27.4)]);
+
+        let mut ticks = filters(&mut names, &no_types);
+        ticks.differences = Some((DifferenceMeasure::Share, 3.0));
+        assert!(is_hidden(0, &ticks, &agreed), "one point apart");
+        assert!(!is_hidden(0, &ticks, &differs));
+
+        // The same rows in DPS, where the numbers are a thousand times larger.
+        ticks.differences = Some((DifferenceMeasure::Dps, 3.0));
+        assert!(
+            !is_hidden(0, &ticks, &agreed),
+            "a thousand DPS apart is over a threshold of three"
+        );
+        ticks.differences = Some((DifferenceMeasure::Dps, 5_000.0));
+        assert!(is_hidden(0, &ticks, &agreed));
+        assert!(!is_hidden(0, &ticks, &differs));
+    }
+
+    /// How many combats a row appears in at all, which is what tells "flown
+    /// once" from "flown everywhere, unevenly".
+    #[test]
+    fn a_row_says_how_many_combats_it_appears_in() {
+        let row = filter_row("Ba'ul", &[], &[Some(3.0), None, Some(27.0), None]);
+        assert_eq!(2, row.present_in());
     }
 
     fn charted(node: &CompareNode) -> PreparedDamageDataSet {
@@ -2575,6 +2992,9 @@ mod tests {
                 })
                 .collect(),
             series: vec![None],
+            shares: Vec::new(),
+            dps: Vec::new(),
+            damage_types: Vec::new(),
             sort_key: 0.0,
             sub_nodes,
             open: false,

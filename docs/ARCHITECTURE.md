@@ -319,6 +319,56 @@ way. Neither it nor the ticks are persisted: `CompareSettings` holds the
 columns, the breakdown and the averages, and a fresh `Comparison` starts with
 every row ticked.
 
+#### Which rows are on screen
+
+Three filters decide it, `and`ed in `is_hidden`, and all three apply only to the
+rows directly under Total — the level the ticks are at, and the level a reader
+compares builds at.
+
+| filter | state | what it asks |
+|--------|-------|--------------|
+| `👁` in the `Name` header | `hide_unticked` | only the rows the Total is added up from |
+| `☰ Type` in the `Name` header | `types` | only the rows that dealt one of these damage types |
+| `Δ Differences` in the toolbar | `show_differences`, `difference_measure`, `share_threshold` / `dps_threshold` | only the rows the combats disagree over |
+
+`CompareNode::damage_types` is the union of `DamageGroup::damage_types` over the
+slots. The analyzer already keeps `Shield` out of a group that has a real type
+(`add_damage_type_non_pool`) — the log carries no energy type for a hit on
+shields, only for one on hull — so a row's types are its weapon types, and a
+group holding several weapons carries all of theirs. The picker offers only what
+the comparison actually holds (`all_damage_types`).
+
+A difference is `spread`: the row's largest value across the combats less its
+smallest, **counting a combat that does not have the row as zero**. That zero is
+the point — a row flown in two runs out of five is the difference being looked
+for, and treating the absence as missing data would rank it as agreement. What
+"value" means is the reader's choice, and neither answer is right on its own:
+
+| measure | value per slot | why |
+|---------|----------------|-----|
+| `Share` | `damage_percentage.all` — the row's share of that combat's own damage, so the threshold is in percentage points | a shorter or weaker run does not read as a different build in every row at once |
+| `Dps` | `dps.all` | what the row was actually worth, whatever share of the run it came to |
+
+Each carries its own threshold: a number that means something in percentage
+points means nothing in DPS.
+
+Two decisions worth keeping:
+
+- **The order does not change.** Rows stay sorted by the reference combat's DPS,
+  as they are with the toggle off, so a row known from the full table is where it
+  was. The alternative — largest difference first — makes the toggle a different
+  table rather than the same one with rows taken out.
+- **A row missing from some combats says so** (`missing_from`, "(in 2 of 5)").
+  "Flown in two runs out of five" and "flown in all five, unevenly" are different
+  findings, and the numbers in the columns do not tell them apart at a glance.
+
+Measured on five runs of one map: at a 3 pp threshold the tree drops from 25 rows
+to 9, and at 18.5 pp to the two the runs really differ over — the antiproton
+beams of one build and the phaser group of the other.
+
+The filters are the view only; the Total follows the ticks, not what is on
+screen.
+
 #### Averages
 
 `build_row` returns both shapes of a row in one pass: a `SlotCell` per combat,

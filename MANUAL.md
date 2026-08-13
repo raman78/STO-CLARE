@@ -358,6 +358,57 @@ everything at once. Half-filled means some rows are out.
 Your ticks last as long as the comparison. Going back to **Change selection**,
 or starting a new comparison, starts again with every row counted.
 
+### Finding what a run did differently
+
+Two more things sit next to the tick boxes, for the question a wide comparison
+is usually really about: not what these runs have in common, but what they do
+not.
+
+**Type** next to the `Name` heading lists the damage types the comparison
+holds — Phaser, Antiproton, Plasma, Polaron, Disruptor, Kinetic and so on — and
+shows only the rows that dealt the ones you pick. A row that dealt several types
+(a group holding more than one weapon) is shown for any of them. Pick nothing
+and you see everything, which is how it starts.
+
+**Δ Differences** in the toolbar hides the rows the runs agree on, leaving what
+they differ over. Two controls appear with it:
+
+| control | what it does |
+|---|---|
+| share of combat / DPS | what a difference is measured in |
+| the slider | how large a difference has to be for the row to stay |
+
+Measured as a **share of combat**, a row is compared by how much of that run it
+was — so a shorter or weaker run does not look like a different build in every
+row at once. Measured in **DPS**, it is compared by what it was actually worth.
+Neither is right for every question, so both are there, each with its own slider
+setting.
+
+A run that never used a row counts as zero, so "flew this at all" is the largest
+difference there is. Rows missing from some runs say so beside the name — `(in 2
+of 5)` — because "flown in two runs out of five" and "flown in all five, but
+unevenly" are different findings.
+
+The rows stay in their usual order, so a row you know from the full table is
+where you left it; only the ones nobody differs over go.
+
+Worked example, five runs of the same patrol: at a small setting the table drops
+from 25 rows to 9. Turned up, two rows are left — the antiproton beams one build
+flew and the phaser group the other leaned on. That is the difference between a
+rainbow build and a single-flavour one, without reading a single number.
+
+```
+Δ Differences   [share of combat] [DPS]   ──○────  18.5   min difference (pp)
+
+  Name  👁  ☰ Type                        #1      #2      #3      #4      #5
+  Total                                317'792 424'411 392'343 441'869 406'217
+  Ba'ul Antiproton Beam Array  (in 3 of 5)
+  Omni-Directional&Standard Phaser Beam Array  (in 2 of 5)
+```
+
+Both of these only change what is on screen. The Total still counts whatever is
+ticked, whether or not you can see it.
+
 ### One average instead of many columns
 
 With more than a handful of runs on screen there are more columns than anyone
