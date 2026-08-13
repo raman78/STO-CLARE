@@ -11,17 +11,19 @@
 //! into one mean per metric, and the export, which writes the same table to a
 //! spreadsheet (`export`).
 
-use std::{path::PathBuf, sync::Arc};
+use std::{ops::Range, path::PathBuf, sync::Arc};
 
+use chrono::NaiveDateTime;
 use eframe::{
     Frame,
     egui::{text::LayoutJob, *},
 };
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     analyzer::{
-        AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager, ValueFlags,
+        AnalysisGroup, Combat, DamageGroup, DamageMetrics, Hit, Hits, HitsManager, MaxOneHit,
+        NameHandle, NameManager, ShieldHullOptionalValues, ShieldHullValues, ValueFlags,
     },
     app::main_tabs::diagrams::{
         DamageDiagrams, DiagramType, PreparedDamageDataSet, PreparedHit, combat_duration_seconds,
@@ -32,7 +34,7 @@ use crate::{
     custom_widgets::{
         slider_text_edit::SliderTextEdit, splitter::Splitter, table::*, toggle::Toggle,
     },
-    helpers::number_formatting::NumberFormatter,
+    helpers::{number_formatting::NumberFormatter, time_range_to_duration_or_zero},
 };
 
 use super::CompareMetric;
@@ -97,6 +99,15 @@ pub struct Comparison {
     /// Whether the chart currently holds the averaged line rather than one line
     /// per combat. Followed from the settings so the toggle rebuilds it.
     averages: bool,
+    /// The rows under Total the reader has taken out of it, by name.
+    ///
+    /// By name rather than by node id because a rebuild (another column, a
+    /// different player) hands out fresh ids, and a selection that survived
+    /// picking a column but not unpicking one would be a puzzle.
+    excluded: FxHashSet<String>,
+    /// Whether the rows that are out are hidden rather than only left out of
+    /// the Total.
+    hide_unticked: bool,
     filter: f64,
     time_slice: f64,
     /// What came of the last export, shown beside the button: where the file
@@ -207,6 +218,8 @@ impl Comparison {
             diagrams: None,
             active_diagram: DiagramType::Dps,
             averages: settings.compare.show_averages,
+            excluded: Default::default(),
+            hide_unticked: false,
             filter: 0.4,
             time_slice: 1.0,
             export_status: None,
@@ -263,9 +276,66 @@ impl Comparison {
             open: true,
         }];
 
+        // A rebuild starts from the whole tree again, so a row that was out of
+        // the Total has to be taken back out of the one just built.
+        if !self.excluded.is_empty() {
+            self.refresh_total();
+        }
+
         // Chart the overall total by default so a chart shows immediately.
         self.selected = Some(root_id);
         self.rebuild_diagram();
+    }
+
+    /// (Re)build the Total row from the rows that are ticked — its values, the
+    /// averages beside them, the series the chart draws it from, and the name
+    /// that says how much of the tree went into it.
+    ///
+    /// With nothing unticked it is built from the player's own damage group,
+    /// so an unfiltered Total is the analyzer's own figure to the last digit
+    /// rather than the pieces added back together in a different order.
+    fn refresh_total(&mut self) {
+        let filtered: Vec<Option<DamageGroup>> = if self.excluded.is_empty() {
+            Vec::new()
+        } else {
+            self.slots
+                .iter()
+                .map(|slot| subset_total(slot, &self.excluded))
+                .collect()
+        };
+
+        let (cells, averages, series) = {
+            let parents: Vec<Option<&DamageGroup>> = if filtered.is_empty() {
+                self.slots
+                    .iter()
+                    .map(|s| s.combat.players.get(&s.player).map(|p| &p.damage_out))
+                    .collect()
+            } else {
+                filtered.iter().map(|group| group.as_ref()).collect()
+            };
+            let hits_managers: Vec<&HitsManager> =
+                self.slots.iter().map(|s| &s.combat.hits_manger).collect();
+            let durations: Vec<f64> = self
+                .slots
+                .iter()
+                .map(|s| combat_duration_seconds(&s.combat))
+                .collect();
+            let (cells, averages) = build_row(&parents, &self.columns);
+            let series = build_series(&parents, &hits_managers, &durations);
+            (cells, averages, series)
+        };
+
+        let excluded = &self.excluded;
+        let Some(total) = self.nodes.first_mut() else {
+            return;
+        };
+        total.cells = cells;
+        total.averages = averages;
+        total.series = series;
+        total.name = total_row_name(
+            ticked_count(&total.sub_nodes, excluded),
+            total.sub_nodes.len(),
+        );
     }
 
     /// (Re)build the chart for the currently selected ability node: one line per
@@ -291,12 +361,19 @@ impl Comparison {
             }
             let data = (0..n_slots).filter_map(|slot_i| {
                 let series = node.series.get(slot_i)?.as_ref()?;
-                Some(PreparedDamageDataSet::new(
-                    &chart_label(slot_i, note_of(notes, slot_i)),
-                    series.total,
-                    series.hits.iter(),
-                    series.combat_duration_s,
-                ))
+                Some(
+                    PreparedDamageDataSet::new(
+                        &chart_label(slot_i, note_of(notes, slot_i)),
+                        series.total,
+                        series.hits.iter(),
+                        series.combat_duration_s,
+                    )
+                    // A combat's colour is which combat it is, so it is pinned
+                    // to the slot rather than left to the chart's own order —
+                    // that order is by total, and every tick in the table moves
+                    // the totals.
+                    .with_color(theme::series_color(slot_i)),
+                )
             });
             DamageDiagrams::from_data(data, filter, time_slice)
         });
@@ -450,19 +527,26 @@ impl Comparison {
     }
 
     /// The colour each slot's combat is drawn in on the chart, `None` for a
-    /// slot the chart has no line for — nothing is charted yet, or the selected
-    /// ability is absent from that combat.
+    /// slot the chart has no line for — nothing is charted yet, the selected
+    /// ability is absent from that combat, or the chart holds the one averaged
+    /// line instead of one per combat.
     ///
-    /// Asked of the chart rather than worked out here: the colours follow the
-    /// order the series sorted into (by total, largest first), so they depend
-    /// on the numbers and change with the ability picked. Reading them off the
-    /// chart is what keeps the table and the legend from drifting out of step
-    /// with it.
+    /// The colour itself is the slot's own and never moves: it says which
+    /// combat this is, and a combat is still the same combat after a row is
+    /// unticked. The charts sort their series by total, so a colour taken from
+    /// that order would change under every tick — and did, which is what this
+    /// replaced.
     fn slot_colors(&self) -> Vec<Option<Color32>> {
+        let charted = (!self.averages)
+            .then(|| self.selected.and_then(|id| find_node(&self.nodes, id)))
+            .flatten();
         (0..self.slots.len())
             .map(|slot_i| {
-                let diagrams = self.diagrams.as_ref()?;
-                diagrams.series_color(&chart_label(slot_i, note_of(&self.notes, slot_i)))
+                let node = charted?;
+                node.series
+                    .get(slot_i)?
+                    .as_ref()
+                    .map(|_| theme::series_color(slot_i))
             })
             .collect()
     }
@@ -720,14 +804,38 @@ impl Comparison {
 
         let mut selected = self.selected;
         let mut selection_changed = false;
+        let hide_unticked = self.hide_unticked;
+        let mut hide_toggled = false;
+        let mut ticks = Ticks {
+            excluded: &mut self.excluded,
+            hide_unticked,
+            changed: false,
+        };
         {
             let nodes = &mut self.nodes;
             ScrollArea::horizontal().show(ui, |ui| {
                 Table::new(ui)
                     .cell_spacing(10.0)
                     .header(header_height(with_notes), |r| {
+                        // The tick column's header stays empty: the row it
+                        // belongs to (Total) carries the tick that stands for
+                        // all of them.
+                        r.cell(|_| {});
                         r.cell(|ui| {
-                            ui.label("Name");
+                            ui.horizontal(|ui| {
+                                ui.label("Name");
+                                if ui
+                                    .add(Button::selectable(hide_unticked, "👁"))
+                                    .on_hover_text(
+                                        "Hide the rows that are not ticked, leaving only what the \
+                                         Total is added up from. They stay out of the Total either \
+                                         way — this only takes them off the screen.",
+                                    )
+                                    .clicked()
+                                {
+                                    hide_toggled = true;
+                                }
+                            });
                         });
                         for header in &headers {
                             match header {
@@ -744,11 +852,12 @@ impl Comparison {
                         for node in nodes.iter_mut() {
                             node.show(
                                 t,
-                                0.0,
+                                0,
                                 n_slots,
                                 n_metrics,
                                 show_breakdown,
                                 show_averages,
+                                &mut ticks,
                                 &mut selected,
                                 &mut selection_changed,
                             );
@@ -757,8 +866,19 @@ impl Comparison {
             });
         }
 
+        let ticks_changed = ticks.changed;
         self.selected = selected;
-        if selection_changed {
+        if hide_toggled {
+            self.hide_unticked = !self.hide_unticked;
+        }
+        if ticks_changed {
+            self.refresh_total();
+        }
+        // The chart follows the ticks only while it is the Total that is
+        // charted — an ability's own line is the same line whether or not it is
+        // counted in the total above it.
+        let total_charted = self.selected == self.nodes.first().map(|node| node.id);
+        if selection_changed || (ticks_changed && total_charted) {
             self.rebuild_diagram();
         }
     }
@@ -803,19 +923,23 @@ impl CompareNode {
     fn show(
         &mut self,
         t: &mut TableBody,
-        indent: f32,
+        depth: usize,
         n_slots: usize,
         n_metrics: usize,
         show_breakdown: bool,
         show_averages: bool,
+        ticks: &mut Ticks,
         selected: &mut Option<u32>,
         selection_changed: &mut bool,
     ) {
         let is_selected = *selected == Some(self.id);
+        let mut tick_rect = Rect::NOTHING;
         let response = t.selectable_row(is_selected, |r| {
+            tick_rect = self.show_tick(r, depth, ticks);
+
             r.cell(|ui| {
                 ui.horizontal(|ui| {
-                    ui.add_space(indent * 20.0);
+                    ui.add_space(depth as f32 * 20.0);
                     let symbol = if self.open { "⏷" } else { "⏵" };
                     let can_open = !self.sub_nodes.is_empty();
                     if ui
@@ -931,26 +1055,214 @@ impl CompareNode {
             }
         });
 
-        if response.clicked() {
+        // The tick sits inside the row, so ticking clicks the row as well —
+        // including when the pointer lands in the tick's cell but beside the
+        // box itself. The whole cell is therefore out of bounds for charting,
+        // or aiming at a tick and missing it by two points would chart that row
+        // instead of ticking it.
+        let clicked_the_tick = response
+            .interact_pointer_pos()
+            .is_some_and(|pos| tick_rect.contains(pos));
+        if response.clicked() && !clicked_the_tick {
             *selected = Some(self.id);
             *selection_changed = true;
         }
 
         if self.open {
             for sub in self.sub_nodes.iter_mut() {
+                if is_hidden(depth, ticks, &sub.name) {
+                    continue;
+                }
                 sub.show(
                     t,
-                    indent + 1.0,
+                    depth + 1,
                     n_slots,
                     n_metrics,
                     show_breakdown,
                     show_averages,
+                    ticks,
                     selected,
                     selection_changed,
                 );
             }
         }
     }
+
+    /// The first column: whether this row is counted in the Total. Returns the
+    /// cell it drew into, which the row uses to tell a tick from a click on the
+    /// row itself.
+    ///
+    /// Only the rows directly under Total carry one — they are what the Total
+    /// is added up from, and a row deeper in the tree goes in with the branch
+    /// it belongs to. Total itself carries the tick that stands for all of
+    /// them, half-filled while only some are in.
+    fn show_tick(&self, r: &mut TableRow, depth: usize, ticks: &mut Ticks) -> Rect {
+        match depth {
+            0 => {
+                let rows = self.sub_nodes.len();
+                let kept = ticked_count(&self.sub_nodes, ticks.excluded);
+                let mut all = kept == rows;
+                let cell = r.cell(|ui| {
+                    let response = ui
+                        .add(Checkbox::new(&mut all, "").indeterminate(kept != rows && kept != 0))
+                        .on_hover_text(
+                            "Count every row below in the Total, or none of them. Untick a row to \
+                             leave it out and the Total is added up again without it.",
+                        );
+                    if response.changed() {
+                        ticks.changed = true;
+                        for sub in self.sub_nodes.iter() {
+                            if all {
+                                ticks.excluded.remove(&sub.name);
+                            } else {
+                                ticks.excluded.insert(sub.name.clone());
+                            }
+                        }
+                    }
+                });
+                cell.rect
+            }
+            1 => {
+                let mut ticked = !ticks.excluded.contains(&self.name);
+                let cell = r.cell(|ui| {
+                    if ui
+                        .checkbox(&mut ticked, "")
+                        .on_hover_text("Count this row in the Total above")
+                        .changed()
+                    {
+                        ticks.changed = true;
+                        if ticked {
+                            ticks.excluded.remove(&self.name);
+                        } else {
+                            ticks.excluded.insert(self.name.clone());
+                        }
+                    }
+                });
+                cell.rect
+            }
+            // Deeper in the tree there is nothing to tick: the row is part of
+            // the branch above it, which has a tick of its own.
+            _ => r.cell(|_| {}).rect,
+        }
+    }
+}
+
+/// What the tick column needs while the tree draws itself: which rows are out
+/// of the Total, whether those rows are hidden, and whether this pass changed
+/// any of that.
+struct Ticks<'a> {
+    excluded: &'a mut FxHashSet<String>,
+    hide_unticked: bool,
+    changed: bool,
+}
+
+/// How many of the rows under Total are counted in it.
+fn ticked_count(sub_nodes: &[CompareNode], excluded: &FxHashSet<String>) -> usize {
+    sub_nodes
+        .iter()
+        .filter(|node| !excluded.contains(&node.name))
+        .count()
+}
+
+/// What the Total row is called: plain "Total" while the whole tree is in it,
+/// and how much of it went in when it is not — a filtered total read as the
+/// run's own figure is the one way this can mislead, on screen and in the
+/// exported sheet alike.
+fn total_row_name(kept: usize, rows: usize) -> String {
+    if kept == rows {
+        "Total".to_string()
+    } else {
+        format!("Total ({kept} of {rows} rows)")
+    }
+}
+
+/// The player's outgoing damage in one combat, added up from the ticked rows
+/// only.
+///
+/// Built out of the hits themselves and run through the analyzer's own metrics
+/// pass, so every column — resistance, criticals, accuracy, the lot — comes out
+/// the way the analyzer would have it for a group holding exactly those rows,
+/// rather than out of an average of averages.
+fn subset_total(slot: &Slot, excluded: &FxHashSet<String>) -> Option<DamageGroup> {
+    let player = slot.combat.players.get(&slot.player)?;
+    let name_manager = &slot.combat.name_manager;
+    let rows = player.damage_out.sub_groups().values().map(|sub| {
+        (
+            sub.name().get(name_manager),
+            sub.hits.get(&slot.combat.hits_manger),
+        )
+    });
+    Some(subset_group(
+        subset_hits(rows, excluded)?,
+        metrics_duration(&player.combat_time),
+        &slot.combat.total_damage_out,
+    ))
+}
+
+/// The hits of the ticked rows, pooled — or `None` when this combat holds none
+/// of the ticked rows at all.
+///
+/// A branch's hits are the whole branch's, so a row goes in with everything
+/// under it, which is why only the rows under Total can be ticked.
+///
+/// The `None` is the difference between "this combat did nothing with what you
+/// ticked" and "this combat has none of it": the second is an empty cell
+/// everywhere else in the table, is left out of the averages, and is not
+/// charted. A zero would instead draw a flat line along the bottom of the chart
+/// and drag every average down for a run that simply flew something else.
+fn subset_hits<'a>(
+    rows: impl Iterator<Item = (&'a str, &'a [Hit])>,
+    excluded: &FxHashSet<String>,
+) -> Option<Vec<Hit>> {
+    let kept: Vec<&[Hit]> = rows
+        .filter(|(name, _)| !excluded.contains(*name))
+        .map(|(_, hits)| hits)
+        .collect();
+    if kept.is_empty() {
+        return None;
+    }
+    Some(kept.into_iter().flatten().copied().collect())
+}
+
+/// Whether a row is not drawn at all: only the rows under Total (`parent_depth`
+/// 0 is Total itself) can be hidden, and only while the toggle in the Name
+/// header is on.
+fn is_hidden(parent_depth: usize, ticks: &Ticks, name: &str) -> bool {
+    parent_depth == 0 && ticks.hide_unticked && ticks.excluded.contains(name)
+}
+
+/// A damage group standing for a set of hits, with every metric recalculated
+/// from them the way [`DamageGroup::recalculate_metrics`] does it, so the rest
+/// of the table can read it like any other group.
+fn subset_group(hits: Vec<Hit>, duration: f64, combat_total: &ShieldHullValues) -> DamageGroup {
+    let mut damage_metrics = DamageMetrics::default();
+    damage_metrics.calc_and_apply_delta(&hits);
+    damage_metrics.recalculate_time_based_metrics(duration);
+    let mut max_one_hit = MaxOneHit::default();
+    max_one_hit.update_from_hits(NameHandle::UNKNOWN, &hits);
+    DamageGroup {
+        damage_percentage: ShieldHullOptionalValues::percentage(
+            &damage_metrics.total_damage,
+            combat_total,
+        ),
+        damage_metrics,
+        max_one_hit,
+        hits: Hits::Leaf(hits),
+        ..Default::default()
+    }
+}
+
+/// The combat duration the analyzer measures a player's outgoing damage
+/// against: the time they were in combat.
+///
+/// Not `combat_duration_seconds`, which the charts use — that one is the length
+/// of the fight (`active_time`), and dividing by it would give a DPS no other
+/// part of the program states.
+fn metrics_duration(combat_time: &Option<Range<NaiveDateTime>>) -> f64 {
+    time_range_to_duration_or_zero(combat_time)
+        .num_milliseconds()
+        .max(0) as f64
+        / 1e3
 }
 
 /// What an averaged value is made of: how many of the combats had this row at
@@ -1772,7 +2084,7 @@ mod tests {
         // The fonts only exist once a pass has run.
         let _ = ctx.run_ui(Default::default(), |_| {});
         let font = TextStyle::Body.resolve(&Style::default());
-        for glyph in "Σ🖹⚠🆚◀⏷⏵".chars() {
+        for glyph in "Σ🖹⚠🆚◀⏷⏵👁".chars() {
             assert!(
                 ctx.fonts_mut(|fonts| fonts.has_glyph(&font, glyph)),
                 "'{glyph}' (U+{:04X}) has no glyph and would draw as an empty box",
@@ -1961,17 +2273,213 @@ mod tests {
     }
 
     fn hit(damage: f64, time_millis: u32) -> Hit {
+        flagged_hit(damage, time_millis, ValueFlags::NONE)
+    }
+
+    fn crit(damage: f64, time_millis: u32) -> Hit {
+        flagged_hit(damage, time_millis, ValueFlags::CRITICAL)
+    }
+
+    fn flagged_hit(damage: f64, time_millis: u32, flags: ValueFlags) -> Hit {
         use crate::analyzer::{BaseHit, SpecificHit};
         Hit {
             hit: BaseHit {
                 damage,
-                flags: ValueFlags::NONE,
+                flags,
                 specific: SpecificHit::Hull {
                     base_damage: damage,
                 },
             },
             time_millis,
         }
+    }
+
+    fn combat_total(all: f64) -> ShieldHullValues {
+        ShieldHullValues {
+            all,
+            shield: 0.0,
+            hull: all,
+        }
+    }
+
+    fn excluded(names: &[&str]) -> FxHashSet<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    fn at(text: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M").unwrap()
+    }
+
+    /// The Total of a set of ticked rows is not the columns added up — it is
+    /// their hits put back through the analyzer's own metrics pass, so every
+    /// figure comes out the way it would for a group holding exactly those
+    /// rows.
+    #[test]
+    fn a_filtered_total_is_recalculated_from_the_hits_it_keeps() {
+        let group = subset_group(
+            vec![hit(100.0, 0), hit(300.0, 2000)],
+            10.0,
+            &combat_total(1000.0),
+        );
+
+        assert_eq!(400.0, group.total_damage.all);
+        assert_eq!(40.0, group.dps.all, "400 damage over 10 seconds");
+        assert_eq!(2, group.damage_metrics.hits.all);
+        assert_eq!(Some(200.0), group.average_hit.all);
+        assert_eq!(300.0, group.max_one_hit.damage);
+        assert_eq!(
+            Some(40.0),
+            group.damage_percentage.all,
+            "still a share of the whole fight, as the unfiltered Total is"
+        );
+    }
+
+    /// The percentages are recalculated with it, rather than carried over from
+    /// the rows that are still in — one crit in two hull hits is a 50% crit
+    /// rate whatever the rest of the run did.
+    #[test]
+    fn a_filtered_total_recalculates_the_percentages_too() {
+        let group = subset_group(
+            vec![hit(100.0, 0), crit(300.0, 1000)],
+            10.0,
+            &combat_total(400.0),
+        );
+
+        assert_eq!(Some(50.0), group.critical_percentage);
+        assert_eq!(Some(100.0), group.damage_percentage.all);
+    }
+
+    /// Unticking a row takes its hits out of the Total, and leaves the rest of
+    /// them exactly as they were.
+    #[test]
+    fn an_unticked_row_is_left_out_of_the_total() {
+        let beams = [hit(100.0, 0), hit(100.0, 1000)];
+        let torpedoes = [hit(500.0, 500)];
+        let rows = || {
+            [
+                ("Phaser Beam Array", beams.as_slice()),
+                ("Photon Torpedo", torpedoes.as_slice()),
+            ]
+            .into_iter()
+        };
+
+        let everything = subset_hits(rows(), &excluded(&[])).expect("nothing is unticked");
+        assert_eq!(3, everything.len());
+        assert_eq!(
+            700.0,
+            subset_group(everything, 10.0, &combat_total(700.0))
+                .total_damage
+                .all
+        );
+
+        let kept = subset_hits(rows(), &excluded(&["Photon Torpedo"])).expect("the beams are in");
+        assert_eq!(2, kept.len());
+        let total = subset_group(kept, 10.0, &combat_total(700.0));
+        assert_eq!(200.0, total.total_damage.all, "the torpedo is out");
+        assert_eq!(20.0, total.dps.all);
+    }
+
+    /// A row name that is not in the tree (a leftover from another player, say)
+    /// takes nothing out with it.
+    #[test]
+    fn an_unknown_row_name_leaves_the_total_alone() {
+        let beams = [hit(100.0, 0)];
+        let rows = [("Phaser Beam Array", beams.as_slice())].into_iter();
+        assert_eq!(
+            1,
+            subset_hits(rows, &excluded(&["Tetryon Cannon"]))
+                .expect("the row it does name is still in")
+                .len()
+        );
+    }
+
+    /// A combat that has none of the ticked rows leaves an empty cell, exactly
+    /// as an absent row does everywhere else in the table — not a zero, which
+    /// would draw a line along the bottom of the chart and pull every average
+    /// down for a run that simply flew something else.
+    #[test]
+    fn a_combat_without_any_ticked_row_is_left_out_entirely() {
+        let torpedoes = [hit(500.0, 0)];
+        let rows = [("Photon Torpedo", torpedoes.as_slice())].into_iter();
+        assert!(subset_hits(rows, &excluded(&["Photon Torpedo"])).is_none());
+
+        // Unticking everything is the same case, for every combat at once.
+        let beams = [hit(100.0, 0)];
+        let rows = [
+            ("Phaser Beam Array", beams.as_slice()),
+            ("Photon Torpedo", torpedoes.as_slice()),
+        ]
+        .into_iter();
+        assert!(subset_hits(rows, &excluded(&["Phaser Beam Array", "Photon Torpedo"])).is_none());
+    }
+
+    /// The Total is measured against the time the player was in combat, which
+    /// is what the analyzer divides by — not the length of the fight, which is
+    /// what the charts use.
+    #[test]
+    fn the_filtered_total_uses_the_time_in_combat() {
+        let start = at("2026-07-23 20:07");
+        let end = start + chrono::Duration::seconds(30);
+        assert_eq!(30.0, metrics_duration(&Some(start..end)));
+        assert_eq!(0.0, metrics_duration(&None));
+    }
+
+    /// The name says how much of the tree the Total is of, so a filtered figure
+    /// cannot be read as the run's own — on screen or in the exported sheet.
+    #[test]
+    fn a_filtered_total_says_so_in_its_name() {
+        assert_eq!("Total", total_row_name(5, 5));
+        assert_eq!("Total (2 of 5 rows)", total_row_name(2, 5));
+        assert_eq!("Total (0 of 5 rows)", total_row_name(0, 5));
+    }
+
+    /// The tick on the Total row stands for the rows below it: full when they
+    /// are all in, empty when none are, half-filled in between.
+    #[test]
+    fn the_total_counts_the_rows_that_are_ticked() {
+        let rows = vec![
+            node("Phaser Beam Array", vec![Some(0.0)], Vec::new()),
+            node("Photon Torpedo", vec![Some(0.0)], Vec::new()),
+        ];
+
+        assert_eq!(2, ticked_count(&rows, &excluded(&[])));
+        assert_eq!(1, ticked_count(&rows, &excluded(&["Photon Torpedo"])));
+        assert_eq!(
+            0,
+            ticked_count(&rows, &excluded(&["Photon Torpedo", "Phaser Beam Array"]))
+        );
+    }
+
+    /// The toggle in the Name header hides the rows that are out, and nothing
+    /// else: Total stays, the ticked rows stay, and a sub-row is never hidden
+    /// on account of a name that matches its own branch's.
+    #[test]
+    fn hiding_takes_out_the_unticked_rows_only() {
+        let mut names = excluded(&["Photon Torpedo"]);
+        let ticks = Ticks {
+            excluded: &mut names,
+            hide_unticked: true,
+            changed: false,
+        };
+
+        assert!(is_hidden(0, &ticks, "Photon Torpedo"));
+        assert!(!is_hidden(0, &ticks, "Phaser Beam Array"));
+        assert!(
+            !is_hidden(1, &ticks, "Photon Torpedo"),
+            "a row deeper in the tree is drawn with the branch it belongs to"
+        );
+    }
+
+    /// With the toggle off the rows stay on screen, only out of the Total.
+    #[test]
+    fn the_unticked_rows_stay_on_screen_until_the_toggle_is_on() {
+        let mut names = excluded(&["Photon Torpedo"]);
+        let ticks = Ticks {
+            excluded: &mut names,
+            hide_unticked: false,
+            changed: false,
+        };
+        assert!(!is_hidden(0, &ticks, "Photon Torpedo"));
     }
 
     fn charted(node: &CompareNode) -> PreparedDamageDataSet {

@@ -1,5 +1,11 @@
 # Change Log
 
+## unreleased
+
+### Other Changes
+- a run keeps one colour for as long as a comparison is open. The colours used to be handed out by size, so they swapped around whenever the numbers behind them moved — now the colour is simply which run it is, in the list at the top, in the column headings and on the chart
+- a comparison can now be about part of a run instead of all of it. Every ability row has a tick box beside it, and the Total above is added up from the rows you leave ticked — so two runs can be compared on your beams alone, with the torpedo spread and the console procs set aside. Everything is worked out again from the hits, not only the DPS: the resistance, critical rate and accuracy on the Total are those of the abilities you kept, and the chart follows. The Total says how much of the run went into it, on screen and in a saved spreadsheet, and the button beside **Name** hides the rows you left out
+
 ## v2.3.0
 
 ### Major Changes

@@ -6,11 +6,9 @@ mod values_chart;
 
 pub use crate::app::main_tabs::diagrams::common::DiagramType;
 use crate::app::settings::Settings;
-use crate::app::theme;
 pub use common::HealComponents;
 pub use common::PreparedDamageDataSet;
 pub use common::PreparedHealDataSet;
-use eframe::egui::Color32;
 // The compare view builds its averaged series point by point, because averaging
 // scales the hit count as well as the damage and a hit carries a whole count.
 pub use common::PreparedHit;
@@ -40,20 +38,6 @@ pub struct HealDiagrams {
 }
 
 impl DamageDiagrams {
-    /// The colour the series called `name` is drawn in, or `None` when no
-    /// series goes by that name.
-    ///
-    /// Read off the chart rather than worked out again by the caller: the
-    /// colours follow the order the series ended up sorted into (by total,
-    /// largest first), which is data-dependent. Every chart here sorts the same
-    /// way, so one answer holds for all five of them.
-    pub fn series_color(&self, name: &str) -> Option<Color32> {
-        self.dps_graph
-            .series_names()
-            .position(|series| series == name)
-            .map(theme::series_color)
-    }
-
     pub fn empty() -> Self {
         Self {
             dps_graph: ValuePerSecondGraph::empty(DiagramType::Dps),

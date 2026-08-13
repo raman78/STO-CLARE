@@ -272,6 +272,53 @@ The one thing left uneven is the table's `Name` column, which scrolls away with
 everything else — the averages toggle is the answer to a table too wide to
 read, not a frozen first column.
 
+#### Picking what the Total is of
+
+The table's first column is a tick per row, and the Total row is added up from
+the ticked ones only. `Comparison::excluded` holds the names of the rows that
+are out; `refresh_total` rebuilds the Total row — its cells, its averages, its
+chart series and its name — whenever that set changes.
+
+Only the rows directly under Total carry a tick. A branch's hits are the whole
+branch's (`Values::Branch` is a range over the slot's `HitsManager`), so a row
+goes in with everything under it; a tick deeper in the tree would mean re-adding
+every branch above it on every click, for a granularity the damage tree already
+expresses as a row of its own.
+
+Per slot, with rows excluded:
+
+```
+player.damage_out.sub_groups()
+   │  drop the rows named in Comparison::excluded        (subset_hits)
+   ▼
+Vec<Hit>
+   │  DamageMetrics::calc_and_apply_delta                (subset_group)
+   │  DamageMetrics::recalculate_time_based_metrics(player.combat_time)
+   ▼
+DamageGroup { hits: Hits::Leaf(..), .. }  ──►  build_row, build_series
+```
+
+The synthetic group is fed to the same `build_row` and `build_series` the tree
+is built with, so a filtered Total carries deltas, averages and a chart series
+like any other row, and nothing downstream knows it was filtered.
+
+| decision | why |
+|----------|-----|
+| the metrics are recalculated from the hits, not summed from the columns | a percentage cannot be added up: the resistance, crit rate and accuracy of a subset are only defined against that subset's hits. `DamageGroup::recalculate_metrics` does exactly this for a branch, so a filtered Total is what the analyzer would give a group holding those rows |
+| with nothing excluded the row is rebuilt from `player.damage_out` instead | float addition is not associative, and an unfiltered Total should be the analyzer's own figure to the last digit rather than the pieces added back in another order |
+| `metrics_duration` reads `Player::combat_time` | `damage_out` is measured against the time in combat (`Player::recalculate_metrics`). `combat_duration_seconds`, which the charts use, is `active_time`; dividing by it would state a DPS no other part of the program agrees with |
+| `damage_percentage` stays a share of `Combat::total_damage_out` | the column means the same filtered or not — how much of the fight this is |
+| the ticks are held by row name, not by node id | a column change or another player rebuilds the tree and hands out fresh ids; the reader's selection has no reason to survive one and not the other |
+| a combat that has none of the ticked rows leaves an empty cell | `subset_hits` answers `None` rather than an empty pool. That is what an absent row is everywhere else in the table: no cell, out of the averages, off the chart. A zero would draw a flat line along the bottom and pull every average down for a run that simply flew something else |
+| a tick is not also a chart selection | the tick sits inside a `selectable_row`, so it clicks the row as well. `CompareNode::show` drops any click whose pointer landed in the tick cell (`show_tick` returns its `Rect`) — not only one that changed a tick, since aiming at a box and missing it by two points would otherwise chart that row |
+| the row is renamed `Total (k of n rows)` while filtered | the one way this can mislead is a filtered figure read as the run's own DPS — on screen and in the exported sheet alike |
+
+The `👁` toggle in the `Name` header (`Comparison::hide_unticked`, `is_hidden`)
+only takes the unticked rows off the screen; they are out of the Total either
+way. Neither it nor the ticks are persisted: `CompareSettings` holds the
+columns, the breakdown and the averages, and a fresh `Comparison` starts with
+every row ticked.
+
 #### Averages
 
 `build_row` returns both shapes of a row in one pass: a `SlotCell` per combat,
@@ -327,7 +374,8 @@ compute with.
 | decision | why |
 |----------|-----|
 | `MetricCell::value` carries the raw `f64` beside the formatted text | a workbook wants a number it can add up, not `"1.2M"` |
-| every row of the tree is written, `open` or not | the file is the comparison; a spreadsheet has its own way of hiding rows |
+| every row of the tree is written, `open` or not, ticked or not | the file is the comparison; a spreadsheet has its own way of hiding rows |
+| a filtered Total goes in under its `Total (k of n rows)` name | the file states what its top row is of, since the ticks that made it are not in there |
 | a missing value writes no cell at all | a zero would average and chart as a real number |
 | the name column is indented with spaces | survives a copy into anything else, unlike a cell indent |
 | `Column::decimals` mirrors `CompareMetric::precision` | the file rounds the way the table does |
@@ -350,13 +398,16 @@ their parts differ in colour: the **number and the note** are drawn in the
 colour of that combat's line on the chart, while what stands between them is
 not — the metric name belongs to the whole group of columns, and the identifier
 is long enough that a whole row of it in a chart colour reads as a warning.
-Those colours are **read off the chart** (`DamageDiagrams::series_color`,
-backed by
-`ValuePerSecondGraph::series_names`), not worked out again — `theme::
-series_color` hands colours out by the order the series sorted into (by total,
-largest first), which depends on the numbers and therefore changes with the
-ability row picked. Anything that recomputed that order by hand would drift out
-of step with the chart the moment two totals crossed.
+A combat's colour is `theme::series_color(slot)` — its own, and fixed. The
+charts otherwise colour a series by where it sorted (by total, largest first),
+which is what the ability rows of one fight want and the wrong thing for
+combats: the row ticks under Total change every combat's total, so a colour
+taken from that order moved on every click, and moved at random once several
+totals were equal at zero. `Comparison::rebuild_diagram` therefore pins each
+series with `PreparedDataSet::with_color`, and `slot_colors` states the same
+colour for the table without asking the chart. A slot the charted row is absent
+from still gets `None`, and its number and note stay in the ordinary text
+colour.
 
 The note line is only added when some combat in the comparison carries one, and
 the header height follows (`header_height`): the table reserves the height

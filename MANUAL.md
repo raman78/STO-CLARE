@@ -302,16 +302,61 @@ selected, and each run's number and note are printed in the colour of its own
 line — in the list at the top, and in every column heading. Pick a column, look
 for the line in the same colour.
 
-One thing to expect: those colours are handed out by size, biggest first, and
-the chart follows whichever ability row you select. Select a different row and
-the colours can swap around — the table and the legend swap with it, so they
-always agree with the chart in front of you.
+A run keeps its colour for as long as the comparison is open, whatever you
+select or tick, so the colour is a reliable way to tell one run from another.
+Where a run has nothing to draw for the row you selected — it never used that
+ability — its number is left in the ordinary text colour instead.
 
 Tip: a DPS difference on its own can hide what changed — firing more often while
 each hit lands softer can come out looking like nothing happened. Switch the
 breakdown on in the Columns menu and each difference is split into the part that
 came from landing hits more often and the part that came from each hit landing
 harder. The two always add up to the whole difference.
+
+### Comparing only part of a run
+
+Down the left of the table there is a tick box on every ability row, and one on
+the **Total** row that stands for all of them. Untick a row and it drops out of
+the Total above, which is worked out again without it:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  [x] │ Name  👁            │   DPS #1   │   DPS #2           │
+├──────────────────────────────────────────────────────────────┤
+│  [–] │ Total (16 of 18 rows)│  334'696  │  314'242           │
+│  [x] │  Phaser Beam Array   │  140'953  │  127'423           │
+│  [ ] │  Broadside Beam Sup. │   87'580  │   91'975           │  ← out
+│  [x] │  Pahvan Proton Beam  │   70'537  │   72'949           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+This answers questions a whole-run number cannot: how the two runs compare on
+your beams alone, with the torpedo spread and the console procs set aside, or
+what the run looks like without the one ability you swapped.
+
+The rows you untick are only left out of the Total — their own numbers stay on
+screen and keep their differences, so you can still see what you set aside. The
+Total row says how much of the run went into it, so a part-run figure cannot be
+mistaken for the whole one later, and it says the same in an exported file.
+
+Everything is worked out again from scratch, not just the DPS: the resistance,
+critical rate and accuracy shown on the Total are those of the abilities you
+kept, exactly as if the rest had not been used. The chart follows too, as long
+as the Total row is the one selected.
+
+A run that used none of the abilities you ticked leaves its Total empty rather
+than showing a zero, and is left off the chart — a zero would read as a run that
+did nothing, when what happened is that it flew something else entirely.
+
+The eye button next to **Name** takes the unticked rows off the screen
+altogether, leaving only what the Total is made of. Press it again to bring them
+back — it only hides them; ticking is what decides the Total.
+
+Tip: the tick box on the Total row ticks everything at once, and clears
+everything at once. Half-filled means some rows are out.
+
+Your ticks last as long as the comparison. Going back to **Change selection**,
+or starting a new comparison, starts again with every row counted.
 
 ### One average instead of many columns
 
