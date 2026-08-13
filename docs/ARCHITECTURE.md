@@ -369,6 +369,32 @@ beams of one build and the phaser group of the other.
 The filters are the view only; the Total follows the ticks, not what is on
 screen.
 
+#### The damage-type summary
+
+`🎯 By type` opens a window of its own (`Comparison::show_type_summary`) holding
+one row per damage type and one column per combat, each cell the share of that
+combat the type came to. A window rather than another panel: the table and the
+chart already divide the screen, and this is read once and put away.
+
+`damage_by_type` walks the tree and **descends until a row has a single type**,
+putting that whole row's damage under it (`collect_types`). Descending is what
+makes the figure whole: the log gives no energy type for a hit on *shields*,
+only for one on hull, so counting log lines by type loses a fifth to a quarter
+of the damage to a `Shield` bucket. A row knows what weapon it is, and its
+shield damage goes with it.
+
+| case | where it lands | why |
+|------|----------------|-----|
+| one type | that type | the ordinary row |
+| several types, sub-rows below | split among its sub-rows | a group of several weapons is told apart by what is under it |
+| several types, nothing below | `mixed` | a proc that deals two types at once and has no rows to split |
+| no type at all | `untyped` | the shares are meant to add up to the run, so nothing is quietly dropped |
+
+Rows are sorted by `spread` — largest disagreement between the combats first,
+since a type every run leaned on equally is the one thing this window has
+nothing to say about — and by name where two are equally far apart, the rows
+coming out of an `FxHashMap`.
+
 #### Averages
 
 `build_row` returns both shapes of a row in one pass: a `SlotCell` per combat,

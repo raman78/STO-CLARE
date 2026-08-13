@@ -409,6 +409,33 @@ rainbow build and a single-flavour one, without reading a single number.
 Both of these only change what is on screen. The Total still counts whatever is
 ticked, whether or not you can see it.
 
+### The runs split by damage type
+
+**🎯 By type** in the toolbar opens a small window: one line per damage type, one
+column per run, saying what share of that run the type came to. Hover a figure
+for the damage behind it.
+
+```
+┌─ Damage by type ─────────────────────────────────┐
+│  Damage type      #1     #2     #3     #4     #5 │
+│  Phaser         32.9%  14.9%  70.3%  72.0%  62.1%│
+│  AntiProton     12.4%  51.6%   0.0%   1.2%   0.0%│
+│  Proton         20.8%  15.8%  16.0%  18.0%   7.0%│
+│  Disruptor       9.0%   0.0%   0.0%   0.0%   0.0%│
+│  Polaron         8.9%   0.0%   0.0%   0.0%   0.0%│
+└──────────────────────────────────────────────────┘
+```
+
+That is one rainbow run, one antiproton run and three phaser runs, in five
+lines. The types the runs differ over most are at the top; the ones they all
+lean on equally sit below.
+
+Damage dealt to shields is counted here, even though the game does not record
+what flavour of energy hit a shield — the figure follows the weapon the row
+belongs to. Where a row deals two types at once and there is nothing under it to
+tell them apart, it is counted as **mixed** rather than dropped, so the column
+still adds up to the run.
+
 ### One average instead of many columns
 
 With more than a handful of runs on screen there are more columns than anyone

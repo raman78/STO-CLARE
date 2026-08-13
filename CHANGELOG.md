@@ -3,10 +3,14 @@
 ## unreleased
 
 ### Other Changes
+- a comparison can be split by damage type in a window of its own — one line per type, one column per run, saying what share of the run each came to. One rainbow run beside three phaser ones is five lines instead of a hunt through the table. Damage dealt to shields is counted with the weapon that dealt it, which the game does not record on the shield hit itself
 - a comparison can now show only what the runs did *differently*. One button hides every row they agree on and leaves what they differ over — what a run flew that the others did not, and what it leaned on far harder — with a slider for how large a difference has to be to count, measured either as a share of the run or in plain DPS. A row missing from some of the runs says so, since "flown in two runs out of five" and "flown in all five, unevenly" are different things. On five runs of one patrol it cuts the table from 25 rows to two: the antiproton beams of one build and the phaser group of the other
 - the rows of a comparison can be narrowed to one damage type — phaser, antiproton, plasma, kinetic and whatever else the runs hold — from a menu beside the Name heading. A rainbow build can then be read one flavour at a time
 - a run keeps one colour for as long as a comparison is open. The colours used to be handed out by size, so they swapped around whenever the numbers behind them moved — now the colour is simply which run it is, in the list at the top, in the column headings and on the chart
 - a comparison can now be about part of a run instead of all of it. Every ability row has a tick box beside it, and the Total above is added up from the rows you leave ticked — so two runs can be compared on your beams alone, with the torpedo spread and the console procs set aside. Everything is worked out again from the hits, not only the DPS: the resistance, critical rate and accuracy on the Total are those of the abilities you kept, and the chart follows. The Total says how much of the run went into it, on screen and in a saved spreadsheet, and the button beside **Name** hides the rows you left out
+
+### Fixes
+- numbers whose decimals rounded up now read correctly. A figure like 8.972 was shown as 8.0 instead of 9.0 — about one number in twenty at a single decimal — everywhere the program prints one: the tables, the overlay, the summary pasted into chat and the spreadsheets
 
 ## v2.3.0
 

@@ -114,6 +114,10 @@ pub struct Comparison {
     /// Whether the rows the combats agree on are hidden, leaving what they
     /// differ over.
     show_differences: bool,
+    /// Whether the damage-type summary is up. A window of its own: the table
+    /// and the chart already have the screen between them, and this is read
+    /// once and put away.
+    show_type_summary: bool,
     /// What "differ" is measured in, and by how much a row has to differ to
     /// stay on screen. A threshold each, because one is percentage points of a
     /// combat and the other is DPS — a number that means anything in one is
@@ -145,6 +149,10 @@ struct CompareNode {
     /// are on screen and have to be there whether or not they are shown.
     shares: Vec<Option<f64>>,
     dps: Vec<Option<f64>>,
+    /// Per slot: the damage this row did in that combat. Adds up across rows,
+    /// which `shares` does not below the first level — a share there is of the
+    /// row's parent — so this is what the damage-type summary is built from.
+    damage: Vec<Option<f64>>,
     /// The damage types this row dealt, over all the combats — what the type
     /// picker filters on. A group of several weapons carries all of theirs.
     damage_types: Vec<String>,
@@ -244,6 +252,7 @@ impl Comparison {
             hide_unticked: false,
             types: Default::default(),
             show_differences: false,
+            show_type_summary: false,
             difference_measure: DifferenceMeasure::Share,
             share_threshold: 3.0,
             dps_threshold: 5_000.0,
@@ -302,6 +311,10 @@ impl Comparison {
             // rows are filtered against, and is always drawn.
             shares: Vec::new(),
             dps: Vec::new(),
+            damage: parents
+                .iter()
+                .map(|g| g.map(|g| g.total_damage.all))
+                .collect(),
             damage_types: Vec::new(),
             sort_key,
             sub_nodes,
@@ -442,6 +455,7 @@ impl Comparison {
         }
 
         let colors = self.slot_colors();
+        self.show_type_summary(ui, &colors);
 
         ui.label(
             RichText::new(if settings.compare.show_averages {
@@ -623,6 +637,18 @@ impl Comparison {
                 settings.save();
             }
 
+            if ui
+                .add(Button::new("🎯 By type").selected(self.show_type_summary))
+                .on_hover_text(
+                    "Open a window with the comparison split by damage type — how much of each \
+                     run was phaser, antiproton, kinetic and the rest. It is the quickest way to \
+                     tell a rainbow build from a single-flavour one.",
+                )
+                .clicked()
+            {
+                self.show_type_summary = !self.show_type_summary;
+            }
+
             self.show_difference_controls(ui);
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -650,6 +676,87 @@ impl Comparison {
                 }
             });
         });
+    }
+
+    /// The damage-type summary: a row per type, a column per combat, each
+    /// saying what share of that run the type came to.
+    ///
+    /// Sorted by how far apart the runs are on it, so the types that tell them
+    /// apart are at the top and the ones they all lean on equally are below.
+    fn show_type_summary(&mut self, ui: &mut Ui, colors: &[Option<Color32>]) {
+        if !self.show_type_summary {
+            return;
+        }
+        let Some(total) = self.nodes.first() else {
+            return;
+        };
+        let n_slots = self.slots.len();
+        let rows = damage_by_type(total, n_slots);
+        let font = TextStyle::Body.resolve(ui.style());
+        let text_color = ui.visuals().text_color();
+        let mut open = true;
+
+        Window::new("Damage by type")
+            .open(&mut open)
+            .default_width(520.0)
+            .show(ui.ctx(), |ui| {
+                ui.label(
+                    RichText::new(
+                        "What share of each run this damage type came to. The types the runs \
+                         differ over most are at the top; hover a figure for the damage behind \
+                         it.",
+                    )
+                    .weak(),
+                );
+                ui.separator();
+                ScrollArea::vertical().show(ui, |ui| {
+                    Table::new(ui)
+                        .cell_spacing(10.0)
+                        .header(HEADER_LINE_HEIGHT * 2.0, |r| {
+                            r.cell(|ui| {
+                                ui.label("Damage type");
+                            });
+                            for slot_i in 0..n_slots {
+                                r.cell(|ui| {
+                                    ui.label(header_text(
+                                        &font,
+                                        text_color,
+                                        "",
+                                        &format!("#{}", slot_i + 1),
+                                        None,
+                                        colors.get(slot_i).copied().flatten(),
+                                    ));
+                                });
+                            }
+                        })
+                        .body(ROW_HEIGHT, |t| {
+                            let mut formatter = NumberFormatter::new();
+                            for row in rows.iter() {
+                                t.row(|r| {
+                                    r.cell(|ui| {
+                                        ui.label(&row.name);
+                                    });
+                                    for slot_i in 0..n_slots {
+                                        let share = row.shares.get(slot_i).copied().unwrap_or(0.0);
+                                        let damage = row.damage.get(slot_i).copied().unwrap_or(0.0);
+                                        let text = format!("{}%", formatter.format(share, 1));
+                                        let tooltip = formatter.format(damage, 0);
+                                        r.cell_with_layout(
+                                            Layout::right_to_left(Align::Center),
+                                            |ui| {
+                                                ui.label(text).on_hover_text(tooltip);
+                                            },
+                                        );
+                                    }
+                                });
+                            }
+                        });
+                });
+            });
+
+        if !open {
+            self.show_type_summary = false;
+        }
     }
 
     /// The differences toggle, and — while it is on — what a difference is
@@ -1338,6 +1445,95 @@ fn spread(values: &[Option<f64>]) -> f64 {
     if low > high { 0.0 } else { high - low }
 }
 
+/// One damage type across the combats: what it did in each of them, and what
+/// share of that combat it was.
+struct TypeRow {
+    name: String,
+    damage: Vec<f64>,
+    shares: Vec<f64>,
+    /// The largest share less the smallest — what the summary is sorted by,
+    /// since a type every run leaned on equally is the one thing this window
+    /// has nothing to say about.
+    spread: f64,
+}
+
+/// The comparison's damage split by damage type, one row per type.
+///
+/// Walks down each branch until it reaches something of a single type, and puts
+/// that whole branch's damage under it — which is the only way the damage dealt
+/// to *shields* is counted at all, since the log gives no energy type for it
+/// (`add_damage_type_non_pool`). A branch that never narrows to one type (a
+/// group holding several weapons, with no deeper rows to tell them apart) goes
+/// under `mixed`, and one the log typed at all under `untyped`, rather than
+/// being dropped: the shares are meant to add up to the run.
+fn damage_by_type(total: &CompareNode, n_slots: usize) -> Vec<TypeRow> {
+    let mut by_type: FxHashMap<String, Vec<f64>> = Default::default();
+    collect_types(&total.sub_nodes, n_slots, &mut by_type);
+
+    let combat_totals: Vec<f64> = (0..n_slots)
+        .map(|slot_i| {
+            total
+                .damage
+                .get(slot_i)
+                .copied()
+                .flatten()
+                .unwrap_or_default()
+        })
+        .collect();
+
+    let mut rows: Vec<TypeRow> = by_type
+        .into_iter()
+        .map(|(name, damage)| {
+            let shares: Vec<f64> = damage
+                .iter()
+                .zip(combat_totals.iter())
+                .map(|(damage, total)| {
+                    if *total > 0.0 {
+                        100.0 * damage / total
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+            let spread = spread(&shares.iter().copied().map(Some).collect::<Vec<_>>());
+            TypeRow {
+                name,
+                damage,
+                shares,
+                spread,
+            }
+        })
+        .collect();
+    // By name where two types are equally far apart — the rows come out of a
+    // hash map, so without it the order of a tie is whatever the map felt like
+    // that run.
+    rows.sort_by(|a, b| b.spread.total_cmp(&a.spread).then(a.name.cmp(&b.name)));
+    rows
+}
+
+fn collect_types(nodes: &[CompareNode], n_slots: usize, by_type: &mut FxHashMap<String, Vec<f64>>) {
+    for node in nodes {
+        let name = match node.damage_types.as_slice() {
+            [one] => one.clone(),
+            [] => "untyped".to_string(),
+            _ if !node.sub_nodes.is_empty() => {
+                collect_types(&node.sub_nodes, n_slots, by_type);
+                continue;
+            }
+            _ => "mixed".to_string(),
+        };
+        let entry = by_type.entry(name).or_insert_with(|| vec![0.0; n_slots]);
+        for (slot_i, damage) in entry.iter_mut().enumerate() {
+            *damage += node
+                .damage
+                .get(slot_i)
+                .copied()
+                .flatten()
+                .unwrap_or_default();
+        }
+    }
+}
+
 /// The damage type picker in the `Name` header: every type the comparison holds,
 /// each on or off, and a way back to all of them.
 ///
@@ -1964,6 +2160,10 @@ fn build_level(
                     .map(|g| g.and_then(|g| g.damage_percentage.all))
                     .collect(),
                 dps: per_slot.iter().map(|g| g.map(|g| g.dps.all)).collect(),
+                damage: per_slot
+                    .iter()
+                    .map(|g| g.map(|g| g.total_damage.all))
+                    .collect(),
                 damage_types: damage_types(per_slot, name_managers),
                 sort_key,
                 sub_nodes,
@@ -2381,7 +2581,7 @@ mod tests {
         // The fonts only exist once a pass has run.
         let _ = ctx.run_ui(Default::default(), |_| {});
         let font = TextStyle::Body.resolve(&Style::default());
-        for glyph in "Σ🖹⚠🆚◀⏷⏵👁Δ☰".chars() {
+        for glyph in "Σ🖹⚠🆚◀⏷⏵👁Δ☰🎯".chars() {
             assert!(
                 ctx.fonts_mut(|fonts| fonts.has_glyph(&font, glyph)),
                 "'{glyph}' (U+{:04X}) has no glyph and would draw as an empty box",
@@ -2891,6 +3091,130 @@ mod tests {
         assert!(!is_hidden(0, &ticks, &differs));
     }
 
+    /// A row of the tree for the type summary: what it dealt in each combat,
+    /// what types it dealt, and what hangs under it.
+    fn typed_row(
+        name: &str,
+        types: &[&str],
+        damage: &[Option<f64>],
+        sub_nodes: Vec<CompareNode>,
+    ) -> CompareNode {
+        let mut node = node(name, vec![Some(0.0)], sub_nodes);
+        node.damage_types = types.iter().map(|t| t.to_string()).collect();
+        node.damage = damage.to_vec();
+        node
+    }
+
+    fn summary(total: &CompareNode) -> Vec<(String, Vec<f64>)> {
+        damage_by_type(total, 2)
+            .into_iter()
+            .map(|row| (row.name, row.shares.iter().map(|s| s.round()).collect()))
+            .collect()
+    }
+
+    /// Each type gets the damage of the rows that dealt it, as a share of the
+    /// combat — the two runs here are a rainbow and a phaser boat, and the
+    /// summary says so in two lines.
+    #[test]
+    fn the_type_summary_splits_each_combat_by_type() {
+        let total = typed_row(
+            "Total",
+            &[],
+            &[Some(1000.0), Some(1000.0)],
+            vec![
+                typed_row(
+                    "Phaser Beams",
+                    &["Phaser"],
+                    &[Some(200.0), Some(800.0)],
+                    vec![],
+                ),
+                typed_row("Plasma Beams", &["Plasma"], &[Some(500.0), None], vec![]),
+                typed_row("Torpedo", &["Kinetic"], &[Some(300.0), Some(200.0)], vec![]),
+            ],
+        );
+
+        assert_eq!(
+            vec![
+                ("Phaser".to_string(), vec![20.0, 80.0]),
+                ("Plasma".to_string(), vec![50.0, 0.0]),
+                ("Kinetic".to_string(), vec![30.0, 20.0]),
+            ],
+            summary(&total),
+            "sorted by how far apart the runs are on that type"
+        );
+    }
+
+    /// A branch of several types is walked into, so the damage lands under the
+    /// types its rows actually dealt — including the part dealt to shields,
+    /// which the log gives no type of its own.
+    #[test]
+    fn a_branch_of_several_types_is_split_by_its_rows() {
+        let total = typed_row(
+            "Total",
+            &[],
+            &[Some(1000.0), Some(1000.0)],
+            vec![typed_row(
+                "Beams",
+                &["Phaser", "Plasma"],
+                &[Some(1000.0), Some(1000.0)],
+                vec![
+                    typed_row(
+                        "Phaser Array",
+                        &["Phaser"],
+                        &[Some(400.0), Some(900.0)],
+                        vec![],
+                    ),
+                    typed_row(
+                        "Plasma Array",
+                        &["Plasma"],
+                        &[Some(600.0), Some(100.0)],
+                        vec![],
+                    ),
+                ],
+            )],
+        );
+
+        assert_eq!(
+            vec![
+                ("Phaser".to_string(), vec![40.0, 90.0]),
+                ("Plasma".to_string(), vec![60.0, 10.0]),
+            ],
+            summary(&total),
+            "equally far apart, so in name order rather than in the hash map's"
+        );
+    }
+
+    /// A branch of several types with nothing under it to tell them apart is
+    /// still counted, under `mixed` — the shares are meant to add up to the
+    /// run, so nothing may quietly fall out of them.
+    #[test]
+    fn a_branch_that_never_narrows_is_counted_as_mixed() {
+        let total = typed_row(
+            "Total",
+            &[],
+            &[Some(1000.0), Some(1000.0)],
+            vec![
+                typed_row(
+                    "Console proc",
+                    &["Phaser", "Radiation"],
+                    &[Some(250.0), Some(250.0)],
+                    vec![],
+                ),
+                typed_row("Placate", &[], &[Some(0.0), Some(0.0)], vec![]),
+            ],
+        );
+
+        let summary = summary(&total);
+        assert!(
+            summary.contains(&("mixed".to_string(), vec![25.0, 25.0])),
+            "{summary:?}"
+        );
+        assert!(
+            summary.contains(&("untyped".to_string(), vec![0.0, 0.0])),
+            "{summary:?}"
+        );
+    }
+
     /// How many combats a row appears in at all, which is what tells "flown
     /// once" from "flown everywhere, unevenly".
     #[test]
@@ -2994,6 +3318,7 @@ mod tests {
             series: vec![None],
             shares: Vec::new(),
             dps: Vec::new(),
+            damage: Vec::new(),
             damage_types: Vec::new(),
             sort_key: 0.0,
             sub_nodes,
