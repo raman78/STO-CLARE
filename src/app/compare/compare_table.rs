@@ -33,7 +33,8 @@ use crate::{
     app::settings::{CombatNotes, Settings},
     app::theme,
     custom_widgets::{
-        slider_text_edit::SliderTextEdit, splitter::Splitter, table::*, toggle::Toggle,
+        popup_button::PopupButton, slider_text_edit::SliderTextEdit, splitter::Splitter, table::*,
+        toggle::Toggle,
     },
     helpers::{number_formatting::NumberFormatter, time_range_to_duration_or_zero},
 };
@@ -760,12 +761,23 @@ impl Comparison {
     /// type picker offers. Taken from the rows rather than from a list of the
     /// game's types, so it never offers a type this comparison has none of.
     fn all_damage_types(&self) -> Vec<String> {
+        // From the players' own damage rather than from the tree: the tree is
+        // what the picker has already narrowed, so reading it back left the
+        // picker offering only the type that was picked — and no way to add a
+        // second one. A branch carries the types of everything under it, so the
+        // player's own group holds them all.
         let mut types: Vec<String> = self
-            .nodes
-            .first()
-            .into_iter()
-            .flat_map(|total| total.sub_nodes.iter())
-            .flat_map(|node| node.damage_types.iter().cloned())
+            .columns_slots()
+            .filter_map(|slot| Some((slot, slot.combat.players.get(&slot.player)?)))
+            .flat_map(|(slot, player)| {
+                player
+                    .damage_out
+                    .damage_types
+                    .iter()
+                    .map(move |damage_type| {
+                        damage_type.get(&slot.combat.name_manager).to_string()
+                    })
+            })
             .collect();
         types.sort_unstable();
         types.dedup();
@@ -1193,45 +1205,48 @@ impl Comparison {
     }
 
     fn show_column_picker(&self, ui: &mut Ui, settings: &mut Settings) {
-        // ⏷ rather than ▾: the bundled fonts have no U+25BE, which drew as an
-        // empty box. This is the same arrow the tree rows open with.
-        ui.menu_button("Columns ⏷", |ui| {
-            let mut changed = false;
-            for &metric in CompareMetric::ALL {
-                let mut on = settings.compare.columns.contains(&metric);
-                if ui.checkbox(&mut on, metric.label()).changed() {
-                    changed = true;
-                    if on {
-                        settings.compare.columns.push(metric);
-                    } else {
-                        settings.compare.columns.retain(|&m| m != metric);
+        // A popup rather than a menu, for the same reason the type picker is
+        // one: a menu closes on the first click, and picking columns is picking
+        // several. ⏷ rather than ▾, which the bundled fonts draw as a box.
+        PopupButton::new("Columns ⏷")
+            .with_id_source("compare column picker")
+            .show(ui, |ui| {
+                let mut changed = false;
+                for &metric in CompareMetric::ALL {
+                    let mut on = settings.compare.columns.contains(&metric);
+                    if ui.checkbox(&mut on, metric.label()).changed() {
+                        changed = true;
+                        if on {
+                            settings.compare.columns.push(metric);
+                        } else {
+                            settings.compare.columns.retain(|&m| m != metric);
+                        }
                     }
                 }
-            }
 
-            ui.separator();
-            // Not a metric of a single combat but a pair of columns all the
-            // same, so it belongs with the others rather than beside the menu.
-            changed |= ui
-                .checkbox(&mut settings.compare.show_dps_breakdown, "ΔDPS breakdown")
-                .hover(
-                    "Two more columns splitting each DPS difference against the reference: the \
+                ui.separator();
+                // Not a metric of a single combat but a pair of columns all the
+                // same, so it belongs with the others rather than beside the menu.
+                changed |= ui
+                    .checkbox(&mut settings.compare.show_dps_breakdown, "ΔDPS breakdown")
+                    .hover(
+                        "Two more columns splitting each DPS difference against the reference: the \
                      share that came from landing more often, and the share that came from each \
                      hit landing harder. The two add up to the whole difference.",
-                )
-                .changed();
+                    )
+                    .changed();
 
-            if changed {
-                // Keep a stable column order regardless of toggle order.
-                settings.compare.columns.sort_by_key(|m| {
-                    CompareMetric::ALL
-                        .iter()
-                        .position(|x| x == m)
-                        .unwrap_or(usize::MAX)
-                });
-                settings.save();
-            }
-        });
+                if changed {
+                    // Keep a stable column order regardless of toggle order.
+                    settings.compare.columns.sort_by_key(|m| {
+                        CompareMetric::ALL
+                            .iter()
+                            .position(|x| x == m)
+                            .unwrap_or(usize::MAX)
+                    });
+                    settings.save();
+                }
+            });
     }
 
     fn show_table(
@@ -2092,26 +2107,36 @@ fn show_type_picker(ui: &mut Ui, all: &[String], picked: &mut FxHashSet<String>)
     } else {
         format!("☰ Type ({})", picked.len())
     };
-    ui.menu_button(label, |ui| {
-        if !picked.is_empty() && ui.button("Every type").clicked() {
-            picked.clear();
-        }
-        for damage_type in all {
-            let mut on = picked.contains(damage_type);
-            if ui.checkbox(&mut on, damage_type).changed() {
-                if on {
-                    picked.insert(damage_type.clone());
-                } else {
-                    picked.remove(damage_type);
+    // A popup rather than a menu: egui's menus close on the first click inside
+    // them, and picking one type out of a rainbow build means picking several.
+    PopupButton::new(label)
+        .with_id_source("compare damage type picker")
+        .show(ui, |ui| {
+            ui.label(RichText::new("Show only these damage types").weak());
+            ui.separator();
+            if ui
+                .add_enabled(!picked.is_empty(), Button::new("Every type"))
+                .hover("Back to showing every type")
+                .clicked()
+            {
+                picked.clear();
+            }
+            for damage_type in all {
+                let mut on = picked.contains(damage_type);
+                if ui.checkbox(&mut on, damage_type).changed() {
+                    if on {
+                        picked.insert(damage_type.clone());
+                    } else {
+                        picked.remove(damage_type);
+                    }
                 }
             }
-        }
-    })
-    .response
-    .hover(
-        "Show only the rows that dealt a damage type you pick — the beams of one flavour out of a \
-         rainbow build, say. A row that dealt several types is shown for each of them.",
-    );
+        })
+        .response
+        .hover(
+            "Show only the rows that dealt the damage types you pick, with every figure worked out \
+             for those types alone. Pick as many as you like; the list stays open.",
+        );
 }
 
 impl CompareNode {
