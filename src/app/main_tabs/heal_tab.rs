@@ -83,18 +83,16 @@ impl HealTab {
         let excluded = &self.excluded;
         let total = combat.total_heal_ally;
         let kept = |group: &'_ HealGroup, player: &'_ Player| -> Option<HealGroup> {
-            (!excluded.is_empty())
-                .then(|| {
-                    damage_subset::player_heal_without(
-                        player,
-                        group,
-                        &combat.name_manager,
-                        &combat.heal_ticks_manger,
-                        excluded,
-                        &total,
-                    )
-                })
-                .flatten()
+            (!excluded.is_empty()).then(|| {
+                damage_subset::player_heal_without(
+                    player,
+                    group,
+                    &combat.name_manager,
+                    &combat.heal_ticks_manger,
+                    excluded,
+                    &total,
+                )
+            })
         };
 
         self.table_by_person = match self.other_level {

@@ -43,13 +43,13 @@ pub fn player_damage_without(
     hits_manager: &HitsManager,
     excluded: &FxHashSet<String>,
     combat_total: &ShieldHullValues,
-) -> Option<DamageGroup> {
+) -> DamageGroup {
     let rows = group
         .sub_groups()
         .values()
         .map(|sub| (sub.name().get(name_manager), sub.hits.get(hits_manager)));
     let mut kept = subset_group(
-        subset_hits(rows, excluded)?,
+        subset_hits(rows, excluded).unwrap_or_default(),
         metrics_duration(&player.combat_time),
         combat_total,
     );
@@ -57,13 +57,12 @@ pub fn player_damage_without(
     // the same player, with part of their tree set aside, and a nameless row
     // that cannot be opened is not that.
     kept.segment = group.segment;
-    kept.sub_groups = group
-        .sub_groups()
-        .iter()
-        .filter(|(_, sub)| !excluded.contains(sub.name().get(name_manager)))
-        .map(|(handle, sub)| (*handle, sub.clone()))
-        .collect();
-    Some(kept)
+    // Every row stays under it, the ticked and the unticked alike. They are
+    // what the ticks are of: dropping the unticked ones would take their tick
+    // boxes with them, and the row above would lose the count it needs to say
+    // whether all, some or none of them are in.
+    kept.sub_groups = group.sub_groups().clone();
+    kept
 }
 
 /// The hits of the rows that are kept, pooled — or `None` when none of them are
@@ -215,8 +214,7 @@ fn set_child_percentages(group: &mut DamageGroup) {
     }
 }
 
-/// A player's healing with the named rows left out, or `None` when none of the
-/// kept rows are theirs.
+/// A player's healing with the named rows left out, zeroes when every row is.
 ///
 /// The heal side of [`player_damage_without`], and for the same reason: an
 /// average heal and a crit rate are ratios of tick counts, so they have to be
@@ -228,12 +226,12 @@ pub fn player_heal_without(
     ticks_manager: &HealTicksManager,
     excluded: &FxHashSet<String>,
     pool_total: &ShieldHullValues,
-) -> Option<HealGroup> {
+) -> HealGroup {
     let rows = group
         .sub_groups()
         .values()
         .map(|sub| (sub.name().get(name_manager), sub.ticks.get(ticks_manager)));
-    let kept_ticks = subset_values(rows, excluded)?;
+    let kept_ticks = subset_values(rows, excluded).unwrap_or_default();
 
     let mut heal_metrics = HealMetrics::default();
     heal_metrics.calc_and_apply(&kept_ticks);
@@ -248,13 +246,12 @@ pub fn player_heal_without(
         ..Default::default()
     };
     kept.segment = group.segment;
-    kept.sub_groups = group
-        .sub_groups()
-        .iter()
-        .filter(|(_, sub)| !excluded.contains(sub.name().get(name_manager)))
-        .map(|(handle, sub)| (*handle, sub.clone()))
-        .collect();
-    Some(kept)
+    // Every row stays under it, the ticked and the unticked alike. They are
+    // what the ticks are of: dropping the unticked ones would take their tick
+    // boxes with them, and the row above would lose the count it needs to say
+    // whether all, some or none of them are in.
+    kept.sub_groups = group.sub_groups().clone();
+    kept
 }
 
 /// The values of the rows that are kept, pooled — or `None` when none of them
@@ -482,6 +479,22 @@ mod tests {
 
         // Nothing of this player's kept: `None`, not a zero.
         assert!(subset_values(rows(), &excluded(&["Big", "Small"])).is_none());
+    }
+
+    /// Every row unticked leaves zeroes, not the figures the player started
+    /// with: the reader asked for none of it, and answering with the whole
+    /// would read as a control that does nothing.
+    #[test]
+    fn unticking_every_row_leaves_zeroes() {
+        let all = [hit(100.0), hit(300.0)];
+        let rows = [("Beams", all.as_slice())].into_iter();
+        assert!(subset_hits(rows, &excluded(&["Beams"])).is_none());
+
+        let empty = subset_group(Vec::new(), 10.0, &combat_total(1_000.0));
+        assert_eq!(0.0, empty.total_damage.all);
+        assert_eq!(0.0, empty.dps.all);
+        assert_eq!(0, empty.damage_metrics.hits.all);
+        assert_eq!(None, empty.critical_percentage, "no hits, no rate");
     }
 
     /// A group of one type is kept whole; a group of several is rebuilt from

@@ -127,32 +127,16 @@ impl DamageTab {
                 None => Cow::Borrowed(whole),
             };
         }
-        match damage_subset::player_damage_without(
+        Cow::Owned(damage_subset::player_damage_without(
             player,
             narrowed,
             &combat.name_manager,
             &combat.hits_manger,
             &self.excluded,
             &combat.total_damage_out,
-        ) {
-            Some(kept) => Cow::Owned(kept),
-            // Nothing of this player's was ticked off, so nothing of theirs
-            // changes.
-            None => match of_types {
-                Some(kept) => Cow::Owned(kept),
-                None => Cow::Borrowed(whole),
-            },
-        }
+        ))
     }
 
-    /// (Re)build the table from the combat, with the rows the reader has
-    /// unticked left out of each player's figures.
-    ///
-    /// A player row is then what they did with the rows that are still ticked —
-    /// worked out from those rows' hits rather than by subtracting columns,
-    /// which cannot be done for a resistance or a crit rate. A player with none
-    /// of the ticked rows keeps their own figures rather than showing zeroes,
-    /// since nothing of theirs was ticked off in the first place.
     fn rebuild_table(&mut self, settings: &Settings, combat: &Combat) {
         // Both filters go through one place, so the table and the chart under
         // it are always of the same rows.

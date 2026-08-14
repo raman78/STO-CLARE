@@ -474,7 +474,12 @@ impl<T> MetricsTablePart<T> {
     ) {
         let mut tick_rect = Rect::NOTHING;
         let response = table.selectable_row(selection.is_selected(self.id), |r| {
-            tick_rect = ticks.show_cell(r, indent, &self.name);
+            tick_rect = ticks.show_cell(
+                r,
+                indent,
+                &self.name,
+                self.sub_parts.iter().map(|part| part.name.as_str()),
+            );
             r.cell(|ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(indent * 30.0);
@@ -745,13 +750,59 @@ impl RowTicks<'_> {
 
     /// The tick of one row, and the cell it was drawn in.
     ///
-    /// Only the rows directly under a player carry one: they are what the
-    /// player's figures are added up from, and a row deeper in the tree goes in
-    /// with the branch it belongs to.
-    fn show_cell(&mut self, row: &mut TableRow, indent: f32, name: &str) -> Rect {
-        if indent != 1.0 {
-            return row.cell(|_| {}).rect;
+    /// A player's row carries the tick that stands for all of theirs, half
+    /// filled while only some are in — the same tick the Total row of a
+    /// comparison carries, because it is the same thing: the row those below it
+    /// add up to. The rows under it carry their own. Deeper in the tree there
+    /// is nothing to tick: a row goes in with the branch it belongs to.
+    fn show_cell<'n>(
+        &mut self,
+        row: &mut TableRow,
+        indent: f32,
+        name: &str,
+        children: impl Iterator<Item = &'n str> + Clone,
+    ) -> Rect {
+        match indent {
+            0.0 => self.show_all_tick(row, children),
+            1.0 => self.show_row_tick(row, name),
+            _ => row.cell(|_| {}).rect,
         }
+    }
+
+    /// The player's own tick: every row of theirs, or none.
+    fn show_all_tick<'n>(
+        &mut self,
+        row: &mut TableRow,
+        children: impl Iterator<Item = &'n str> + Clone,
+    ) -> Rect {
+        let rows = children.clone().count();
+        let kept = children
+            .clone()
+            .filter(|name| !self.excluded.contains(*name))
+            .count();
+        let mut all = kept == rows;
+        let cell = row.cell(|ui| {
+            let response = ui
+                .add(Checkbox::new(&mut all, "").indeterminate(kept != rows && kept != 0))
+                .hover(
+                    "Count every row below in this player's figures, or none of them. Untick one \
+                     and the figures above are worked out again without it.",
+                );
+            if response.changed() {
+                self.changed = true;
+                for name in children {
+                    if all {
+                        self.excluded.remove(name);
+                    } else {
+                        self.excluded.insert(name.to_string());
+                    }
+                }
+            }
+        });
+        cell.rect
+    }
+
+    fn show_row_tick(&mut self, row: &mut TableRow, name: &str) -> Rect {
         let mut ticked = !self.excluded.contains(name);
         let cell = row.cell(|ui| {
             if ui
