@@ -80,10 +80,26 @@ macro_rules! shield_hull_parts {
         &[
             ColumnPart {
                 name: "Hull",
+                // Each half orders by its own figure. Ordering all three by the
+                // total, as they used to, made two of the three headings a lie.
+                sort: |t| {
+                    t.sort_by_option_f64_desc(|p| {
+                        $crate::app::main_tabs::common::OrderingValue::ordering_value(
+                            &p.$field.hull,
+                        )
+                    })
+                },
                 show: |t, r| t.$field.show_hull(r),
             },
             ColumnPart {
                 name: "Shield",
+                sort: |t| {
+                    t.sort_by_option_f64_desc(|p| {
+                        $crate::app::main_tabs::common::OrderingValue::ordering_value(
+                            &p.$field.shield,
+                        )
+                    })
+                },
                 show: |t, r| t.$field.show_shield(r),
             },
         ]
@@ -99,7 +115,7 @@ pub struct MetricsTable<T: 'static> {
     players: Vec<MetricsTablePart<T>>,
     selection: SelectionTracker,
     /// Which column the rows are ordered by, and which way round.
-    sort: SortState<&'static str>,
+    sort: SortState<ColumnKey>,
 }
 
 #[derive(Educe)]
@@ -126,10 +142,32 @@ pub struct ColumnDescriptor<T: 'static> {
     pub parts: &'static [ColumnPart<T>],
 }
 
+/// What tells one sortable heading from another: the metric, and which half of
+/// it when the halves have columns of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ColumnKey {
+    column: &'static str,
+    part: Option<&'static str>,
+}
+
+impl ColumnKey {
+    const fn whole(column: &'static str) -> Self {
+        Self { column, part: None }
+    }
+
+    const fn half(column: &'static str, part: &'static str) -> Self {
+        Self {
+            column,
+            part: Some(part),
+        }
+    }
+}
+
 /// One half of a split column.
 #[derive(Clone, Copy)]
 pub struct ColumnPart<T: 'static> {
     pub name: &'static str,
+    pub sort: fn(&mut MetricsTable<T>),
     pub show: fn(&mut MetricsTablePart<T>, &mut TableRow),
 }
 
@@ -176,7 +214,7 @@ impl<T: 'static> MetricsTable<T> {
         // The first column is what a table opens ordered by, as it always has
         // been. The state has to say so too, or the heading it is ordered by
         // carries no mark until somebody clicks something.
-        table.sort.column = Some(table.columns[0].name);
+        table.sort.column = Some(ColumnKey::whole(table.columns[0].name));
         let first = table.columns[0].sort;
         table.sort_by_column(first);
 
@@ -247,22 +285,31 @@ impl<T: 'static> MetricsTable<T> {
         // Unsplit: one cell holding the metric name. Split: a rule opens the
         // group, the metric name sits above its first cell, and All/Hull/Shield
         // label the second line. Without the rule, three same-looking numbers
-        // from neighbouring metrics run together. Every cell of the group sorts
-        // by the same (all-values) key.
+        // from neighbouring metrics run together.
+        //
+        // Each cell of the group orders by its own figure — the total, the hull
+        // or the shield — which is why the halves are named for the sort state
+        // as `Metric Hull` rather than sharing the metric's name. Ordering all
+        // three by the total made two of the three headings a lie.
         if split && !column.parts.is_empty() {
             show_group_separator(row);
             let name = column.name;
-            let marker = self.sort.marker(name);
-            self.show_header_cell_with(row, column, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(split_total_header_text(ui, name));
-                    ui.label(marker);
-                });
-            });
+            self.show_header_cell_with(
+                row,
+                ColumnKey::whole(name),
+                column.name_info,
+                column.sort,
+                |ui| split_total_header_text(ui, name).into(),
+            );
             for part in column.parts.iter() {
-                // The halves carry no mark of their own: they are the same
-                // column, and three arrows in a row say nothing three times.
-                self.show_header_part_cell(row, &format!("\n{}", part.name), column);
+                let label = format!("\n{}", part.name);
+                self.show_header_cell_with(
+                    row,
+                    ColumnKey::half(column.name, part.name),
+                    None,
+                    part.sort,
+                    move |_| label.into(),
+                );
             }
             return;
         }
@@ -272,44 +319,42 @@ impl<T: 'static> MetricsTable<T> {
         } else {
             column.name.to_string()
         };
-        self.show_header_cell(row, &name, column);
+        self.show_header_cell_with(
+            row,
+            ColumnKey::whole(column.name),
+            column.name_info,
+            column.sort,
+            move |_| name.clone().into(),
+        );
     }
 
-    fn show_header_cell(&mut self, row: &mut TableRow, text: &str, column: &ColumnDescriptor<T>) {
-        // The mark rides with the text so it stays put when a heading wraps to
-        // two lines, which the split columns do.
-        let text = format!("{text}{}", self.sort.marker(column.name));
-        self.show_header_part_cell(row, &text, column);
-    }
-
-    fn show_header_part_cell(
-        &mut self,
-        row: &mut TableRow,
-        text: &str,
-        column: &ColumnDescriptor<T>,
-    ) {
-        let text = text.to_string();
-        self.show_header_cell_with(row, column, |ui| {
-            ui.label(text);
-        });
-    }
-
-    /// The header cell of `column` with its own contents — sorting on click and
-    /// the explanation on hover stay the same whatever is written in it.
+    /// The header cell of a column: ordered by on click, marked while it is the
+    /// one doing the ordering, and explained on hover.
+    ///
+    /// The mark goes to the right of the text, in a cell of its own inside the
+    /// heading, so it lands in the same place whether the heading is one line
+    /// or two.
     fn show_header_cell_with(
         &mut self,
         row: &mut TableRow,
-        column: &ColumnDescriptor<T>,
-        contents: impl FnOnce(&mut Ui),
+        key: ColumnKey,
+        info: Option<&'static str>,
+        sort: fn(&mut Self),
+        text: impl FnOnce(&mut Ui) -> WidgetText,
     ) {
-        // The column doing the ordering is drawn as picked, and carries the
-        // mark saying which way round it runs.
-        let response = row.selectable_cell(self.sort.is_sorted_by(column.name), contents);
+        let marker = self.sort.marker(key);
+        let response = row.selectable_cell(self.sort.is_sorted_by(key), |ui| {
+            ui.horizontal(|ui| {
+                let text = text(ui);
+                ui.label(text);
+                ui.label(marker);
+            });
+        });
         if response.clicked() {
-            self.sort.clicked(column.name);
-            self.sort_by_column(column.sort);
+            self.sort.clicked(key);
+            self.sort_by_column(sort);
         }
-        if let Some(info) = column.name_info {
+        if let Some(info) = info {
             response.hover(info);
         }
     }
