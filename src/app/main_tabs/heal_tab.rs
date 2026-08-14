@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use eframe::egui::Ui;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     analyzer::*,
@@ -24,7 +24,9 @@ pub struct HealTab {
     grouping: HealGrouping,
     /// The rows ticked off, and whether they are hidden — the same pair the
     /// damage tabs keep, so both kinds of table behave alike.
-    excluded: FxHashSet<String>,
+    /// One tree of ticks per player: a row ticked off for one player says
+    /// nothing about the same row under another.
+    excluded: FxHashMap<String, FxHashSet<String>>,
     hide_unticked: bool,
     /// Healing has no damage types to pick from, so the picker has nothing to
     /// offer and does not appear.
@@ -82,14 +84,16 @@ impl HealTab {
         let pool = self.heal_pool;
         let excluded = &self.excluded;
         let total = combat.total_heal_ally;
+        // The ticks are per player: one player's rows are their own.
         let kept = |group: &'_ HealGroup, player: &'_ Player| -> Option<HealGroup> {
-            (!excluded.is_empty()).then(|| {
+            let out = excluded.get(group.name().get(&combat.name_manager))?;
+            (!out.is_empty()).then(|| {
                 damage_subset::player_heal_without(
                     player,
                     group,
                     &combat.name_manager,
                     &combat.heal_ticks_manger,
-                    excluded,
+                    out,
                     &total,
                 )
             })

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use eframe::egui::*;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     analyzer::*,
@@ -23,7 +23,9 @@ pub struct DamageTab {
     damage_group: for<'a> fn(&'a Player) -> &'a DamageGroup,
     /// The rows the reader has ticked off, by name. They are left out of every
     /// player's figures, and — with `hide_unticked` — off the screen as well.
-    excluded: FxHashSet<String>,
+    /// One tree of ticks per player: a row ticked off for one player says
+    /// nothing about the same row under another.
+    excluded: FxHashMap<String, FxHashSet<String>>,
     hide_unticked: bool,
     /// The damage types the figures are of, empty for all of them, and every
     /// type this combat holds.
@@ -103,7 +105,9 @@ impl DamageTab {
     /// when nothing is ticked off.
     fn kept_damage<'a>(&self, player: &'a Player, combat: &Combat) -> Cow<'a, DamageGroup> {
         let whole = (self.damage_group)(player);
-        if self.types.is_empty() && self.excluded.is_empty() {
+        // The ticks are this player's own.
+        let excluded = self.excluded.get(whole.name().get(&combat.name_manager));
+        if self.types.is_empty() && excluded.is_none_or(FxHashSet::is_empty) {
             return Cow::Borrowed(whole);
         }
         // The type first — it decides what the rows even are — and the ticks
@@ -121,18 +125,18 @@ impl DamageTab {
             )
         };
         let narrowed = of_types.as_ref().unwrap_or(whole);
-        if self.excluded.is_empty() {
+        let Some(excluded) = excluded.filter(|out| !out.is_empty()) else {
             return match of_types {
                 Some(kept) => Cow::Owned(kept),
                 None => Cow::Borrowed(whole),
             };
-        }
+        };
         Cow::Owned(damage_subset::player_damage_without(
             player,
             narrowed,
             &combat.name_manager,
             &combat.hits_manger,
-            &self.excluded,
+            excluded,
             &combat.total_damage_out,
         ))
     }
