@@ -143,9 +143,8 @@ impl DamageTab {
     fn rebuild_table(&mut self, settings: &Settings, combat: &Combat) {
         // Both filters go through one place, so the table and the chart under
         // it are always of the same rows.
-        let mut table = DamageTable::new(settings, combat, |player| {
-            self.kept_damage(player, combat)
-        });
+        let mut table =
+            DamageTable::new(settings, combat, |player| self.kept_damage(player, combat));
         // A tick rebuilds the table; the tree the reader had opened, and the
         // column they had ordered it by, are theirs and stay put.
         table.take_state_from(&self.table);

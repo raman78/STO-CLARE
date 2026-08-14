@@ -13,9 +13,11 @@ use crate::{
 
 pub const ROW_HEIGHT: f32 = 25.0;
 pub const HEADER_HEIGHT: f32 = 15.0;
-/// Header height when Hull/Shield have their own columns: the metric name sits
-/// on the first line, the All/Hull/Shield label on the second.
-pub const SPLIT_HEADER_HEIGHT: f32 = 32.0;
+/// Header height when Hull/Shield have their own columns: the metric name on
+/// the first line, and under it the All/Hull/Shield label as a widget of its
+/// own — which is what carries the click, so it needs a widget's height rather
+/// than a line's.
+pub const SPLIT_HEADER_HEIGHT: f32 = 40.0;
 
 #[derive(Default)]
 pub struct TextValue {
@@ -237,35 +239,6 @@ fn show_value_text_strong(row: &mut TableRow, value_text: &str) -> Response {
 /// emphasis.
 pub fn bold_text(text: impl Into<String>) -> RichText {
     RichText::new(text).family(bold_family()).strong()
-}
-
-/// The heading of a split column's total cell: the metric name on the first
-/// line as usual, and a bold `All` on the second, so the heading is as heavy as
-/// the values under it. One galley, so the cell keeps sorting on a single click.
-pub fn split_total_header_text(ui: &Ui, name: &str) -> text::LayoutJob {
-    let font_id = TextStyle::Body.resolve(ui.style());
-    let mut job = text::LayoutJob::default();
-    job.append(
-        &format!("{}\n", name),
-        0.0,
-        TextFormat {
-            font_id: font_id.clone(),
-            // Replaced with the label's own color, so the heading follows the
-            // theme and the hover/selection visuals like any other cell.
-            color: Color32::PLACEHOLDER,
-            ..Default::default()
-        },
-    );
-    job.append(
-        "All",
-        0.0,
-        TextFormat {
-            font_id: FontId::new(font_id.size, bold_family()),
-            color: ui.visuals().strong_text_color(),
-            ..Default::default()
-        },
-    );
-    job
 }
 
 fn show_value_text(row: &mut TableRow, value_text: &str) -> Response {

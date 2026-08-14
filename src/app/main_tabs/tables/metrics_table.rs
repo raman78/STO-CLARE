@@ -320,21 +320,28 @@ impl<T: 'static> MetricsTable<T> {
         if split && !column.parts.is_empty() {
             show_group_separator(row);
             let name = column.name;
-            self.show_header_cell_with(
+            self.show_split_header(
                 row,
                 ColumnKey::whole(name),
                 column.name_info,
                 column.sort,
-                |ui| split_total_header_text(ui, name).into(),
+                |ui| {
+                    ui.label(RichText::new(name).color(ui.visuals().text_color()));
+                },
             );
             for part in column.parts.iter() {
-                let label = format!("\n{}", part.name);
-                self.show_header_cell_with(
+                // A half has no name of its own on the first line, but it still
+                // needs the room: without it the label would sit a line higher
+                // than the one beside it.
+                self.show_split_header(
                     row,
-                    ColumnKey::half(column.name, part.name),
+                    ColumnKey::half(name, part.name),
                     None,
                     part.sort,
-                    move |_| label.into(),
+                    |ui| {
+                        let line = ui.text_style_height(&TextStyle::Body);
+                        ui.add_space(line);
+                    },
                 );
             }
             return;
@@ -345,44 +352,59 @@ impl<T: 'static> MetricsTable<T> {
         } else {
             column.name.to_string()
         };
-        self.show_header_cell_with(
-            row,
-            ColumnKey::whole(column.name),
-            column.name_info,
-            column.sort,
-            move |_| name.clone().into(),
-        );
-    }
-
-    /// The header cell of a column: ordered by on click, marked while it is the
-    /// one doing the ordering, and explained on hover.
-    ///
-    /// The mark goes to the right of the text, in a cell of its own inside the
-    /// heading, so it lands in the same place whether the heading is one line
-    /// or two.
-    fn show_header_cell_with(
-        &mut self,
-        row: &mut TableRow,
-        key: ColumnKey,
-        info: Option<&'static str>,
-        sort: fn(&mut Self),
-        text: impl FnOnce(&mut Ui) -> WidgetText,
-    ) {
-        let marker = self.sort.marker(key);
-        // Not drawn as picked: a filled heading cell over a two-line header
-        // leaves no room for the second line, and the mark already says which
-        // column is doing the ordering.
+        let marker = self.sort.marker(ColumnKey::whole(column.name));
+        let key = ColumnKey::whole(column.name);
         let response = row.selectable_cell(false, |ui| {
             ui.horizontal(|ui| {
-                let text = text(ui);
-                ui.label(text);
-                // Only when there is one: an empty label still takes the
-                // spacing beside it, and headings are tight enough as it is.
+                ui.label(name);
                 if !marker.is_empty() {
                     ui.label(marker);
                 }
             });
         });
+        if response.clicked() {
+            self.sort.clicked(key);
+            self.sort_by_column(column.sort);
+        }
+        if let Some(info) = column.name_info {
+            response.hover(info);
+        }
+    }
+
+    /// One heading of a split group: the metric name (or nothing, over a half)
+    /// on the first line, and under it the label that does the ordering.
+    ///
+    /// Only that label takes the click and lights up under the pointer. It used
+    /// to be one cell holding both lines, so pointing anywhere in the heading
+    /// lit the whole two-line block and said nothing about which of All, Hull
+    /// or Shield was about to be ordered by.
+    fn show_split_header(
+        &mut self,
+        row: &mut TableRow,
+        key: ColumnKey,
+        info: Option<&'static str>,
+        sort: fn(&mut Self),
+        first_line: impl FnOnce(&mut Ui),
+    ) {
+        let marker = self.sort.marker(key);
+        let label = key.part.unwrap_or("All");
+        let mut response = None;
+        row.cell(|ui| {
+            // Headings are as narrow as their column and must not wrap: a
+            // "Shield" folded into "Shie / ld" costs the line under it.
+            ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                first_line(ui);
+                response = Some(ui.add(Button::selectable(
+                    self.sort.is_sorted_by(key),
+                    format!("{label}{marker}"),
+                )));
+            });
+        });
+        let Some(response) = response else {
+            return;
+        };
         if response.clicked() {
             self.sort.clicked(key);
             self.sort_by_column(sort);
@@ -810,7 +832,7 @@ impl RowTicks<'_> {
     /// comparison carries, because it is the same thing: the row those below it
     /// add up to. The rows under it carry their own. Deeper in the tree there
     /// is nothing to tick: a row goes in with the branch it belongs to.
-    fn show_cell<'n>(
+    fn show_cell(
         &mut self,
         row: &mut TableRow,
         indent: f32,
@@ -861,7 +883,12 @@ impl RowTicks<'_> {
         cell.rect
     }
 
-    fn show_row_tick(&mut self, row: &mut TableRow, player: NameHandle, handle: NameHandle) -> Rect {
+    fn show_row_tick(
+        &mut self,
+        row: &mut TableRow,
+        player: NameHandle,
+        handle: NameHandle,
+    ) -> Rect {
         let mut ticked = !self
             .excluded
             .get(&player)

@@ -256,22 +256,6 @@ pub fn player_heal_without(
     kept
 }
 
-/// The values of the rows that are kept, pooled — or `None` when none of them
-/// are here. The same rule as [`subset_hits`], for ticks as well as hits.
-pub fn subset_values<'a, V: Clone + 'a>(
-    rows: impl Iterator<Item = (&'a str, &'a [V])>,
-    excluded: &FxHashSet<String>,
-) -> Option<Vec<V>> {
-    let kept: Vec<&[V]> = rows
-        .filter(|(name, _)| !excluded.contains(*name))
-        .map(|(_, values)| values)
-        .collect();
-    if kept.is_empty() {
-        return None;
-    }
-    Some(kept.into_iter().flatten().cloned().collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,21 +437,11 @@ mod tests {
     }
 
     /// Healing answers the same way damage does: the kept rows' ticks are what
-    /// the figures are worked out from, so the parts add back up to the whole
-    /// and a crit rate is of what is left.
+    /// the figures are worked out from, so a crit that went with a row it was
+    /// in is gone from the rate, and nothing kept leaves zeroes.
     #[test]
     fn heal_ticks_are_pooled_the_same_way_hits_are() {
-        let big = [tick(300.0, true)];
-        let small = [tick(100.0, false)];
-        let rows = || [("Big", big.as_slice()), ("Small", small.as_slice())].into_iter();
-
-        let whole = subset_values(rows(), &Default::default()).unwrap();
-        assert_eq!(2, whole.len());
-
-        let kept = subset_values(rows(), &excluded(&["Big"])).unwrap();
-        assert_eq!(1, kept.len());
-        assert_eq!(100.0, kept[0].amount);
-
+        let kept = vec![tick(100.0, false)];
         let mut metrics = HealMetrics::default();
         metrics.calc_and_apply(&kept);
         metrics.recalculate_time_based_metrics(10.0);
@@ -479,24 +453,12 @@ mod tests {
             "the crit went with the row it was in"
         );
 
-        // Nothing of this player's kept: `None`, not a zero.
-        assert!(subset_values(rows(), &excluded(&["Big", "Small"])).is_none());
-    }
-
-    /// Every row unticked leaves zeroes, not the figures the player started
-    /// with: the reader asked for none of it, and answering with the whole
-    /// would read as a control that does nothing.
-    #[test]
-    fn unticking_every_row_leaves_zeroes() {
-        let all = [hit(100.0), hit(300.0)];
-        let rows = [("Beams", all.as_slice())].into_iter();
-        assert!(subset_hits(rows, &excluded(&["Beams"])).is_none());
-
-        let empty = subset_group(Vec::new(), 10.0, &combat_total(1_000.0));
-        assert_eq!(0.0, empty.total_damage.all);
-        assert_eq!(0.0, empty.dps.all);
-        assert_eq!(0, empty.damage_metrics.hits.all);
-        assert_eq!(None, empty.critical_percentage, "no hits, no rate");
+        let mut nothing = HealMetrics::default();
+        nothing.calc_and_apply(&[]);
+        nothing.recalculate_time_based_metrics(10.0);
+        assert_eq!(0.0, nothing.total_heal.all);
+        assert_eq!(0.0, nothing.hps.all);
+        assert_eq!(None, nothing.critical_percentage, "no ticks, no rate");
     }
 
     /// A group of one type is kept whole; a group of several is rebuilt from
