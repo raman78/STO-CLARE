@@ -3,6 +3,7 @@
 ## unreleased
 
 ### Other Changes
+- a run can be taken out of a comparison and put back from the list at the top, without going through the picker again — the quickest way to ask what the others look like without it. The runs that stay keep the number and the colour they came in with
 - the rows of a comparison can be ordered by any column — click its heading, click again to turn the order round, exactly as the tables in the main window work
 - a comparison can say what one run did differently from the rest. Pick the run and every row gets a figure beside its name for how much DPS it added to that run, or cost it, against what the other runs did with the same row — biggest gain first, since what is usually being looked for is what a run did better. The figures add up exactly to the difference on the Total, so it reads as an account of where the run's DPS came from rather than a ranking. Hovering one spells out the arithmetic and says how far out of line the row is against how much the other runs disagree among themselves
 - a comparison can be split by damage type in a window of its own — one line per type, one column per run, saying what share of the run each came to. Each type opens up to show the beams, turrets and procs it is made of, largest first. One rainbow run beside three phaser ones is five lines instead of a hunt through the table. Damage dealt to shields is counted with the weapon that dealt it, which the game does not record on the shield hit itself

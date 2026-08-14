@@ -135,8 +135,17 @@ pub struct Comparison {
     /// The player's damage narrowed to the picked types, one per slot, empty
     /// while no type is picked. What the tree and the Total are built from.
     of_type: Vec<Option<DamageGroup>>,
+    /// The combats the reader has taken out of the comparison, by their place
+    /// in `slots`. They stay in the list above so they can be put back.
+    dropped: FxHashSet<usize>,
+    /// Which slot each column of the table is of. A dropped combat leaves a
+    /// gap, so a run keeps the number and the colour it was shown under —
+    /// renumbering would move every other run's colour whenever one was taken
+    /// out, which is the thing pinning the colours was for.
+    numbers: Vec<usize>,
     /// The combat whose rows are being measured against the others, while the
-    /// reader is asking what that run did differently.
+    /// reader is asking what that run did differently. Indexes the columns, not
+    /// `slots`.
     impact_slot: Option<usize>,
     /// Which column the rows are ordered by, and whether the largest is on top.
     /// `None` is the order they were built in — the reference combat's DPS.
@@ -270,7 +279,7 @@ impl Comparison {
             })
             .collect();
         follow_the_reference_player(&mut slots);
-        let notes = slot_notes(&slots, &settings.combat_notes);
+        let notes = slot_notes(slots.iter(), &settings.combat_notes);
         let mut comparison = Self {
             slots,
             nodes: Vec::new(),
@@ -281,6 +290,8 @@ impl Comparison {
             active_diagram: DiagramType::Dps,
             averages: settings.compare.show_averages,
             excluded: Default::default(),
+            dropped: Default::default(),
+            numbers: Vec::new(),
             hide_unticked: false,
             types: Default::default(),
             of_type: Vec::new(),
@@ -300,26 +311,35 @@ impl Comparison {
         comparison
     }
 
+    /// The slots the comparison is currently of, in order — everything the
+    /// reader has not taken out of it.
+    fn in_play(&self) -> Vec<usize> {
+        columns_in_play(self.slots.len(), &self.dropped)
+    }
+
     fn rebuild(&mut self) {
+        self.numbers = self.in_play();
         // With a damage type picked, the tree is built from a copy of the
         // player's damage holding only what was dealt in that type — so every
         // row's figures are of the type rather than of the whole row it was
         // part of. Held on the comparison because the Total is rebuilt from the
         // same groups whenever a tick moves.
         self.of_type = self.types.is_empty().then(Vec::new).unwrap_or_else(|| {
-            self.slots
-                .iter()
+            self.columns_slots()
                 .map(|slot| of_type(slot, &self.types))
                 .collect()
         });
         let parents = self.parents();
-        let name_managers: Vec<&NameManager> =
-            self.slots.iter().map(|s| &s.combat.name_manager).collect();
-        let hits_managers: Vec<&HitsManager> =
-            self.slots.iter().map(|s| &s.combat.hits_manger).collect();
+        let name_managers: Vec<&NameManager> = self
+            .columns_slots()
+            .map(|s| &s.combat.name_manager)
+            .collect();
+        let hits_managers: Vec<&HitsManager> = self
+            .columns_slots()
+            .map(|s| &s.combat.hits_manger)
+            .collect();
         let durations: Vec<f64> = self
-            .slots
-            .iter()
+            .columns_slots()
             .map(|s| combat_duration_seconds(&s.combat))
             .collect();
 
@@ -383,13 +403,17 @@ impl Comparison {
     /// the copy holding only the picked damage types.
     fn parents(&self) -> Vec<Option<&DamageGroup>> {
         if self.of_type.is_empty() {
-            self.slots
-                .iter()
+            self.columns_slots()
                 .map(|s| s.combat.players.get(&s.player).map(|p| &p.damage_out))
                 .collect()
         } else {
             self.of_type.iter().map(|group| group.as_ref()).collect()
         }
+    }
+
+    /// The slots the columns are of, in column order.
+    fn columns_slots(&self) -> impl Iterator<Item = &Slot> {
+        self.numbers.iter().map(|&slot_i| &self.slots[slot_i])
     }
 
     /// (Re)build the Total row from the rows that are ticked — its values, the
@@ -483,10 +507,11 @@ impl Comparison {
                 return;
             }
         };
-        let n_slots = self.slots.len();
+        let n_slots = self.numbers.len();
         let filter = self.filter;
         let time_slice = self.time_slice;
         let notes = &self.notes;
+        let numbers = &self.numbers;
         let averages = self.averages;
         self.diagrams = find_node(&self.nodes, id).map(|node| {
             if averages {
@@ -497,7 +522,7 @@ impl Comparison {
                 let series = node.series.get(slot_i)?.as_ref()?;
                 Some(
                     PreparedDamageDataSet::new(
-                        &chart_label(slot_i, note_of(notes, slot_i)),
+                        &chart_label(numbers[slot_i], note_of(notes, slot_i)),
                         series.total,
                         series.hits.iter(),
                         series.combat_duration_s,
@@ -506,7 +531,7 @@ impl Comparison {
                     // to the slot rather than left to the chart's own order —
                     // that order is by total, and every tick in the table moves
                     // the totals.
-                    .with_color(theme::series_color(slot_i)),
+                    .with_color(theme::series_color(numbers[slot_i])),
                 )
             });
             DamageDiagrams::from_data(data, filter, time_slice)
@@ -522,7 +547,7 @@ impl Comparison {
         // A note can be written (or changed) in the main window while a
         // comparison is still up, and the chart's series names are built from
         // these, so check them rather than take them once and keep them.
-        let notes = slot_notes(&self.slots, &settings.combat_notes);
+        let notes = slot_notes(self.columns_slots(), &settings.combat_notes);
         if notes != self.notes {
             self.notes = notes;
             self.rebuild_diagram();
@@ -586,7 +611,8 @@ impl Comparison {
             .initial_ratio(legend_ratio)
             .ratio_bounds(MIN_LEGEND_RATIO..=MAX_LEGEND_RATIO)
             .show(ui, |legend_ui, rest_ui| {
-                if let Some((slot_i, handle)) = self.show_legend(legend_ui, &colors) {
+                let change = self.show_legend(legend_ui, &colors);
+                if let Some((slot_i, handle)) = change.player {
                     self.slots[slot_i].player = handle;
                     // Changing who the reference is about moves the others with
                     // it, where that player took part: the deltas are all
@@ -595,6 +621,16 @@ impl Comparison {
                     if slot_i == 0 {
                         follow_the_reference_player(&mut self.slots);
                     }
+                    self.rebuild();
+                }
+                if let Some(slot_i) = change.dropped {
+                    if !self.dropped.remove(&slot_i) {
+                        self.dropped.insert(slot_i);
+                    }
+                    // A combat leaving or rejoining is a different comparison:
+                    // every column, every average and the chart are of the
+                    // combats that are in it.
+                    self.impact_slot = None;
                     self.rebuild();
                 }
 
@@ -619,16 +655,31 @@ impl Comparison {
     ///
     /// It scrolls inside whatever height the pane has been given, so a session's
     /// worth of runs is reachable without pushing the table off the window.
-    fn show_legend(&self, ui: &mut Ui, colors: &[Option<Color32>]) -> Option<(usize, NameHandle)> {
-        let mut player_change = None;
+    fn show_legend(&self, ui: &mut Ui, colors: &[Option<Color32>]) -> LegendChange {
+        let mut change = LegendChange::default();
         ScrollArea::vertical()
             .id_salt("compare legend")
             .show(ui, |ui| {
                 for (slot_i, slot) in self.slots.iter().enumerate() {
                     ui.horizontal(|ui| {
+                        // A combat can be dropped from the comparison and put
+                        // back without going through the picker again: the
+                        // quickest way to ask "and what if that run were not in
+                        // this?" is to take it out and look.
+                        let mut kept = !self.dropped.contains(&slot_i);
+                        if ui
+                            .checkbox(&mut kept, "")
+                            .hover("Keep this combat in the comparison")
+                            .changed()
+                        {
+                            change.dropped = Some(slot_i);
+                        }
                         // The user's own note, where they wrote one, tells apart
                         // runs the identifier alone cannot.
-                        let note = note_of(&self.notes, slot_i);
+                        let note = self
+                            .column_of(slot_i)
+                            .map(|column| note_of(&self.notes, column))
+                            .unwrap_or("");
                         // The number and the note are drawn in the colour this
                         // combat has on the chart, so the legend, the table and
                         // the chart all say the same thing about which run is
@@ -639,7 +690,8 @@ impl Comparison {
                             slot_i,
                             &slot.combat.identifier(),
                             note,
-                            colors[slot_i],
+                            self.column_of(slot_i)
+                                .and_then(|column| colors.get(column).copied().flatten()),
                         ));
                         let current = slot.player.get(&slot.combat.name_manager).to_string();
                         ComboBox::new(("compare player", slot_i), "player")
@@ -647,7 +699,7 @@ impl Comparison {
                             .show_ui(ui, |ui| {
                                 for (handle, name) in players_by_dps(&slot.combat) {
                                     if ui.selectable_label(handle == slot.player, name).clicked() {
-                                        player_change = Some((slot_i, handle));
+                                        change.player = Some((slot_i, handle));
                                     }
                                 }
                             });
@@ -664,7 +716,12 @@ impl Comparison {
                     });
                 }
             });
-        player_change
+        change
+    }
+
+    /// Which column a slot is shown in, if it is in the comparison at all.
+    fn column_of(&self, slot_i: usize) -> Option<usize> {
+        column_of(&self.numbers, slot_i)
     }
 
     /// The colour each slot's combat is drawn in on the chart, `None` for a
@@ -681,15 +738,21 @@ impl Comparison {
         let charted = (!self.averages)
             .then(|| self.selected.and_then(|id| find_node(&self.nodes, id)))
             .flatten();
-        (0..self.slots.len())
-            .map(|slot_i| {
+        (0..self.numbers.len())
+            .map(|column| {
                 let node = charted?;
                 node.series
-                    .get(slot_i)?
+                    .get(column)?
                     .as_ref()
-                    .map(|_| theme::series_color(slot_i))
+                    .map(|_| theme::series_color(self.numbers[column]))
             })
             .collect()
+    }
+
+    /// What a column is called on screen: the combat's own number, which does
+    /// not move when another combat is taken out of the comparison.
+    fn number_of(&self, column: usize) -> usize {
+        number_of(&self.numbers, column)
     }
 
     /// Every damage type the rows under Total dealt, in name order — what the
@@ -825,9 +888,9 @@ impl Comparison {
             for slot_i in 0..self.slots.len() {
                 let note = note_of(&self.notes, slot_i);
                 let label = if note.is_empty() {
-                    format!("#{}", slot_i + 1)
+                    format!("#{}", self.number_of(slot_i))
                 } else {
-                    format!("#{} {note}", slot_i + 1)
+                    format!("#{} {note}", self.number_of(slot_i))
                 };
                 if ui.steady_toggle(slot_i == current, label).clicked() {
                     self.impact_slot = Some(slot_i);
@@ -923,7 +986,7 @@ impl Comparison {
                                         &font,
                                         text_color,
                                         "",
-                                        &format!("#{}", slot_i + 1),
+                                        &format!("#{}", self.number_of(slot_i)),
                                         with_notes.then(|| note_of(&notes, slot_i)),
                                         colors.get(slot_i).copied().flatten(),
                                     ))
@@ -1058,10 +1121,14 @@ impl Comparison {
     /// kept for the toolbar to show: a save dialog closing on its own says
     /// nothing about whether anything was written.
     fn export(&mut self, averages: bool, frame: &Frame) {
+        let Some(first) = self.columns_slots().next() else {
+            return;
+        };
+        let file_name = export::default_file_name(&first.combat);
         let Some(path) = rfd::FileDialog::new()
             .set_title("Export Comparison")
             .add_filter("Excel workbook", &["xlsx"])
-            .set_file_name(export::default_file_name(&self.slots[0].combat))
+            .set_file_name(file_name)
             .set_parent(frame)
             .save_file()
         else {
@@ -1086,8 +1153,7 @@ impl Comparison {
     /// what is not wanted.
     fn export_sheet(&self, averages: bool) -> export::Sheet {
         let combats = self
-            .slots
-            .iter()
+            .columns_slots()
             .enumerate()
             .map(|(slot_i, slot)| export::Combat {
                 identifier: slot.combat.identifier(),
@@ -1104,9 +1170,9 @@ impl Comparison {
                     decimals: column.precision(),
                 });
             } else {
-                for slot_i in 0..self.slots.len() {
+                for slot_i in 0..self.numbers.len() {
                     columns.push(export::Column {
-                        header: format!("{} #{}", column.label(), slot_i + 1),
+                        header: format!("{} #{}", column.label(), self.number_of(slot_i)),
                         decimals: column.precision(),
                     });
                 }
@@ -1114,7 +1180,7 @@ impl Comparison {
         }
 
         let mut rows = Vec::new();
-        collect_export_rows(&self.nodes, 0, self.slots.len(), averages, &mut rows);
+        collect_export_rows(&self.nodes, 0, self.numbers.len(), averages, &mut rows);
         export::Sheet {
             name: "Comparison".to_string(),
             combats,
@@ -1172,7 +1238,7 @@ impl Comparison {
         show_averages: bool,
         colors: &[Option<Color32>],
     ) {
-        let n_slots = self.slots.len();
+        let n_slots = self.numbers.len();
         let n_metrics = self.columns.len();
         // Averaged columns belong to every combat at once, so there is no note
         // and no breakdown against a reference to put under them.
@@ -1212,7 +1278,7 @@ impl Comparison {
                     &font,
                     text_color,
                     "ΔDPS vs rest",
-                    &format!("#{}", slot + 1),
+                    &format!("#{}", self.number_of(slot)),
                     with_notes.then(|| note_of(&self.notes, slot)),
                     colors.get(slot).copied().flatten(),
                 ),
@@ -1220,7 +1286,7 @@ impl Comparison {
                     "How much DPS each row added to combat #{}{}, or cost it, against the average \
                      of the other combats. The rows add up to the figure on the Total. Click to \
                      order the rows by it — largest gain first.",
-                    slot + 1,
+                    self.number_of(slot),
                     note_suffix(note_of(&self.notes, slot))
                 ),
                 sort: Some(SortBy::Impact { slot }),
@@ -1249,9 +1315,9 @@ impl Comparison {
                         text_color,
                         if slot_i == 0 { column.label() } else { "" },
                         &if slot_i == 0 {
-                            format!("#{} (ref)", slot_i + 1)
+                            format!("#{} (ref)", self.number_of(slot_i))
                         } else {
-                            format!("#{}", slot_i + 1)
+                            format!("#{}", self.number_of(slot_i))
                         },
                         with_notes.then(|| note_of(&self.notes, slot_i)),
                         colors.get(slot_i).copied().flatten(),
@@ -1259,7 +1325,7 @@ impl Comparison {
                     tooltip: format!(
                         "{} in combat #{}{}{}",
                         column.label(),
-                        slot_i + 1,
+                        self.number_of(slot_i),
                         note_suffix(note_of(&self.notes, slot_i)),
                         if slot_i == 0 {
                             " — the reference every other column is compared against"
@@ -1285,14 +1351,14 @@ impl Comparison {
                             &font,
                             text_color,
                             if slot_i == 1 { label } else { "" },
-                            &format!("#{}", slot_i + 1),
+                            &format!("#{}", self.number_of(slot_i)),
                             with_notes.then(|| note_of(&self.notes, slot_i)),
                             colors.get(slot_i).copied().flatten(),
                         ),
                         tooltip: format!(
                             "{} (combat #{}{} against #1)",
                             tooltip,
-                            slot_i + 1,
+                            self.number_of(slot_i),
                             note_suffix(note_of(&self.notes, slot_i))
                         ),
                         sort: None,
@@ -1757,6 +1823,31 @@ impl CompareNode {
             _ => r.cell(|_| {}).rect,
         }
     }
+}
+
+/// The slots a comparison is of, in column order: everything not taken out.
+fn columns_in_play(slots: usize, dropped: &FxHashSet<usize>) -> Vec<usize> {
+    (0..slots).filter(|slot| !dropped.contains(slot)).collect()
+}
+
+/// The number a column is shown under — the combat's own, so taking one combat
+/// out does not renumber (and so recolour) the ones beside it.
+fn number_of(numbers: &[usize], column: usize) -> usize {
+    numbers.get(column).copied().unwrap_or(column) + 1
+}
+
+/// Which column a slot is shown in, if it is in the comparison at all.
+fn column_of(numbers: &[usize], slot: usize) -> Option<usize> {
+    numbers.iter().position(|&number| number == slot)
+}
+
+/// What the reader changed in the list of runs this pass.
+#[derive(Default)]
+struct LegendChange {
+    /// The slot whose player was picked.
+    player: Option<(usize, NameHandle)>,
+    /// The slot that was taken out of the comparison, or put back.
+    dropped: Option<usize>,
 }
 
 /// What the tick column needs while the tree draws itself: which rows are out
@@ -2539,10 +2630,10 @@ fn follow_the_reference_player(slots: &mut [Slot]) {
     }
 }
 
-/// The user's note for each slot's combat, empty where they wrote none.
-fn slot_notes(slots: &[Slot], notes: &CombatNotes) -> Vec<String> {
+/// The user's note for each combat behind a column, empty where they wrote
+/// none.
+fn slot_notes<'a>(slots: impl Iterator<Item = &'a Slot>, notes: &CombatNotes) -> Vec<String> {
     slots
-        .iter()
         .map(|slot| notes.get(&CombatNotes::key(&slot.combat)).to_owned())
         .collect()
 }
@@ -3826,6 +3917,31 @@ mod tests {
             row.sort_value(SortBy::Spread, None),
             "no measure, no spread"
         );
+    }
+
+    /// A combat taken out of the comparison leaves the others where they were:
+    /// the columns keep the numbers the combats came in with, rather than
+    /// closing ranks. Renumbering would move every other run's colour whenever
+    /// one was dropped, which is what pinning the colours was for.
+    #[test]
+    fn dropping_a_combat_leaves_the_others_their_numbers() {
+        let dropped: FxHashSet<usize> = [1usize].into_iter().collect();
+        let numbers = columns_in_play(4, &dropped);
+        assert_eq!(vec![0, 2, 3], numbers);
+
+        assert_eq!(1, number_of(&numbers, 0), "the first combat is still #1");
+        assert_eq!(3, number_of(&numbers, 1), "the third is still #3");
+        assert_eq!(4, number_of(&numbers, 2));
+
+        assert_eq!(Some(2), column_of(&numbers, 3), "#4 is the third column");
+        assert_eq!(None, column_of(&numbers, 1), "the one taken out has none");
+    }
+
+    /// Nothing dropped is every combat, in order.
+    #[test]
+    fn a_comparison_nobody_has_touched_holds_every_combat() {
+        assert_eq!(vec![0, 1, 2], columns_in_play(3, &Default::default()));
+        assert!(columns_in_play(0, &Default::default()).is_empty());
     }
 
     /// A difference is the largest combat less the smallest, and a combat

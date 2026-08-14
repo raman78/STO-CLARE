@@ -313,6 +313,17 @@ breakdown on in the Columns menu and each difference is split into the part that
 came from landing hits more often and the part that came from each hit landing
 harder. The two always add up to the whole difference.
 
+### Taking a run out of the comparison
+
+Every run in the list at the top has a tick box. Untick one and it leaves the
+table, the averages and the chart; tick it again and it comes back. Nothing goes
+through the picker, so "what do the other four look like without this one?" is
+one click and one more to undo.
+
+The runs that stay keep the number and the colour they came in with, so #4 is
+still #4 with #2 taken out. Only what is ticked is counted in the averages, the
+spread and the Total.
+
 ### Comparing only part of a run
 
 Down the left of the table there is a tick box on every ability row, and one on
