@@ -25,6 +25,9 @@ pub struct HealTab {
     /// damage tabs keep, so both kinds of table behave alike.
     excluded: FxHashSet<String>,
     hide_unticked: bool,
+    /// Healing has no damage types to pick from, so the picker has nothing to
+    /// offer and does not appear.
+    no_types: FxHashSet<String>,
     main_diagrams: HealDiagrams,
     selection_diagrams: Option<HealDiagrams>,
     heal_pool: fn(&Player) -> &HealPool,
@@ -51,6 +54,7 @@ impl HealTab {
             grouping: HealGrouping::ByAbility,
             excluded: Default::default(),
             hide_unticked: false,
+            no_types: Default::default(),
             heal_pool,
             other_level,
             main_diagrams: HealDiagrams::empty(),
@@ -102,6 +106,8 @@ impl HealTab {
                 let mut ticks = RowTicks {
                     excluded: &mut self.excluded,
                     hide_unticked: &mut self.hide_unticked,
+                    types: &mut self.no_types,
+                    all_types: &[],
                     changed: false,
                 };
                 table.show(

@@ -116,3 +116,176 @@ pub fn metrics_duration(combat_time: &Option<Range<NaiveDateTime>>) -> f64 {
         .max(0) as f64
         / 1e3
 }
+
+/// A player's outgoing damage holding only what was dealt in the picked types,
+/// or `None` when they dealt none of them.
+///
+/// A row's own figures are then of the type: `Polaron Beam Array` under `Cold`
+/// is the few hundred its Frostbite proc did, not the beams around it.
+pub fn damage_of_types(
+    player: &Player,
+    group: &DamageGroup,
+    name_manager: &NameManager,
+    hits_manager: &HitsManager,
+    types: &FxHashSet<String>,
+    combat_total: &ShieldHullValues,
+) -> Option<DamageGroup> {
+    let filter = TypeFilter {
+        name_manager,
+        hits_manager,
+        types,
+        duration: metrics_duration(&player.combat_time),
+    };
+    let mut kept = filter.keep(group)?;
+    // The percentages the tables show are of the whole fight for the top row
+    // and of the parent below it, the same as the analyzer states them.
+    kept.damage_percentage =
+        ShieldHullOptionalValues::percentage(&kept.damage_metrics.total_damage, combat_total);
+    set_child_percentages(&mut kept);
+    Some(kept)
+}
+
+/// What a walk down the tree needs to keep the picked types out of it.
+struct TypeFilter<'a> {
+    name_manager: &'a NameManager,
+    hits_manager: &'a HitsManager,
+    types: &'a FxHashSet<String>,
+    duration: f64,
+}
+
+impl TypeFilter<'_> {
+    /// This group with everything outside the picked types taken out of it, or
+    /// `None` when it dealt none of them.
+    ///
+    /// A group of one picked type is kept whole — nothing in it is of another
+    /// type, so there is nothing to recompute. A group of several is rebuilt
+    /// from the sub-groups that survive, since that is the only level the log
+    /// separates them at: a hit carries no damage type of its own, the group it
+    /// lands in does.
+    fn keep(&self, group: &DamageGroup) -> Option<DamageGroup> {
+        let mut own = group.damage_types.iter().map(|t| t.get(self.name_manager));
+        let picked = own.clone().filter(|t| self.types.contains(*t)).count();
+        let all = own.by_ref().count();
+
+        if picked == 0 {
+            return None;
+        }
+        if picked == all {
+            return Some(group.clone());
+        }
+
+        let sub_groups: Vec<DamageGroup> = group
+            .sub_groups
+            .values()
+            .filter_map(|sub| self.keep(sub))
+            .collect();
+        if sub_groups.is_empty() {
+            return None;
+        }
+
+        let hits: Vec<Hit> = sub_groups
+            .iter()
+            .flat_map(|sub| sub.hits.get(self.hits_manager).iter().copied())
+            .collect();
+        let mut kept = subset_group(hits, self.duration, &Default::default());
+        kept.segment = group.segment;
+        kept.damage_types = group
+            .damage_types
+            .iter()
+            .copied()
+            .filter(|t| self.types.contains(t.get(self.name_manager)))
+            .collect();
+        kept.sub_groups = sub_groups
+            .into_iter()
+            .map(|sub| (sub.name(), sub))
+            .collect();
+        Some(kept)
+    }
+}
+
+/// Each row's share of the row above it, down the tree — the figure the
+/// `Damage %` column shows, which a rebuilt group has no one to have set.
+fn set_child_percentages(group: &mut DamageGroup) {
+    let parent_total = group.damage_metrics.total_damage;
+    for sub in group.sub_groups.values_mut() {
+        sub.damage_percentage =
+            ShieldHullOptionalValues::percentage(&sub.damage_metrics.total_damage, &parent_total);
+        set_child_percentages(sub);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyzer::{BaseHit, NameFlags, SpecificHit, ValueFlags};
+
+    fn hit(damage: f64) -> Hit {
+        Hit {
+            hit: BaseHit {
+                damage,
+                flags: ValueFlags::NONE,
+                specific: SpecificHit::Hull {
+                    base_damage: damage,
+                },
+            },
+            time_millis: 0,
+        }
+    }
+
+    /// A group of one type is kept whole; a group of several is rebuilt from
+    /// the sub-groups that survive, so its figures are of the picked type and
+    /// not of everything it was part of. This is the Polaron Beam Array case:
+    /// under `Cold` it is the Frostbite proc, not the beams around it.
+    #[test]
+    fn a_type_filter_rebuilds_a_mixed_group_from_what_survives() {
+        let mut names = NameManager::default();
+        let cold = names.insert("Cold", NameFlags::NONE);
+        let polaron = names.insert("Polaron", NameFlags::NONE);
+        let hits_manager = HitsManager::default();
+
+        let leaf = |damage: f64, damage_type| {
+            let mut group = DamageGroup {
+                hits: Hits::Leaf(vec![hit(damage)]),
+                ..Default::default()
+            };
+            group.damage_types.insert(damage_type);
+            group.damage_metrics.total_damage.all = damage;
+            group
+        };
+        let beams = leaf(4_000.0, polaron);
+        let frostbite = leaf(60.0, cold);
+
+        let mut group = DamageGroup::default();
+        group.damage_types.insert(polaron);
+        group.damage_types.insert(cold);
+        group.sub_groups.insert(beams.name(), beams);
+        group.sub_groups.insert(frostbite.name(), frostbite);
+
+        let picked: FxHashSet<String> = ["Cold".to_string()].into_iter().collect();
+        let filter = TypeFilter {
+            name_manager: &names,
+            hits_manager: &hits_manager,
+            types: &picked,
+            duration: 10.0,
+        };
+
+        let kept = filter.keep(&group).expect("the group dealt some cold");
+        assert_eq!(60.0, kept.total_damage.all, "the proc, not the beams");
+        assert_eq!(
+            1,
+            kept.sub_groups.len(),
+            "the beams are gone with their type"
+        );
+        assert_eq!(6.0, kept.dps.all, "60 damage over 10 seconds");
+
+        // A group with none of the picked types drops out entirely.
+        let tetryon: FxHashSet<String> = ["Tetryon".to_string()].into_iter().collect();
+        let filter = TypeFilter {
+            name_manager: &names,
+            hits_manager: &hits_manager,
+            types: &tetryon,
+            duration: 10.0,
+        };
+        assert!(filter.keep(&group).is_none());
+    }
+}

@@ -5,6 +5,7 @@ use educe::Educe;
 use eframe::egui::*;
 use rustc_hash::FxHashSet;
 
+use crate::custom_widgets::popup_button::PopupButton;
 use crate::custom_widgets::table::SortState;
 use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::{
@@ -266,6 +267,7 @@ impl<T: 'static> MetricsTable<T> {
                         ui.horizontal(|ui| {
                             ui.label("Name");
                             ticks.show_eye(ui);
+                            ticks.show_types(ui);
                         });
                     });
 
@@ -676,11 +678,57 @@ pub struct RowTicks<'a> {
     /// is rebuilt whenever the combat, the settings or the ticks change.
     pub excluded: &'a mut FxHashSet<String>,
     pub hide_unticked: &'a mut bool,
-    /// Set when this pass changed either, so the caller rebuilds the table.
+    /// The damage types the reader is looking at, and every type there is to
+    /// pick. Empty means every type, which is how it starts.
+    pub types: &'a mut FxHashSet<String>,
+    pub all_types: &'a [String],
+    /// Set when this pass changed any of them, so the caller rebuilds.
     pub changed: bool,
 }
 
 impl RowTicks<'_> {
+    /// The type picker: which damage types the figures are of.
+    fn show_types(&mut self, ui: &mut Ui) {
+        if self.all_types.is_empty() {
+            return;
+        }
+        let label = if self.types.is_empty() {
+            "☰ Type".to_string()
+        } else {
+            format!("☰ Type ({})", self.types.len())
+        };
+        PopupButton::new(label)
+            .with_id_source("table damage type picker")
+            .show(ui, |ui| {
+                ui.label(RichText::new("Show only these damage types").weak());
+                ui.separator();
+                if ui
+                    .add_enabled(!self.types.is_empty(), Button::new("Every type"))
+                    .hover("Back to showing every type")
+                    .clicked()
+                {
+                    self.types.clear();
+                    self.changed = true;
+                }
+                for damage_type in self.all_types {
+                    let mut on = self.types.contains(damage_type);
+                    if ui.checkbox(&mut on, damage_type).changed() {
+                        self.changed = true;
+                        if on {
+                            self.types.insert(damage_type.clone());
+                        } else {
+                            self.types.remove(damage_type);
+                        }
+                    }
+                }
+            })
+            .response
+            .hover(
+                "Show only what was dealt in the damage types you pick, with every figure worked \
+                 out for those types alone. Pick as many as you like; the list stays open.",
+            );
+    }
+
     /// The eye that hides the rows that are out.
     fn show_eye(&mut self, ui: &mut Ui) {
         if ui

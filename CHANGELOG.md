@@ -18,6 +18,7 @@
 - the settings window no longer shows a horizontal scroll bar under contents that fit. Every tab drew one for the few points the vertical bar had taken away
 - tooltips sit against what they explain rather than floating a few points below it, so it is never in doubt which row or button one belongs to
 
+- the damage tabs in the main window can be narrowed to the damage types you pick, from the same list a comparison has: every figure is then worked out for those types alone, so "how much of this run was phaser" is one pick
 - the damage tabs in the main window have tick boxes too, the way a comparison does. Untick an ability and the player's own figures are worked out again without it — DPS, resistance, crit rate and all — and the chart under the table follows, so "what do my beams alone look like" is a few clicks. The eye beside the Name heading hides what you have unticked
 
 ### Fixes

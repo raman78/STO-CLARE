@@ -25,6 +25,10 @@ pub struct DamageTab {
     /// player's figures, and — with `hide_unticked` — off the screen as well.
     excluded: FxHashSet<String>,
     hide_unticked: bool,
+    /// The damage types the figures are of, empty for all of them, and every
+    /// type this combat holds.
+    types: FxHashSet<String>,
+    all_types: Vec<String>,
     filter: f64,
     diagram_time_slice: f64,
     active_diagram: DiagramType,
@@ -41,6 +45,8 @@ impl DamageTab {
             damage_group,
             excluded: Default::default(),
             hide_unticked: false,
+            types: Default::default(),
+            all_types: Vec::new(),
             filter: 0.4,
             diagram_time_slice: 1.0,
             dmg_selection_diagrams: None,
@@ -61,6 +67,23 @@ impl DamageTab {
     /// kept drawing everything would answer a different question from the table
     /// above it.
     fn rebuild(&mut self, settings: &Settings, combat: &Combat) {
+        // Taken from the players' own groups: a branch carries the types of
+        // everything under it, and reading them off the filtered tree would
+        // leave the picker offering only what was already picked.
+        let mut all_types: Vec<String> = combat
+            .players
+            .values()
+            .flat_map(|player| {
+                (self.damage_group)(player)
+                    .damage_types
+                    .iter()
+                    .map(|damage_type| damage_type.get(&combat.name_manager).to_string())
+            })
+            .collect();
+        all_types.sort_unstable();
+        all_types.dedup();
+        self.all_types = all_types;
+
         self.rebuild_table(settings, combat);
         let kept: Vec<DamageGroup> = combat
             .players
@@ -80,12 +103,33 @@ impl DamageTab {
     /// when nothing is ticked off.
     fn kept_damage<'a>(&self, player: &'a Player, combat: &Combat) -> Cow<'a, DamageGroup> {
         let whole = (self.damage_group)(player);
-        if self.excluded.is_empty() {
+        if self.types.is_empty() && self.excluded.is_empty() {
             return Cow::Borrowed(whole);
+        }
+        // The type first — it decides what the rows even are — and the ticks
+        // over what it left.
+        let of_types = if self.types.is_empty() {
+            None
+        } else {
+            damage_subset::damage_of_types(
+                player,
+                whole,
+                &combat.name_manager,
+                &combat.hits_manger,
+                &self.types,
+                &combat.total_damage_out,
+            )
+        };
+        let narrowed = of_types.as_ref().unwrap_or(whole);
+        if self.excluded.is_empty() {
+            return match of_types {
+                Some(kept) => Cow::Owned(kept),
+                None => Cow::Borrowed(whole),
+            };
         }
         match damage_subset::player_damage_without(
             player,
-            whole,
+            narrowed,
             &combat.name_manager,
             &combat.hits_manger,
             &self.excluded,
@@ -94,7 +138,10 @@ impl DamageTab {
             Some(kept) => Cow::Owned(kept),
             // Nothing of this player's was ticked off, so nothing of theirs
             // changes.
-            None => Cow::Borrowed(whole),
+            None => match of_types {
+                Some(kept) => Cow::Owned(kept),
+                None => Cow::Borrowed(whole),
+            },
         }
     }
 
@@ -107,26 +154,10 @@ impl DamageTab {
     /// of the ticked rows keeps their own figures rather than showing zeroes,
     /// since nothing of theirs was ticked off in the first place.
     fn rebuild_table(&mut self, settings: &Settings, combat: &Combat) {
-        let group = self.damage_group;
-        let excluded = &self.excluded;
-        let total = combat.total_damage_out;
-        self.table = DamageTable::new(settings, combat, move |player| {
-            let whole = group(player);
-            if excluded.is_empty() {
-                return Cow::Borrowed(whole);
-            }
-            match damage_subset::player_damage_without(
-                player,
-                whole,
-                &combat.name_manager,
-                &combat.hits_manger,
-                excluded,
-                &total,
-            ) {
-                Some(kept) => Cow::Owned(kept),
-                None => Cow::Borrowed(whole),
-            }
-        });
+        // Both filters go through one place, so the table and the chart under
+        // it are always of the same rows.
+        let table = DamageTable::new(settings, combat, |player| self.kept_damage(player, combat));
+        self.table = table;
     }
 
     pub fn show(&mut self, settings: &Settings, combat: Option<&Combat>, ui: &mut Ui) {
@@ -139,6 +170,8 @@ impl DamageTab {
                 let mut ticks = RowTicks {
                     excluded: &mut self.excluded,
                     hide_unticked: &mut self.hide_unticked,
+                    types: &mut self.types,
+                    all_types: &self.all_types,
                     changed: false,
                 };
                 self.table.show(
