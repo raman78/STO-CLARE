@@ -325,6 +325,7 @@ impl<T: 'static> MetricsTable<T> {
                 ColumnKey::whole(name),
                 column.name_info,
                 column.sort,
+                true,
                 |ui| {
                     ui.label(RichText::new(name).color(ui.visuals().text_color()));
                 },
@@ -338,6 +339,7 @@ impl<T: 'static> MetricsTable<T> {
                     ColumnKey::half(name, part.name),
                     None,
                     part.sort,
+                    true,
                     |ui| {
                         let line = ui.text_style_height(&TextStyle::Body);
                         ui.add_space(line);
@@ -347,28 +349,24 @@ impl<T: 'static> MetricsTable<T> {
             return;
         }
 
-        let name = if split {
-            format!("{}\n", column.name)
-        } else {
-            column.name.to_string()
-        };
-        let marker = self.sort.marker(ColumnKey::whole(column.name));
-        let key = ColumnKey::whole(column.name);
-        let response = row.selectable_cell(false, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(name);
-                if !marker.is_empty() {
-                    ui.label(marker);
+        // One heading, one control — the same one a split group's halves get,
+        // so every heading in the table looks and behaves alike.
+        self.show_split_header(
+            row,
+            ColumnKey::whole(column.name),
+            column.name_info,
+            column.sort,
+            false,
+            |ui| {
+                // A metric with no halves still sits in a header built for two
+                // lines when the split columns are on, so it takes the first
+                // line's room and leaves its heading level with the others.
+                if split {
+                    let line = ui.text_style_height(&TextStyle::Body);
+                    ui.add_space(line);
                 }
-            });
-        });
-        if response.clicked() {
-            self.sort.clicked(key);
-            self.sort_by_column(column.sort);
-        }
-        if let Some(info) = column.name_info {
-            response.hover(info);
-        }
+            },
+        );
     }
 
     /// One heading of a split group: the metric name (or nothing, over a half)
@@ -384,10 +382,17 @@ impl<T: 'static> MetricsTable<T> {
         key: ColumnKey,
         info: Option<&'static str>,
         sort: fn(&mut Self),
+        split_group: bool,
         first_line: impl FnOnce(&mut Ui),
     ) {
         let marker = self.sort.marker(key);
-        let label = key.part.unwrap_or("All");
+        // A whole column is labelled with its metric; a split group labels its
+        // three columns All, Hull and Shield under the metric name.
+        let label = match (key.part, split_group) {
+            (Some(part), _) => part,
+            (None, true) => "All",
+            (None, false) => key.column,
+        };
         let mut response = None;
         row.cell(|ui| {
             // Headings are as narrow as their column and must not wrap: a
@@ -396,10 +401,17 @@ impl<T: 'static> MetricsTable<T> {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 first_line(ui);
-                response = Some(ui.add(Button::selectable(
-                    self.sort.is_sorted_by(key),
-                    format!("{label}{marker}"),
-                )));
+                // As wide as the column, so the whole strip under the metric
+                // name takes the click rather than the few points the word
+                // happens to cover. `min_size` only ever grows it, so the
+                // column cannot collapse on the first pass, when it has no
+                // measured width yet.
+                response = Some(
+                    ui.add(
+                        Button::selectable(self.sort.is_sorted_by(key), format!("{label}{marker}"))
+                            .min_size(vec2(ui.available_width(), 0.0)),
+                    ),
+                );
             });
         });
         let Some(response) = response else {
