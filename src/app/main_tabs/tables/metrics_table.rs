@@ -152,21 +152,31 @@ pub struct ColumnDescriptor<T: 'static> {
 /// What tells one sortable heading from another: the metric, and which half of
 /// it when the halves have columns of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ColumnKey {
+pub struct ColumnKey {
     column: &'static str,
     part: Option<&'static str>,
 }
 
 impl ColumnKey {
-    const fn whole(column: &'static str) -> Self {
+    pub const fn whole(column: &'static str) -> Self {
         Self { column, part: None }
     }
 
-    const fn half(column: &'static str, part: &'static str) -> Self {
+    pub const fn half(column: &'static str, part: &'static str) -> Self {
         Self {
             column,
             part: Some(part),
         }
+    }
+
+    /// Which half of a split column this is, if it is one.
+    pub const fn part(&self) -> Option<&'static str> {
+        self.part
+    }
+
+    /// The metric this heading orders by.
+    pub const fn column(&self) -> &'static str {
+        self.column
     }
 }
 
@@ -385,51 +395,10 @@ impl<T: 'static> MetricsTable<T> {
         split_group: bool,
         first_line: impl FnOnce(&mut Ui),
     ) {
-        let marker = self.sort.marker(key);
-        // A whole column is labelled with its metric; a split group labels its
-        // three columns All, Hull and Shield under the metric name.
-        let label = match (key.part, split_group) {
-            (Some(part), _) => part,
-            (None, true) => "All",
-            (None, false) => key.column,
-        };
-        let picked = self.sort.is_sorted_by(key);
-        let mut response = None;
-        row.cell(|ui| {
-            // Headings are as narrow as their column and must not wrap: a
-            // "Shield" folded into "Shie / ld" costs the line under it.
-            ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                first_line(ui);
-
-                // The strip under the metric name, drawn the way a pickable
-                // table cell is drawn rather than as a button: filled while it
-                // is the one ordering the rows, rimmed under the pointer. As
-                // wide as the column, so the whole strip takes the click and
-                // not the few points the word covers.
-                let text = format!("{label}{marker}");
-                let line = ui.text_style_height(&TextStyle::Body);
-                let width = ui
-                    .available_width()
-                    .max(text_width(ui, &text) + ui.spacing().item_spacing.x);
-                let (rect, strip) = ui.allocate_exact_size(vec2(width, line), Sense::click());
-                draw_cell_visuals(ui, picked, &strip);
-                ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
-                    ui.label(text);
-                });
-                response = Some(strip);
-            });
-        });
-        let Some(response) = response else {
-            return;
-        };
+        let response = show_sortable_header(row, &self.sort, key, info, split_group, first_line);
         if response.clicked() {
             self.sort.clicked(key);
             self.sort_by_column(sort);
-        }
-        if let Some(info) = info {
-            response.hover(info);
         }
     }
 
@@ -749,6 +718,66 @@ impl SelectionTracker {
             }
         }
     }
+}
+
+/// One heading: whatever the caller draws on the first line, and under it the
+/// strip that does the ordering.
+///
+/// Only that strip takes the click and lights up under the pointer, and it is
+/// drawn the way a pickable table cell is drawn rather than as a button —
+/// filled while it is the one ordering the rows, rimmed under the pointer. It
+/// used to be one cell holding both lines, so pointing anywhere in the heading
+/// lit the whole two-line block and said nothing about which of All, Hull or
+/// Shield was about to be ordered by.
+///
+/// Shared with `SummaryTable`, so a heading looks and behaves the same
+/// wherever it is.
+pub(super) fn show_sortable_header(
+    row: &mut TableRow,
+    sort: &SortState<ColumnKey>,
+    key: ColumnKey,
+    info: Option<&'static str>,
+    split_group: bool,
+    first_line: impl FnOnce(&mut Ui),
+) -> Response {
+    let marker = sort.marker(key);
+    // A whole column is labelled with its metric; a split group labels its
+    // three columns All, Hull and Shield under the metric name.
+    let label = match (key.part, split_group) {
+        (Some(part), _) => part,
+        (None, true) => "All",
+        (None, false) => key.column,
+    };
+    let picked = sort.is_sorted_by(key);
+    let mut strip = None;
+    row.cell(|ui| {
+        // Headings are as narrow as their column and must not wrap: a "Shield"
+        // folded into "Shie / ld" costs the line under it.
+        ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            first_line(ui);
+
+            // As wide as the column, so the whole strip takes the click and not
+            // the few points the word covers.
+            let text = format!("{label}{marker}");
+            let line = ui.text_style_height(&TextStyle::Body);
+            let width = ui
+                .available_width()
+                .max(text_width(ui, &text) + ui.spacing().item_spacing.x);
+            let (rect, response) = ui.allocate_exact_size(vec2(width, line), Sense::click());
+            draw_cell_visuals(ui, picked, &response);
+            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                ui.label(text);
+            });
+            strip = Some(response);
+        });
+    });
+    let response = strip.expect("the cell's contents are drawn before it returns");
+    if let Some(info) = info {
+        response.clone().hover(info);
+    }
+    response
 }
 
 /// How wide a heading's own text is, so a column cannot be narrower than what

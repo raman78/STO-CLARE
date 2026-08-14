@@ -155,7 +155,30 @@ Three conventions worth knowing before changing a table or a chart:
 - **Columns are data.** A table is a `&'static [ColumnDescriptor<T>]`; a column
   carries its label, its sort function and its render function. A metric that
   splits into hull and shield uses `shield_hull_col!`, which adds the two extra
-  cells that the split-columns setting shows.
+  cells that the split-columns setting shows. Each half carries its own `sort`,
+  so All, Hull and Shield order by their own figure; ordering all three by the
+  total made two of the three headings a lie.
+
+- **One heading control, drawn once.** `metrics_table::show_sortable_header` is
+  what every heading in `MetricsTable` and in `SummaryTable` is made of, so the
+  two cannot drift apart. It draws whatever the caller puts on the first line
+  (the metric name, or blank room over a half) and under it a strip that is
+  column-wide, one line tall, and takes the click. The strip is painted with
+  `table::draw_cell_visuals` — the same fill-when-picked, rim-under-the-pointer
+  look a pickable cell has, not a button frame; a button drew a box around the
+  words and lit both lines of a split group at once, which said nothing about
+  which of All, Hull or Shield was about to be ordered by.
+
+  Which heading is in charge lives in `SortState<ColumnKey>` (`custom_widgets::
+  table`): `ColumnKey` is the metric plus which half, `natural` is which way the
+  order runs, and `marker` returns the `⏷`/`⏶` drawn to the right of the label.
+  A second click on the same heading reverses the rows rather than sorting them
+  again — a column knows one order (largest first, or smallest where small is
+  the good end), and the other way round is that one turned over. Rebuilding a
+  table carries the state across (`MetricsTable::take_state_from`,
+  `SummaryTable::take_state_from`) and re-applies it, so ticking a row off or
+  opening another combat does not undo the order the reader chose.
+
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.

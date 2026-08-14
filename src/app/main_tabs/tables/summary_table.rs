@@ -10,7 +10,10 @@ use crate::{
     helpers::{number_formatting::NumberFormatter, *},
 };
 
-use super::{common::Kills, metrics_table::show_group_separator};
+use super::{
+    common::Kills,
+    metrics_table::{ColumnKey, show_group_separator, show_sortable_header},
+};
 
 macro_rules! col {
     ($name:expr, $sort:expr, $show:expr $(,)?) => {
@@ -32,13 +35,17 @@ macro_rules! shield_hull_col {
             name: $name,
             sort: $sort,
             show: |p, r| p.$field.show(r, p.halves_in_tooltip),
+            // Each half orders by its own figure. Ordering all three by the
+            // total made two of the three headings a lie.
             parts: &[
                 ColumnPart {
                     name: "Hull",
+                    sort: |t| t.sort_by_option_f64(|p| p.$field.hull.value),
                     show: |p, r| p.$field.show_hull(r),
                 },
                 ColumnPart {
                     name: "Shield",
+                    sort: |t| t.sort_by_option_f64(|p| p.$field.shield.value),
                     show: |p, r| p.$field.show_shield(r),
                 },
             ],
@@ -138,6 +145,7 @@ fn closes_summary_group(columns: &[&ColumnDescriptor], index: usize, split: bool
 
 struct ColumnPart {
     name: &'static str,
+    sort: fn(&mut SummaryTable),
     show: fn(&Player, &mut TableRow),
 }
 
@@ -146,8 +154,14 @@ pub struct SummaryTable {
     selected_player: Option<usize>,
     /// See `MetricsTable::split_shield_hull`.
     split_shield_hull: bool,
+    /// Which heading is ordering the players, and which way round.
+    sort: SortState<ColumnKey>,
 }
 
+/// The column the players are in when nothing has been clicked.
+const DEFAULT_SORT: ColumnKey = ColumnKey::whole("Damage Dealt");
+
+#[derive(Default)]
 struct Player {
     name: String,
     total_out_damage: ShieldAndHullTextValue,
@@ -172,6 +186,7 @@ impl SummaryTable {
             players: Default::default(),
             selected_player: None,
             split_shield_hull: false,
+            sort: Default::default(),
         }
     }
 
@@ -194,9 +209,32 @@ impl SummaryTable {
                 .collect(),
             selected_player: None,
             split_shield_hull: settings.general.split_shield_hull_columns,
+            sort: SortState {
+                column: Some(DEFAULT_SORT),
+                natural: true,
+            },
         };
         table.sort_by_option_f64(|p| p.total_out_damage.all.value);
         table
+    }
+
+    /// Carry the order the reader put the table in onto the table replacing it,
+    /// so opening another combat does not undo it. See
+    /// `MetricsTable::take_state_from`.
+    pub fn take_state_from(&mut self, previous: &Self) {
+        self.sort = previous.sort;
+        let Some(key) = self.sort.column else {
+            return;
+        };
+        let Some(column) = COLUMNS.iter().find(|column| column.name == key.column()) else {
+            return;
+        };
+        let sort = key
+            .part()
+            .and_then(|part| column.parts.iter().find(|p| p.name == part))
+            .map(|part| part.sort)
+            .unwrap_or(column.sort);
+        self.sort_by_column(sort);
     }
 
     /// Every column this table has, for the column picker.
@@ -224,14 +262,7 @@ impl SummaryTable {
                     });
 
                     for (index, column) in columns.iter().enumerate() {
-                        if split && !column.parts.is_empty() {
-                            show_group_separator(r);
-                        }
-                        for name in Self::header_names(column, split) {
-                            Self::show_column_header(r, &name, || {
-                                (column.sort)(self);
-                            });
-                        }
+                        self.show_column_header(r, column, split);
                         if closes_summary_group(&columns, index, split) {
                             show_group_separator(r);
                         }
@@ -248,28 +279,70 @@ impl SummaryTable {
         });
     }
 
-    /// Header text per cell of a column: one cell normally, or the metric name
-    /// plus an All/Hull/Shield line per cell when the column is split.
-    fn header_names(column: &ColumnDescriptor, split: bool) -> Vec<String> {
+    /// See `MetricsTable::show_column_header`: the same headings, drawn by the
+    /// same code, so the two tables cannot drift apart.
+    fn show_column_header(&mut self, row: &mut TableRow, column: &ColumnDescriptor, split: bool) {
         if split && !column.parts.is_empty() {
-            let mut names = vec![format!("{}\nAll", column.name)];
-            names.extend(column.parts.iter().map(|p| format!("\n{}", p.name)));
-            return names;
+            show_group_separator(row);
+            let name = column.name;
+            self.show_heading(row, ColumnKey::whole(name), column.sort, true, |ui| {
+                ui.label(name);
+            });
+            for part in column.parts.iter() {
+                // A half has no name of its own on the first line, but it still
+                // needs the room: without it the label would sit a line higher
+                // than the one beside it.
+                self.show_heading(
+                    row,
+                    ColumnKey::half(name, part.name),
+                    part.sort,
+                    true,
+                    |ui| {
+                        let line = ui.text_style_height(&TextStyle::Body);
+                        ui.add_space(line);
+                    },
+                );
+            }
+            return;
         }
-        if split {
-            return vec![format!("{}\n", column.name)];
-        }
-        vec![column.name.to_string()]
+
+        self.show_heading(
+            row,
+            ColumnKey::whole(column.name),
+            column.sort,
+            false,
+            |ui| {
+                // A metric with no halves still sits in a header built for two lines
+                // when the split columns are on, so it takes the first line's room
+                // and leaves its heading level with the others.
+                if split {
+                    let line = ui.text_style_height(&TextStyle::Body);
+                    ui.add_space(line);
+                }
+            },
+        );
     }
 
-    fn show_column_header(row: &mut TableRow, column_name: &str, sort: impl FnOnce()) {
-        if row
-            .selectable_cell(false, |ui| {
-                ui.label(column_name);
-            })
-            .clicked()
-        {
-            sort();
+    fn show_heading(
+        &mut self,
+        row: &mut TableRow,
+        key: ColumnKey,
+        sort: fn(&mut Self),
+        split_group: bool,
+        first_line: impl FnOnce(&mut Ui),
+    ) {
+        let response = show_sortable_header(row, &self.sort, key, None, split_group, first_line);
+        if response.clicked() {
+            self.sort.clicked(key);
+            self.sort_by_column(sort);
+        }
+    }
+
+    /// See `MetricsTable::sort_by_column`.
+    fn sort_by_column(&mut self, sort: fn(&mut Self)) {
+        sort(self);
+        if !self.sort.natural {
+            self.players.reverse();
         }
     }
 
@@ -393,5 +466,123 @@ impl Player {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn player(name: &str, all: f64, hull: f64, shield: f64) -> Player {
+        Player {
+            name: name.to_string(),
+            total_out_damage: ShieldAndHullTextValue {
+                all: TextValue {
+                    text: None,
+                    value: Some(all),
+                },
+                hull: TextValue {
+                    text: None,
+                    value: Some(hull),
+                },
+                shield: TextValue {
+                    text: None,
+                    value: Some(shield),
+                },
+            },
+            ..Default::default()
+        }
+    }
+
+    fn table(players: Vec<Player>) -> SummaryTable {
+        SummaryTable {
+            players,
+            selected_player: None,
+            split_shield_hull: true,
+            sort: Default::default(),
+        }
+    }
+
+    fn names(table: &SummaryTable) -> Vec<&str> {
+        table.players.iter().map(|p| p.name.as_str()).collect()
+    }
+
+    fn column(name: &str) -> &'static ColumnDescriptor {
+        COLUMNS
+            .iter()
+            .find(|column| column.name == name)
+            .expect("the column is one this table has")
+    }
+
+    fn part(name: &str, half: &str) -> fn(&mut SummaryTable) {
+        column(name)
+            .parts
+            .iter()
+            .find(|part| part.name == half)
+            .expect("the column splits into halves")
+            .sort
+    }
+
+    /// The Hull heading orders by the hull figure, not by the total above it.
+    /// One order for all three columns made two of the three headings a lie.
+    #[test]
+    fn a_half_orders_by_its_own_figure() {
+        let mut table = table(vec![
+            player("Kestrel", 900.0, 100.0, 800.0),
+            player("Talon", 800.0, 700.0, 100.0),
+        ]);
+
+        table.sort_by_column(column("Damage Dealt").sort);
+        assert_eq!(names(&table), ["Kestrel", "Talon"], "by the total");
+
+        table.sort_by_column(part("Damage Dealt", "Hull"));
+        assert_eq!(names(&table), ["Talon", "Kestrel"], "by the hull half");
+
+        table.sort_by_column(part("Damage Dealt", "Shield"));
+        assert_eq!(names(&table), ["Kestrel", "Talon"], "by the shield half");
+    }
+
+    /// Clicking the heading that is already ordering the rows turns the order
+    /// round rather than sorting it the same way again.
+    #[test]
+    fn clicking_the_same_heading_turns_the_order_round() {
+        let mut table = table(vec![
+            player("Kestrel", 900.0, 0.0, 0.0),
+            player("Talon", 800.0, 0.0, 0.0),
+        ]);
+        let key = ColumnKey::whole("Damage Dealt");
+
+        table.sort.clicked(key);
+        table.sort_by_column(column("Damage Dealt").sort);
+        assert_eq!(names(&table), ["Kestrel", "Talon"]);
+
+        table.sort.clicked(key);
+        table.sort_by_column(column("Damage Dealt").sort);
+        assert_eq!(names(&table), ["Talon", "Kestrel"], "the same click again");
+
+        assert_eq!(table.sort.marker(key), " ⏶", "and the heading says so");
+    }
+
+    /// Opening another combat builds the table again. The column the reader put
+    /// it in order by is theirs and comes along, the way it does in the tables
+    /// on the damage tabs.
+    #[test]
+    fn the_order_survives_opening_another_combat() {
+        let mut previous = table(vec![player("Kestrel", 900.0, 100.0, 0.0)]);
+        previous
+            .sort
+            .clicked(ColumnKey::half("Damage Dealt", "Hull"));
+
+        let mut next = table(vec![
+            player("Kestrel", 900.0, 100.0, 0.0),
+            player("Talon", 800.0, 700.0, 0.0),
+        ]);
+        next.take_state_from(&previous);
+
+        assert_eq!(
+            next.sort.column,
+            Some(ColumnKey::half("Damage Dealt", "Hull"))
+        );
+        assert_eq!(names(&next), ["Talon", "Kestrel"], "and it is applied");
     }
 }

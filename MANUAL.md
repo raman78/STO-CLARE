@@ -170,6 +170,13 @@ see how much of a figure landed on hull and how much was eaten by shields. If
 you prefer the compact table, turn the split off under
 [Settings → General](#general).
 
+Click any column heading to put the table in that order. The heading lights up
+and carries an arrow for which way the order runs; click it again to turn it
+round. **All**, **Hull** and **Shield** are three headings, not one — click
+Shield and the table is ordered by what landed on shields alone. This works the
+same way on every tab, and the order you chose stays put when you open another
+combat.
+
 ### Damage Dealt
 
 One row per player, ordered by damage. This is where you find your DPS.
