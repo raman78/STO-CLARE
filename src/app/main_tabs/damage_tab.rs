@@ -25,7 +25,7 @@ pub struct DamageTab {
     /// player's figures, and — with `hide_unticked` — off the screen as well.
     /// One tree of ticks per player: a row ticked off for one player says
     /// nothing about the same row under another.
-    excluded: FxHashMap<String, FxHashSet<String>>,
+    excluded: FxHashMap<NameHandle, FxHashSet<NameHandle>>,
     hide_unticked: bool,
     /// The damage types the figures are of, empty for all of them, and every
     /// type this combat holds.
@@ -106,7 +106,7 @@ impl DamageTab {
     fn kept_damage<'a>(&self, player: &'a Player, combat: &Combat) -> Cow<'a, DamageGroup> {
         let whole = (self.damage_group)(player);
         // The ticks are this player's own.
-        let excluded = self.excluded.get(whole.name().get(&combat.name_manager));
+        let excluded = self.excluded.get(&whole.name());
         if self.types.is_empty() && excluded.is_none_or(FxHashSet::is_empty) {
             return Cow::Borrowed(whole);
         }
@@ -134,7 +134,6 @@ impl DamageTab {
         Cow::Owned(damage_subset::player_damage_without(
             player,
             narrowed,
-            &combat.name_manager,
             &combat.hits_manger,
             excluded,
             &combat.total_damage_out,

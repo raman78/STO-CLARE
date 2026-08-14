@@ -26,7 +26,7 @@ pub struct HealTab {
     /// damage tabs keep, so both kinds of table behave alike.
     /// One tree of ticks per player: a row ticked off for one player says
     /// nothing about the same row under another.
-    excluded: FxHashMap<String, FxHashSet<String>>,
+    excluded: FxHashMap<NameHandle, FxHashSet<NameHandle>>,
     hide_unticked: bool,
     /// Healing has no damage types to pick from, so the picker has nothing to
     /// offer and does not appear.
@@ -86,12 +86,11 @@ impl HealTab {
         let total = combat.total_heal_ally;
         // The ticks are per player: one player's rows are their own.
         let kept = |group: &'_ HealGroup, player: &'_ Player| -> Option<HealGroup> {
-            let out = excluded.get(group.name().get(&combat.name_manager))?;
+            let out = excluded.get(&group.name())?;
             (!out.is_empty()).then(|| {
                 damage_subset::player_heal_without(
                     player,
                     group,
-                    &combat.name_manager,
                     &combat.heal_ticks_manger,
                     out,
                     &total,

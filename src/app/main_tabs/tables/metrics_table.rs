@@ -126,6 +126,11 @@ pub struct MetricsTablePart<T> {
     #[educe(Deref, DerefMut)]
     pub data: T,
     pub name: String,
+    /// The group this row is of. Two rows can be called the same thing — a
+    /// group named after one of the abilities it collects, say — so anything
+    /// that has to pick one row out of a table goes by this rather than by the
+    /// name.
+    handle: NameHandle,
     id: u32,
 
     pub sub_parts: Vec<Self>,
@@ -280,7 +285,7 @@ impl<T: 'static> MetricsTable<T> {
                 })
                 .body(ROW_HEIGHT, |t| {
                     for player in self.players.iter_mut() {
-                        let name = player.name.clone();
+                        let handle = player.handle;
                         player.show(
                             &columns,
                             t,
@@ -290,7 +295,7 @@ impl<T: 'static> MetricsTable<T> {
                             modifiers,
                             split,
                             ticks,
-                            &name,
+                            handle,
                         );
                     }
                 });
@@ -480,6 +485,7 @@ impl<T> MetricsTablePart<T> {
         Self {
             data: data_new(settings, source, combat, number_formatter),
             name: source.name().get(&combat.name_manager).to_string(),
+            handle: source.name(),
             id,
             sub_parts,
             open: false,
@@ -500,7 +506,7 @@ impl<T> MetricsTablePart<T> {
         split: bool,
         ticks: &mut RowTicks,
         // Whose rows these are: the ticks are per player.
-        player: &str,
+        player: NameHandle,
     ) {
         let mut tick_rect = Rect::NOTHING;
         let response = table.selectable_row(selection.is_selected(self.id), |r| {
@@ -508,8 +514,8 @@ impl<T> MetricsTablePart<T> {
                 r,
                 indent,
                 player,
-                &self.name,
-                self.sub_parts.iter().map(|part| part.name.as_str()),
+                self.handle,
+                self.sub_parts.iter().map(|part| part.handle),
             );
             r.cell(|ui| {
                 ui.horizontal(|ui| {
@@ -573,7 +579,7 @@ impl<T> MetricsTablePart<T> {
 
         if self.open {
             for sub_part in self.sub_parts.iter_mut() {
-                if ticks.is_hidden(indent, &self.name, &sub_part.name) {
+                if ticks.is_hidden(indent, self.handle, sub_part.handle) {
                     continue;
                 }
                 sub_part.show(
@@ -585,7 +591,7 @@ impl<T> MetricsTablePart<T> {
                     modifiers,
                     split,
                     ticks,
-                    &self.name,
+                    self.handle,
                 );
             }
         }
@@ -727,9 +733,10 @@ pub struct RowTicks<'a> {
     /// player's rows are their own. Two players who both flew a Phaser Beam
     /// Array can have it ticked off in one and in for the other.
     ///
-    /// By name rather than by id because the table is rebuilt whenever the
-    /// combat, the settings or the ticks change.
-    pub excluded: &'a mut FxHashMap<String, FxHashSet<String>>,
+    /// Keyed by the group's name handle, not by the name itself: a grouping
+    /// rule can give a group the name of an ability it collects, and then two
+    /// different rows read the same. Ticking one would take both.
+    pub excluded: &'a mut FxHashMap<NameHandle, FxHashSet<NameHandle>>,
     pub hide_unticked: &'a mut bool,
     /// The damage types the reader is looking at, and every type there is to
     /// pick. Empty means every type, which is how it starts.
@@ -807,29 +814,29 @@ impl RowTicks<'_> {
         &mut self,
         row: &mut TableRow,
         indent: f32,
-        player: &str,
-        name: &str,
-        children: impl Iterator<Item = &'n str> + Clone,
+        player: NameHandle,
+        handle: NameHandle,
+        children: impl Iterator<Item = NameHandle> + Clone,
     ) -> Rect {
         match indent {
-            0.0 => self.show_all_tick(row, name, children),
-            1.0 => self.show_row_tick(row, player, name),
+            0.0 => self.show_all_tick(row, handle, children),
+            1.0 => self.show_row_tick(row, player, handle),
             _ => row.cell(|_| {}).rect,
         }
     }
 
     /// The player's own tick: every row of theirs, or none.
-    fn show_all_tick<'n>(
+    fn show_all_tick(
         &mut self,
         row: &mut TableRow,
-        player: &str,
-        children: impl Iterator<Item = &'n str> + Clone,
+        player: NameHandle,
+        children: impl Iterator<Item = NameHandle> + Clone,
     ) -> Rect {
-        let out = self.excluded.get(player);
+        let out = self.excluded.get(&player);
         let rows = children.clone().count();
         let kept = children
             .clone()
-            .filter(|name| !out.is_some_and(|out| out.contains(*name)))
+            .filter(|handle| !out.is_some_and(|out| out.contains(handle)))
             .count();
         let mut all = kept == rows;
         let cell = row.cell(|ui| {
@@ -841,12 +848,12 @@ impl RowTicks<'_> {
                 );
             if response.changed() {
                 self.changed = true;
-                let out = self.excluded.entry(player.to_string()).or_default();
-                for name in children {
+                let out = self.excluded.entry(player).or_default();
+                for handle in children {
                     if all {
-                        out.remove(name);
+                        out.remove(&handle);
                     } else {
-                        out.insert(name.to_string());
+                        out.insert(handle);
                     }
                 }
             }
@@ -854,11 +861,11 @@ impl RowTicks<'_> {
         cell.rect
     }
 
-    fn show_row_tick(&mut self, row: &mut TableRow, player: &str, name: &str) -> Rect {
+    fn show_row_tick(&mut self, row: &mut TableRow, player: NameHandle, handle: NameHandle) -> Rect {
         let mut ticked = !self
             .excluded
-            .get(player)
-            .is_some_and(|out| out.contains(name));
+            .get(&player)
+            .is_some_and(|out| out.contains(&handle));
         let cell = row.cell(|ui| {
             if ui
                 .checkbox(&mut ticked, "")
@@ -866,11 +873,11 @@ impl RowTicks<'_> {
                 .changed()
             {
                 self.changed = true;
-                let out = self.excluded.entry(player.to_string()).or_default();
+                let out = self.excluded.entry(player).or_default();
                 if ticked {
-                    out.remove(name);
+                    out.remove(&handle);
                 } else {
-                    out.insert(name.to_string());
+                    out.insert(handle);
                 }
             }
         });
@@ -879,22 +886,23 @@ impl RowTicks<'_> {
 
     /// Whether a row is not drawn at all: only the rows under a player can be,
     /// and only while the eye is on.
-    fn is_hidden(&self, parent_indent: f32, player: &str, name: &str) -> bool {
+    fn is_hidden(&self, parent_indent: f32, player: NameHandle, handle: NameHandle) -> bool {
         parent_indent == 0.0
             && *self.hide_unticked
             && self
                 .excluded
-                .get(player)
-                .is_some_and(|out| out.contains(name))
+                .get(&player)
+                .is_some_and(|out| out.contains(&handle))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::NameFlags;
 
     fn ticks<'a>(
-        excluded: &'a mut FxHashMap<String, FxHashSet<String>>,
+        excluded: &'a mut FxHashMap<NameHandle, FxHashSet<NameHandle>>,
         hide: &'a mut bool,
         types: &'a mut FxHashSet<String>,
     ) -> RowTicks<'a> {
@@ -912,39 +920,54 @@ mod tests {
     /// their trees are separate, and so are their figures.
     #[test]
     fn a_row_ticked_off_for_one_player_stays_in_for_another() {
-        let mut excluded: FxHashMap<String, FxHashSet<String>> = Default::default();
-        excluded
-            .entry("Raman".to_string())
-            .or_default()
-            .insert("Phaser Beam Array".to_string());
+        let mut names = NameManager::default();
+        let raman = names.insert("Raman", NameFlags::NONE);
+        let martinez = names.insert("Martinez", NameFlags::NONE);
+        let beams = names.insert("Phaser Beam Array", NameFlags::NONE);
+        let torpedo = names.insert("Photon Torpedo", NameFlags::NONE);
+
+        let mut excluded: FxHashMap<NameHandle, FxHashSet<NameHandle>> = Default::default();
+        excluded.entry(raman).or_default().insert(beams);
         let (mut hide, mut types) = (true, FxHashSet::default());
         let ticks = ticks(&mut excluded, &mut hide, &mut types);
 
-        assert!(ticks.is_hidden(0.0, "Raman", "Phaser Beam Array"));
+        assert!(ticks.is_hidden(0.0, raman, beams));
         assert!(
-            !ticks.is_hidden(0.0, "Martinez", "Phaser Beam Array"),
+            !ticks.is_hidden(0.0, martinez, beams),
             "the other player never ticked it off"
         );
         assert!(
-            !ticks.is_hidden(0.0, "Raman", "Photon Torpedo"),
+            !ticks.is_hidden(0.0, raman, torpedo),
             "and this player's other rows are untouched"
         );
         assert!(
-            !ticks.is_hidden(1.0, "Raman", "Phaser Beam Array"),
+            !ticks.is_hidden(1.0, raman, beams),
             "a row deeper in the tree goes with the branch it belongs to"
         );
+    }
+
+    /// The rows under one parent are keyed by their group, and the analyzer
+    /// interns a name once, so two rows under the same parent cannot read the
+    /// same. Keying the ticks by the handle rather than by the name is
+    /// therefore free of the question of what a name means — and cheaper.
+    #[test]
+    fn a_row_is_told_by_its_group_not_by_its_name() {
+        let mut names = NameManager::default();
+        let once = names.insert("Gravity Well I", NameFlags::NONE);
+        let again = names.insert("Gravity Well I", NameFlags::VALUE);
+        assert_eq!(once, again, "one name, one handle");
     }
 
     /// Nothing hides while the eye is off, whatever is ticked.
     #[test]
     fn the_unticked_rows_stay_on_screen_until_the_eye_is_on() {
-        let mut excluded: FxHashMap<String, FxHashSet<String>> = Default::default();
-        excluded
-            .entry("Raman".to_string())
-            .or_default()
-            .insert("Phaser Beam Array".to_string());
+        let mut names = NameManager::default();
+        let player = names.insert("Raman", NameFlags::NONE);
+        let beams = names.insert("Phaser Beam Array", NameFlags::NONE);
+        let mut excluded: FxHashMap<NameHandle, FxHashSet<NameHandle>> = Default::default();
+        excluded.entry(player).or_default().insert(beams);
         let (mut hide, mut types) = (false, FxHashSet::default());
         let ticks = ticks(&mut excluded, &mut hide, &mut types);
-        assert!(!ticks.is_hidden(0.0, "Raman", "Phaser Beam Array"));
+        assert!(!ticks.is_hidden(0.0, player, beams));
     }
 }

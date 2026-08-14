@@ -20,7 +20,7 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     analyzer::{
-        AnalysisGroup, DamageGroup, DamageMetrics, HealGroup, HealMetrics, HealTicks,
+        AnalysisGroup, DamageGroup, DamageMetrics, HealGroup, HealMetrics, HealTick, HealTicks,
         HealTicksManager, Hit, Hits, HitsManager, MaxOneHit, NameHandle, NameManager, Player,
         ShieldHullOptionalValues, ShieldHullValues,
     },
@@ -39,17 +39,18 @@ use crate::{
 pub fn player_damage_without(
     player: &Player,
     group: &DamageGroup,
-    name_manager: &NameManager,
     hits_manager: &HitsManager,
-    excluded: &FxHashSet<String>,
+    excluded: &FxHashSet<NameHandle>,
     combat_total: &ShieldHullValues,
 ) -> DamageGroup {
-    let rows = group
+    let kept_hits = group
         .sub_groups()
         .values()
-        .map(|sub| (sub.name().get(name_manager), sub.hits.get(hits_manager)));
+        .filter(|sub| !excluded.contains(&sub.name()))
+        .flat_map(|sub| sub.hits.get(hits_manager).iter().copied())
+        .collect();
     let mut kept = subset_group(
-        subset_hits(rows, excluded).unwrap_or_default(),
+        kept_hits,
         metrics_duration(&player.combat_time),
         combat_total,
     );
@@ -214,7 +215,8 @@ fn set_child_percentages(group: &mut DamageGroup) {
     }
 }
 
-/// A player's healing with the named rows left out, zeroes when every row is.
+/// A player's healing with the given rows left out, by group handle; zeroes
+/// when every row is.
 ///
 /// The heal side of [`player_damage_without`], and for the same reason: an
 /// average heal and a crit rate are ratios of tick counts, so they have to be
@@ -222,16 +224,16 @@ fn set_child_percentages(group: &mut DamageGroup) {
 pub fn player_heal_without(
     player: &Player,
     group: &HealGroup,
-    name_manager: &NameManager,
     ticks_manager: &HealTicksManager,
-    excluded: &FxHashSet<String>,
+    excluded: &FxHashSet<NameHandle>,
     pool_total: &ShieldHullValues,
 ) -> HealGroup {
-    let rows = group
+    let kept_ticks: Vec<HealTick> = group
         .sub_groups()
         .values()
-        .map(|sub| (sub.name().get(name_manager), sub.ticks.get(ticks_manager)));
-    let kept_ticks = subset_values(rows, excluded).unwrap_or_default();
+        .filter(|sub| !excluded.contains(&sub.name()))
+        .flat_map(|sub| sub.ticks.get(ticks_manager).iter().cloned())
+        .collect();
 
     let mut heal_metrics = HealMetrics::default();
     heal_metrics.calc_and_apply(&kept_ticks);
