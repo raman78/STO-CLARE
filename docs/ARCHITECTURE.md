@@ -364,8 +364,10 @@ for, and treating the absence as missing data would rank it as agreement. What
 | `Share` | `damage_percentage.all` — the row's share of that combat's own damage, so the threshold is in percentage points | a shorter or weaker run does not read as a different build in every row at once |
 | `Dps` | `dps.all` | what the row was actually worth, whatever share of the run it came to |
 
-Each carries its own threshold: a number that means something in percentage
-points means nothing in DPS.
+Each carries its own threshold, from zero up: a number that means something in
+percentage points means nothing in DPS, and the bottom of either scale has to
+mean "hide nothing". The figure itself is shown in a `Spread` column, so the
+threshold is visible rather than an invisible rule the table obeys.
 
 Two decisions worth keeping:
 
@@ -391,7 +393,12 @@ summed.
 
 #### What one combat did differently
 
-`⚖ vs rest` puts a column at the end of the table saying what each row added to
+Both of these put their column **beside the name**, before the metrics. They
+were at the far end, behind every metric of every combat, which on a wide
+comparison is a screen or two of sideways scrolling: the reader saw the rows
+reordered and no reason for it, which is exactly the report that came back.
+
+`⚖ vs rest` puts a column beside the name saying what each row added to
 one combat, or cost it, against the other combats in the comparison
 (`CompareNode::impact`, `Comparison::impact_slot`). The rows under Total are
 then ordered by how much they weighed either way (`sort_rows`) — the ranking is

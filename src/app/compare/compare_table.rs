@@ -711,12 +711,13 @@ impl Comparison {
             }
 
             if ui
-                .add(Button::new("Δ Differences").selected(self.show_differences))
+                .add(Button::new("Δ Spread").selected(self.show_differences))
                 .hover(
-                    "Hide the rows the combats agree on, leaving what they differ over — what a \
-                     run flew that the others did not, and what it leaned on far harder. The rows \
-                     stay in the order they are in, and the Total above is added up from what is \
-                     left on screen.",
+                    "Keep only the rows the combats disagree over. Each row gets a Spread column — \
+                     its largest combat less its smallest — and anything under the figure on the \
+                     slider goes. A run that never flew a row counts as zero for it, so \
+                     \"flown here and nowhere else\" is the largest spread there is. The rows stay \
+                     in the order they are in, and the Total is added up from what is left.",
                 )
                 .clicked()
             {
@@ -727,11 +728,12 @@ impl Comparison {
             if ui
                 .add(Button::new("⚖ vs rest").selected(self.impact_slot.is_some()))
                 .hover(
-                    "Measure one combat against the others: every row says how much DPS it added \
-                     or cost that run compared with what the other runs did, and the rows are put \
-                     in the order of how much they weighed. The figures add up to the difference \
-                     on the Total, so the column reads as an account of where the run's DPS came \
-                     from.",
+                    "Pick one combat and read what it did differently. Every row gets a ΔDPS \
+                     column: that combat's DPS on the row less what the other combats averaged on \
+                     it. Plus means the row carried this run, minus means the others did more with \
+                     it — and a run that never flew it reads as the whole of its cost. The column \
+                     adds up to the figure on the Total, so it is an account of where this run's \
+                     DPS came from, not a ranking.",
                 )
                 .clicked()
             {
@@ -983,8 +985,11 @@ impl Comparison {
 
             let measure = self.difference_measure;
             let (threshold, range, step) = match measure {
-                DifferenceMeasure::Share => (&mut self.share_threshold, 0.1..=20.0, 0.1),
-                DifferenceMeasure::Dps => (&mut self.dps_threshold, 50.0..=50_000.0, 50.0),
+                // From zero: the bottom of the scale has to mean "hide
+                // nothing", or the reader cannot get back to the whole table
+                // without turning the toggle off.
+                DifferenceMeasure::Share => (&mut self.share_threshold, 0.0..=20.0, 0.1),
+                DifferenceMeasure::Dps => (&mut self.dps_threshold, 0.0..=50_000.0, 50.0),
             };
             // A step either side of the slider: the useful range is narrow at
             // the bottom end, and dragging a slider that spans 50 to 50'000 is
@@ -1006,12 +1011,12 @@ impl Comparison {
                 changed = true;
             }
 
-            ui.label(format!("min difference ({})", measure.unit()))
-                .hover(
-                    "A row stays on screen when its largest combat and its smallest are at least \
-                     this far apart. A combat that does not have the row at all counts as zero, \
-                     so a row flown in some runs and not others is a difference of its whole size.",
-                );
+            ui.label(format!("min spread ({})", measure.unit())).hover(
+                "A row stays on screen when its largest combat and its smallest are at least this \
+                 far apart — the figure in the Spread column. A combat that does not have the row \
+                 at all counts as zero, so a row flown in some runs and not others has a spread of \
+                 its whole size.",
+            );
         });
         changed
     }
@@ -1149,6 +1154,40 @@ impl Comparison {
         // A rule opens each group: without one, three combats' worth of the
         // same-looking numbers run into the next metric.
         let mut headers: Vec<HeaderCell> = Vec::new();
+
+        // The two columns that answer a question about the whole row — how far
+        // apart the combats are on it, and what it was worth to one of them —
+        // come first, right after the name. They were last, behind every
+        // metric of every combat, which on a wide comparison is a screen or two
+        // of sideways scrolling away: the reader saw the rows reordered and no
+        // reason for it.
+        if let Some((measure, _)) = self.differences() {
+            headers.push(HeaderCell::Cell {
+                text: header_text(&font, text_color, "Spread", measure.unit(), None, None),
+                tooltip: format!(
+                    "How far apart the combats are on this row: the largest less the smallest, in                      {}. A combat without the row counts as zero. Rows below the figure on the                      slider are hidden.",
+                    measure.label()
+                ),
+            });
+        }
+        if let Some(slot) = self.impact_slot {
+            headers.push(HeaderCell::Cell {
+                text: header_text(
+                    &font,
+                    text_color,
+                    "ΔDPS vs rest",
+                    &format!("#{}", slot + 1),
+                    with_notes.then(|| note_of(&self.notes, slot)),
+                    colors.get(slot).copied().flatten(),
+                ),
+                tooltip: format!(
+                    "How much DPS each row added to combat #{}{}, or cost it, against the average                      of the other combats. The rows add up to the figure on the Total.",
+                    slot + 1,
+                    note_suffix(note_of(&self.notes, slot))
+                ),
+            });
+        }
+
         for column in self.columns.iter() {
             headers.push(HeaderCell::Separator);
             if show_averages {
@@ -1413,6 +1452,58 @@ impl CompareNode {
                 });
             });
 
+            // How far apart the combats are on this row — the figure the
+            // threshold is compared against, so the reader can see why a row
+            // is on screen rather than only that it is.
+            if let Some((measure, _)) = ticks.differences {
+                match depth {
+                    0 => {
+                        r.cell(|_| {});
+                    }
+                    _ => {
+                        let mut formatter = NumberFormatter::new();
+                        let text = formatter.format(
+                            self.difference(measure),
+                            match measure {
+                                DifferenceMeasure::Share => 1,
+                                DifferenceMeasure::Dps => 0,
+                            },
+                        );
+                        r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(text);
+                        });
+                    }
+                }
+            }
+
+            // What this row weighed in the combat being measured, against the
+            // average of the others. Green where it carried that run.
+            if let Some(slot) = impact_slot {
+                match self.impact(slot) {
+                    Some(impact) => {
+                        let palette = theme::palette();
+                        let color = if impact >= 0.0 {
+                            palette.improve
+                        } else {
+                            palette.worse
+                        };
+                        let mut formatter = NumberFormatter::new();
+                        let text = format!(
+                            "{}{}",
+                            if impact >= 0.0 { "+" } else { "-" },
+                            formatter.format(impact.abs(), 0)
+                        );
+                        let tooltip = self.impact_tooltip(slot, impact, &mut formatter);
+                        r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.colored_label(color, text).hover(tooltip);
+                        });
+                    }
+                    None => {
+                        r.cell(|_| {});
+                    }
+                }
+            }
+
             // Column groups by metric: for each metric, one cell per combat —
             // or a single averaged cell standing for all of them.
             for metric_i in 0..n_metrics {
@@ -1511,35 +1602,6 @@ impl CompareNode {
                                 r.cell(|_| {});
                             }
                         }
-                    }
-                }
-            }
-
-            // What this row weighed in the combat being measured, against the
-            // average of the others. Green where it carried that run.
-            if let Some(slot) = impact_slot {
-                show_group_separator(r);
-                match self.impact(slot) {
-                    Some(impact) => {
-                        let palette = theme::palette();
-                        let color = if impact >= 0.0 {
-                            palette.improve
-                        } else {
-                            palette.worse
-                        };
-                        let mut formatter = NumberFormatter::new();
-                        let text = format!(
-                            "{}{}",
-                            if impact >= 0.0 { "+" } else { "-" },
-                            formatter.format(impact.abs(), 0)
-                        );
-                        let tooltip = self.impact_tooltip(slot, impact, &mut formatter);
-                        r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.colored_label(color, text).hover(tooltip);
-                        });
-                    }
-                    None => {
-                        r.cell(|_| {});
                     }
                 }
             }

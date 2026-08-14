@@ -377,8 +377,14 @@ they differ over. Two controls appear with it:
 
 | control | what it does |
 |---|---|
-| Damage % / DPS | what a difference is measured in |
-| − and + and the slider | how large a difference has to be for the row to stay |
+| Damage % / DPS | what the spread is measured in |
+| − and + and the slider | how large a spread has to be for the row to stay |
+
+A **Spread** column appears beside the name, holding the figure the slider is
+compared against, so you can see why a row is on screen rather than only that it
+is. `Mycelial Lightning` at `0, 0, 19480, 19535, 0` DPS has a spread of 19'535 —
+its largest run less its smallest — and stays as long as the slider is under
+that.
 
 Measured in **Damage %** — the same figure as the column of that name — a row is
 compared by how much of that run it was, so a shorter or weaker run does not
@@ -418,10 +424,13 @@ is what you see.
 ### What one run did differently from the rest
 
 **⚖ vs rest** answers the question a pile of runs is usually about: why is *this*
-one different? Press it, pick the run under the toolbar, and a column appears at
-the end of the table saying how much DPS each row added to that run — or cost
-it — against what the other runs did with the same row. The rows are put in the
-order of how much they weighed.
+one different? Press it, pick the run under the toolbar, and a **ΔDPS vs rest**
+column appears beside the name: that run's DPS on the row, less what the other
+runs averaged on it. The rows are put in the order of how much they weighed.
+
+For `Mycelial Lightning` at `0, 0, 19480, 19535, 0`, run #3 reads **+14'596** —
+it did 19'480 where the others averaged 4'884 — and run #1 reads **−9'754**,
+because it never used the thing at all.
 
 It reads as an account, because the figures add up: the rows sum exactly to the
 difference shown on the Total. So a run that came out 47k DPS ahead of the
