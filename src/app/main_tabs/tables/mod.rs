@@ -12,6 +12,7 @@ pub use heal_table::HealTable;
 pub use heal_table::HealTablePart;
 pub use heal_table::HealTablePartData;
 pub use heal_table::column_names as heal_column_names;
+pub use metrics_table::RowTicks;
 pub use metrics_table::TableSelectionEvent;
 pub use metrics_table::show_group_separator;
 pub use summary_table::SummaryTable;

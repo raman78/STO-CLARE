@@ -1,4 +1,7 @@
+use std::borrow::Cow;
+
 use eframe::egui::Ui;
+use rustc_hash::FxHashSet;
 
 use crate::{
     analyzer::*,
@@ -18,6 +21,10 @@ pub struct HealTab {
     table_by_person: HealTable,
     table_by_ability: HealTable,
     grouping: HealGrouping,
+    /// The rows ticked off, and whether they are hidden — the same pair the
+    /// damage tabs keep, so both kinds of table behave alike.
+    excluded: FxHashSet<String>,
+    hide_unticked: bool,
     main_diagrams: HealDiagrams,
     selection_diagrams: Option<HealDiagrams>,
     heal_pool: fn(&Player) -> &HealPool,
@@ -42,6 +49,8 @@ impl HealTab {
             table_by_person: HealTable::empty(),
             table_by_ability: HealTable::empty(),
             grouping: HealGrouping::ByAbility,
+            excluded: Default::default(),
+            hide_unticked: false,
             heal_pool,
             other_level,
             main_diagrams: HealDiagrams::empty(),
@@ -58,10 +67,12 @@ impl HealTab {
         self.combat_duration_s = combat_duration_seconds(combat);
         let pool = self.heal_pool;
         self.table_by_person = match self.other_level {
-            Some(_) => HealTable::new(settings, combat, move |p| &pool(p).by_person),
+            Some(_) => HealTable::new(settings, combat, move |p| Cow::Borrowed(&pool(p).by_person)),
             None => HealTable::empty(),
         };
-        self.table_by_ability = HealTable::new(settings, combat, move |p| &pool(p).by_ability);
+        self.table_by_ability = HealTable::new(settings, combat, move |p| {
+            Cow::Borrowed(&pool(p).by_ability)
+        });
         // Either nesting holds the same ticks, so the per-player chart is the
         // same; build it from one of them.
         self.main_diagrams = HealDiagrams::from_heal_groups(
@@ -88,9 +99,15 @@ impl HealTab {
                 let combat_duration_s = self.combat_duration_s;
                 let components = self.components;
                 let columns = &settings.columns;
+                let mut ticks = RowTicks {
+                    excluded: &mut self.excluded,
+                    hide_unticked: &mut self.hide_unticked,
+                    changed: false,
+                };
                 table.show(
                     top_ui,
                     |column| columns.is_shown(TableKind::Heal, column),
+                    &mut ticks,
                     |p| {
                         Self::process_diagram_change(
                             &mut self.selection_diagrams,

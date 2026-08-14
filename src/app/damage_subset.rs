@@ -47,11 +47,22 @@ pub fn player_damage_without(
         .sub_groups()
         .values()
         .map(|sub| (sub.name().get(name_manager), sub.hits.get(hits_manager)));
-    Some(subset_group(
+    let mut kept = subset_group(
         subset_hits(rows, excluded)?,
         metrics_duration(&player.combat_time),
         combat_total,
-    ))
+    );
+    // The row keeps its name and the rows under it: the reader is looking at
+    // the same player, with part of their tree set aside, and a nameless row
+    // that cannot be opened is not that.
+    kept.segment = group.segment;
+    kept.sub_groups = group
+        .sub_groups()
+        .iter()
+        .filter(|(_, sub)| !excluded.contains(sub.name().get(name_manager)))
+        .map(|(handle, sub)| (*handle, sub.clone()))
+        .collect();
+    Some(kept)
 }
 
 /// The hits of the rows that are kept, pooled — or `None` when none of them are

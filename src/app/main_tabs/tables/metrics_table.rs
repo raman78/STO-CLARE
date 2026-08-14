@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Reverse;
 
 use educe::Educe;
@@ -186,7 +187,11 @@ impl<T: 'static> MetricsTable<T> {
         settings: &Settings,
         columns: &'static [ColumnDescriptor<T>],
         combat: &Combat,
-        mut group: impl FnMut(&Player) -> &G,
+        // A group by value rather than by reference: a table whose rows can be
+        // ticked off shows a group that is not in the analyzer's tree — the
+        // player's damage with the unticked rows taken out, worked out from the
+        // hits (`app::damage_subset`). `Cow` keeps the ordinary case free.
+        mut group: impl FnMut(&Player) -> Cow<'_, G>,
         data_new: fn(&Settings, &G, &Combat, &mut NumberFormatter) -> T,
     ) -> Self {
         let mut number_formatter = NumberFormatter::new();
@@ -200,7 +205,7 @@ impl<T: 'static> MetricsTable<T> {
                 .map(|p| {
                     MetricsTablePart::new(
                         settings,
-                        group(p),
+                        group(p).as_ref(),
                         combat,
                         &mut number_formatter,
                         &mut id_source,
@@ -224,10 +229,14 @@ impl<T: 'static> MetricsTable<T> {
     /// `shown` decides which columns are drawn, and is asked every frame rather
     /// than baked in when the table is built, so the picker takes effect at
     /// once instead of at the next refresh.
+    /// Draws the table, with a tick column in front of the names when `ticks`
+    /// is given: the rows under a player can then be taken out of that player's
+    /// own figures, the way the ticks in a comparison decide its Total.
     pub fn show(
         &mut self,
         ui: &mut Ui,
         shown: impl Fn(&str) -> bool,
+        ticks: &mut RowTicks,
         mut on_selected: impl FnMut(TableSelectionEvent<T>),
     ) {
         let modifiers = ui.input(|i| i.modifiers);
@@ -249,8 +258,15 @@ impl<T: 'static> MetricsTable<T> {
             Table::new(ui)
                 .cell_spacing(10.0)
                 .header(header_height, |r| {
+                    // The tick column's own header stays empty; the eye that
+                    // hides the unticked rows sits beside the name, as it does
+                    // in a comparison.
+                    r.cell(|_| {});
                     r.cell(|ui| {
-                        ui.label("Name");
+                        ui.horizontal(|ui| {
+                            ui.label("Name");
+                            ticks.show_eye(ui);
+                        });
                     });
 
                     for (index, column) in columns.iter().enumerate() {
@@ -270,6 +286,7 @@ impl<T: 'static> MetricsTable<T> {
                             &mut on_selected,
                             modifiers,
                             split,
+                            ticks,
                         );
                     }
                 });
@@ -451,8 +468,11 @@ impl<T> MetricsTablePart<T> {
         on_selected: &mut impl FnMut(TableSelectionEvent<T>),
         modifiers: Modifiers,
         split: bool,
+        ticks: &mut RowTicks,
     ) {
+        let mut tick_rect = Rect::NOTHING;
         let response = table.selectable_row(selection.is_selected(self.id), |r| {
+            tick_rect = ticks.show_cell(r, indent, &self.name);
             r.cell(|ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(indent * 30.0);
@@ -488,7 +508,12 @@ impl<T> MetricsTablePart<T> {
             }
         });
 
-        if response.clicked() {
+        // A click that landed in the tick column is about the tick, not about
+        // charting the row.
+        let clicked_the_tick = response
+            .interact_pointer_pos()
+            .is_some_and(|pos| tick_rect.contains(pos));
+        if response.clicked() && !clicked_the_tick {
             if modifiers.contains(Modifiers::CTRL) {
                 selection.select_or_unselect_single(self, on_selected);
             } else {
@@ -510,6 +535,9 @@ impl<T> MetricsTablePart<T> {
 
         if self.open {
             for sub_part in self.sub_parts.iter_mut() {
+                if ticks.is_hidden(indent, &sub_part.name) {
+                    continue;
+                }
                 sub_part.show(
                     columns,
                     table,
@@ -518,6 +546,7 @@ impl<T> MetricsTablePart<T> {
                     on_selected,
                     modifiers,
                     split,
+                    ticks,
                 );
             }
         }
@@ -633,5 +662,69 @@ impl SelectionTracker {
                 }
             }
         }
+    }
+}
+
+/// The tick column of a table, and what it decides.
+///
+/// The rows under a player can be ticked off; what is left is what that
+/// player's own row is worked out from (`app::damage_subset`), the way a
+/// comparison's Total is worked out from the rows ticked under it. The eye
+/// beside the name takes the unticked rows off the screen as well.
+pub struct RowTicks<'a> {
+    /// The rows that are out, by name. Names rather than ids because the table
+    /// is rebuilt whenever the combat, the settings or the ticks change.
+    pub excluded: &'a mut FxHashSet<String>,
+    pub hide_unticked: &'a mut bool,
+    /// Set when this pass changed either, so the caller rebuilds the table.
+    pub changed: bool,
+}
+
+impl RowTicks<'_> {
+    /// The eye that hides the rows that are out.
+    fn show_eye(&mut self, ui: &mut Ui) {
+        if ui
+            .add(Button::selectable(*self.hide_unticked, "👁"))
+            .hover(
+                "Hide the rows that are not ticked. They are out of the player's figures either \
+                 way — this only takes them off the screen.",
+            )
+            .clicked()
+        {
+            *self.hide_unticked = !*self.hide_unticked;
+        }
+    }
+
+    /// The tick of one row, and the cell it was drawn in.
+    ///
+    /// Only the rows directly under a player carry one: they are what the
+    /// player's figures are added up from, and a row deeper in the tree goes in
+    /// with the branch it belongs to.
+    fn show_cell(&mut self, row: &mut TableRow, indent: f32, name: &str) -> Rect {
+        if indent != 1.0 {
+            return row.cell(|_| {}).rect;
+        }
+        let mut ticked = !self.excluded.contains(name);
+        let cell = row.cell(|ui| {
+            if ui
+                .checkbox(&mut ticked, "")
+                .hover("Count this row in the player's figures above")
+                .changed()
+            {
+                self.changed = true;
+                if ticked {
+                    self.excluded.remove(name);
+                } else {
+                    self.excluded.insert(name.to_string());
+                }
+            }
+        });
+        cell.rect
+    }
+
+    /// Whether a row is not drawn at all: only the rows under a player can be,
+    /// and only while the eye is on.
+    fn is_hidden(&self, parent_indent: f32, name: &str) -> bool {
+        parent_indent == 0.0 && *self.hide_unticked && self.excluded.contains(name)
     }
 }

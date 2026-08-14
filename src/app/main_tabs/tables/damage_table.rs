@@ -6,6 +6,7 @@ use crate::{
     helpers::number_formatting::NumberFormatter,
     shield_hull_col,
 };
+use std::borrow::Cow;
 
 use super::{common::Kills, metrics_table::*};
 use crate::custom_widgets::tooltip::CloseTooltip;
@@ -213,7 +214,7 @@ impl DamageTable {
     pub fn new(
         settings: &Settings,
         combat: &Combat,
-        damage_group: impl FnMut(&Player) -> &DamageGroup,
+        damage_group: impl FnMut(&Player) -> Cow<'_, DamageGroup>,
     ) -> Self {
         Self::new_base(
             settings,

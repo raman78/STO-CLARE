@@ -577,6 +577,9 @@ mod tests {
     /// `custom_widgets::toggle` exists to stop.
     #[test]
     fn the_accent_rim_changes_the_colour_and_not_the_width() {
+        // `apply` writes the active theme every test in here reads, so they
+        // take turns.
+        let _active = ACTIVE_THEME.lock().unwrap();
         for theme in THEMES.iter() {
             let ctx = Context::default();
             apply(&ctx, theme.theme);

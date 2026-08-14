@@ -1,8 +1,14 @@
+use std::borrow::Cow;
+
 use eframe::egui::*;
+use rustc_hash::FxHashSet;
 
 use crate::{
     analyzer::*,
-    app::settings::{Settings, TableKind},
+    app::{
+        damage_subset,
+        settings::{Settings, TableKind},
+    },
     custom_widgets::splitter::Splitter,
 };
 
@@ -15,6 +21,10 @@ pub struct DamageTab {
     dmg_main_diagrams: DamageDiagrams,
     dmg_selection_diagrams: Option<DamageDiagrams>,
     damage_group: for<'a> fn(&'a Player) -> &'a DamageGroup,
+    /// The rows the reader has ticked off, by name. They are left out of every
+    /// player's figures, and — with `hide_unticked` — off the screen as well.
+    excluded: FxHashSet<String>,
+    hide_unticked: bool,
     filter: f64,
     diagram_time_slice: f64,
     active_diagram: DiagramType,
@@ -29,6 +39,8 @@ impl DamageTab {
             table: DamageTable::empty(),
             dmg_main_diagrams: DamageDiagrams::empty(),
             damage_group,
+            excluded: Default::default(),
+            hide_unticked: false,
             filter: 0.4,
             diagram_time_slice: 1.0,
             dmg_selection_diagrams: None,
@@ -39,9 +51,24 @@ impl DamageTab {
 
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
         self.combat_duration_s = combat_duration_seconds(combat);
-        self.table = DamageTable::new(settings, combat, self.damage_group);
+        self.rebuild(settings, combat);
+    }
+
+    /// The table and the chart under it, both of the rows that are ticked.
+    ///
+    /// The chart follows because the reason to tick rows off is to look at part
+    /// of a build — the beams alone, the front weapons alone — and a chart that
+    /// kept drawing everything would answer a different question from the table
+    /// above it.
+    fn rebuild(&mut self, settings: &Settings, combat: &Combat) {
+        self.rebuild_table(settings, combat);
+        let kept: Vec<DamageGroup> = combat
+            .players
+            .values()
+            .map(|player| self.kept_damage(player, combat).into_owned())
+            .collect();
         self.dmg_main_diagrams = DamageDiagrams::from_damage_groups(
-            combat.players.values().map(self.damage_group),
+            kept.iter(),
             combat,
             self.filter,
             self.diagram_time_slice,
@@ -49,15 +76,75 @@ impl DamageTab {
         self.dmg_selection_diagrams = None;
     }
 
-    pub fn show(&mut self, settings: &Settings, ui: &mut Ui) {
+    /// One player's damage with the unticked rows left out, or the whole of it
+    /// when nothing is ticked off.
+    fn kept_damage<'a>(&self, player: &'a Player, combat: &Combat) -> Cow<'a, DamageGroup> {
+        let whole = (self.damage_group)(player);
+        if self.excluded.is_empty() {
+            return Cow::Borrowed(whole);
+        }
+        match damage_subset::player_damage_without(
+            player,
+            whole,
+            &combat.name_manager,
+            &combat.hits_manger,
+            &self.excluded,
+            &combat.total_damage_out,
+        ) {
+            Some(kept) => Cow::Owned(kept),
+            // Nothing of this player's was ticked off, so nothing of theirs
+            // changes.
+            None => Cow::Borrowed(whole),
+        }
+    }
+
+    /// (Re)build the table from the combat, with the rows the reader has
+    /// unticked left out of each player's figures.
+    ///
+    /// A player row is then what they did with the rows that are still ticked —
+    /// worked out from those rows' hits rather than by subtracting columns,
+    /// which cannot be done for a resistance or a crit rate. A player with none
+    /// of the ticked rows keeps their own figures rather than showing zeroes,
+    /// since nothing of theirs was ticked off in the first place.
+    fn rebuild_table(&mut self, settings: &Settings, combat: &Combat) {
+        let group = self.damage_group;
+        let excluded = &self.excluded;
+        let total = combat.total_damage_out;
+        self.table = DamageTable::new(settings, combat, move |player| {
+            let whole = group(player);
+            if excluded.is_empty() {
+                return Cow::Borrowed(whole);
+            }
+            match damage_subset::player_damage_without(
+                player,
+                whole,
+                &combat.name_manager,
+                &combat.hits_manger,
+                excluded,
+                &total,
+            ) {
+                Some(kept) => Cow::Owned(kept),
+                None => Cow::Borrowed(whole),
+            }
+        });
+    }
+
+    pub fn show(&mut self, settings: &Settings, combat: Option<&Combat>, ui: &mut Ui) {
+        let mut ticks_changed = false;
         Splitter::horizontal()
             .initial_ratio(0.6)
             .ratio_bounds(0.1..=0.9)
             .show(ui, |top_ui, bottom_ui| {
                 let columns = &settings.columns;
+                let mut ticks = RowTicks {
+                    excluded: &mut self.excluded,
+                    hide_unticked: &mut self.hide_unticked,
+                    changed: false,
+                };
                 self.table.show(
                     top_ui,
                     |column| columns.is_shown(TableKind::Damage, column),
+                    &mut ticks,
                     |p| {
                         Self::process_diagram_change(
                             &mut self.dmg_selection_diagrams,
@@ -69,8 +156,15 @@ impl DamageTab {
                     },
                 );
 
+                ticks_changed = ticks.changed;
                 self.show_diagrams(settings, bottom_ui);
             });
+
+        // A tick changes what every player's row is of, so the table and the
+        // chart are both built again from the rows that are left.
+        if ticks_changed && let Some(combat) = combat {
+            self.rebuild(settings, combat);
+        }
     }
 
     fn process_diagram_change(

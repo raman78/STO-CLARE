@@ -28,7 +28,7 @@ const COMBATS_SHOWN_AT_ONCE: usize = 15;
 /// wrapped, so a row stays one row tall.
 const COMBATS_LIST_WIDTH: f32 = 900.0;
 mod compare;
-mod damage_subset;
+pub(crate) mod damage_subset;
 pub mod desktop_install;
 mod export;
 mod fonts;
