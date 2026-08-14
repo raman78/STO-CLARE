@@ -11,20 +11,20 @@
 //! into one mean per metric, and the export, which writes the same table to a
 //! spreadsheet (`export`).
 
-use std::{ops::Range, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
-use chrono::NaiveDateTime;
 use eframe::{
     Frame,
     egui::{text::LayoutJob, *},
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::app::damage_subset::{metrics_duration, subset_group, subset_hits};
 use crate::custom_widgets::table::SortState;
 use crate::{
     analyzer::{
-        AnalysisGroup, Combat, DamageGroup, DamageMetrics, Hit, Hits, HitsManager, MaxOneHit,
-        NameHandle, NameManager, ShieldHullOptionalValues, ShieldHullValues, ValueFlags,
+        AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager,
+        ShieldHullOptionalValues, ValueFlags,
     },
     app::main_tabs::diagrams::{
         DamageDiagrams, DiagramType, PreparedDamageDataSet, PreparedHit, combat_duration_seconds,
@@ -36,7 +36,7 @@ use crate::{
         popup_button::PopupButton, slider_text_edit::SliderTextEdit, splitter::Splitter, table::*,
         toggle::Toggle,
     },
-    helpers::{number_formatting::NumberFormatter, time_range_to_duration_or_zero},
+    helpers::number_formatting::NumberFormatter,
 };
 
 use super::CompareMetric;
@@ -774,9 +774,7 @@ impl Comparison {
                     .damage_out
                     .damage_types
                     .iter()
-                    .map(move |damage_type| {
-                        damage_type.get(&slot.combat.name_manager).to_string()
-                    })
+                    .map(move |damage_type| damage_type.get(&slot.combat.name_manager).to_string())
             })
             .collect();
         types.sort_unstable();
@@ -2413,31 +2411,6 @@ fn set_child_percentages(group: &mut DamageGroup) {
     }
 }
 
-/// The hits of the ticked rows, pooled — or `None` when this combat holds none
-/// of the ticked rows at all.
-///
-/// A branch's hits are the whole branch's, so a row goes in with everything
-/// under it, which is why only the rows under Total can be ticked.
-///
-/// The `None` is the difference between "this combat did nothing with what you
-/// ticked" and "this combat has none of it": the second is an empty cell
-/// everywhere else in the table, is left out of the averages, and is not
-/// charted. A zero would instead draw a flat line along the bottom of the chart
-/// and drag every average down for a run that simply flew something else.
-fn subset_hits<'a>(
-    rows: impl Iterator<Item = (&'a str, &'a [Hit])>,
-    excluded: &FxHashSet<String>,
-) -> Option<Vec<Hit>> {
-    let kept: Vec<&[Hit]> = rows
-        .filter(|(name, _)| !excluded.contains(*name))
-        .map(|(_, hits)| hits)
-        .collect();
-    if kept.is_empty() {
-        return None;
-    }
-    Some(kept.into_iter().flatten().copied().collect())
-}
-
 /// Whether a row is not drawn at all.
 ///
 /// Only the rows under Total (`parent_depth` 0 is Total itself) can be hidden:
@@ -2457,40 +2430,6 @@ fn is_hidden(parent_depth: usize, ticks: &Ticks, node: &CompareNode) -> bool {
         return true;
     }
     false
-}
-
-/// A damage group standing for a set of hits, with every metric recalculated
-/// from them the way [`DamageGroup::recalculate_metrics`] does it, so the rest
-/// of the table can read it like any other group.
-fn subset_group(hits: Vec<Hit>, duration: f64, combat_total: &ShieldHullValues) -> DamageGroup {
-    let mut damage_metrics = DamageMetrics::default();
-    damage_metrics.calc_and_apply_delta(&hits);
-    damage_metrics.recalculate_time_based_metrics(duration);
-    let mut max_one_hit = MaxOneHit::default();
-    max_one_hit.update_from_hits(NameHandle::UNKNOWN, &hits);
-    DamageGroup {
-        damage_percentage: ShieldHullOptionalValues::percentage(
-            &damage_metrics.total_damage,
-            combat_total,
-        ),
-        damage_metrics,
-        max_one_hit,
-        hits: Hits::Leaf(hits),
-        ..Default::default()
-    }
-}
-
-/// The combat duration the analyzer measures a player's outgoing damage
-/// against: the time they were in combat.
-///
-/// Not `combat_duration_seconds`, which the charts use — that one is the length
-/// of the fight (`active_time`), and dividing by it would give a DPS no other
-/// part of the program states.
-fn metrics_duration(combat_time: &Option<Range<NaiveDateTime>>) -> f64 {
-    time_range_to_duration_or_zero(combat_time)
-        .num_milliseconds()
-        .max(0) as f64
-        / 1e3
 }
 
 /// What an averaged value is made of: how many of the combats had this row at
@@ -3167,6 +3106,8 @@ fn show_time_filter_setting(filter: &mut f64, ui: &mut Ui) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::{Hits, ShieldHullValues};
+    use chrono::NaiveDateTime;
 
     /// The two shares must add up to the whole DPS difference, whatever the
     /// numbers — that is the point of taking them at the midpoint of the pair
