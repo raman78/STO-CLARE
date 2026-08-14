@@ -418,6 +418,9 @@ impl CombatNameRules {
         let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
         ScrollArea::vertical()
             .id_salt("auto detected maps")
+            // The bar goes at the edge of the panel rather than against the
+            // longest map name.
+            .auto_shrink([false, true])
             .max_height(ui.available_height().min(max_height).at_least(row * 4.0))
             .show(ui, |ui| {
                 for map in curated_map_names() {

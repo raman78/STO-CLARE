@@ -138,6 +138,10 @@ impl<'a> Table<'a> {
         } = self;
         let scroll_output = ScrollArea::vertical()
             .id_salt(id.with("__table_scroll"))
+            // Full width, whatever the columns come to: the scroll bar belongs
+            // at the edge of the space the table was given, not tucked against
+            // the last column with a stretch of empty panel beside it.
+            .auto_shrink([false, true])
             .min_scrolled_height(min_scroll_height)
             .max_height(max_scroll_height)
             .show(ui, |ui| {
