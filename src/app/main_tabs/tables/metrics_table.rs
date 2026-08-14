@@ -4,6 +4,7 @@ use educe::Educe;
 use eframe::egui::*;
 use rustc_hash::FxHashSet;
 
+use crate::custom_widgets::table::SortState;
 use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::{
     analyzer::*,
@@ -97,6 +98,8 @@ pub struct MetricsTable<T: 'static> {
     split_shield_hull: bool,
     players: Vec<MetricsTablePart<T>>,
     selection: SelectionTracker,
+    /// Which column the rows are ordered by, and which way round.
+    sort: SortState<&'static str>,
 }
 
 #[derive(Educe)]
@@ -137,6 +140,7 @@ impl<T: 'static> MetricsTable<T> {
             selection: Default::default(),
             columns,
             split_shield_hull: false,
+            sort: Default::default(),
         }
     }
 
@@ -167,8 +171,14 @@ impl<T: 'static> MetricsTable<T> {
                 })
                 .collect(),
             selection: Default::default(),
+            sort: Default::default(),
         };
-        (table.columns[0].sort)(&mut table);
+        // The first column is what a table opens ordered by, as it always has
+        // been. The state has to say so too, or the heading it is ordered by
+        // carries no mark until somebody clicks something.
+        table.sort.column = Some(table.columns[0].name);
+        let first = table.columns[0].sort;
+        table.sort_by_column(first);
 
         table
     }
@@ -242,11 +252,17 @@ impl<T: 'static> MetricsTable<T> {
         if split && !column.parts.is_empty() {
             show_group_separator(row);
             let name = column.name;
+            let marker = self.sort.marker(name);
             self.show_header_cell_with(row, column, |ui| {
-                ui.label(split_total_header_text(ui, name));
+                ui.horizontal(|ui| {
+                    ui.label(split_total_header_text(ui, name));
+                    ui.label(marker);
+                });
             });
             for part in column.parts.iter() {
-                self.show_header_cell(row, &format!("\n{}", part.name), column);
+                // The halves carry no mark of their own: they are the same
+                // column, and three arrows in a row say nothing three times.
+                self.show_header_part_cell(row, &format!("\n{}", part.name), column);
             }
             return;
         }
@@ -260,6 +276,19 @@ impl<T: 'static> MetricsTable<T> {
     }
 
     fn show_header_cell(&mut self, row: &mut TableRow, text: &str, column: &ColumnDescriptor<T>) {
+        // The mark rides with the text so it stays put when a heading wraps to
+        // two lines, which the split columns do.
+        let text = format!("{text}{}", self.sort.marker(column.name));
+        self.show_header_part_cell(row, &text, column);
+    }
+
+    fn show_header_part_cell(
+        &mut self,
+        row: &mut TableRow,
+        text: &str,
+        column: &ColumnDescriptor<T>,
+    ) {
+        let text = text.to_string();
         self.show_header_cell_with(row, column, |ui| {
             ui.label(text);
         });
@@ -273,13 +302,34 @@ impl<T: 'static> MetricsTable<T> {
         column: &ColumnDescriptor<T>,
         contents: impl FnOnce(&mut Ui),
     ) {
-        let response = row.selectable_cell(false, contents);
+        // The column doing the ordering is drawn as picked, and carries the
+        // mark saying which way round it runs.
+        let response = row.selectable_cell(self.sort.is_sorted_by(column.name), contents);
         if response.clicked() {
-            (column.sort)(self);
+            self.sort.clicked(column.name);
+            self.sort_by_column(column.sort);
         }
         if let Some(info) = column.name_info {
             response.hover(info);
         }
+    }
+
+    /// Order the rows by `column`, the way `SortState` says.
+    ///
+    /// A column knows one order — largest first for most of them, smallest for
+    /// the few where small is the good end — so the other way round is that one
+    /// reversed rather than a second sort with its own idea of what is best.
+    fn sort_by_column(&mut self, sort: fn(&mut Self)) {
+        sort(self);
+        if !self.sort.natural {
+            self.reverse_order();
+        }
+    }
+
+    /// Turn the order round, at every level of the tree.
+    fn reverse_order(&mut self) {
+        self.players.reverse();
+        self.players.iter_mut().for_each(|p| p.reverse_order());
     }
 
     pub fn sort_by_option_f64_desc(
@@ -425,6 +475,13 @@ impl<T> MetricsTablePart<T> {
         self.sub_parts.sort_unstable_by_key(|p| Reverse(key(p)));
 
         self.sub_parts.iter_mut().for_each(|p| p.sort_by_desc(key));
+    }
+
+    /// Turn this row's children round, and theirs, so a reversed order reaches
+    /// the whole tree rather than only its top level.
+    fn reverse_order(&mut self) {
+        self.sub_parts.reverse();
+        self.sub_parts.iter_mut().for_each(|p| p.reverse_order());
     }
 
     pub fn sort_by_asc<K: Ord>(&mut self, key: impl FnMut(&Self) -> K + Copy) {

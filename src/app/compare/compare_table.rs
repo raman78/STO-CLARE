@@ -20,6 +20,7 @@ use eframe::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::custom_widgets::table::SortState;
 use crate::{
     analyzer::{
         AnalysisGroup, Combat, DamageGroup, DamageMetrics, Hit, Hits, HitsManager, MaxOneHit,
@@ -147,9 +148,9 @@ pub struct Comparison {
     /// reader is asking what that run did differently. Indexes the columns, not
     /// `slots`.
     impact_slot: Option<usize>,
-    /// Which column the rows are ordered by, and whether the largest is on top.
-    /// `None` is the order they were built in — the reference combat's DPS.
-    sort: Option<(SortBy, bool)>,
+    /// Which column the rows are ordered by, and which way round — the same
+    /// state the main window's tables keep, so both behave alike.
+    sort: SortState<SortBy>,
     /// Whether the rows the combats agree on are hidden, leaving what they
     /// differ over.
     show_differences: bool,
@@ -296,7 +297,7 @@ impl Comparison {
             types: Default::default(),
             of_type: Vec::new(),
             impact_slot: None,
-            sort: None,
+            sort: Default::default(),
             open_types: Default::default(),
             show_differences: false,
             show_type_summary: false,
@@ -913,9 +914,11 @@ impl Comparison {
         // Turning the impact column on orders by it, largest gain first: the
         // question it answers is what this combat did *better*, and a list that
         // opens on its biggest losses answers the opposite one.
-        let sort = self
-            .sort
-            .or_else(|| self.impact_slot.map(|slot| (SortBy::Impact { slot }, true)));
+        let sort = match self.sort.column {
+            Some(by) => Some((by, self.sort.natural)),
+            // Turning the impact column on orders by it, largest gain first.
+            None => self.impact_slot.map(|slot| (SortBy::Impact { slot }, true)),
+        };
         let differences = self.differences();
         let Some(total) = self.nodes.first_mut() else {
             return;
@@ -1433,9 +1436,13 @@ impl Comparison {
                                     // The column the rows are ordered by is
                                     // drawn as picked, the way the main
                                     // window's tables do it.
-                                    let picked = sort.map(|(by, _)| by) == Some(*by);
+                                    let picked = sort.is_sorted_by(*by);
+                                    let marker = sort.marker(*by);
                                     let response = r.selectable_cell(picked, |ui| {
-                                        ui.label(text.clone());
+                                        ui.horizontal(|ui| {
+                                            ui.label(text.clone());
+                                            ui.label(marker);
+                                        });
                                     });
                                     if response.clicked() {
                                         // Clicking the column it is already
@@ -1468,13 +1475,7 @@ impl Comparison {
 
         let ticks_changed = ticks.changed;
         if let Some(by) = sort_clicked {
-            self.sort = Some(match self.sort {
-                // Largest first to begin with — the question is nearly always
-                // "which rows are the big ones here" — and round the other way
-                // when the same column is clicked again.
-                Some((current, descending)) if current == by => (by, !descending),
-                _ => (by, true),
-            });
+            self.sort.clicked(by);
             self.sort_rows();
         }
         self.selected = selected;
@@ -3319,7 +3320,7 @@ mod tests {
         // The fonts only exist once a pass has run.
         let _ = ctx.run_ui(Default::default(), |_| {});
         let font = TextStyle::Body.resolve(&Style::default());
-        for glyph in "Σ🖹⚠🆚◀⏷⏵👁Δ☰🎯⚖".chars() {
+        for glyph in "Σ🖹⚠🆚◀⏷⏵👁Δ☰🎯⚖⏶".chars() {
             assert!(
                 ctx.fonts_mut(|fonts| fonts.has_glyph(&font, glyph)),
                 "'{glyph}' (U+{:04X}) has no glyph and would draw as an empty box",

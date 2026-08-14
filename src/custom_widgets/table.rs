@@ -1,5 +1,53 @@
 use eframe::{egui::*, emath::GuiRounding};
 
+/// Which column a table is ordered by, and which way round.
+///
+/// Lives here rather than in each table because every table in the program is
+/// meant to behave the same way: click a heading to order by it, click again to
+/// turn it round, and see at a glance which one is doing the ordering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SortState<C> {
+    /// The column, once one has been picked.
+    pub column: Option<C>,
+    /// Whether the order runs the way the column reads it — largest first for
+    /// most, smallest first for the few where small is good.
+    pub natural: bool,
+}
+
+impl<C> Default for SortState<C> {
+    fn default() -> Self {
+        // Nothing picked yet, and the first pick reads the column the way the
+        // column itself reads it.
+        Self {
+            column: None,
+            natural: true,
+        }
+    }
+}
+
+impl<C: PartialEq + Copy> SortState<C> {
+    /// Take a click on `column`: pick it, or turn the order round if it is
+    /// already the one in charge.
+    pub fn clicked(&mut self, column: C) {
+        self.natural = self.column != Some(column) || !self.natural;
+        self.column = Some(column);
+    }
+
+    /// Whether `column` is the one the rows are ordered by.
+    pub fn is_sorted_by(&self, column: C) -> bool {
+        self.column == Some(column)
+    }
+
+    /// The mark to draw beside a heading: which way the order runs, or nothing
+    /// on a column that is not doing the ordering.
+    pub fn marker(&self, column: C) -> &'static str {
+        if !self.is_sorted_by(column) {
+            return "";
+        }
+        if self.natural { " ⏷" } else { " ⏶" }
+    }
+}
+
 pub struct Table<'a> {
     ui: &'a mut Ui,
     id: Id,
@@ -433,5 +481,44 @@ fn draw_visuals(ui: &mut Ui, is_stripe: bool, checked: Option<bool>, response: &
             ui.style().interact_selectable(response, checked).bg_stroke,
             StrokeKind::Inside,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Clicking a heading picks that column; clicking it again turns the order
+    /// round; clicking another starts that one the way it reads.
+    #[test]
+    fn a_heading_picks_a_column_and_then_turns_it_round() {
+        let mut sort = SortState::default();
+        assert_eq!(None, sort.column, "nothing is picked to begin with");
+
+        sort.clicked("DPS");
+        assert!(sort.is_sorted_by("DPS"));
+        assert!(sort.natural, "the first click reads the column its own way");
+
+        sort.clicked("DPS");
+        assert!(!sort.natural, "the same heading again turns it round");
+
+        sort.clicked("Hits");
+        assert!(sort.is_sorted_by("Hits"));
+        assert!(!sort.is_sorted_by("DPS"), "only one column orders the rows");
+        assert!(sort.natural, "a different heading starts over");
+    }
+
+    /// The mark says which column is doing the ordering, and which way — and
+    /// says nothing at all about the others.
+    #[test]
+    fn only_the_ordering_column_carries_a_mark() {
+        let mut sort = SortState::default();
+        sort.clicked("DPS");
+        assert_eq!("", sort.marker("Hits"));
+        let natural = sort.marker("DPS");
+        sort.clicked("DPS");
+        let reversed = sort.marker("DPS");
+        assert!(!natural.is_empty() && !reversed.is_empty());
+        assert_ne!(natural, reversed, "the two directions look different");
     }
 }
