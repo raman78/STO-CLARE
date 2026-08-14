@@ -8,6 +8,7 @@ use crate::{
 };
 
 use super::{common::Kills, metrics_table::*};
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 /// Every column of this table, for the column picker.
 pub fn column_names() -> Vec<&'static str> {
@@ -349,7 +350,7 @@ impl MaxOneHit {
 
     fn show(&self, row: &mut TableRow) {
         if let Some(response) = self.damage.show(row) {
-            response.on_hover_text(&self.name);
+            response.hover(&self.name);
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::{
 
 use super::{common::*, diagrams::*, tables::*};
 use crate::custom_widgets::toggle::Toggle;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 pub struct HealTab {
     /// The same healing, nested both ways. Both are built up front so the
@@ -128,7 +129,7 @@ impl HealTab {
                     HealGrouping::ByPerson,
                     format!("{} ⏵ Ability", other_level),
                 )
-                .on_hover_text(format!(
+                .hover(format!(
                     "Top level is the {}, with the abilities underneath.",
                     other_level.to_lowercase()
                 ))
@@ -138,7 +139,7 @@ impl HealTab {
                     HealGrouping::ByAbility,
                     format!("Ability ⏵ {}", other_level),
                 )
-                .on_hover_text(format!(
+                .hover(format!(
                     "Top level is the ability, with the {} underneath.",
                     other_level.to_lowercase()
                 ))
@@ -275,11 +276,11 @@ impl HealTab {
             let mut shield = self.components.shield;
             changed |= ui
                 .toggle_value(&mut hull, "Hull")
-                .on_hover_text("Include healing that restored hull.")
+                .hover("Include healing that restored hull.")
                 .changed();
             changed |= ui
                 .toggle_value(&mut shield, "Shield")
-                .on_hover_text("Include healing that restored shields.")
+                .hover("Include healing that restored shields.")
                 .changed();
             if !hull && !shield {
                 // Whichever the user just switched off is the one to keep.
@@ -301,25 +302,25 @@ impl HealTab {
                 DiagramType::Hps,
                 DiagramType::Hps.name(),
             )
-            .on_hover_text(DiagramType::Hps.tooltip());
+            .hover(DiagramType::Hps.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::Heal,
                 DiagramType::Heal.name(),
             )
-            .on_hover_text(DiagramType::Heal.tooltip());
+            .hover(DiagramType::Heal.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HealTicksPerSecond,
                 DiagramType::HealTicksPerSecond.name(),
             )
-            .on_hover_text(DiagramType::HealTicksPerSecond.tooltip());
+            .hover(DiagramType::HealTicksPerSecond.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HealTicksCount,
                 DiagramType::HealTicksCount.name(),
             )
-            .on_hover_text(DiagramType::HealTicksCount.tooltip());
+            .hover(DiagramType::HealTicksCount.tooltip());
         });
 
         let mut update_required = self.show_component_picker(ui);

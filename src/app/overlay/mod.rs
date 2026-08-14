@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::analysis_handling::{AnalysisHandler, AnalysisInfo};
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 // The Linux wlr-layer-shell backend (always-on-top surface + its own thread).
 #[cfg(target_os = "linux")]
@@ -343,7 +344,7 @@ impl Overlay {
         if Button::new("Overlay")
             .selected(inner.show)
             .ui(ui)
-            .on_hover_text("Enables an Overlay, that you can move in front of the game window. Note that the it will always show the newest combat.")
+            .hover("Enables an Overlay, that you can move in front of the game window. Note that the it will always show the newest combat.")
             .clicked()
         {
             inner.toggle_show();
@@ -687,14 +688,14 @@ impl OverlayInner {
                     let icon = vec2(TOOLBAR_HEIGHT - 6.0, TOOLBAR_HEIGHT - 6.0);
                     if ui
                         .add_sized(icon, Button::selectable(self.columns_open, "⛭"))
-                        .on_hover_text("Configure what columns are displayed")
+                        .hover("Configure what columns are displayed")
                         .clicked()
                     {
                         self.columns_open = !self.columns_open;
                     }
                     if ui
                         .add_sized(icon, Button::selectable(self.move_around, "✋"))
-                        .on_hover_text("Move the Overlay")
+                        .hover("Move the Overlay")
                         .clicked()
                     {
                         self.move_around = !self.move_around;

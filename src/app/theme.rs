@@ -268,12 +268,14 @@ pub fn apply(ctx: &Context, theme: Theme) {
     // start a text selection instead of doing nothing.
     style.interaction.selectable_labels = false;
     style.interaction.tooltip_delay = 0.0;
-    // Floating scroll bars grow when the pointer comes near them and would then
-    // be drawn on top of the content — the horizontal bar of a table covering
-    // its last row. Reserve a strip as wide as the fully grown bar, so it sits
-    // next to the content instead of over it. The strip is only taken while the
-    // bar is actually shown.
-    style.spacing.scroll.floating_allocated_width = style.spacing.scroll.bar_width;
+    // Scroll bars sit beside the content instead of floating over it. A
+    // floating bar is a thin sliver until the pointer comes near it and is
+    // drawn on top of what it scrolls — and the one bar here that has to be
+    // found before it can be used is the horizontal one under a table too wide
+    // for the window, which is exactly the bar nobody knows is there. A
+    // non-floating bar is always drawn, always the same width, and takes its
+    // strip out of the content rather than covering its last row.
+    style.spacing.scroll.floating = false;
 
     // The app picks its own theme, so both of egui's slots get the same style;
     // following the desktop's light/dark preference would override the choice.
@@ -971,9 +973,9 @@ mod tests {
             "the text sizes come from TEXT_SIZES"
         );
         assert!(!style.interaction.selectable_labels);
-        assert_eq!(
-            style.spacing.scroll.bar_width, style.spacing.scroll.floating_allocated_width,
-            "a floating scroll bar has to get a strip of its own"
+        assert!(
+            !style.spacing.scroll.floating,
+            "a scroll bar has to be visible without being hunted for"
         );
         assert_eq!(
             style.visuals.dark_mode,

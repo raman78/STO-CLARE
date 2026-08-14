@@ -13,6 +13,9 @@
 
 - **Compare selected** now carries the accent rim the program uses for the button that does something, so it is not read as one more of the tick-and-untick buttons around it
 
+- scroll bars are always visible now, instead of thinning to a sliver until the pointer comes near them. The one that needed finding most was the horizontal bar under a table too wide for the window — the bar nobody knew was there
+- tooltips sit against what they explain rather than floating a few points below it, so it is never in doubt which row or button one belongs to
+
 ### Fixes
 - numbers whose decimals rounded up now read correctly. A figure like 8.972 was shown as 8.0 instead of 9.0 — about one number in twenty at a single decimal — everywhere the program prints one: the tables, the overlay, the summary pasted into chat and the spreadsheets
 

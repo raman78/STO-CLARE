@@ -3,6 +3,7 @@ use std::ops::RangeInclusive;
 use chrono::Duration;
 use eframe::egui::*;
 
+use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::{
     analyzer::*,
     app::fonts::bold_family,
@@ -322,7 +323,7 @@ pub fn show_time_filter_setting(filter: &mut f64, combat_duration_s: f64, ui: &m
             .show(ui)
             .changed();
         ui.label("Gauss Filter Standard Deviation (how much to smooth the graph)")
-            .on_hover_text(format!(
+            .hover(format!(
                 "How far either side of a moment the graph averages.\n\
                  Capped at {max:.0} s for this combat: the smoothing reaches four \
                  times this far, and a window approaching the length of the fight \

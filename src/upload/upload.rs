@@ -18,6 +18,7 @@ use crate::{
 };
 
 use super::common::{RequestError, spawn_request};
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 #[derive(Default)]
 pub struct Upload {
@@ -35,11 +36,7 @@ impl Upload {
         url: &str,
     ) {
         ui.add_enabled_ui(self.state.is_idle() && combat.is_some(), |ui| {
-            if ui
-                .button("Upload 🌎")
-                .on_hover_text(UPLOAD_TOOLTIP)
-                .clicked()
-            {
+            if ui.button("Upload 🌎").hover(UPLOAD_TOOLTIP).clicked() {
                 self.state = self.begin_upload(ui.ctx().clone(), combat.unwrap(), settings, url);
             };
         });

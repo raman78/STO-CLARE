@@ -39,6 +39,7 @@ use crate::{
 
 use super::CompareMetric;
 use crate::app::export;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 const ROW_HEIGHT: f32 = 25.0;
 /// The size the open/close arrow of a tree row is drawn at.
@@ -545,7 +546,7 @@ impl Comparison {
         // one short line, with the particulars a hover away.
         if let Some(warning) = odd_player_warning(&slot_player_names(&self.slots)) {
             ui.label(RichText::new(warning.line).color(theme::palette().worse))
-                .on_hover_text(warning.detail);
+                .hover(warning.detail);
         }
 
         ui.separator();
@@ -698,7 +699,7 @@ impl Comparison {
             // uses the frameless kind because there it stands among its own.)
             if ui
                 .add(Button::new("Σ Averages").selected(settings.compare.show_averages))
-                .on_hover_text(
+                .hover(
                     "Collapse the per-combat columns into one average per metric, over every \
                      combat in the comparison. Useful once there are more runs on screen than \
                      can be read side by side.",
@@ -711,7 +712,7 @@ impl Comparison {
 
             if ui
                 .add(Button::new("Δ Differences").selected(self.show_differences))
-                .on_hover_text(
+                .hover(
                     "Hide the rows the combats agree on, leaving what they differ over — what a \
                      run flew that the others did not, and what it leaned on far harder. The rows \
                      stay in the order they are in, and the Total above is added up from what is \
@@ -725,7 +726,7 @@ impl Comparison {
 
             if ui
                 .add(Button::new("⚖ vs rest").selected(self.impact_slot.is_some()))
-                .on_hover_text(
+                .hover(
                     "Measure one combat against the others: every row says how much DPS it added \
                      or cost that run compared with what the other runs did, and the rows are put \
                      in the order of how much they weighed. The figures add up to the difference \
@@ -743,7 +744,7 @@ impl Comparison {
 
             if ui
                 .add(Button::new("🎯 By type").selected(self.show_type_summary))
-                .on_hover_text(
+                .hover(
                     "Open a window with the comparison split by damage type — how much of each \
                      run was phaser, antiproton, kinetic and the rest. It is the quickest way to \
                      tell a rainbow build from a single-flavour one.",
@@ -756,7 +757,7 @@ impl Comparison {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
                     .button("Export XLSX 🖹")
-                    .on_hover_text(
+                    .hover(
                         "Save what the table shows as a spreadsheet — the plain numbers, without \
                          the differences.",
                     )
@@ -891,7 +892,7 @@ impl Comparison {
                                         with_notes.then(|| note_of(&notes, slot_i)),
                                         colors.get(slot_i).copied().flatten(),
                                     ))
-                                    .on_hover_text(format!(
+                                    .hover(format!(
                                         "Combat #{}{}",
                                         slot_i + 1,
                                         note_suffix(note_of(&notes, slot_i))
@@ -913,7 +914,7 @@ impl Comparison {
                                                     Button::selectable(false, symbol)
                                                         .min_size(ARROW_SIZE),
                                                 )
-                                                .on_hover_text("What this type is made of")
+                                                .hover("What this type is made of")
                                                 .clicked()
                                             {
                                                 folded = Some(row.name.clone());
@@ -966,7 +967,7 @@ impl Comparison {
             for measure in [DifferenceMeasure::Share, DifferenceMeasure::Dps] {
                 changed |= ui
                     .steady_toggle_value(&mut self.difference_measure, measure, measure.label())
-                    .on_hover_text(match measure {
+                    .hover(match measure {
                         DifferenceMeasure::Share => {
                             "Measure a difference in what the row was of its own combat — the same \
                              figure the Damage % column shows. A shorter or weaker run then does \
@@ -988,7 +989,7 @@ impl Comparison {
             // A step either side of the slider: the useful range is narrow at
             // the bottom end, and dragging a slider that spans 50 to 50'000 is
             // no way to move by fifty.
-            if ui.button("−").on_hover_text("One step less").clicked() {
+            if ui.button("−").hover("One step less").clicked() {
                 *threshold = (*threshold - step).max(*range.start());
                 changed = true;
             }
@@ -1000,13 +1001,13 @@ impl Comparison {
                 .step_by(step)
                 .show(ui)
                 .changed();
-            if ui.button("+").on_hover_text("One step more").clicked() {
+            if ui.button("+").hover("One step more").clicked() {
                 *threshold = (*threshold + step).min(1e9);
                 changed = true;
             }
 
             ui.label(format!("min difference ({})", measure.unit()))
-                .on_hover_text(
+                .hover(
                     "A row stays on screen when its largest combat and its smallest are at least \
                      this far apart. A combat that does not have the row at all counts as zero, \
                      so a row flown in some runs and not others is a difference of its whole size.",
@@ -1106,7 +1107,7 @@ impl Comparison {
             // same, so it belongs with the others rather than beside the menu.
             changed |= ui
                 .checkbox(&mut settings.compare.show_dps_breakdown, "ΔDPS breakdown")
-                .on_hover_text(
+                .hover(
                     "Two more columns splitting each DPS difference against the reference: the \
                      share that came from landing more often, and the share that came from each \
                      hit landing harder. The two add up to the whole difference.",
@@ -1269,7 +1270,7 @@ impl Comparison {
                                 ui.label("Name");
                                 if ui
                                     .add(Button::selectable(hide_unticked, "👁"))
-                                    .on_hover_text(
+                                    .hover(
                                         "Hide the rows that are not ticked, leaving only what the \
                                          Total is added up from. They stay out of the Total either \
                                          way — this only takes them off the screen.",
@@ -1286,7 +1287,7 @@ impl Comparison {
                                 HeaderCell::Separator => show_group_separator(r),
                                 HeaderCell::Cell { text, tooltip } => {
                                     r.cell(|ui| {
-                                        ui.label(text.clone()).on_hover_text(tooltip);
+                                        ui.label(text.clone()).hover(tooltip);
                                     });
                                 }
                             }
@@ -1344,7 +1345,7 @@ impl Comparison {
                 DiagramType::HitsCount,
             ] {
                 ui.steady_toggle_value(&mut self.active_diagram, diagram, diagram.name())
-                    .on_hover_text(diagram.tooltip());
+                    .hover(diagram.tooltip());
             }
         });
 
@@ -1421,7 +1422,7 @@ impl CompareNode {
                         Some(average) => {
                             let tooltip = average_tooltip(average, n_slots);
                             r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.label(&average.text).on_hover_text(tooltip);
+                                ui.label(&average.text).hover(tooltip);
                             });
                         }
                         None => {
@@ -1502,7 +1503,7 @@ impl CompareNode {
                                 r.cell_with_layout(
                                     Layout::right_to_left(Align::Center),
                                     |ui| {
-                                        ui.colored_label(color, text).on_hover_text(tooltip);
+                                        ui.colored_label(color, text).hover(tooltip);
                                     },
                                 );
                             }
@@ -1534,7 +1535,7 @@ impl CompareNode {
                         );
                         let tooltip = self.impact_tooltip(slot, impact, &mut formatter);
                         r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.colored_label(color, text).on_hover_text(tooltip);
+                            ui.colored_label(color, text).hover(tooltip);
                         });
                     }
                     None => {
@@ -1595,7 +1596,7 @@ impl CompareNode {
                 let cell = r.cell(|ui| {
                     let response = ui
                         .add(Checkbox::new(&mut all, "").indeterminate(kept != rows && kept != 0))
-                        .on_hover_text(
+                        .hover(
                             "Count every row below in the Total, or none of them. Untick a row to \
                              leave it out and the Total is added up again without it.",
                         );
@@ -1617,7 +1618,7 @@ impl CompareNode {
                 let cell = r.cell(|ui| {
                     if ui
                         .checkbox(&mut ticked, "")
-                        .on_hover_text("Count this row in the Total above")
+                        .hover("Count this row in the Total above")
                         .changed()
                     {
                         ticks.changed = true;
@@ -1719,7 +1720,7 @@ fn show_shares(r: &mut TableRow, shares: &[f64], damage: &[f64], formatter: &mut
         let text = format!("{}%", formatter.format(*share, 1));
         let tooltip = formatter.format(damage.get(slot_i).copied().unwrap_or_default(), 0);
         r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(text).on_hover_text(tooltip);
+            ui.label(text).hover(tooltip);
         });
     }
 }
@@ -1894,7 +1895,7 @@ fn show_type_picker(ui: &mut Ui, all: &[String], picked: &mut FxHashSet<String>)
         }
     })
     .response
-    .on_hover_text(
+    .hover(
         "Show only the rows that dealt a damage type you pick — the beams of one flavour out of a \
          rainbow build, say. A row that dealt several types is shown for each of them.",
     );

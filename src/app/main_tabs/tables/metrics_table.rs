@@ -4,6 +4,7 @@ use educe::Educe;
 use eframe::egui::*;
 use rustc_hash::FxHashSet;
 
+use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::{
     analyzer::*,
     app::{main_tabs::common::*, settings::Settings},
@@ -277,7 +278,7 @@ impl<T: 'static> MetricsTable<T> {
             (column.sort)(self);
         }
         if let Some(info) = column.name_info {
-            response.on_hover_text(info);
+            response.hover(info);
         }
     }
 

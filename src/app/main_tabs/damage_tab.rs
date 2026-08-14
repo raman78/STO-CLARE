@@ -8,6 +8,7 @@ use crate::{
 
 use super::{common::*, diagrams::*, tables::*};
 use crate::custom_widgets::toggle::Toggle;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 pub struct DamageTab {
     table: DamageTable,
@@ -184,31 +185,31 @@ impl DamageTab {
                 DiagramType::Dps,
                 DiagramType::Dps.name(),
             )
-            .on_hover_text(DiagramType::Dps.tooltip());
+            .hover(DiagramType::Dps.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::Damage,
                 DiagramType::Damage.name(),
             )
-            .on_hover_text(DiagramType::Damage.tooltip());
+            .hover(DiagramType::Damage.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::DamageResistance,
                 DiagramType::DamageResistance.name(),
             )
-            .on_hover_text(DiagramType::DamageResistance.tooltip());
+            .hover(DiagramType::DamageResistance.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HitsPerSecond,
                 DiagramType::HitsPerSecond.name(),
             )
-            .on_hover_text(DiagramType::HitsPerSecond.tooltip());
+            .hover(DiagramType::HitsPerSecond.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HitsCount,
                 DiagramType::HitsCount.name(),
             )
-            .on_hover_text(DiagramType::HitsCount.tooltip());
+            .hover(DiagramType::HitsCount.tooltip());
         });
 
         let updated_required = match self.active_diagram {

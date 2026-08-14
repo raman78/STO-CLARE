@@ -13,6 +13,7 @@ use crate::{
 
 use self::{damage_tab::DamageTab, heal_tab::HealTab, summary_tab::SummaryTab};
 use crate::custom_widgets::toggle::Toggle;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 mod common;
 mod damage_tab;
@@ -132,7 +133,7 @@ impl MainTabs {
                 }
             })
             .response
-            .on_hover_text(
+            .hover(
                 "Which columns this table shows. The two damage tabs share their choice, and so \
                  do the three healing ones.",
             );
@@ -201,20 +202,20 @@ impl MainTabs {
             ui.steady_toggle_value(&mut self.active_tab, MainTab::Summary, "Summary");
 
             ui.steady_toggle_value(&mut self.active_tab, MainTab::DamageDealt, "Damage Dealt")
-                .on_hover_text("Damage you dealt to others.");
+                .hover("Damage you dealt to others.");
             ui.steady_toggle_value(&mut self.active_tab, MainTab::DamageTaken, "Damage Taken")
-                .on_hover_text("Damage others dealt to you.");
+                .hover("Damage others dealt to you.");
 
             ui.steady_toggle_value(&mut self.active_tab, MainTab::SelfHealing, "Self Healing")
-                .on_hover_text(SELF_HEALING_INFO);
+                .hover(SELF_HEALING_INFO);
             ui.steady_toggle_value(&mut self.active_tab, MainTab::HealingAlly, "Healing Ally")
-                .on_hover_text(HEALING_ALLY_INFO);
+                .hover(HEALING_ALLY_INFO);
             ui.steady_toggle_value(
                 &mut self.active_tab,
                 MainTab::HealingReceived,
                 "Healing Received",
             )
-            .on_hover_text(HEALING_RECEIVED_INFO);
+            .hover(HEALING_RECEIVED_INFO);
 
             self.show_column_picker(settings, ui);
 
@@ -224,7 +225,7 @@ impl MainTabs {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
                     .add_enabled(combat.is_some(), Button::new("Export XLSX 🖹"))
-                    .on_hover_text(
+                    .hover(
                         "Save the whole combat as a spreadsheet: one sheet per tab, every \
                          player, every row of the breakdown, and every metric — not only the \
                          columns on screen.",

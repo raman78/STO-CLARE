@@ -28,6 +28,7 @@ use crate::{
 mod compare_table;
 mod date_range;
 
+use crate::custom_widgets::tooltip::CloseTooltip;
 use compare_table::Comparison;
 use date_range::DateRange;
 
@@ -338,7 +339,7 @@ impl CompareView {
             if !matching.is_empty()
                 && ui
                     .button("Select all")
-                    .on_hover_text("Add every combat the filters above leave in the list")
+                    .hover("Add every combat the filters above leave in the list")
                     .clicked()
             {
                 for i in matching {
@@ -359,7 +360,7 @@ impl CompareView {
             if let Some(pinned) = &pinned {
                 let mut always = true;
                 ui.add_enabled_ui(false, |ui| {
-                    ui.checkbox(&mut always, pinned).on_disabled_hover_text(
+                    ui.checkbox(&mut always, pinned).disabled_hover(
                         "The run you opened from the ladder. It is what the \
                              comparison is of, so it cannot be taken out of it.",
                     );
@@ -408,7 +409,7 @@ impl CompareView {
                         self.toggle_selected(i, checked);
                     }
                     if !matches {
-                        ui.colored_label(theme::palette().warn, "⚠").on_hover_text(
+                        ui.colored_label(theme::palette().warn, "⚠").hover(
                             "Ticked, but it does not match the filters above — it is shown so a \
                              combat cannot go into a comparison out of sight. Untick it, or \
                              widen the filters to see it in place.",

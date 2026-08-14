@@ -7,6 +7,7 @@ use crate::analyzer::{Combat, curated_map_identifiers, curated_map_names};
 use crate::app::theme;
 use crate::custom_widgets::table::Table;
 use crate::custom_widgets::toggle::Toggle;
+use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
@@ -227,7 +228,7 @@ impl AnalysisTab {
                                 ui.label(name);
                             });
                             r.cell(|ui| {
-                                if ui.button("🗐").on_hover_text("Copy").clicked() {
+                                if ui.button("🗐").hover("Copy").clicked() {
                                     ui.ctx().copy_text(name.to_string());
                                 }
                             });
@@ -555,7 +556,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
 
                         r.cell(|ui| {
                             // A framed button, to match the ✏ next to it.
-                            if ui.button("🗐").on_hover_text("Clone this rule").clicked() {
+                            if ui.button("🗐").hover("Clone this rule").clicked() {
                                 to_clone = Some(id);
                             }
                         });
@@ -569,8 +570,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         if let Some(row_warning) = row_warning {
                             r.cell(|ui| match row_warning(rule.borrow()) {
                                 Some(tooltip) => {
-                                    ui.colored_label(theme::palette().warn, "⚠")
-                                        .on_hover_text(tooltip);
+                                    ui.colored_label(theme::palette().warn, "⚠").hover(tooltip);
                                 }
                                 // Keep the column width constant whether or not a
                                 // warning shows, so toggling rules doesn't shift the row.
@@ -666,11 +666,7 @@ impl<'a> RulesTable<'a> {
                             });
 
                             r.cell(|ui| {
-                                if ui
-                                    .button("🗐")
-                                    .on_hover_text("Clone this condition")
-                                    .clicked()
-                                {
+                                if ui.button("🗐").hover("Clone this condition").clicked() {
                                     to_clone = Some(id);
                                 }
                             });

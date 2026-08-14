@@ -23,6 +23,7 @@ use crate::{
 
 use super::common::*;
 use crate::custom_widgets::toggle::Toggle;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 const PAGE_SIZE: i32 = 50;
 
@@ -757,11 +758,11 @@ impl LoadedEntries {
                     r.cell(|ui| {
                         ui.label("📥");
                     })
-                    .on_hover_text("download log");
+                    .hover("download log");
                     r.cell(|ui| {
                         ui.label("🔍");
                     })
-                    .on_hover_text("open this run in the main window");
+                    .hover("open this run in the main window");
                 })
                 .body(25.0, |b| {
                     for index in 0..entries_count {
@@ -842,7 +843,7 @@ impl DownloadLogState {
                     ui.label("🔍");
                 });
             })
-            .on_hover_text("open this run in the main window")
+            .hover("open this run in the main window")
             .clicked()
         {
             let path = crate::helpers::paths::ladder_run(log_id);
@@ -878,7 +879,7 @@ impl DownloadLogState {
                     ui.label("📥");
                 });
             })
-            .on_hover_text("download log")
+            .hover("download log")
             .clicked()
             && let Some(file) = rfd::FileDialog::new()
                 .set_parent(frame)
