@@ -44,8 +44,58 @@ impl<C: PartialEq + Copy> SortState<C> {
         if !self.is_sorted_by(column) {
             return "";
         }
-        if self.natural { " ⏷" } else { " ⏶" }
+        if self.natural {
+            SORT_MARKERS[0]
+        } else {
+            SORT_MARKERS[1]
+        }
     }
+}
+
+/// Every mark a heading can end up carrying — the order running the column's
+/// way, and the other way round.
+pub const SORT_MARKERS: [&str; 2] = [" ⏷", " ⏶"];
+
+/// The room the sort mark needs, whichever of the two it turns out to be.
+///
+/// A heading keeps this room whether or not it is the one ordering the rows, so
+/// that clicking it does not widen its column — a long heading used to push the
+/// numbers under it sideways the moment it took charge of the order.
+pub fn sort_marker_width(ui: &Ui) -> f32 {
+    SORT_MARKERS
+        .iter()
+        .map(|marker| text_width(ui, marker))
+        .fold(0.0, f32::max)
+}
+
+/// How wide a piece of text is in the body style, unwrapped.
+pub fn text_width(ui: &Ui, text: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            text.to_string(),
+            TextStyle::Body.resolve(ui.style()),
+            Color32::PLACEHOLDER,
+        )
+        .size()
+        .x
+}
+
+/// Draw the sort mark against the right-hand edge of a heading, where the
+/// numbers under it end, rather than trailing the words — the mark is then
+/// looked for in one place down the row of headings instead of wherever a name
+/// happens to finish.
+pub fn show_sort_marker(ui: &mut Ui, rect: Rect, marker: &str) {
+    if marker.is_empty() {
+        return;
+    }
+    ui.scope_builder(
+        UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::right_to_left(Align::Center)),
+        |ui| {
+            ui.label(marker);
+        },
+    );
 }
 
 pub struct Table<'a> {
@@ -496,6 +546,21 @@ fn draw_visuals(ui: &mut Ui, is_stripe: bool, checked: Option<bool>, response: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Whatever mark a heading ends up carrying is one of the marks the room is
+    /// kept for. Changing one and not the other would leave a heading either
+    /// short of room or holding room for a mark it can never draw.
+    #[test]
+    fn a_heading_only_ever_carries_a_mark_it_has_room_for() {
+        let mut sort = SortState::default();
+        sort.clicked("DPS");
+        assert!(SORT_MARKERS.contains(&sort.marker("DPS")));
+
+        sort.clicked("DPS");
+        assert!(SORT_MARKERS.contains(&sort.marker("DPS")));
+
+        assert_eq!("", sort.marker("Hits"), "and nothing on the other columns");
+    }
 
     /// Clicking a heading picks that column; clicking it again turns the order
     /// round; clicking another starts that one the way it reads.

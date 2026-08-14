@@ -222,10 +222,12 @@ impl SummaryTable {
     /// so opening another combat does not undo it. See
     /// `MetricsTable::take_state_from`.
     pub fn take_state_from(&mut self, previous: &Self) {
-        self.sort = previous.sort;
-        let Some(key) = self.sort.column else {
+        // See `MetricsTable::take_state_from`: the empty table a tab starts
+        // with has picked nothing, and its state must not be taken.
+        let Some(key) = previous.sort.column else {
             return;
         };
+        self.sort = previous.sort;
         let Some(column) = COLUMNS.iter().find(|column| column.name == key.column()) else {
             return;
         };
@@ -561,6 +563,21 @@ mod tests {
         assert_eq!(names(&table), ["Talon", "Kestrel"], "the same click again");
 
         assert_eq!(table.sort.marker(key), " ⏶", "and the heading says so");
+    }
+
+    /// A tab starts with an empty table nobody has clicked. It must not hand
+    /// that emptiness to the first real table, which would leave the players in
+    /// damage order with no heading saying so.
+    #[test]
+    fn the_table_a_tab_starts_with_says_nothing_about_the_order() {
+        let mut first = table(vec![player("Kestrel", 900.0, 0.0, 0.0)]);
+        first.sort = SortState {
+            column: Some(DEFAULT_SORT),
+            natural: true,
+        };
+        first.take_state_from(&SummaryTable::empty());
+
+        assert_eq!(first.sort.column, Some(DEFAULT_SORT));
     }
 
     /// Opening another combat builds the table again. The column the reader put

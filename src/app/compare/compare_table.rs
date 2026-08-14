@@ -1455,9 +1455,19 @@ impl Comparison {
                                     let response = r.selectable_cell(false, |ui| {
                                         ui.horizontal(|ui| {
                                             ui.label(text.clone());
-                                            if !marker.is_empty() {
-                                                ui.label(marker);
-                                            }
+                                            // The mark sits against the right
+                                            // edge of the column, and its room
+                                            // is kept whether or not it is
+                                            // there — otherwise a column grew
+                                            // the moment it took the order.
+                                            let room = sort_marker_width(ui);
+                                            let height = ui.available_height();
+                                            let width = ui.available_width().max(room);
+                                            let (rect, _) = ui.allocate_exact_size(
+                                                vec2(width, height),
+                                                Sense::hover(),
+                                            );
+                                            show_sort_marker(ui, rect, marker);
                                         });
                                     });
                                     if response.clicked() {

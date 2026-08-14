@@ -443,6 +443,13 @@ impl<T: 'static> MetricsTable<T> {
     /// name, which is what a reader recognises a row by; a row that was not
     /// there before simply starts closed.
     pub fn take_state_from(&mut self, previous: &Self) {
+        take_open_state(&mut self.players, &previous.players);
+        // The table being replaced may be the empty one a tab starts life with,
+        // which has picked no column. Taking its state would leave the fresh
+        // table ordered by its first column with no heading saying so.
+        if previous.sort.column.is_none() {
+            return;
+        }
         self.sort = previous.sort;
         let column = self
             .sort
@@ -457,7 +464,6 @@ impl<T: 'static> MetricsTable<T> {
                 .unwrap_or(whole);
             self.sort_by_column(sort);
         }
-        take_open_state(&mut self.players, &previous.players);
     }
 
     pub fn sort_by_desc<K: Ord>(&mut self, mut key: impl FnMut(&MetricsTablePart<T>) -> K + Copy) {
@@ -759,17 +765,21 @@ pub(super) fn show_sortable_header(
             first_line(ui);
 
             // As wide as the column, so the whole strip takes the click and not
-            // the few points the word covers.
-            let text = format!("{label}{marker}");
+            // the few points the word covers, and never narrower than the name
+            // plus the room the sort mark needs.
             let line = ui.text_style_height(&TextStyle::Body);
-            let width = ui
-                .available_width()
-                .max(text_width(ui, &text) + ui.spacing().item_spacing.x);
+            let width = heading_width(
+                ui.available_width(),
+                text_width(ui, label),
+                sort_marker_width(ui),
+                ui.spacing().item_spacing.x,
+            );
             let (rect, response) = ui.allocate_exact_size(vec2(width, line), Sense::click());
             draw_cell_visuals(ui, picked, &response);
             ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
-                ui.label(text);
+                ui.label(label);
             });
+            show_sort_marker(ui, rect, marker);
             strip = Some(response);
         });
     });
@@ -780,17 +790,14 @@ pub(super) fn show_sortable_header(
     response
 }
 
-/// How wide a heading's own text is, so a column cannot be narrower than what
-/// it is called even before the table has measured anything.
-fn text_width(ui: &Ui, text: &str) -> f32 {
-    ui.painter()
-        .layout_no_wrap(
-            text.to_string(),
-            TextStyle::Body.resolve(ui.style()),
-            Color32::PLACEHOLDER,
-        )
-        .size()
-        .x
+/// How wide a heading has to be: what it is called, the room its sort mark
+/// needs whether or not it is carrying one, and the gap between the two — or
+/// the column's own width where that is wider.
+///
+/// The room is kept unconditionally so that a heading taking charge of the
+/// order cannot widen its column under itself.
+fn heading_width(available: f32, label: f32, marker_room: f32, spacing: f32) -> f32 {
+    available.max(label + marker_room + spacing)
 }
 
 /// Copies `open` from the rows of the table being replaced onto the rows that
@@ -1001,6 +1008,31 @@ mod tests {
             all_types: &[],
             changed: false,
         }
+    }
+
+    /// A heading keeps the room its sort mark needs before it has one, so
+    /// taking charge of the order cannot widen the column under it — which is
+    /// what pushed the numbers sideways under a long heading.
+    #[test]
+    fn a_heading_keeps_room_for_a_mark_it_is_not_carrying_yet() {
+        let (label, mark, spacing) = (120.0, 9.0, 4.0);
+        let narrow_column = 10.0;
+
+        let width = heading_width(narrow_column, label, mark, spacing);
+        assert!(
+            width >= label + mark,
+            "the name and the mark both fit: {width}"
+        );
+        assert_eq!(
+            width,
+            heading_width(narrow_column, label, mark, spacing),
+            "and the width does not depend on whether the mark is drawn"
+        );
+        assert_eq!(
+            300.0,
+            heading_width(300.0, label, mark, spacing),
+            "a column wider than its heading keeps its own width"
+        );
     }
 
     /// One player's ticks are their own. Two players who both flew a Phaser

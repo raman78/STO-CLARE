@@ -171,13 +171,25 @@ Three conventions worth knowing before changing a table or a chart:
 
   Which heading is in charge lives in `SortState<ColumnKey>` (`custom_widgets::
   table`): `ColumnKey` is the metric plus which half, `natural` is which way the
-  order runs, and `marker` returns the `⏷`/`⏶` drawn to the right of the label.
-  A second click on the same heading reverses the rows rather than sorting them
-  again — a column knows one order (largest first, or smallest where small is
-  the good end), and the other way round is that one turned over. Rebuilding a
-  table carries the state across (`MetricsTable::take_state_from`,
+  order runs, and `marker` returns one of `SORT_MARKERS` (`⏷`/`⏶`). A second
+  click on the same heading reverses the rows rather than sorting them again — a
+  column knows one order (largest first, or smallest where small is the good
+  end), and the other way round is that one turned over. Rebuilding a table
+  carries the state across (`MetricsTable::take_state_from`,
   `SummaryTable::take_state_from`) and re-applies it, so ticking a row off or
-  opening another combat does not undo the order the reader chose.
+  opening another combat does not undo the order the reader chose. Neither takes
+  the state of a table that has picked no column — that is the empty table a tab
+  is born with, and taking it left the first real table sorted with no heading
+  saying so.
+
+- **A heading keeps room for a mark it has not got.** `show_sort_marker` draws
+  the mark against the right-hand edge of the heading — where the numbers under
+  it end, so it is looked for in one place down the row rather than wherever a
+  name happens to finish — and `heading_width` reserves `sort_marker_width` in
+  every heading whether or not it is carrying one. Laying the mark out with the
+  label made a column widen the moment it took charge of the order, shifting
+  every column right of it. `MetricsTable`, `SummaryTable` and the comparison's
+  headers all measure this way.
 
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
