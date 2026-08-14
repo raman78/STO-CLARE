@@ -307,6 +307,16 @@ The one thing left uneven is the table's `Name` column, which scrolls away with
 everything else — the averages toggle is the answer to a table too wide to
 read, not a frozen first column.
 
+**A scrolling list must not be wider than its pane.** Every vertical
+`ScrollArea` in the program carries `auto_shrink([false, true])` so its bar sits
+at the edge of the pane rather than against the longest line in it. That only
+holds while the content fits: with `direction_enabled[0] == false` and
+`auto_shrink[0] == false`, egui sizes the inner rect as
+`inner.max(content_size.x)` (`scroll_area.rs`), so one over-long line widens the
+whole area and carries the vertical bar off the right-hand edge with it. That is
+what hid the legend's bar — the line explaining the reference run. Any label
+that can outgrow its pane is `Label::truncate()`d.
+
 #### Picking what the Total is of
 
 The table's first column is a tick per row, and the Total row is added up from

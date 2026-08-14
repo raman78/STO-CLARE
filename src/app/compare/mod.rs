@@ -395,29 +395,33 @@ impl CompareView {
 
         ui.separator();
 
-        ScrollArea::vertical().show(ui, |ui| {
-            for (i, matches) in visible {
-                let note = notes[i];
-                let mut checked = self.selected.contains(&i);
-                let label = if note.is_empty() {
-                    combats[i].clone()
-                } else {
-                    format!("{} — {note}", combats[i])
-                };
-                ui.horizontal(|ui| {
-                    if ui.checkbox(&mut checked, label).clicked() {
-                        self.toggle_selected(i, checked);
-                    }
-                    if !matches {
-                        ui.colored_label(theme::palette().warn, "⚠").hover(
+        ScrollArea::vertical()
+            // The bar goes at the edge of the panel rather than against the
+            // longest combat name.
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                for (i, matches) in visible {
+                    let note = notes[i];
+                    let mut checked = self.selected.contains(&i);
+                    let label = if note.is_empty() {
+                        combats[i].clone()
+                    } else {
+                        format!("{} — {note}", combats[i])
+                    };
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut checked, label).clicked() {
+                            self.toggle_selected(i, checked);
+                        }
+                        if !matches {
+                            ui.colored_label(theme::palette().warn, "⚠").hover(
                             "Ticked, but it does not match the filters above — it is shown so a \
                              combat cannot go into a comparison out of sight. Untick it, or \
                              widen the filters to see it in place.",
                         );
-                    }
-                });
-            }
-        });
+                        }
+                    });
+                }
+            });
         picked
     }
 

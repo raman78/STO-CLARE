@@ -660,6 +660,9 @@ impl Comparison {
         let mut change = LegendChange::default();
         ScrollArea::vertical()
             .id_salt("compare legend")
+            // The bar goes at the edge of the pane rather than against the
+            // longest run's name.
+            .auto_shrink([false, true])
             .show(ui, |ui| {
                 for (slot_i, slot) in self.slots.iter().enumerate() {
                     ui.horizontal(|ui| {
@@ -705,13 +708,21 @@ impl Comparison {
                                 }
                             });
                         if slot_i == 0 {
-                            ui.label(
-                                RichText::new(
-                                    "(reference — every difference is measured against this \
-                                     combat, and changing the player here moves the others to the \
-                                     same player)",
+                            // Cut off rather than run past the pane: a line
+                            // wider than the list makes the list itself wider
+                            // than the window, and the scroll bar goes with it —
+                            // off the right-hand edge, where it cannot be seen
+                            // or grabbed.
+                            ui.add(
+                                Label::new(
+                                    RichText::new(
+                                        "(reference — every difference is measured against this \
+                                         combat, and changing the player here moves the others to \
+                                         the same player)",
+                                    )
+                                    .weak(),
                                 )
-                                .weak(),
+                                .truncate(),
                             );
                         }
                     });
@@ -985,73 +996,82 @@ impl Comparison {
                     .weak(),
                 );
                 ui.separator();
-                ScrollArea::vertical().show(ui, |ui| {
-                    Table::new(ui)
-                        .cell_spacing(10.0)
-                        .header(header_height(with_notes), |r| {
-                            r.cell(|ui| {
-                                ui.label("Damage type");
-                            });
-                            for slot_i in 0..n_slots {
+                ScrollArea::vertical()
+                    // The bar goes at the edge of the window rather than
+                    // against the table.
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        Table::new(ui)
+                            .cell_spacing(10.0)
+                            .header(header_height(with_notes), |r| {
                                 r.cell(|ui| {
-                                    ui.label(header_text(
-                                        &font,
-                                        text_color,
-                                        "",
-                                        &format!("#{}", self.number_of(slot_i)),
-                                        with_notes.then(|| note_of(&notes, slot_i)),
-                                        colors.get(slot_i).copied().flatten(),
-                                    ))
-                                    .hover(format!(
-                                        "Combat #{}{}",
-                                        slot_i + 1,
-                                        note_suffix(note_of(&notes, slot_i))
-                                    ));
+                                    ui.label("Damage type");
                                 });
-                            }
-                        })
-                        .body(ROW_HEIGHT, |t| {
-                            let mut formatter = NumberFormatter::new();
-                            for row in rows.iter() {
-                                let unfolded = open_types.contains(&row.name);
-                                t.row(|r| {
+                                for slot_i in 0..n_slots {
                                     r.cell(|ui| {
-                                        ui.horizontal(|ui| {
-                                            let symbol = if unfolded { "⏷" } else { "⏵" };
-                                            if ui
-                                                .add_visible(
-                                                    !row.parts.is_empty(),
-                                                    Button::selectable(false, symbol)
-                                                        .min_size(ARROW_SIZE),
-                                                )
-                                                .hover("What this type is made of")
-                                                .clicked()
-                                            {
-                                                folded = Some(row.name.clone());
-                                            }
-                                            ui.label(&row.name);
-                                        });
+                                        ui.label(header_text(
+                                            &font,
+                                            text_color,
+                                            "",
+                                            &format!("#{}", self.number_of(slot_i)),
+                                            with_notes.then(|| note_of(&notes, slot_i)),
+                                            colors.get(slot_i).copied().flatten(),
+                                        ))
+                                        .hover(format!(
+                                            "Combat #{}{}",
+                                            slot_i + 1,
+                                            note_suffix(note_of(&notes, slot_i))
+                                        ));
                                     });
-                                    show_shares(r, &row.shares, &row.damage, &mut formatter);
-                                });
-
-                                if !unfolded {
-                                    continue;
                                 }
-                                for part in row.parts.iter() {
+                            })
+                            .body(ROW_HEIGHT, |t| {
+                                let mut formatter = NumberFormatter::new();
+                                for row in rows.iter() {
+                                    let unfolded = open_types.contains(&row.name);
                                     t.row(|r| {
                                         r.cell(|ui| {
                                             ui.horizontal(|ui| {
-                                                ui.add_space(ARROW_SIZE.x);
-                                                ui.label(RichText::new(&part.name).weak());
+                                                let symbol = if unfolded { "⏷" } else { "⏵" };
+                                                if ui
+                                                    .add_visible(
+                                                        !row.parts.is_empty(),
+                                                        Button::selectable(false, symbol)
+                                                            .min_size(ARROW_SIZE),
+                                                    )
+                                                    .hover("What this type is made of")
+                                                    .clicked()
+                                                {
+                                                    folded = Some(row.name.clone());
+                                                }
+                                                ui.label(&row.name);
                                             });
                                         });
-                                        show_shares(r, &part.shares, &part.damage, &mut formatter);
+                                        show_shares(r, &row.shares, &row.damage, &mut formatter);
                                     });
+
+                                    if !unfolded {
+                                        continue;
+                                    }
+                                    for part in row.parts.iter() {
+                                        t.row(|r| {
+                                            r.cell(|ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.add_space(ARROW_SIZE.x);
+                                                    ui.label(RichText::new(&part.name).weak());
+                                                });
+                                            });
+                                            show_shares(
+                                                r,
+                                                &part.shares,
+                                                &part.damage,
+                                                &mut formatter,
+                                            );
+                                        });
+                                    }
                                 }
-                            }
-                        });
-                });
+                            });
+                    });
             });
 
         if let Some(name) = folded

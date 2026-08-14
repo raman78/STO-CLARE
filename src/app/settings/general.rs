@@ -231,20 +231,25 @@ impl ClearLogDialog {
             });
 
             ui.separator();
-            ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                // Newest first, matching the combats dropdown.
-                let newest = combats.len().wrapping_sub(1);
-                for i in (0..combats.len()).rev() {
-                    if let Some(flag) = self.to_delete.get_mut(i) {
-                        let label = if i == newest {
-                            format!("{}  (newest)", combats[i])
-                        } else {
-                            combats[i].clone()
-                        };
-                        ui.checkbox(flag, label);
+            ScrollArea::vertical()
+                .max_height(320.0)
+                // The bar goes at the edge of the panel rather than against the
+                // longest combat name.
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    // Newest first, matching the combats dropdown.
+                    let newest = combats.len().wrapping_sub(1);
+                    for i in (0..combats.len()).rev() {
+                        if let Some(flag) = self.to_delete.get_mut(i) {
+                            let label = if i == newest {
+                                format!("{}  (newest)", combats[i])
+                            } else {
+                                combats[i].clone()
+                            };
+                            ui.checkbox(flag, label);
+                        }
                     }
-                }
-            });
+                });
             ui.separator();
 
             let delete_count = self.to_delete.iter().filter(|&&d| d).count();
