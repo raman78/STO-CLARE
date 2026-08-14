@@ -242,9 +242,9 @@ impl MainTabs {
             MainTab::Summary => self.summary_tab.show(settings, ui),
             MainTab::DamageDealt => self.damage_out_tab.show(settings, combat, ui),
             MainTab::DamageTaken => self.damage_in_tab.show(settings, combat, ui),
-            MainTab::SelfHealing => self.heal_self_tab.show(settings, ui),
-            MainTab::HealingAlly => self.heal_ally_tab.show(settings, ui),
-            MainTab::HealingReceived => self.heal_received_tab.show(settings, ui),
+            MainTab::SelfHealing => self.heal_self_tab.show(settings, combat, ui),
+            MainTab::HealingAlly => self.heal_ally_tab.show(settings, combat, ui),
+            MainTab::HealingReceived => self.heal_received_tab.show(settings, combat, ui),
         }
     }
 }

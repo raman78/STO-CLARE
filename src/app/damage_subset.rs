@@ -20,8 +20,9 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     analyzer::{
-        AnalysisGroup, DamageGroup, DamageMetrics, Hit, Hits, HitsManager, MaxOneHit, NameHandle,
-        NameManager, Player, ShieldHullOptionalValues, ShieldHullValues,
+        AnalysisGroup, DamageGroup, DamageMetrics, HealGroup, HealMetrics, HealTicks,
+        HealTicksManager, Hit, Hits, HitsManager, MaxOneHit, NameHandle, NameManager, Player,
+        ShieldHullOptionalValues, ShieldHullValues,
     },
     helpers::time_range_to_duration_or_zero,
 };
@@ -214,10 +215,68 @@ fn set_child_percentages(group: &mut DamageGroup) {
     }
 }
 
+/// A player's healing with the named rows left out, or `None` when none of the
+/// kept rows are theirs.
+///
+/// The heal side of [`player_damage_without`], and for the same reason: an
+/// average heal and a crit rate are ratios of tick counts, so they have to be
+/// worked out from the ticks that are left rather than subtracted.
+pub fn player_heal_without(
+    player: &Player,
+    group: &HealGroup,
+    name_manager: &NameManager,
+    ticks_manager: &HealTicksManager,
+    excluded: &FxHashSet<String>,
+    pool_total: &ShieldHullValues,
+) -> Option<HealGroup> {
+    let rows = group
+        .sub_groups()
+        .values()
+        .map(|sub| (sub.name().get(name_manager), sub.ticks.get(ticks_manager)));
+    let kept_ticks = subset_values(rows, excluded)?;
+
+    let mut heal_metrics = HealMetrics::default();
+    heal_metrics.calc_and_apply(&kept_ticks);
+    // Healing is measured against the time anything happened, which is what
+    // `Player::recalculate_metrics` divides the heal pools by.
+    heal_metrics.recalculate_time_based_metrics(metrics_duration(&player.active_time));
+
+    let mut kept = HealGroup {
+        heal_percentage: ShieldHullOptionalValues::percentage(&heal_metrics.total_heal, pool_total),
+        heal_metrics,
+        ticks: HealTicks::Leaf(kept_ticks),
+        ..Default::default()
+    };
+    kept.segment = group.segment;
+    kept.sub_groups = group
+        .sub_groups()
+        .iter()
+        .filter(|(_, sub)| !excluded.contains(sub.name().get(name_manager)))
+        .map(|(handle, sub)| (*handle, sub.clone()))
+        .collect();
+    Some(kept)
+}
+
+/// The values of the rows that are kept, pooled — or `None` when none of them
+/// are here. The same rule as [`subset_hits`], for ticks as well as hits.
+pub fn subset_values<'a, V: Clone + 'a>(
+    rows: impl Iterator<Item = (&'a str, &'a [V])>,
+    excluded: &FxHashSet<String>,
+) -> Option<Vec<V>> {
+    let kept: Vec<&[V]> = rows
+        .filter(|(name, _)| !excluded.contains(*name))
+        .map(|(_, values)| values)
+        .collect();
+    if kept.is_empty() {
+        return None;
+    }
+    Some(kept.into_iter().flatten().cloned().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analyzer::{BaseHit, NameFlags, SpecificHit, ValueFlags};
+    use crate::analyzer::{BaseHit, HealTick, NameFlags, SpecificHit, ValueFlags};
 
     fn hit(damage: f64) -> Hit {
         Hit {
@@ -230,6 +289,199 @@ mod tests {
             },
             time_millis: 0,
         }
+    }
+
+    fn crit(damage: f64) -> Hit {
+        Hit {
+            hit: BaseHit {
+                damage,
+                flags: ValueFlags::CRITICAL,
+                specific: SpecificHit::Hull {
+                    base_damage: damage,
+                },
+            },
+            time_millis: 0,
+        }
+    }
+
+    /// Every row kept is the whole group again — to the last digit of every
+    /// figure, not only the total. This is the property the whole feature rests
+    /// on: a subset is worked out the way the analyzer works out a branch, so
+    /// the subset of everything has to equal what the analyzer said.
+    #[test]
+    fn keeping_every_row_gives_the_analyzer_s_own_figures() {
+        let hits = vec![hit(100.0), crit(300.0), hit(50.0)];
+        let whole = subset_group(hits.clone(), 10.0, &combat_total(1_000.0));
+        let kept = subset_group(
+            subset_hits(
+                [("Beams", &hits[..2]), ("Torpedo", &hits[2..])].into_iter(),
+                &Default::default(),
+            )
+            .unwrap(),
+            10.0,
+            &combat_total(1_000.0),
+        );
+
+        assert_eq!(whole.total_damage.all, kept.total_damage.all);
+        assert_eq!(whole.dps.all, kept.dps.all);
+        assert_eq!(whole.damage_metrics.hits.all, kept.damage_metrics.hits.all);
+        assert_eq!(whole.critical_percentage, kept.critical_percentage);
+        assert_eq!(whole.average_hit.all, kept.average_hit.all);
+        assert_eq!(whole.max_one_hit.damage, kept.max_one_hit.damage);
+        assert_eq!(whole.damage_percentage.all, kept.damage_percentage.all);
+    }
+
+    /// Taking a row out takes exactly that row out: what is left equals the
+    /// same rows counted on their own, and the two halves add back up to the
+    /// whole. Nothing is lost between them and nothing is counted twice.
+    #[test]
+    fn what_is_left_plus_what_was_taken_is_the_whole() {
+        let beams = [hit(100.0), crit(300.0)];
+        let torpedo = [hit(50.0)];
+        let rows = || [("Beams", beams.as_slice()), ("Torpedo", torpedo.as_slice())].into_iter();
+        let total = combat_total(1_000.0);
+
+        let whole = subset_group(
+            subset_hits(rows(), &Default::default()).unwrap(),
+            10.0,
+            &total,
+        );
+        let without_torpedo = subset_group(
+            subset_hits(rows(), &excluded(&["Torpedo"])).unwrap(),
+            10.0,
+            &total,
+        );
+        let only_torpedo = subset_group(
+            subset_hits(rows(), &excluded(&["Beams"])).unwrap(),
+            10.0,
+            &total,
+        );
+
+        assert_eq!(400.0, without_torpedo.total_damage.all);
+        assert_eq!(50.0, only_torpedo.total_damage.all);
+        assert_eq!(
+            whole.total_damage.all,
+            without_torpedo.total_damage.all + only_torpedo.total_damage.all,
+            "the two parts add back up to the whole"
+        );
+        assert_eq!(
+            whole.damage_metrics.hits.all,
+            without_torpedo.damage_metrics.hits.all + only_torpedo.damage_metrics.hits.all
+        );
+        assert_eq!(
+            whole.dps.all,
+            without_torpedo.dps.all + only_torpedo.dps.all,
+            "DPS is additive over the same duration"
+        );
+    }
+
+    /// A ratio is of what is left, not of what there was: one crit in two hits
+    /// is 50%, and taking the crit out makes it 0% rather than leaving it where
+    /// it was. This is why a subset cannot be a subtraction.
+    #[test]
+    fn a_ratio_follows_the_rows_that_are_left() {
+        let crits = [crit(300.0)];
+        let plain = [hit(100.0)];
+        let rows = || [("Crits", crits.as_slice()), ("Plain", plain.as_slice())].into_iter();
+        let total = combat_total(1_000.0);
+
+        let whole = subset_group(
+            subset_hits(rows(), &Default::default()).unwrap(),
+            10.0,
+            &total,
+        );
+        assert_eq!(Some(50.0), whole.critical_percentage);
+
+        let without_crits = subset_group(
+            subset_hits(rows(), &excluded(&["Crits"])).unwrap(),
+            10.0,
+            &total,
+        );
+        assert_eq!(Some(0.0), without_crits.critical_percentage);
+        assert_eq!(Some(100.0), without_crits.average_hit.all);
+    }
+
+    /// The share of the fight follows the subset as well: half the damage of a
+    /// run is half of what that run was of the fight.
+    #[test]
+    fn the_share_of_the_fight_follows_the_subset() {
+        let a = [hit(500.0)];
+        let b = [hit(500.0)];
+        let rows = || [("A", a.as_slice()), ("B", b.as_slice())].into_iter();
+        let total = combat_total(2_000.0);
+
+        let whole = subset_group(
+            subset_hits(rows(), &Default::default()).unwrap(),
+            10.0,
+            &total,
+        );
+        let half = subset_group(
+            subset_hits(rows(), &excluded(&["B"])).unwrap(),
+            10.0,
+            &total,
+        );
+
+        assert_eq!(Some(50.0), whole.damage_percentage.all);
+        assert_eq!(Some(25.0), half.damage_percentage.all);
+    }
+
+    fn combat_total(all: f64) -> ShieldHullValues {
+        ShieldHullValues {
+            all,
+            shield: 0.0,
+            hull: all,
+        }
+    }
+
+    fn excluded(names: &[&str]) -> FxHashSet<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    fn tick(amount: f64, crit: bool) -> HealTick {
+        use crate::analyzer::{BaseHealTick, SpecificHealTick};
+        HealTick {
+            tick: BaseHealTick {
+                amount,
+                flags: if crit {
+                    ValueFlags::CRITICAL
+                } else {
+                    ValueFlags::NONE
+                },
+                specific: SpecificHealTick::Hull,
+            },
+            time_millis: 0,
+        }
+    }
+
+    /// Healing answers the same way damage does: the kept rows' ticks are what
+    /// the figures are worked out from, so the parts add back up to the whole
+    /// and a crit rate is of what is left.
+    #[test]
+    fn heal_ticks_are_pooled_the_same_way_hits_are() {
+        let big = [tick(300.0, true)];
+        let small = [tick(100.0, false)];
+        let rows = || [("Big", big.as_slice()), ("Small", small.as_slice())].into_iter();
+
+        let whole = subset_values(rows(), &Default::default()).unwrap();
+        assert_eq!(2, whole.len());
+
+        let kept = subset_values(rows(), &excluded(&["Big"])).unwrap();
+        assert_eq!(1, kept.len());
+        assert_eq!(100.0, kept[0].amount);
+
+        let mut metrics = HealMetrics::default();
+        metrics.calc_and_apply(&kept);
+        metrics.recalculate_time_based_metrics(10.0);
+        assert_eq!(100.0, metrics.total_heal.all);
+        assert_eq!(10.0, metrics.hps.all, "100 over ten seconds");
+        assert_eq!(
+            Some(0.0),
+            metrics.critical_percentage,
+            "the crit went with the row it was in"
+        );
+
+        // Nothing of this player's kept: `None`, not a zero.
+        assert!(subset_values(rows(), &excluded(&["Big", "Small"])).is_none());
     }
 
     /// A group of one type is kept whole; a group of several is rebuilt from

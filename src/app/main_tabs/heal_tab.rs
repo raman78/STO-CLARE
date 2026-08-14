@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::{common::*, diagrams::*, tables::*};
+use crate::app::damage_subset;
 use crate::custom_widgets::toggle::Toggle;
 use crate::custom_widgets::tooltip::CloseTooltip;
 
@@ -69,18 +70,57 @@ impl HealTab {
 
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
         self.combat_duration_s = combat_duration_seconds(combat);
+        self.rebuild(settings, combat);
+    }
+
+    /// The tables and the chart, all of the rows that are ticked.
+    ///
+    /// A player's row is worked out again from the ticks of what is left, the
+    /// way the damage tabs do it — an average heal and a crit rate are ratios
+    /// of tick counts, so they cannot be got by subtracting a column.
+    fn rebuild(&mut self, settings: &Settings, combat: &Combat) {
         let pool = self.heal_pool;
+        let excluded = &self.excluded;
+        let total = combat.total_heal_ally;
+        let kept = |group: &'_ HealGroup, player: &'_ Player| -> Option<HealGroup> {
+            (!excluded.is_empty())
+                .then(|| {
+                    damage_subset::player_heal_without(
+                        player,
+                        group,
+                        &combat.name_manager,
+                        &combat.heal_ticks_manger,
+                        excluded,
+                        &total,
+                    )
+                })
+                .flatten()
+        };
+
         self.table_by_person = match self.other_level {
-            Some(_) => HealTable::new(settings, combat, move |p| Cow::Borrowed(&pool(p).by_person)),
+            Some(_) => HealTable::new(settings, combat, |p| {
+                let whole = &pool(p).by_person;
+                kept(whole, p).map_or(Cow::Borrowed(whole), Cow::Owned)
+            }),
             None => HealTable::empty(),
         };
-        self.table_by_ability = HealTable::new(settings, combat, move |p| {
-            Cow::Borrowed(&pool(p).by_ability)
+        self.table_by_ability = HealTable::new(settings, combat, |p| {
+            let whole = &pool(p).by_ability;
+            kept(whole, p).map_or(Cow::Borrowed(whole), Cow::Owned)
         });
+
         // Either nesting holds the same ticks, so the per-player chart is the
         // same; build it from one of them.
+        let charted: Vec<HealGroup> = combat
+            .players
+            .values()
+            .map(|p| {
+                let whole = &pool(p).by_person;
+                kept(whole, p).unwrap_or_else(|| whole.clone())
+            })
+            .collect();
         self.main_diagrams = HealDiagrams::from_heal_groups(
-            combat.players.values().map(move |p| &pool(p).by_person),
+            charted.iter(),
             combat,
             self.filter,
             self.diagram_time_slice,
@@ -89,7 +129,8 @@ impl HealTab {
         self.selection_diagrams = None;
     }
 
-    pub fn show(&mut self, settings: &Settings, ui: &mut Ui) {
+    pub fn show(&mut self, settings: &Settings, combat: Option<&Combat>, ui: &mut Ui) {
+        let mut ticks_changed = false;
         Splitter::horizontal()
             .initial_ratio(0.6)
             .ratio_bounds(0.1..=0.9)
@@ -126,8 +167,15 @@ impl HealTab {
                     },
                 );
 
+                ticks_changed = ticks.changed;
                 self.show_diagrams(settings, bottom_ui);
             });
+
+        // A tick changes what every player's row is of, so both nestings and
+        // the chart are built again from the rows that are left.
+        if ticks_changed && let Some(combat) = combat {
+            self.rebuild(settings, combat);
+        }
     }
 
     /// Switches how the tree is nested. Both nestings are already built, so this
