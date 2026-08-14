@@ -99,17 +99,22 @@ impl HealTab {
             })
         };
 
-        self.table_by_person = match self.other_level {
+        let mut by_person = match self.other_level {
             Some(_) => HealTable::new(settings, combat, |p| {
                 let whole = &pool(p).by_person;
                 kept(whole, p).map_or(Cow::Borrowed(whole), Cow::Owned)
             }),
             None => HealTable::empty(),
         };
-        self.table_by_ability = HealTable::new(settings, combat, |p| {
+        let mut by_ability = HealTable::new(settings, combat, |p| {
             let whole = &pool(p).by_ability;
             kept(whole, p).map_or(Cow::Borrowed(whole), Cow::Owned)
         });
+        // The tree the reader had opened is theirs; a tick must not fold it up.
+        by_person.take_state_from(&self.table_by_person);
+        by_ability.take_state_from(&self.table_by_ability);
+        self.table_by_person = by_person;
+        self.table_by_ability = by_ability;
 
         // Either nesting holds the same ticks, so the per-player chart is the
         // same; build it from one of them.

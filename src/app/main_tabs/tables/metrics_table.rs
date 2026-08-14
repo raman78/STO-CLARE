@@ -419,6 +419,32 @@ impl<T: 'static> MetricsTable<T> {
         self.sort_by_asc(move |p| key(p).map(F64TotalOrd));
     }
 
+    /// Carries over which rows were open, and what the rows are ordered by,
+    /// from the table this one replaces.
+    ///
+    /// A table is rebuilt whenever a tick or a damage type moves, and a rebuilt
+    /// row is closed and unsorted by default — so the tree a reader had opened
+    /// folded itself up under them every time they ticked something. Matched by
+    /// name, which is what a reader recognises a row by; a row that was not
+    /// there before simply starts closed.
+    pub fn take_state_from(&mut self, previous: &Self) {
+        self.sort = previous.sort;
+        let column = self
+            .sort
+            .column
+            .and_then(|key| self.columns.iter().find(|c| c.name == key.column))
+            .map(|column| (column.sort, column.parts, self.sort.column));
+        if let Some((whole, parts, key)) = column {
+            let sort = key
+                .and_then(|key| key.part)
+                .and_then(|part| parts.iter().find(|p| p.name == part))
+                .map(|part| part.sort)
+                .unwrap_or(whole);
+            self.sort_by_column(sort);
+        }
+        take_open_state(&mut self.players, &previous.players);
+    }
+
     pub fn sort_by_desc<K: Ord>(&mut self, mut key: impl FnMut(&MetricsTablePart<T>) -> K + Copy) {
         self.players.sort_unstable_by_key(|p| Reverse(key(p)));
 
@@ -675,6 +701,18 @@ impl SelectionTracker {
                 }
             }
         }
+    }
+}
+
+/// Copies `open` from the rows of the table being replaced onto the rows that
+/// took their place, by name, down the whole tree.
+fn take_open_state<T>(rows: &mut [MetricsTablePart<T>], previous: &[MetricsTablePart<T>]) {
+    for row in rows.iter_mut() {
+        let Some(was) = previous.iter().find(|old| old.name == row.name) else {
+            continue;
+        };
+        row.open = was.open;
+        take_open_state(&mut row.sub_parts, &was.sub_parts);
     }
 }
 
