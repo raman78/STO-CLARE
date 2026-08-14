@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use eframe::{
     egui::{
         Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Ui, Visuals,
-        style::Selection,
+        style::{ScrollStyle, Selection},
     },
     epaint::{Rgba, Shadow},
 };
@@ -268,14 +268,15 @@ pub fn apply(ctx: &Context, theme: Theme) {
     // start a text selection instead of doing nothing.
     style.interaction.selectable_labels = false;
     style.interaction.tooltip_delay = 0.0;
-    // Scroll bars sit beside the content instead of floating over it. A
-    // floating bar is a thin sliver until the pointer comes near it and is
-    // drawn on top of what it scrolls — and the one bar here that has to be
-    // found before it can be used is the horizontal one under a table too wide
-    // for the window, which is exactly the bar nobody knows is there. A
-    // non-floating bar is always drawn, always the same width, and takes its
-    // strip out of the content rather than covering its last row.
-    style.spacing.scroll.floating = false;
+    // Scroll bars sit beside the content instead of floating over it, in the
+    // shape a browser uses: always drawn, thin, and hard against the edge of
+    // what they scroll. A floating bar is a sliver until the pointer comes near
+    // it and is drawn on top of what it scrolls — and the bar that most needs
+    // finding is the horizontal one under a table too wide for the window,
+    // which is exactly the one nobody knows is there. `solid` also drops the
+    // outer margin, so the bar sits at the edge rather than a few points inside
+    // it, and takes it down from ten points to six.
+    style.spacing.scroll = ScrollStyle::solid();
 
     // The app picks its own theme, so both of egui's slots get the same style;
     // following the desktop's light/dark preference would override the choice.

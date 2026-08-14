@@ -131,7 +131,11 @@ impl SettingsWindow {
                 // full content height whenever it is dragged smaller.
                 let bottom_bar = ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 4.0;
                 ScrollArea::both()
-                    .auto_shrink([false, false])
+                    // Only the height is pinned. Pinned width made the contents
+                    // as wide as the view, which the vertical bar had just made
+                    // narrower — so every tab drew a horizontal bar for the few
+                    // points it overflowed by, under contents that fitted.
+                    .auto_shrink([true, false])
                     .max_height((ui.available_height() - bottom_bar).at_least(80.0))
                     .show(ui, |ui| match self.selected_tab {
                         SettingsTab::General => self.general_tab.show(

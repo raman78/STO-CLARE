@@ -13,7 +13,8 @@
 
 - **Compare selected** now carries the accent rim the program uses for the button that does something, so it is not read as one more of the tick-and-untick buttons around it
 
-- scroll bars are always visible now, instead of thinning to a sliver until the pointer comes near them. The one that needed finding most was the horizontal bar under a table too wide for the window — the bar nobody knew was there
+- scroll bars now look and behave the way they do in a browser: always visible instead of thinning to a sliver until the pointer comes near, thinner and quieter than before, and sitting hard against the edge of what they scroll. The one that needed finding most was the horizontal bar under a table too wide for the window — the bar nobody knew was there
+- the settings window no longer shows a horizontal scroll bar under contents that fit. Every tab drew one for the few points the vertical bar had taken away
 - tooltips sit against what they explain rather than floating a few points below it, so it is never in doubt which row or button one belongs to
 
 ### Fixes
