@@ -439,6 +439,12 @@ shield damage goes with it.
 | several types, nothing below | `mixed` | a proc that deals two types at once and has no rows to split |
 | no type at all | `untyped` | the shares are meant to add up to the run, so nothing is quietly dropped |
 
+Each type carries the rows it was built from (`TypeRow::parts`, largest first),
+which the window unfolds under it — the question after "these two runs differ on
+phaser" is always "on which phaser". A row nested under a group is named with
+its path (`Beams › Phaser Array`), since a bare leaf name is not always enough
+to place it.
+
 Rows are sorted by `spread` — largest disagreement between the combats first,
 since a type every run leaned on equally is the one thing this window has
 nothing to say about — and by name where two are equally far apart, the rows

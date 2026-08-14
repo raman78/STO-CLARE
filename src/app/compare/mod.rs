@@ -368,6 +368,10 @@ impl CompareView {
             // With a run pinned, one of the reader's own fights is enough to
             // have something to compare it against.
             let enough = if pinned.is_some() { 1 } else { 2 };
+            // The one button on this screen that does anything: everything
+            // around it only ticks, unticks or narrows the list. It carries the
+            // theme's accent rim so it is not read as one more of them.
+            theme::accent_rim(ui);
             if ui
                 .add_enabled(
                     self.selected.len() >= enough,

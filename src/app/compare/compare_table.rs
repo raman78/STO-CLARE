@@ -120,6 +120,8 @@ pub struct Comparison {
     /// Whether the rows the combats agree on are hidden, leaving what they
     /// differ over.
     show_differences: bool,
+    /// The damage types whose rows are unfolded in that window.
+    open_types: FxHashSet<String>,
     /// Whether the damage-type summary is up. A window of its own: the table
     /// and the chart already have the screen between them, and this is read
     /// once and put away.
@@ -259,6 +261,7 @@ impl Comparison {
             types: Default::default(),
             of_type: Vec::new(),
             impact_slot: None,
+            open_types: Default::default(),
             show_differences: false,
             show_type_summary: false,
             difference_measure: DifferenceMeasure::Share,
@@ -855,6 +858,8 @@ impl Comparison {
         let with_notes = self.notes.iter().any(|note| !note.is_empty());
         let notes = self.notes.clone();
         let mut open = true;
+        let open_types = self.open_types.clone();
+        let mut folded: Option<String> = None;
 
         Window::new("Damage by type")
             .open(&mut open)
@@ -897,28 +902,52 @@ impl Comparison {
                         .body(ROW_HEIGHT, |t| {
                             let mut formatter = NumberFormatter::new();
                             for row in rows.iter() {
+                                let unfolded = open_types.contains(&row.name);
                                 t.row(|r| {
                                     r.cell(|ui| {
-                                        ui.label(&row.name);
+                                        ui.horizontal(|ui| {
+                                            let symbol = if unfolded { "⏷" } else { "⏵" };
+                                            if ui
+                                                .add_visible(
+                                                    !row.parts.is_empty(),
+                                                    Button::selectable(false, symbol)
+                                                        .min_size(ARROW_SIZE),
+                                                )
+                                                .on_hover_text("What this type is made of")
+                                                .clicked()
+                                            {
+                                                folded = Some(row.name.clone());
+                                            }
+                                            ui.label(&row.name);
+                                        });
                                     });
-                                    for slot_i in 0..n_slots {
-                                        let share = row.shares.get(slot_i).copied().unwrap_or(0.0);
-                                        let damage = row.damage.get(slot_i).copied().unwrap_or(0.0);
-                                        let text = format!("{}%", formatter.format(share, 1));
-                                        let tooltip = formatter.format(damage, 0);
-                                        r.cell_with_layout(
-                                            Layout::right_to_left(Align::Center),
-                                            |ui| {
-                                                ui.label(text).on_hover_text(tooltip);
-                                            },
-                                        );
-                                    }
+                                    show_shares(r, &row.shares, &row.damage, &mut formatter);
                                 });
+
+                                if !unfolded {
+                                    continue;
+                                }
+                                for part in row.parts.iter() {
+                                    t.row(|r| {
+                                        r.cell(|ui| {
+                                            ui.horizontal(|ui| {
+                                                ui.add_space(ARROW_SIZE.x);
+                                                ui.label(RichText::new(&part.name).weak());
+                                            });
+                                        });
+                                        show_shares(r, &part.shares, &part.damage, &mut formatter);
+                                    });
+                                }
                             }
                         });
                 });
             });
 
+        if let Some(name) = folded
+            && !self.open_types.remove(&name)
+        {
+            self.open_types.insert(name);
+        }
         if !open {
             self.show_type_summary = false;
         }
@@ -1683,6 +1712,18 @@ fn spread(values: &[Option<f64>]) -> f64 {
     if low > high { 0.0 } else { high - low }
 }
 
+/// One row of the summary: a share per combat, with the damage behind it a
+/// hover away.
+fn show_shares(r: &mut TableRow, shares: &[f64], damage: &[f64], formatter: &mut NumberFormatter) {
+    for (slot_i, share) in shares.iter().enumerate() {
+        let text = format!("{}%", formatter.format(*share, 1));
+        let tooltip = formatter.format(damage.get(slot_i).copied().unwrap_or_default(), 0);
+        r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(text).on_hover_text(tooltip);
+        });
+    }
+}
+
 /// One damage type across the combats: what it did in each of them, and what
 /// share of that combat it was.
 struct TypeRow {
@@ -1693,6 +1734,16 @@ struct TypeRow {
     /// since a type every run leaned on equally is the one thing this window
     /// has nothing to say about.
     spread: f64,
+    /// The rows that add up to it, largest first — what a type is *made of*,
+    /// which is the next question after seeing that two runs differ on one.
+    parts: Vec<TypePart>,
+}
+
+/// One row's contribution to a damage type.
+struct TypePart {
+    name: String,
+    damage: Vec<f64>,
+    shares: Vec<f64>,
 }
 
 /// The comparison's damage split by damage type, one row per type.
@@ -1705,8 +1756,8 @@ struct TypeRow {
 /// under `mixed`, and one the log typed at all under `untyped`, rather than
 /// being dropped: the shares are meant to add up to the run.
 fn damage_by_type(total: &CompareNode, n_slots: usize) -> Vec<TypeRow> {
-    let mut by_type: FxHashMap<String, Vec<f64>> = Default::default();
-    collect_types(&total.sub_nodes, n_slots, &mut by_type);
+    let mut by_type: FxHashMap<String, Vec<(String, Vec<f64>)>> = Default::default();
+    collect_types(&total.sub_nodes, "", &mut by_type);
 
     let combat_totals: Vec<f64> = (0..n_slots)
         .map(|slot_i| {
@@ -1718,27 +1769,52 @@ fn damage_by_type(total: &CompareNode, n_slots: usize) -> Vec<TypeRow> {
                 .unwrap_or_default()
         })
         .collect();
+    let shares_of = |damage: &[f64]| -> Vec<f64> {
+        damage
+            .iter()
+            .zip(combat_totals.iter())
+            .map(|(damage, total)| {
+                if *total > 0.0 {
+                    100.0 * damage / total
+                } else {
+                    0.0
+                }
+            })
+            .collect()
+    };
 
     let mut rows: Vec<TypeRow> = by_type
         .into_iter()
-        .map(|(name, damage)| {
-            let shares: Vec<f64> = damage
-                .iter()
-                .zip(combat_totals.iter())
-                .map(|(damage, total)| {
-                    if *total > 0.0 {
-                        100.0 * damage / total
-                    } else {
-                        0.0
+        .map(|(name, contributors)| {
+            let mut damage = vec![0.0; n_slots];
+            let mut parts: Vec<TypePart> = contributors
+                .into_iter()
+                .map(|(part_name, part_damage)| {
+                    for (slot_i, total) in damage.iter_mut().enumerate() {
+                        *total += part_damage.get(slot_i).copied().unwrap_or_default();
+                    }
+                    TypePart {
+                        shares: shares_of(&part_damage),
+                        name: part_name,
+                        damage: part_damage,
                     }
                 })
                 .collect();
+            parts.sort_by(|a, b| {
+                b.damage
+                    .iter()
+                    .sum::<f64>()
+                    .total_cmp(&a.damage.iter().sum::<f64>())
+            });
+
+            let shares = shares_of(&damage);
             let spread = spread(&shares.iter().copied().map(Some).collect::<Vec<_>>());
             TypeRow {
                 name,
                 damage,
                 shares,
                 spread,
+                parts,
             }
         })
         .collect();
@@ -1749,26 +1825,41 @@ fn damage_by_type(total: &CompareNode, n_slots: usize) -> Vec<TypeRow> {
     rows
 }
 
-fn collect_types(nodes: &[CompareNode], n_slots: usize, by_type: &mut FxHashMap<String, Vec<f64>>) {
+/// Walks the tree, filing each row under the damage type it dealt. `path` is
+/// what the rows above it were called, so a proc buried under a weapon group
+/// says which group it came out of.
+fn collect_types(
+    nodes: &[CompareNode],
+    path: &str,
+    by_type: &mut FxHashMap<String, Vec<(String, Vec<f64>)>>,
+) {
     for node in nodes {
         let name = match node.damage_types.as_slice() {
             [one] => one.clone(),
             [] => "untyped".to_string(),
             _ if !node.sub_nodes.is_empty() => {
-                collect_types(&node.sub_nodes, n_slots, by_type);
+                let deeper = if path.is_empty() {
+                    node.name.clone()
+                } else {
+                    format!("{path} › {}", node.name)
+                };
+                collect_types(&node.sub_nodes, &deeper, by_type);
                 continue;
             }
             _ => "mixed".to_string(),
         };
-        let entry = by_type.entry(name).or_insert_with(|| vec![0.0; n_slots]);
-        for (slot_i, damage) in entry.iter_mut().enumerate() {
-            *damage += node
-                .damage
-                .get(slot_i)
-                .copied()
-                .flatten()
-                .unwrap_or_default();
-        }
+        let full_name = if path.is_empty() {
+            node.name.clone()
+        } else {
+            format!("{path} › {}", node.name)
+        };
+        by_type.entry(name).or_default().push((
+            full_name,
+            node.damage
+                .iter()
+                .map(|damage| damage.unwrap_or_default())
+                .collect(),
+        ));
     }
 }
 
@@ -3603,6 +3694,65 @@ mod tests {
             .into_iter()
             .map(|row| (row.name, row.shares.iter().map(|s| s.round()).collect()))
             .collect()
+    }
+
+    /// A type says what it is made of, largest first, and a row buried under a
+    /// group is named with the group it came out of — "Beams › Plasma Array"
+    /// rather than a bare "Plasma Array" that could be anybody's.
+    #[test]
+    fn a_type_carries_the_rows_it_is_made_of() {
+        let total = typed_row(
+            "Total",
+            &[],
+            &[Some(1000.0), Some(1000.0)],
+            vec![
+                typed_row(
+                    "Beams",
+                    &["Phaser", "Plasma"],
+                    &[Some(700.0), Some(700.0)],
+                    vec![
+                        typed_row(
+                            "Phaser Array",
+                            &["Phaser"],
+                            &[Some(200.0), Some(600.0)],
+                            vec![],
+                        ),
+                        typed_row(
+                            "Plasma Array",
+                            &["Plasma"],
+                            &[Some(500.0), Some(100.0)],
+                            vec![],
+                        ),
+                    ],
+                ),
+                typed_row(
+                    "Phaser Turret",
+                    &["Phaser"],
+                    &[Some(300.0), Some(300.0)],
+                    vec![],
+                ),
+            ],
+        );
+
+        let phaser = damage_by_type(&total, 2)
+            .into_iter()
+            .find(|row| row.name == "Phaser")
+            .expect("some of it was phaser");
+        assert_eq!(
+            vec![500.0, 900.0],
+            phaser.damage,
+            "the turret and the array"
+        );
+        let parts: Vec<(&str, f64)> = phaser
+            .parts
+            .iter()
+            .map(|part| (part.name.as_str(), part.damage.iter().sum::<f64>()))
+            .collect();
+        assert_eq!(
+            vec![("Beams › Phaser Array", 800.0), ("Phaser Turret", 600.0)],
+            parts,
+            "largest first, and named with the group it came out of"
+        );
     }
 
     /// Each type gets the damage of the rows that dealt it, as a share of the

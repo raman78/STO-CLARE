@@ -458,6 +458,10 @@ That is one rainbow run, one antiproton run and three phaser runs, in five
 lines. The types the runs differ over most are at the top; the ones they all
 lean on equally sit below.
 
+Each type opens up: the arrow beside it lists the rows it is made of, largest
+first, so "Phaser 70%" turns into which beams, turrets and procs that 70% was.
+A row buried under a weapon group is named with the group it came out of.
+
 Damage dealt to shields is counted here, even though the game does not record
 what flavour of energy hit a shield — the figure follows the weapon the row
 belongs to. Where a row deals two types at once and there is nothing under it to

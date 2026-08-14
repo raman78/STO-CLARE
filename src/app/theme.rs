@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use eframe::{
     egui::{
-        Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Visuals,
+        Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Ui, Visuals,
         style::Selection,
     },
     epaint::{Rgba, Shadow},
@@ -64,6 +64,27 @@ pub struct ThemeEntry {
     pub name: &'static str,
     visuals: fn() -> Visuals,
     pub palette: &'static Palette,
+}
+
+/// How faint the accent rim is on a widget nobody is pointing at. Enough to be
+/// picked out of a row of ordinary buttons, not so much that it reads as the
+/// pressed state the accent otherwise means.
+const RESTING_ACCENT: f32 = 0.7;
+
+/// Paints every state of `ui`'s buttons with the theme's accent rim.
+///
+/// The accent is the theme's own `hyperlink_color` — the one colour every theme
+/// declares as bright enough for its background — which is also what a pressed
+/// widget's rim is painted with (`theme::glassify`). The widths are left at
+/// 1.0: egui takes the frame's stroke width off the button's inner margin, so a
+/// wider rim here would make the button change size the moment it is hovered.
+pub fn accent_rim(ui: &mut Ui) {
+    let accent = ui.visuals().hyperlink_color;
+    let widgets = &mut ui.visuals_mut().widgets;
+    widgets.inactive.bg_stroke = Stroke::new(1.0, accent.gamma_multiply(RESTING_ACCENT));
+    for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        state.bg_stroke = Stroke::new(1.0, accent);
+    }
 }
 
 /// Every theme the app offers, in the order the settings tab lists them.
@@ -545,6 +566,47 @@ fn frost_light_visuals() -> Visuals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::RawInput;
+
+    /// The accent rim has to differ from an ordinary button's in colour and in
+    /// nothing else. A wider stroke would come off the button's inner margin
+    /// and make it change size under the pointer, which is the very thing
+    /// `custom_widgets::toggle` exists to stop.
+    #[test]
+    fn the_accent_rim_changes_the_colour_and_not_the_width() {
+        for theme in THEMES.iter() {
+            let ctx = Context::default();
+            apply(&ctx, theme.theme);
+            let mut ordinary = None;
+            let mut accented = None;
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                ordinary = Some(ui.visuals().widgets.clone());
+                ui.scope(|ui| {
+                    accent_rim(ui);
+                    accented = Some(ui.visuals().widgets.clone());
+                });
+            });
+            let (ordinary, accented) = (ordinary.unwrap(), accented.unwrap());
+
+            for (ordinary, accented) in [
+                (&ordinary.inactive, &accented.inactive),
+                (&ordinary.hovered, &accented.hovered),
+                (&ordinary.active, &accented.active),
+                (&ordinary.open, &accented.open),
+            ] {
+                assert_eq!(
+                    ordinary.bg_stroke.width, accented.bg_stroke.width,
+                    "{}: an accented button must be the same size as an ordinary one",
+                    theme.name
+                );
+                assert_ne!(
+                    ordinary.bg_stroke.color, accented.bg_stroke.color,
+                    "{}: the accent has to be visible against the ordinary rim",
+                    theme.name
+                );
+            }
+        }
+    }
 
     /// Which theme is active is one value for the whole process, so the tests
     /// that set it take turns instead of running over each other.
