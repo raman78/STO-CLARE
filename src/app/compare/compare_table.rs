@@ -73,7 +73,27 @@ const BREAKDOWN_LABELS: [(&str, &str); 2] = [
 /// combat's line on the chart.
 enum HeaderCell {
     Separator,
-    Cell { text: LayoutJob, tooltip: String },
+    Cell {
+        text: LayoutJob,
+        tooltip: String,
+        /// What clicking it sorts the rows by, when the column holds something
+        /// that can be put in order.
+        sort: Option<SortBy>,
+    },
+}
+
+/// What the rows under Total are ordered by. Every column that holds a figure
+/// can be clicked; clicking the same one again turns the order round.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SortBy {
+    /// One metric of one combat — the ordinary columns.
+    Metric { metric: usize, slot: usize },
+    /// One metric averaged over the combats, in averages mode.
+    Average { metric: usize },
+    /// How far apart the combats are on the row.
+    Spread,
+    /// What the row was worth to the combat being measured.
+    Impact { slot: usize },
 }
 
 struct Slot {
@@ -118,6 +138,9 @@ pub struct Comparison {
     /// The combat whose rows are being measured against the others, while the
     /// reader is asking what that run did differently.
     impact_slot: Option<usize>,
+    /// Which column the rows are ordered by, and whether the largest is on top.
+    /// `None` is the order they were built in — the reference combat's DPS.
+    sort: Option<(SortBy, bool)>,
     /// Whether the rows the combats agree on are hidden, leaving what they
     /// differ over.
     show_differences: bool,
@@ -262,6 +285,7 @@ impl Comparison {
             types: Default::default(),
             of_type: Vec::new(),
             impact_slot: None,
+            sort: None,
             open_types: Default::default(),
             show_differences: false,
             show_type_summary: false,
@@ -823,21 +847,30 @@ impl Comparison {
     /// the difference. The differences toggle deliberately leaves the order
     /// alone, being a filter rather than a ranking.
     fn sort_rows(&mut self) {
-        let impact_slot = self.impact_slot;
+        // Turning the impact column on orders by it, largest gain first: the
+        // question it answers is what this combat did *better*, and a list that
+        // opens on its biggest losses answers the opposite one.
+        let sort = self
+            .sort
+            .or_else(|| self.impact_slot.map(|slot| (SortBy::Impact { slot }, true)));
+        let differences = self.differences();
         let Some(total) = self.nodes.first_mut() else {
             return;
         };
-        match impact_slot {
-            Some(slot) => total.sub_nodes.sort_by(|a, b| {
-                b.impact(slot)
-                    .unwrap_or(0.0)
-                    .abs()
-                    .total_cmp(&a.impact(slot).unwrap_or(0.0).abs())
-            }),
-            None => total
+        let Some((by, descending)) = sort else {
+            total
                 .sub_nodes
-                .sort_by(|a, b| b.sort_key.total_cmp(&a.sort_key)),
-        }
+                .sort_by(|a, b| b.sort_key.total_cmp(&a.sort_key));
+            return;
+        };
+        total.sub_nodes.sort_by(|a, b| {
+            let (a, b) = (a.sort_value(by, differences), b.sort_value(by, differences));
+            if descending {
+                b.total_cmp(&a)
+            } else {
+                a.total_cmp(&b)
+            }
+        });
     }
 
     /// The damage-type summary: a row per type, a column per combat, each
@@ -1165,9 +1198,12 @@ impl Comparison {
             headers.push(HeaderCell::Cell {
                 text: header_text(&font, text_color, "Spread", measure.unit(), None, None),
                 tooltip: format!(
-                    "How far apart the combats are on this row: the largest less the smallest, in                      {}. A combat without the row counts as zero. Rows below the figure on the                      slider are hidden.",
+                    "How far apart the combats are on this row: the largest less the smallest, in \
+                     {}. A combat without the row counts as zero. Rows below the figure on the \
+                     slider are hidden. Click to order the rows by it.",
                     measure.label()
                 ),
+                sort: Some(SortBy::Spread),
             });
         }
         if let Some(slot) = self.impact_slot {
@@ -1181,23 +1217,28 @@ impl Comparison {
                     colors.get(slot).copied().flatten(),
                 ),
                 tooltip: format!(
-                    "How much DPS each row added to combat #{}{}, or cost it, against the average                      of the other combats. The rows add up to the figure on the Total.",
+                    "How much DPS each row added to combat #{}{}, or cost it, against the average \
+                     of the other combats. The rows add up to the figure on the Total. Click to \
+                     order the rows by it — largest gain first.",
                     slot + 1,
                     note_suffix(note_of(&self.notes, slot))
                 ),
+                sort: Some(SortBy::Impact { slot }),
             });
         }
 
-        for column in self.columns.iter() {
+        for (metric, column) in self.columns.iter().enumerate() {
             headers.push(HeaderCell::Separator);
             if show_averages {
                 headers.push(HeaderCell::Cell {
                     text: header_text(&font, text_color, column.label(), "Avg", None, None),
                     tooltip: format!(
-                        "{} averaged over the {} combats in this comparison",
+                        "{} averaged over the {} combats in this comparison. Click to order the \
+                         rows by it.",
                         column.label(),
                         n_slots
                     ),
+                    sort: Some(SortBy::Average { metric }),
                 });
                 continue;
             }
@@ -1226,6 +1267,10 @@ impl Comparison {
                             ", with its difference against combat #1 beside it"
                         }
                     ),
+                    sort: Some(SortBy::Metric {
+                        metric,
+                        slot: slot_i,
+                    }),
                 });
             }
         }
@@ -1250,34 +1295,15 @@ impl Comparison {
                             slot_i + 1,
                             note_suffix(note_of(&self.notes, slot_i))
                         ),
+                        sort: None,
                     });
                 }
             }
         }
 
-        // The impact column comes last, after every metric: it is about the
-        // whole row rather than about one of its figures.
-        if let Some(slot) = self.impact_slot {
-            headers.push(HeaderCell::Separator);
-            headers.push(HeaderCell::Cell {
-                text: header_text(
-                    &font,
-                    text_color,
-                    "ΔDPS vs rest",
-                    &format!("#{}", slot + 1),
-                    with_notes.then(|| note_of(&self.notes, slot)),
-                    colors.get(slot).copied().flatten(),
-                ),
-                tooltip: format!(
-                    "How much DPS each row added to combat #{}{}, or cost it, against the average \
-                     of the other combats. The rows add up to the figure on the Total.",
-                    slot + 1,
-                    note_suffix(note_of(&self.notes, slot))
-                ),
-            });
-        }
-
         let impact_slot = self.impact_slot;
+        let sort = self.sort;
+        let mut sort_clicked: Option<SortBy> = None;
         let mut selected = self.selected;
         let mut selection_changed = false;
         let hide_unticked = self.hide_unticked;
@@ -1324,10 +1350,33 @@ impl Comparison {
                         for header in &headers {
                             match header {
                                 HeaderCell::Separator => show_group_separator(r),
-                                HeaderCell::Cell { text, tooltip } => {
+                                HeaderCell::Cell {
+                                    text,
+                                    tooltip,
+                                    sort: None,
+                                } => {
                                     r.cell(|ui| {
                                         ui.label(text.clone()).hover(tooltip);
                                     });
+                                }
+                                HeaderCell::Cell {
+                                    text,
+                                    tooltip,
+                                    sort: Some(by),
+                                } => {
+                                    // The column the rows are ordered by is
+                                    // drawn as picked, the way the main
+                                    // window's tables do it.
+                                    let picked = sort.map(|(by, _)| by) == Some(*by);
+                                    let response = r.selectable_cell(picked, |ui| {
+                                        ui.label(text.clone());
+                                    });
+                                    if response.clicked() {
+                                        // Clicking the column it is already
+                                        // ordered by turns the order round.
+                                        sort_clicked = Some(*by);
+                                    }
+                                    response.hover(tooltip);
                                 }
                             }
                         }
@@ -1352,6 +1401,16 @@ impl Comparison {
         }
 
         let ticks_changed = ticks.changed;
+        if let Some(by) = sort_clicked {
+            self.sort = Some(match self.sort {
+                // Largest first to begin with — the question is nearly always
+                // "which rows are the big ones here" — and round the other way
+                // when the same column is clicked again.
+                Some((current, descending)) if current == by => (by, !descending),
+                _ => (by, true),
+            });
+            self.sort_rows();
+        }
         self.selected = selected;
         if hide_toggled {
             self.hide_unticked = !self.hide_unticked;
@@ -2031,6 +2090,31 @@ impl CompareNode {
                 .collect::<Vec<_>>(),
         );
         (deviation > 0.0).then(|| (this - middle) / deviation)
+    }
+
+    /// What this row holds in the column the rows are being ordered by. A cell
+    /// with nothing in it sorts as if it held zero, which is what an absent row
+    /// is worth to the comparison.
+    fn sort_value(&self, by: SortBy, differences: Option<(DifferenceMeasure, f64)>) -> f64 {
+        match by {
+            SortBy::Metric { metric, slot } => self
+                .cells
+                .get(slot)
+                .and_then(|cell| cell.as_ref())
+                .and_then(|cell| cell.metrics.get(metric))
+                .and_then(|cell| cell.value)
+                .unwrap_or(0.0),
+            SortBy::Average { metric } => self
+                .averages
+                .get(metric)
+                .and_then(|average| average.as_ref())
+                .map(|average| average.value)
+                .unwrap_or(0.0),
+            SortBy::Spread => differences
+                .map(|(measure, _)| self.difference(measure))
+                .unwrap_or(0.0),
+            SortBy::Impact { slot } => self.impact(slot).unwrap_or(0.0),
+        }
     }
 
     /// What a row's impact is made of: this combat's DPS, what the others
@@ -3696,6 +3780,52 @@ mod tests {
         assert_eq!(20.0, median(&[30.0, 10.0, 20.0]));
         assert_eq!(25.0, median(&[30.0, 10.0, 20.0, 40.0]), "the middle two");
         assert_eq!(0.0, median(&[]));
+    }
+
+    /// Clicking a column orders the rows by what it holds. A cell with nothing
+    /// in it sorts as a zero — an absent row is worth nothing to the reader
+    /// looking for the big ones.
+    #[test]
+    fn a_column_orders_the_rows_by_what_it_holds() {
+        // `node` fills one metric cell per value, for the reference combat.
+        let mut row = node("Beams", vec![Some(100.0)], Vec::new());
+        row.dps = vec![Some(100.0), Some(60.0)];
+        row.averages = vec![Some(AverageCell {
+            value: 80.0,
+            text: String::new(),
+            count: 2,
+            min: 60.0,
+            max: 100.0,
+        })];
+        row.shares = vec![Some(30.0), Some(10.0)];
+
+        assert_eq!(
+            100.0,
+            row.sort_value(SortBy::Metric { metric: 0, slot: 0 }, None),
+            "the first combat's own figure"
+        );
+        assert_eq!(80.0, row.sort_value(SortBy::Average { metric: 0 }, None));
+        assert_eq!(
+            20.0,
+            row.sort_value(SortBy::Spread, Some((DifferenceMeasure::Share, 0.0))),
+            "30 points in one combat against 10 in the other"
+        );
+        assert_eq!(
+            40.0,
+            row.sort_value(SortBy::Impact { slot: 0 }, None),
+            "100 here against the 60 the only other combat did"
+        );
+
+        // A column the row has no cell for.
+        assert_eq!(
+            0.0,
+            row.sort_value(SortBy::Metric { metric: 7, slot: 0 }, None)
+        );
+        assert_eq!(
+            0.0,
+            row.sort_value(SortBy::Spread, None),
+            "no measure, no spread"
+        );
     }
 
     /// A difference is the largest combat less the smallest, and a combat

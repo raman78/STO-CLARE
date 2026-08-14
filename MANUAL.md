@@ -432,6 +432,10 @@ For `Mycelial Lightning` at `0, 0, 19480, 19535, 0`, run #3 reads **+14'596** �
 it did 19'480 where the others averaged 4'884 — and run #1 reads **−9'754**,
 because it never used the thing at all.
 
+The rows open ordered by the largest gain, because what a comparison is usually
+being asked is what a run did *better*. Click any column heading to order by
+that column instead, and click it again to turn the order round.
+
 It reads as an account, because the figures add up: the rows sum exactly to the
 difference shown on the Total. So a run that came out 47k DPS ahead of the
 others might read "Ba'ul beams +32k, Broadside +11k, Phaser overload −8k" — and
