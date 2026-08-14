@@ -393,6 +393,7 @@ impl<T: 'static> MetricsTable<T> {
             (None, true) => "All",
             (None, false) => key.column,
         };
+        let picked = self.sort.is_sorted_by(key);
         let mut response = None;
         row.cell(|ui| {
             // Headings are as narrow as their column and must not wrap: a
@@ -401,17 +402,23 @@ impl<T: 'static> MetricsTable<T> {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 first_line(ui);
-                // As wide as the column, so the whole strip under the metric
-                // name takes the click rather than the few points the word
-                // happens to cover. `min_size` only ever grows it, so the
-                // column cannot collapse on the first pass, when it has no
-                // measured width yet.
-                response = Some(
-                    ui.add(
-                        Button::selectable(self.sort.is_sorted_by(key), format!("{label}{marker}"))
-                            .min_size(vec2(ui.available_width(), 0.0)),
-                    ),
-                );
+
+                // The strip under the metric name, drawn the way a pickable
+                // table cell is drawn rather than as a button: filled while it
+                // is the one ordering the rows, rimmed under the pointer. As
+                // wide as the column, so the whole strip takes the click and
+                // not the few points the word covers.
+                let text = format!("{label}{marker}");
+                let line = ui.text_style_height(&TextStyle::Body);
+                let width = ui
+                    .available_width()
+                    .max(text_width(ui, &text) + ui.spacing().item_spacing.x);
+                let (rect, strip) = ui.allocate_exact_size(vec2(width, line), Sense::click());
+                draw_cell_visuals(ui, picked, &strip);
+                ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                    ui.label(text);
+                });
+                response = Some(strip);
             });
         });
         let Some(response) = response else {
@@ -742,6 +749,19 @@ impl SelectionTracker {
             }
         }
     }
+}
+
+/// How wide a heading's own text is, so a column cannot be narrower than what
+/// it is called even before the table has measured anything.
+fn text_width(ui: &Ui, text: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            text.to_string(),
+            TextStyle::Body.resolve(ui.style()),
+            Color32::PLACEHOLDER,
+        )
+        .size()
+        .x
 }
 
 /// Copies `open` from the rows of the table being replaced onto the rows that

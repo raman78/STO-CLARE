@@ -449,6 +449,15 @@ impl State {
     }
 }
 
+/// The look a table cell takes when it can be picked: filled while it is the
+/// one picked, and rimmed under the pointer. Exposed so a caller can give the
+/// same look to part of a cell — a heading whose second line is the thing being
+/// clicked, say — instead of drawing a button there and having two kinds of
+/// heading in one table.
+pub fn draw_cell_visuals(ui: &mut Ui, checked: bool, response: &Response) {
+    draw_visuals(ui, false, Some(checked), response);
+}
+
 fn draw_visuals(ui: &mut Ui, is_stripe: bool, checked: Option<bool>, response: &Response) {
     match checked {
         Some(true) => {
