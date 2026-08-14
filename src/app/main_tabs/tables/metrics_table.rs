@@ -343,11 +343,18 @@ impl<T: 'static> MetricsTable<T> {
         text: impl FnOnce(&mut Ui) -> WidgetText,
     ) {
         let marker = self.sort.marker(key);
-        let response = row.selectable_cell(self.sort.is_sorted_by(key), |ui| {
+        // Not drawn as picked: a filled heading cell over a two-line header
+        // leaves no room for the second line, and the mark already says which
+        // column is doing the ordering.
+        let response = row.selectable_cell(false, |ui| {
             ui.horizontal(|ui| {
                 let text = text(ui);
                 ui.label(text);
-                ui.label(marker);
+                // Only when there is one: an empty label still takes the
+                // spacing beside it, and headings are tight enough as it is.
+                if !marker.is_empty() {
+                    ui.label(marker);
+                }
             });
         });
         if response.clicked() {

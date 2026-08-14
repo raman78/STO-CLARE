@@ -1449,12 +1449,16 @@ impl Comparison {
                                     // The column the rows are ordered by is
                                     // drawn as picked, the way the main
                                     // window's tables do it.
-                                    let picked = sort.is_sorted_by(*by);
+                                    // The mark alone says which column orders
+                                    // the rows; a filled cell over a header
+                                    // three lines deep leaves no room for them.
                                     let marker = sort.marker(*by);
-                                    let response = r.selectable_cell(picked, |ui| {
+                                    let response = r.selectable_cell(false, |ui| {
                                         ui.horizontal(|ui| {
                                             ui.label(text.clone());
-                                            ui.label(marker);
+                                            if !marker.is_empty() {
+                                                ui.label(marker);
+                                            }
                                         });
                                     });
                                     if response.clicked() {
