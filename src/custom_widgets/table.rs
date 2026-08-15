@@ -667,6 +667,11 @@ pub fn draw_cell_visuals(ui: &mut Ui, checked: bool, response: &Response) {
     draw_visuals(ui, false, Some(checked), response);
 }
 
+/// How much darker a list row goes under the pointer. Enough to read at a
+/// glance against both a plain row and a striped one, on a dark theme where the
+/// two are close together.
+const ROW_HIGHLIGHT: Color32 = Color32::from_black_alpha(60);
+
 /// A row of a list, drawn the way a table row is: every other one on a faint
 /// fill, and the one under the pointer picked out.
 ///
@@ -682,6 +687,7 @@ pub fn list_row<R>(
 ) -> InnerResponse<R> {
     let width = ui.available_width();
     let background = ui.painter().add(Shape::Noop);
+    let highlight = ui.painter().add(Shape::Noop);
     let inner = ui.scope_builder(UiBuilder::new().sense(Sense::hover()), |ui| {
         ui.set_min_width(width);
         ui.horizontal(|ui| add_contents(ui)).inner
@@ -693,19 +699,27 @@ pub fn list_row<R>(
         inner.response.rect.min,
         vec2(width, inner.response.rect.height()),
     );
+    if is_stripe {
+        ui.painter().set(
+            background,
+            epaint::RectShape::filled(rect, 0.0, ui.visuals().faint_bg_color),
+        );
+    }
+
     // `contains_pointer` rather than `hovered`: a row is mostly tick box and
     // text, and those are the widgets on top, so the row itself counted as
     // hovered only in the gaps between them.
-    let fill = if inner.response.contains_pointer() {
-        ui.visuals().widgets.hovered.bg_fill
-    } else if is_stripe {
-        ui.visuals().faint_bg_color
-    } else {
-        Color32::TRANSPARENT
-    };
-    if fill != Color32::TRANSPARENT {
-        ui.painter()
-            .set(background, epaint::RectShape::filled(rect, 0.0, fill));
+    //
+    // Drawn as a shade over whatever the row's background is, rather than as a
+    // colour of its own: a theme's hover fill is meant for a small control
+    // against a panel, and across a whole row the bright one glared while the
+    // dark one barely showed. A shade is the same step on every theme, and it
+    // reads as the row being pointed at whichever way round the theme runs.
+    if inner.response.contains_pointer() {
+        ui.painter().set(
+            highlight,
+            epaint::RectShape::filled(rect, 0.0, ROW_HIGHLIGHT),
+        );
     }
 
     InnerResponse::new(inner.inner, inner.response)
