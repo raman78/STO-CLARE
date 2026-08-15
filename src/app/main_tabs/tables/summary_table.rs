@@ -282,21 +282,20 @@ impl SummaryTable {
             })
             .header_row(|r| {
                 r.cell(|ui| {
-                    ui.horizontal(|ui| {
-                        // Ordering by name, the same as the tables on the damage
-                        // tabs: a team of five is found by who, not by how much.
-                        if show_sortable_label(
-                            ui,
-                            self.sort.is_sorted_by(NAME_COLUMN),
-                            self.sort.marker(NAME_COLUMN),
-                            "Player",
-                        )
-                        .clicked()
-                        {
-                            self.sort.clicked(NAME_COLUMN);
-                            self.sort_by_column(|table| table.sort_by_name());
-                        }
-                    });
+                    // Ordering by name, the same as the tables on the damage
+                    // tabs: a team of five is found by who, not by how much.
+                    if show_sortable_header_cell(
+                        ui,
+                        self.sort.is_sorted_by(NAME_COLUMN),
+                        self.sort.marker(NAME_COLUMN),
+                        "Player",
+                        |_| {},
+                    )
+                    .clicked()
+                    {
+                        self.sort.clicked(NAME_COLUMN);
+                        self.sort_by_column(|table| table.sort_by_name());
+                    }
                 });
 
                 for (index, column) in columns.iter().enumerate() {

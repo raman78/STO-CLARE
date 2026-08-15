@@ -1533,30 +1533,32 @@ impl Comparison {
                     // all of them.
                     r.cell(|_| {});
                     r.cell(|ui| {
-                        ui.horizontal(|ui| {
-                            if show_sortable_label(
-                                ui,
-                                sort.is_sorted_by(SortBy::Name),
-                                sort.marker(SortBy::Name),
-                                "Name",
-                            )
-                            .clicked()
-                            {
-                                sort_clicked = Some(SortBy::Name);
-                            }
-                            if ui
-                                .add(Button::selectable(hide_unticked, "👁"))
-                                .hover(
-                                    "Hide the rows that are not ticked, leaving only what the \
+                        // The whole heading orders the rows by name; the eye and
+                        // the type picker sit on it and keep their own clicks.
+                        if show_sortable_header_cell(
+                            ui,
+                            sort.is_sorted_by(SortBy::Name),
+                            sort.marker(SortBy::Name),
+                            "Name",
+                            |ui| {
+                                if ui
+                                    .add(Button::selectable(hide_unticked, "👁"))
+                                    .hover(
+                                        "Hide the rows that are not ticked, leaving only what the \
                                          Total is added up from. They stay out of the Total either \
                                          way — this only takes them off the screen.",
-                                )
-                                .clicked()
-                            {
-                                hide_toggled = true;
-                            }
-                            show_type_picker(ui, &all_types, &mut picked_types);
-                        });
+                                    )
+                                    .clicked()
+                                {
+                                    hide_toggled = true;
+                                }
+                                show_type_picker(ui, &all_types, &mut picked_types);
+                            },
+                        )
+                        .clicked()
+                        {
+                            sort_clicked = Some(SortBy::Name);
+                        }
                     });
                     for header in &headers {
                         match header {
@@ -2762,34 +2764,41 @@ fn show_header_cell(
     let mut strip = None;
     row.spanning_cell(span, |ui| {
         ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            let line = ui.text_style_height(&TextStyle::Body);
-            // The name only over the column that opens the group; the others
-            // keep its room, so every strip in a group sits at the same height.
-            if metric.is_empty() {
-                ui.add_space(line);
-            } else {
-                ui.label(metric);
-            }
 
-            let galley = ui.painter().layout_job(lines.clone());
-            let needed = galley.size().x + sort_marker_width(ui) + ui.spacing().item_spacing.x;
-            let width = ui.available_width().max(needed);
-            let (rect, response) =
-                ui.allocate_exact_size(vec2(width, galley.size().y), Sense::click());
-            draw_cell_visuals(ui, picked, &response);
-            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+        let line = ui.text_style_height(&TextStyle::Body);
+        let galley = ui.painter().layout_job(lines.clone());
+        let needed = galley.size().x + sort_marker_width(ui) + ui.spacing().item_spacing.x;
+        let width = ui.available_width().max(needed);
+
+        // The whole cell takes the click and lights up, every line of it: a
+        // column is one thing to point at.
+        let (rect, response) =
+            ui.allocate_exact_size(vec2(width, ui.available_height()), Sense::click());
+        draw_cell_visuals(ui, picked, &response);
+        ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.vertical(|ui| {
+                // The metric's name only over the column that opens the group;
+                // the others keep its room, so the lines naming the combats sit
+                // level across a group.
+                if metric.is_empty() {
+                    ui.add_space(line);
+                } else {
+                    ui.label(metric);
+                }
                 ui.label(lines.clone());
             });
-            show_sort_marker(ui, rect, marker);
-            strip = Some(response);
-            // What the group has to be wide enough for: the metric's name on
-            // the first line, or the combat's own lines and the room a sort
-            // mark needs under it.
-            needed.max(text_width(ui, metric))
-        })
-        .inner
+        });
+        // Beside the combat's number rather than in the middle of the cell.
+        let number_line = Rect::from_min_size(
+            rect.left_top() + vec2(0.0, line),
+            vec2(rect.width(), line.min(rect.height())),
+        );
+        show_sort_marker(ui, number_line, marker);
+        strip = Some(response);
+        // What the group has to be wide enough for: the metric's name on the
+        // first line, or the combat's own lines and the room a sort mark needs.
+        needed.max(text_width(ui, metric))
     });
     strip.expect("the cell's contents are drawn before it returns")
 }

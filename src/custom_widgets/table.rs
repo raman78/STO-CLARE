@@ -80,22 +80,45 @@ pub fn text_width(ui: &Ui, text: &str) -> f32 {
         .x
 }
 
-/// A heading that is only as wide as its own words, for a column whose header
-/// holds something else beside them — the Name column, which carries the eye and
-/// the type picker next to the word.
+/// The heading of a column that carries buttons beside its name — the Name
+/// column, with the eye and the type picker next to the word.
 ///
-/// Drawn the way every other heading is: filled while it is the one ordering the
-/// rows, rimmed under the pointer, with the sort mark after the text and its
-/// room kept whether or not it is there.
-pub fn show_sortable_label(ui: &mut Ui, picked: bool, marker: &str, text: &str) -> Response {
-    let width = text_width(ui, text) + sort_marker_width(ui) + ui.spacing().item_spacing.x;
-    let height = ui.text_style_height(&TextStyle::Body);
+/// The whole cell orders the rows, like every other heading: it fills while it
+/// is the one in charge, rims under the pointer and takes the sort mark at its
+/// right-hand edge. The buttons are drawn on top of it and are widgets in their
+/// own right, so a click on one of them is that button's, not the heading's.
+pub fn show_sortable_header_cell(
+    ui: &mut Ui,
+    picked: bool,
+    marker: &str,
+    text: &str,
+    buttons: impl FnOnce(&mut Ui),
+) -> Response {
+    // The whole cell, top to bottom, the way every other heading works.
+    let height = ui.available_height().max(ui.spacing().interact_size.y);
+    let width = ui
+        .available_width()
+        .max(text_width(ui, text) + sort_marker_width(ui) + ui.spacing().item_spacing.x);
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     draw_cell_visuals(ui, picked, &response);
+    // Drawn after the strip, so the pointer finds them first: egui gives a click
+    // to the widget on top, and these are meant to be pressed on their own.
     ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
-        ui.label(text);
+        ui.horizontal_centered(|ui| {
+            ui.label(text);
+            // Beside the word rather than at the column's edge, which on this
+            // column is where the buttons are: a mark drawn there sat on top of
+            // one. The room is kept either way, so nothing shifts when the
+            // column takes charge of the order.
+            match marker.is_empty() {
+                true => ui.add_space(sort_marker_width(ui)),
+                false => {
+                    ui.label(marker);
+                }
+            }
+            buttons(ui);
+        });
     });
-    show_sort_marker(ui, rect, marker);
     response
 }
 

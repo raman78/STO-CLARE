@@ -301,24 +301,25 @@ impl<T: 'static> MetricsTable<T> {
                 // comparison.
                 r.cell(|_| {});
                 r.cell(|ui| {
-                    ui.horizontal(|ui| {
-                        // The name orders the rows too — by name, which is how
-                        // an ability is looked for when it is known what it is
-                        // called and not what it is worth.
-                        if show_sortable_label(
-                            ui,
-                            self.sort.is_sorted_by(NAME_COLUMN),
-                            self.sort.marker(NAME_COLUMN),
-                            "Name",
-                        )
-                        .clicked()
-                        {
-                            self.sort.clicked(NAME_COLUMN);
-                            self.sort_by_column(|table| table.sort_by_name());
-                        }
-                        ticks.show_eye(ui);
-                        ticks.show_types(ui);
-                    });
+                    // The name orders the rows too — by name, which is how an
+                    // ability is looked for when it is known what it is called
+                    // and not what it is worth. The eye and the type picker sit
+                    // on the heading and keep their own clicks.
+                    if show_sortable_header_cell(
+                        ui,
+                        self.sort.is_sorted_by(NAME_COLUMN),
+                        self.sort.marker(NAME_COLUMN),
+                        "Name",
+                        |ui| {
+                            ticks.show_eye(ui);
+                            ticks.show_types(ui);
+                        },
+                    )
+                    .clicked()
+                    {
+                        self.sort.clicked(NAME_COLUMN);
+                        self.sort_by_column(|table| table.sort_by_name());
+                    }
                 });
 
                 for (index, column) in columns.iter().enumerate() {
@@ -790,29 +791,39 @@ pub(super) fn show_sortable_header(
     row.cell(|ui| {
         // Headings are as narrow as their column and must not wrap: a "Shield"
         // folded into "Shie / ld" costs the line under it.
+        // Headings are as narrow as their column and must not wrap: a "Shield"
+        // folded into "Shie / ld" costs the line under it.
         ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            first_line(ui);
 
-            // As wide as the column, so the whole strip takes the click and not
-            // the few points the word covers, and never narrower than the name
-            // plus the room the sort mark needs.
-            let line = ui.text_style_height(&TextStyle::Body);
-            let width = heading_width(
-                ui.available_width(),
-                text_width(ui, label),
-                sort_marker_width(ui),
-                ui.spacing().item_spacing.x,
-            );
-            let (rect, response) = ui.allocate_exact_size(vec2(width, line), Sense::click());
-            draw_cell_visuals(ui, picked, &response);
-            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+        // The whole cell, both lines of it, takes the click and lights up: a
+        // column is one thing to point at, and half of it reacting while the
+        // other half did not read as two.
+        let line = ui.text_style_height(&TextStyle::Body);
+        let width = heading_width(
+            ui.available_width(),
+            text_width(ui, label),
+            sort_marker_width(ui),
+            ui.spacing().item_spacing.x,
+        );
+        let height = ui.available_height();
+        let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
+        draw_cell_visuals(ui, picked, &response);
+
+        ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.vertical(|ui| {
+                first_line(ui);
                 ui.label(label);
             });
-            show_sort_marker(ui, rect, marker);
-            strip = Some(response);
         });
+        // Against the line the label is on, not the middle of the cell: the
+        // mark belongs beside the word it is about.
+        let label_line = Rect::from_min_size(
+            rect.left_bottom() - vec2(0.0, line.min(rect.height())),
+            vec2(rect.width(), line.min(rect.height())),
+        );
+        show_sort_marker(ui, label_line, marker);
+        strip = Some(response);
     });
     let response = strip.expect("the cell's contents are drawn before it returns");
     if let Some(info) = info {

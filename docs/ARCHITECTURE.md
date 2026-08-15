@@ -161,13 +161,20 @@ Three conventions worth knowing before changing a table or a chart:
 
 - **One heading control, drawn once.** `metrics_table::show_sortable_header` is
   what every heading in `MetricsTable` and in `SummaryTable` is made of, so the
-  two cannot drift apart. It draws whatever the caller puts on the first line
-  (the metric name, or blank room over a half) and under it a strip that is
-  column-wide, one line tall, and takes the click. The strip is painted with
-  `table::draw_cell_visuals` — the same fill-when-picked, rim-under-the-pointer
-  look a pickable cell has, not a button frame; a button drew a box around the
-  words and lit both lines of a split group at once, which said nothing about
-  which of All, Hull or Shield was about to be ordered by.
+  two cannot drift apart. A heading is its column's whole cell — every line of
+  it, the metric name included where that column carries one — painted with
+  `table::draw_cell_visuals`, the fill-when-picked, rim-under-the-pointer look a
+  pickable cell has rather than a button frame. What must *not* happen is one
+  control over a whole split group: All, Hull and Shield are three columns and
+  three cells, so pointing at one says which of the three is about to order the
+  rows. The sort mark sits against the right-hand edge of the cell, on the line
+  the label is on.
+
+  A column whose header carries buttons — Name, with the eye and the type picker
+  — uses `table::show_sortable_header_cell` instead: the cell still orders the
+  rows, and the buttons are drawn on top of it, so egui hands a click on one of
+  them to that button and everything else to the heading. There the mark follows
+  the word rather than sitting at the edge, which is where the buttons are.
 
   Which heading is in charge lives in `SortState<ColumnKey>` (`custom_widgets::
   table`): `ColumnKey` is the metric plus which half, `natural` is which way the
