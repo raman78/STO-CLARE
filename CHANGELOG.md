@@ -1,6 +1,6 @@
 # Change Log
 
-## unreleased
+## v2.4.0
 
 ### Major Changes
 - a comparison can now be about part of a run instead of all of it. Every ability row has a tick box beside it, and the Total above is added up from the rows left ticked — so two runs can be compared on the beams alone, with the torpedo spread and the console procs set aside. Everything is worked out again from the hits, not only the DPS: the resistance, critical rate and accuracy on the Total are those of the abilities that stayed in, and the chart follows. The Total says how much of the run went into it, on screen and in a saved spreadsheet, and the button beside **Name** hides the rows left out
