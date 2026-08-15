@@ -693,10 +693,11 @@ pub fn list_row<R>(
         inner.response.rect.min,
         vec2(width, inner.response.rect.height()),
     );
-    let fill = if inner.response.hovered() {
-        ui.style()
-            .interact_selectable(&inner.response, false)
-            .bg_fill
+    // `contains_pointer` rather than `hovered`: a row is mostly tick box and
+    // text, and those are the widgets on top, so the row itself counted as
+    // hovered only in the gaps between them.
+    let fill = if inner.response.contains_pointer() {
+        ui.visuals().widgets.hovered.bg_fill
     } else if is_stripe {
         ui.visuals().faint_bg_color
     } else {
