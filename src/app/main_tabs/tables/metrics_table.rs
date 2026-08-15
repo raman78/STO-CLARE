@@ -851,7 +851,10 @@ impl RowTicks<'_> {
             .with_id_source("table damage type picker")
             .show(ui, |ui| {
                 ui.label(RichText::new("Show only these damage types").weak());
-                ui.separator();
+                // No separator: it takes the whole width it is offered, and in
+                // a window sized to its contents that is the width of the
+                // screen — a list of words like "Phaser" opened as a banner.
+                ui.add_space(4.0);
                 if ui
                     .add_enabled(!self.types.is_empty(), Button::new("Every type"))
                     .hover("Back to showing every type")

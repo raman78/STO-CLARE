@@ -191,6 +191,19 @@ Three conventions worth knowing before changing a table or a chart:
   every column right of it. `MetricsTable`, `SummaryTable` and the comparison's
   headers all measure this way.
 
+- **A chart is dragged sideways, never up and down.** Every chart scales its y
+  axis to the data (`auto_bounds`, `include_y`), so moving it vertically only
+  slides the lines out of a frame that was already the right size. `Plot` takes
+  `PAN_SIDEWAYS_ONLY` (`diagrams::common`) for both `allow_scroll` and
+  `allow_drag`; the wheel is a vertical gesture, so it now does nothing on a
+  chart rather than scrolling the picture away.
+
+- **Nothing in a `PopupButton` may ask for all the width on offer.** The window
+  is sized to what it holds, and `ui.separator()` takes whatever it is given —
+  which in an auto-sized window is the width of the screen. The damage-type
+  pickers opened as a banner across the window until their separators became
+  `add_space`.
+
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
@@ -306,6 +319,15 @@ inside itself; below that it still shrinks to what it holds.
 The one thing left uneven is the table's `Name` column, which scrolls away with
 everything else — the averages toggle is the answer to a table too wide to
 read, not a frozen first column.
+
+**The comparison's headers are the main window's headers.** A column header is
+three lines — the metric, the combat's number, the note — and only the lines
+naming the combat take the click (`show_header_cell`), drawn with the same
+`draw_cell_visuals` fill and the same `show_sort_marker` placement as
+`MetricsTable`. The metric's name spans its whole group of columns, so lighting
+it up said nothing about which column was about to order the rows. The header's
+height comes from `ui.text_style_height` rather than a hand-counted constant: at
+17 points a line, the note line had its bottom half cut off by the first row.
 
 **A scrolling list must not be wider than its pane.** Every vertical
 `ScrollArea` in the program carries `auto_shrink([false, true])` so its bar sits

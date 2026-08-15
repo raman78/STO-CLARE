@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, sync::Arc};
 
 use educe::Educe;
-use eframe::egui::{Color32, TextStyle, Ui};
+use eframe::egui::{Color32, TextStyle, Ui, Vec2b};
 use egui_plot::*;
 
 use crate::{
@@ -412,6 +412,15 @@ pub fn y_axis_width(ui: &Ui) -> f32 {
     let digit = ui.fonts_mut(|fonts| fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0'));
     digit * WIDEST_Y_LABEL_CHARS + ui.spacing().item_spacing.x * 2.0
 }
+
+/// Which way a chart may be moved by hand: sideways only.
+///
+/// Every chart here fits its own height — the y axis is scaled to what the
+/// data reaches (`auto_bounds`, `include_y`) — so dragging or scrolling it up
+/// and down only slides the lines out of the frame and leaves blank space in
+/// their place. Sideways is a different matter: on a long fight, moving along
+/// the time axis is the point.
+pub const PAN_SIDEWAYS_ONLY: Vec2b = Vec2b { x: true, y: false };
 
 pub fn format_axis(mark: GridMark, _: &RangeInclusive<f64>) -> String {
     if mark.value < 0.0 {

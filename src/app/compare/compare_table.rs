@@ -52,7 +52,6 @@ const ROW_HEIGHT: f32 = 25.0;
 const ARROW_SIZE: Vec2 = vec2(22.0, 18.0);
 // The header is two lines — the metric name on top, the combat number below —
 // and a third when any combat carries a note.
-const HEADER_LINE_HEIGHT: f32 = 17.0;
 
 /// Headers of the two breakdown column groups, with what each one means, in the
 /// order they are drawn.
@@ -75,7 +74,16 @@ const BREAKDOWN_LABELS: [(&str, &str); 2] = [
 enum HeaderCell {
     Separator,
     Cell {
-        text: LayoutJob,
+        /// The metric's name, on the first line and only over the column that
+        /// opens its group — empty everywhere else, which still keeps the line's
+        /// room so the columns of a group stay level.
+        metric: &'static str,
+        /// The lines under it: the combat's number and, if any combat carries
+        /// one, its note. Drawn in that combat's colour, which is why they are a
+        /// laid-out job rather than a string. This is the part that takes the
+        /// click, the way a metric's All/Hull/Shield line does in the main
+        /// window's tables.
+        lines: LayoutJob,
         tooltip: String,
         /// What clicking it sorts the rows by, when the column holds something
         /// that can be put in order.
@@ -1001,18 +1009,18 @@ impl Comparison {
                     // against the table.
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
+                        let height = header_height(ui, with_notes);
                         Table::new(ui)
                             .cell_spacing(10.0)
-                            .header(header_height(with_notes), |r| {
+                            .header(height, |r| {
                                 r.cell(|ui| {
                                     ui.label("Damage type");
                                 });
                                 for slot_i in 0..n_slots {
                                     r.cell(|ui| {
-                                        ui.label(header_text(
+                                        ui.label(header_lines(
                                             &font,
                                             text_color,
-                                            "",
                                             &format!("#{}", self.number_of(slot_i)),
                                             with_notes.then(|| note_of(&notes, slot_i)),
                                             colors.get(slot_i).copied().flatten(),
@@ -1297,7 +1305,8 @@ impl Comparison {
         // reason for it.
         if let Some((measure, _)) = self.differences() {
             headers.push(HeaderCell::Cell {
-                text: header_text(&font, text_color, "Spread", measure.unit(), None, None),
+                metric: "Spread",
+                lines: header_lines(&font, text_color, measure.unit(), None, None),
                 tooltip: format!(
                     "How far apart the combats are on this row: the largest less the smallest, in \
                      {}. A combat without the row counts as zero. Rows below the figure on the \
@@ -1309,10 +1318,10 @@ impl Comparison {
         }
         if let Some(slot) = self.impact_slot {
             headers.push(HeaderCell::Cell {
-                text: header_text(
+                metric: "ΔDPS vs rest",
+                lines: header_lines(
                     &font,
                     text_color,
-                    "ΔDPS vs rest",
                     &format!("#{}", self.number_of(slot)),
                     with_notes.then(|| note_of(&self.notes, slot)),
                     colors.get(slot).copied().flatten(),
@@ -1332,7 +1341,8 @@ impl Comparison {
             headers.push(HeaderCell::Separator);
             if show_averages {
                 headers.push(HeaderCell::Cell {
-                    text: header_text(&font, text_color, column.label(), "Avg", None, None),
+                    metric: column.label(),
+                    lines: header_lines(&font, text_color, "Avg", None, None),
                     tooltip: format!(
                         "{} averaged over the {} combats in this comparison. Click to order the \
                          rows by it.",
@@ -1345,10 +1355,10 @@ impl Comparison {
             }
             for slot_i in 0..n_slots {
                 headers.push(HeaderCell::Cell {
-                    text: header_text(
+                    metric: if slot_i == 0 { column.label() } else { "" },
+                    lines: header_lines(
                         &font,
                         text_color,
-                        if slot_i == 0 { column.label() } else { "" },
                         &if slot_i == 0 {
                             format!("#{} (ref)", self.number_of(slot_i))
                         } else {
@@ -1382,10 +1392,10 @@ impl Comparison {
                 headers.push(HeaderCell::Separator);
                 for slot_i in 1..n_slots {
                     headers.push(HeaderCell::Cell {
-                        text: header_text(
+                        metric: if slot_i == 1 { label } else { "" },
+                        lines: header_lines(
                             &font,
                             text_color,
-                            if slot_i == 1 { label } else { "" },
                             &format!("#{}", self.number_of(slot_i)),
                             with_notes.then(|| note_of(&self.notes, slot_i)),
                             colors.get(slot_i).copied().flatten(),
@@ -1424,9 +1434,10 @@ impl Comparison {
         {
             let nodes = &mut self.nodes;
             ScrollArea::horizontal().show(ui, |ui| {
+                let height = header_height(ui, with_notes);
                 Table::new(ui)
                     .cell_spacing(10.0)
-                    .header(header_height(with_notes), |r| {
+                    .header(height, |r| {
                         // The tick column's header stays empty: the row it
                         // belongs to (Total) carries the tick that stands for
                         // all of them.
@@ -1452,45 +1463,18 @@ impl Comparison {
                             match header {
                                 HeaderCell::Separator => show_group_separator(r),
                                 HeaderCell::Cell {
-                                    text,
+                                    metric,
+                                    lines,
                                     tooltip,
-                                    sort: None,
+                                    sort: by,
                                 } => {
-                                    r.cell(|ui| {
-                                        ui.label(text.clone()).hover(tooltip);
-                                    });
-                                }
-                                HeaderCell::Cell {
-                                    text,
-                                    tooltip,
-                                    sort: Some(by),
-                                } => {
-                                    // The column the rows are ordered by is
-                                    // drawn as picked, the way the main
-                                    // window's tables do it.
-                                    // The mark alone says which column orders
-                                    // the rows; a filled cell over a header
-                                    // three lines deep leaves no room for them.
-                                    let marker = sort.marker(*by);
-                                    let response = r.selectable_cell(false, |ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.label(text.clone());
-                                            // The mark sits against the right
-                                            // edge of the column, and its room
-                                            // is kept whether or not it is
-                                            // there — otherwise a column grew
-                                            // the moment it took the order.
-                                            let room = sort_marker_width(ui);
-                                            let height = ui.available_height();
-                                            let width = ui.available_width().max(room);
-                                            let (rect, _) = ui.allocate_exact_size(
-                                                vec2(width, height),
-                                                Sense::hover(),
-                                            );
-                                            show_sort_marker(ui, rect, marker);
-                                        });
-                                    });
-                                    if response.clicked() {
+                                    let picked = by.is_some_and(|by| sort.is_sorted_by(by));
+                                    let marker = by.map(|by| sort.marker(by)).unwrap_or_default();
+                                    let response =
+                                        show_header_cell(r, metric, lines, picked, marker);
+                                    if let Some(by) = by
+                                        && response.clicked()
+                                    {
                                         // Clicking the column it is already
                                         // ordered by turns the order round.
                                         sort_clicked = Some(*by);
@@ -2144,7 +2128,9 @@ fn show_type_picker(ui: &mut Ui, all: &[String], picked: &mut FxHashSet<String>)
         .with_id_source("compare damage type picker")
         .show(ui, |ui| {
             ui.label(RichText::new("Show only these damage types").weak());
-            ui.separator();
+            // See `RowTicks::show_types`: a separator would stretch the window
+            // to the width of the screen.
+            ui.add_space(4.0);
             if ui
                 .add_enabled(!picked.is_empty(), Button::new("Every type"))
                 .hover("Back to showing every type")
@@ -2603,35 +2589,80 @@ fn legend_ratio(row: f32, combats: usize, available: f32) -> f32 {
     (legend_height(row, combats) / available).clamp(MIN_LEGEND_RATIO, MAX_LEGEND_RATIO)
 }
 
-/// The height of the header: two lines, and a third when the notes are shown.
-fn header_height(with_notes: bool) -> f32 {
-    HEADER_LINE_HEIGHT * if with_notes { 3.0 } else { 2.0 }
+/// The height of the header: the metric's line, the combat's number, and a
+/// third line when the notes are shown.
+///
+/// Measured from the font in use rather than assumed, because the table
+/// reserves the height before it draws anything: a line taller than the reserve
+/// had its bottom half cut off by the row below.
+fn header_height(ui: &Ui, with_notes: bool) -> f32 {
+    let line = ui.text_style_height(&TextStyle::Body);
+    line * if with_notes { 3.0 } else { 2.0 } + ui.spacing().item_spacing.y
 }
 
-/// One header cell: the metric name (only on the group's first column, where it
-/// stands for the whole group), the combat number under it, and the user's note
-/// under that.
+/// One header cell: the metric's name on the first line, and under it the strip
+/// that names the combat and does the ordering.
 ///
-/// The number and the note are drawn in the colour that combat's line has on
-/// the chart, so a column and a line can be paired off by eye; the metric name
-/// stays in the ordinary text colour, because it belongs to the whole group of
-/// columns rather than to one combat. `note` is `None` when no combat in the
-/// comparison has one and the line is left out entirely.
-fn header_text(
+/// Only the strip takes the click and lights up, exactly as a metric's
+/// All/Hull/Shield line does in the main window (`MetricsTable`): a filled cell
+/// while it is the one ordering the rows, a rim under the pointer. The metric's
+/// name spans its whole group of columns, so lighting it up would have said
+/// nothing about which combat's column was about to order the rows.
+fn show_header_cell(
+    row: &mut TableRow,
+    metric: &str,
+    lines: &LayoutJob,
+    picked: bool,
+    marker: &str,
+) -> Response {
+    let mut strip = None;
+    row.cell(|ui| {
+        ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let line = ui.text_style_height(&TextStyle::Body);
+            // The name only over the column that opens the group; the others
+            // keep its room, so every strip in a group sits at the same height.
+            if metric.is_empty() {
+                ui.add_space(line);
+            } else {
+                ui.label(metric);
+            }
+
+            let galley = ui.painter().layout_job(lines.clone());
+            let width = ui
+                .available_width()
+                .max(galley.size().x + sort_marker_width(ui) + ui.spacing().item_spacing.x);
+            let (rect, response) =
+                ui.allocate_exact_size(vec2(width, galley.size().y), Sense::click());
+            draw_cell_visuals(ui, picked, &response);
+            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                ui.label(lines.clone());
+            });
+            show_sort_marker(ui, rect, marker);
+            strip = Some(response);
+        });
+    });
+    strip.expect("the cell's contents are drawn before it returns")
+}
+
+/// The lines of a header cell that name the combat: its number and, where any
+/// combat in the comparison carries one, its note.
+///
+/// Drawn in the colour that combat's line has on the chart, so a column and a
+/// line can be paired off by eye. The metric's name is not part of this: it
+/// belongs to the whole group of columns rather than to one combat, and it sits
+/// on a line of its own that takes no clicks. `note` is `None` when no combat
+/// has one and the line is left out entirely.
+fn header_lines(
     font: &FontId,
     text_color: Color32,
-    metric: &str,
     number: &str,
     note: Option<&str>,
     color: Option<Color32>,
 ) -> LayoutJob {
     let combat = TextFormat::simple(font.clone(), color.unwrap_or(text_color));
     let mut job = LayoutJob::default();
-    job.append(
-        &format!("{metric}\n"),
-        0.0,
-        TextFormat::simple(font.clone(), text_color),
-    );
     job.append(number, 0.0, combat.clone());
     if let Some(note) = note {
         job.append(&format!("\n{note}"), 0.0, combat);
@@ -3129,36 +3160,35 @@ mod tests {
     }
 
     fn header(note: Option<&str>, color: Option<Color32>) -> LayoutJob {
-        header_text(&FontId::default(), Color32::WHITE, "DPS", "#2", note, color)
+        header_lines(&FontId::default(), Color32::WHITE, "#2", note, color)
     }
 
     /// The note is a line of its own under the combat number, so a column says
     /// which run it is about and not only which slot it sits in.
     #[test]
     fn a_column_header_carries_the_note_under_the_number() {
-        assert_eq!("DPS\n#2\nFAW build", header(Some("FAW build"), None).text);
+        assert_eq!("#2\nFAW build", header(Some("FAW build"), None).text);
     }
 
     /// A comparison of runs nobody named keeps the two-line header it had,
     /// rather than a blank third line under every column.
     #[test]
     fn a_column_header_without_notes_stays_two_lines() {
-        assert_eq!("DPS\n#2", header(None, None).text);
-        assert_eq!(2.0 * HEADER_LINE_HEIGHT, header_height(false));
-        assert_eq!(3.0 * HEADER_LINE_HEIGHT, header_height(true));
+        assert_eq!("#2", header(None, None).text);
     }
 
     /// The number and the note take the colour of that combat's line on the
-    /// chart; the metric name does not, since it stands for the whole group of
-    /// columns rather than for one combat.
+    /// chart. The metric's name is not among them: it stands for the whole
+    /// group of columns rather than for one combat, and it is drawn on a line
+    /// of its own that takes neither the colour nor the click.
     #[test]
     fn the_number_and_the_note_take_the_series_colour() {
         let job = header(Some("FAW build"), Some(Color32::RED));
         let colors: Vec<Color32> = job.sections.iter().map(|s| s.format.color).collect();
         assert_eq!(
-            vec![Color32::WHITE, Color32::RED, Color32::RED],
+            vec![Color32::RED, Color32::RED],
             colors,
-            "metric name, combat number, note"
+            "combat number, note"
         );
     }
 
@@ -3198,23 +3228,28 @@ mod tests {
         assert_eq!("1: Infected Space", job.text);
     }
 
-    /// The header's lines are counted by hand at [`HEADER_LINE_HEIGHT`], since
-    /// the table reserves the height before it draws anything. A font whose
-    /// rows are taller than that would push the note line out of the space
-    /// reserved for it and into the first row of the table.
+    /// The table reserves the header's height before it draws anything, so the
+    /// reserve has to come from the font in use. It was a hand-counted constant,
+    /// and a taller line had its bottom half cut off by the first row.
     #[test]
-    fn a_header_line_fits_the_font_it_is_drawn_in() {
+    fn the_header_reserves_room_for_every_line_it_draws() {
         let ctx = Context::default();
         crate::app::fonts::install(&ctx);
         // The fonts only exist once a pass has run.
         let _ = ctx.run_ui(Default::default(), |_| {});
-        let font = TextStyle::Body.resolve(&Style::default());
-        let row_height = ctx.fonts_mut(|fonts| fonts.row_height(&font));
-        assert!(
-            row_height <= HEADER_LINE_HEIGHT,
-            "a line of the header is {row_height} high, more than the {HEADER_LINE_HEIGHT} \
-             reserved for it"
-        );
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let line = ui.text_style_height(&TextStyle::Body);
+            assert!(
+                header_height(ui, false) >= 2.0 * line,
+                "two lines do not fit in {}",
+                header_height(ui, false)
+            );
+            assert!(
+                header_height(ui, true) >= 3.0 * line,
+                "three lines do not fit in {}",
+                header_height(ui, true)
+            );
+        });
     }
 
     /// Nothing is charted for that combat — the number is left in the ordinary

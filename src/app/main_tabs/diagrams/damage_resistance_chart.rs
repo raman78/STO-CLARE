@@ -74,6 +74,8 @@ impl DamageResistanceChart {
 
         let mut plot = Plot::new("damage resistance chart")
             .auto_bounds(true)
+            .allow_scroll(PAN_SIDEWAYS_ONLY)
+            .allow_drag(PAN_SIDEWAYS_ONLY)
             .y_axis_min_width(y_axis_width(ui))
             .y_axis_formatter(Self::format_axis)
             .x_axis_formatter(Self::format_axis)
