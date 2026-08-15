@@ -73,9 +73,6 @@ const BREAKDOWN_LABELS: [(&str, &str); 2] = [
 /// combat's line on the chart.
 enum HeaderCell {
     Separator,
-    /// Nothing to say: the column under it holds the differences against the
-    /// reference, which the column beside it already names.
-    Blank,
     Cell {
         /// The metric's name, on the first line and only over the column that
         /// opens its group — empty everywhere else, which still keeps the line's
@@ -88,6 +85,11 @@ enum HeaderCell {
         /// window's tables.
         lines: LayoutJob,
         tooltip: String,
+        /// How many columns the heading stands over: one for a plain column,
+        /// two where the value is followed by its difference against the
+        /// reference. The two are separate columns so both line up, but they
+        /// are one metric of one combat and read as one heading.
+        span: usize,
         /// What clicking it sorts the rows by, when the column holds something
         /// that can be put in order.
         sort: Option<SortBy>,
@@ -1355,6 +1357,7 @@ impl Comparison {
             headers.push(HeaderCell::Cell {
                 metric: "Spread",
                 lines: header_lines(&font, text_color, measure.unit(), None, None),
+                span: 1,
                 tooltip: format!(
                     "How far apart the combats are on this row: the largest less the smallest, in \
                      {}. A combat without the row counts as zero. Rows below the figure on the \
@@ -1382,6 +1385,7 @@ impl Comparison {
                     self.number_of(column),
                     note_suffix(self.note_of_column(column))
                 ),
+                span: 1,
                 sort: Some(SortBy::Impact { slot: column }),
             });
         }
@@ -1398,6 +1402,7 @@ impl Comparison {
                         column.label(),
                         n_slots
                     ),
+                    span: 1,
                     sort: Some(SortBy::Average { metric }),
                 });
                 continue;
@@ -1427,16 +1432,14 @@ impl Comparison {
                             ", with its difference against the reference beside it"
                         }
                     ),
+                    // Over its own column and, past the reference, over the
+                    // column holding its difference as well.
+                    span: if slot_i == 0 { 1 } else { 2 },
                     sort: Some(SortBy::Metric {
                         metric,
                         slot: slot_i,
                     }),
                 });
-                // The column holding this run's difference against the
-                // reference; see `CompareNode::show`.
-                if slot_i > 0 {
-                    headers.push(HeaderCell::Blank);
-                }
             }
         }
         // The breakdown has nothing to say about the reference, so its groups
@@ -1461,6 +1464,7 @@ impl Comparison {
                             note_suffix(self.note_of_column(slot_i)),
                             self.number_of(0)
                         ),
+                        span: 1,
                         sort: None,
                     });
                 }
@@ -1536,18 +1540,17 @@ impl Comparison {
                     for header in &headers {
                         match header {
                             HeaderCell::Separator => show_group_separator(r),
-                            HeaderCell::Blank => {
-                                r.cell(|_| {});
-                            }
                             HeaderCell::Cell {
                                 metric,
                                 lines,
                                 tooltip,
+                                span,
                                 sort: by,
                             } => {
                                 let picked = by.is_some_and(|by| sort.is_sorted_by(by));
                                 let marker = by.map(|by| sort.marker(by)).unwrap_or_default();
-                                let response = show_header_cell(r, metric, lines, picked, marker);
+                                let response =
+                                    show_header_cell(r, *span, metric, lines, picked, marker);
                                 if let Some(by) = by
                                     && response.clicked()
                                 {
@@ -2726,13 +2729,14 @@ fn header_height(ui: &Ui, with_notes: bool) -> f32 {
 /// nothing about which combat's column was about to order the rows.
 fn show_header_cell(
     row: &mut TableRow,
+    span: usize,
     metric: &str,
     lines: &LayoutJob,
     picked: bool,
     marker: &str,
 ) -> Response {
     let mut strip = None;
-    row.cell(|ui| {
+    row.spanning_cell(span, |ui| {
         ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -2746,9 +2750,8 @@ fn show_header_cell(
             }
 
             let galley = ui.painter().layout_job(lines.clone());
-            let width = ui
-                .available_width()
-                .max(galley.size().x + sort_marker_width(ui) + ui.spacing().item_spacing.x);
+            let needed = galley.size().x + sort_marker_width(ui) + ui.spacing().item_spacing.x;
+            let width = ui.available_width().max(needed);
             let (rect, response) =
                 ui.allocate_exact_size(vec2(width, galley.size().y), Sense::click());
             draw_cell_visuals(ui, picked, &response);
@@ -2757,7 +2760,12 @@ fn show_header_cell(
             });
             show_sort_marker(ui, rect, marker);
             strip = Some(response);
-        });
+            // What the group has to be wide enough for: the metric's name on
+            // the first line, or the combat's own lines and the room a sort
+            // mark needs under it.
+            needed.max(text_width(ui, metric))
+        })
+        .inner
     });
     strip.expect("the cell's contents are drawn before it returns")
 }

@@ -320,6 +320,19 @@ The one thing left uneven is the table's `Name` column, which scrolls away with
 everything else — the averages toggle is the answer to a table too wide to
 read, not a frozen first column.
 
+**A heading can stand over a group of columns.** `TableRow::spanning_cell` draws
+one cell across several, which is what a comparison's headings use: a run's
+value and its difference against the reference are two columns so that both line
+up, but they are one metric of one run and take one heading. The group's columns
+keep the widths their numbers need; only a heading wider than the group hands
+the surplus to the group's first column — and it claims that width on *every*
+frame, not only when it does not fit. Claiming nothing while it happened to fit
+let the column shrink back to its numbers on the next frame, and the width
+oscillated (`a_spanning_heading_widens_the_group_under_it` pins it). The width a
+heading needs is returned by the closure rather than read off `min_rect`: a
+heading is laid out without wrapping, and text drawn past its rectangle never
+reaches `min_rect`.
+
 **A column index is not a slot index.** `Comparison::slots` is every run the
 comparison was built from, in the order they were picked; `numbers` maps a
 *column* to the slot it holds, and `columns_in_play` puts the reference first.

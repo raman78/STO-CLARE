@@ -552,6 +552,68 @@ impl<'a> TableRow<'a> {
         self.show_cell(layout, add_column, Sense::click(), Some(checked))
     }
 
+    /// One cell standing over several columns, for a heading that belongs to a
+    /// group of them — a value and the difference beside it are two columns so
+    /// that both line up, but they are one metric of one combat and take one
+    /// heading.
+    ///
+    /// The group's own columns keep their widths: a heading is not what a column
+    /// of numbers should be sized by. Only when the heading is wider than the
+    /// group is the surplus handed to the first column, so nothing is cut off.
+    /// `add_column` returns how wide its contents need to be. Measured by the
+    /// caller rather than read off the `Ui` afterwards: a heading is laid out
+    /// without wrapping, and text drawn past the rectangle it was given does not
+    /// reach `min_rect` — the columns then never grew and neighbouring headings
+    /// ran into each other.
+    pub fn spanning_cell(
+        &mut self,
+        columns: usize,
+        add_column: impl FnOnce(&mut Ui) -> f32,
+    ) -> Response {
+        let columns = columns.max(1);
+        while self.state.columns.len() < self.current_column + columns {
+            self.state.columns.push(Default::default());
+        }
+
+        let span_widths: Vec<f32> = self.state.columns
+            [self.current_column..self.current_column + columns]
+            .iter()
+            .map(|column| column.last_size)
+            .collect();
+        let width: f32 =
+            span_widths.iter().sum::<f32>() + 2.0 * self.cell_spacing * (columns - 1) as f32;
+
+        self.left_offset += self.cell_spacing;
+        let rect = Rect::from_min_size(
+            self.left_top + vec2(self.left_offset, 0.0),
+            vec2(width, self.row_height),
+        );
+        let response = self
+            .ui
+            .interact(rect, self.ui.next_auto_id(), Sense::hover());
+        let mut ui = self.ui.new_child(
+            UiBuilder::new()
+                .max_rect(rect)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+
+        let needed = add_column(&mut ui).max(ui.min_rect().width());
+        // What the first column of the group has to be, once the others have
+        // contributed what they are: `update` takes the largest claim on a
+        // column, so this competes with the rows' own contents rather than
+        // overriding them. Claiming nothing while the heading happened to fit
+        // let the column shrink back to its numbers on the next frame, and the
+        // width oscillated between the two.
+        let others: f32 =
+            span_widths[1..].iter().sum::<f32>() + 2.0 * self.cell_spacing * (columns - 1) as f32;
+        self.state.columns[self.current_column].update(needed - others);
+
+        self.current_column += columns;
+        self.left_offset += width + self.cell_spacing;
+        self.state.update_width(self.left_offset);
+        response
+    }
+
     fn show_cell(
         &mut self,
         layout: Layout,
@@ -763,6 +825,42 @@ fn draw_visuals(ui: &mut Ui, is_stripe: bool, checked: Option<bool>, response: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A heading standing over a group of columns has to be able to widen that
+    /// group, or it runs into the heading beside it. The width it asks for is
+    /// what it returns, since text laid out without wrapping never reaches
+    /// `min_rect`.
+    #[test]
+    fn a_spanning_heading_widens_the_group_under_it() {
+        let ctx = Context::default();
+        let mut width = 0.0;
+        // Column widths are settled from the frame before, so this needs a few.
+        for _ in 0..4 {
+            let _ = ctx.run_ui(Default::default(), |ui| {
+                width = Table::new(ui)
+                    .id("spanning test")
+                    .header(20.0)
+                    .body(20.0, |t| {
+                        t.row(|r| {
+                            r.cell(|ui| {
+                                ui.label("1");
+                            });
+                            r.cell(|ui| {
+                                ui.label("2");
+                            });
+                        });
+                    })
+                    .header_row(|r| {
+                        r.spanning_cell(2, |_| 300.0);
+                    })
+                    .width();
+            });
+        }
+        assert!(
+            width >= 300.0,
+            "the group came to {width}, narrower than the heading over it"
+        );
+    }
 
     /// Whatever mark a heading ends up carrying is one of the marks the room is
     /// kept for. Changing one and not the other would leave a heading either
