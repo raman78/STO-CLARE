@@ -33,6 +33,7 @@
 - the tables in the main window have tick boxes too, healing included, the way a comparison does. Untick an ability and the player's own figures are worked out again without it — DPS, resistance and crit rate for damage, HPS and average heal for healing — and the chart under the table follows, so "what do my beams alone look like" is a few clicks. The player's own row carries the tick that stands for all of theirs — half filled while only some are in, exactly like the Total row of a comparison — and the eye beside the Name heading hides what you have unticked
 
 ### Fixes
+- unticking a row in a comparison no longer closes the program. It happened whenever the run everything is measured against was not the one at the front of the table — the reference you picked, or any comparison you had taken a run out of
 - numbers whose decimals rounded up now read correctly. A figure like 8.972 was shown as 8.0 instead of 9.0 — about one number in twenty at a single decimal — everywhere the program prints one: the tables, the overlay, the summary pasted into chat and the spreadsheets
 
 ## v2.3.0

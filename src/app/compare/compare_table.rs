@@ -458,8 +458,12 @@ impl Comparison {
             Vec::new()
         } else {
             let parents = self.parents();
-            self.slots
-                .iter()
+            // In column order, the order `parents` is in. Walking `self.slots`
+            // instead paired every column with whichever run happens to sit at
+            // that index, which is the same run only while the reference leads
+            // and nothing has been dropped: a row's name was then looked up in
+            // another combat's name manager, and that panics.
+            self.columns_slots()
                 .zip(parents)
                 .map(|(slot, parent)| subset_total(slot, parent?, &left_out))
                 .collect()
@@ -471,11 +475,15 @@ impl Comparison {
             } else {
                 subsets.iter().map(|group| group.as_ref()).collect()
             };
-            let hits_managers: Vec<&HitsManager> =
-                self.slots.iter().map(|s| &s.combat.hits_manger).collect();
+            // Column order again: `build_series` reads the two of them beside
+            // `parents`, so a run out of step would be charted from another
+            // one's hits.
+            let hits_managers: Vec<&HitsManager> = self
+                .columns_slots()
+                .map(|s| &s.combat.hits_manger)
+                .collect();
             let durations: Vec<f64> = self
-                .slots
-                .iter()
+                .columns_slots()
                 .map(|s| combat_duration_seconds(&s.combat))
                 .collect();
             let (cells, averages) = build_row(&parents, &self.columns);
