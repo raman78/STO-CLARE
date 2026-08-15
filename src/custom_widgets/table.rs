@@ -160,6 +160,10 @@ struct State {
 struct ColumnState {
     size: f32,
     last_size: f32,
+    /// Whether this column and the next are under one heading, in which case no
+    /// rule is drawn between them: a value and its difference are two columns so
+    /// that both line up, but they read as one.
+    merged_with_next: bool,
 }
 
 #[allow(dead_code)]
@@ -209,7 +213,11 @@ impl<'a> Table<'a> {
     /// so a header that took everything available grew the window, which offered
     /// more, and the window ran away across the screen.
     pub fn header(self, header_height: f32) -> TableWithHeader<'a> {
-        let state = State::load(self.ui, self.id);
+        let mut state = State::load(self.ui, self.id);
+        // Which columns are under one heading is said again by the header row
+        // this frame, or not at all — a table that stops grouping must not keep
+        // the last frame's groups.
+        state.ungroup();
         // Narrower of the two: never wider than the columns, so the overlay's
         // window cannot grow itself, and never wider than the view, so the
         // scroll area is not pushed out past the right-hand edge with its bar.
@@ -236,6 +244,8 @@ impl<'a> Table<'a> {
             cell_spacing,
         } = self;
         let mut state = State::load(ui, id);
+        // A table with no header row has no groups; see `Table::header`.
+        state.ungroup();
         let (body_rect, _) = show_body(
             ui,
             id,
@@ -607,6 +617,11 @@ impl<'a> TableRow<'a> {
         let others: f32 =
             span_widths[1..].iter().sum::<f32>() + 2.0 * self.cell_spacing * (columns - 1) as f32;
         self.state.columns[self.current_column].update(needed - others);
+        // No rules inside the group: it is one heading over one metric of one
+        // combat, whatever it took two columns to line up.
+        for column in self.current_column..self.current_column + columns - 1 {
+            self.state.columns[column].merged_with_next = true;
+        }
 
         self.current_column += columns;
         self.left_offset += width + self.cell_spacing;
@@ -675,6 +690,11 @@ impl ColumnState {
         let mut left_offset = 0.0;
         for column in columns.iter().take(columns.len() - 1) {
             left_offset += column.last_size + 2.0 * cell_spacing;
+            // Inside a group there is no rule: the heading spans it, and a rule
+            // through the middle of a heading is what makes it read as two.
+            if column.merged_with_next {
+                continue;
+            }
             let start = (left_top + vec2(left_offset, 0.0)).round_to_pixels(ui.pixels_per_point());
             let end = (start + vec2(0.0, rect.height())).round_to_pixels(ui.pixels_per_point());
             ui.painter()
@@ -684,6 +704,13 @@ impl ColumnState {
 }
 
 impl State {
+    /// Forget which columns were drawn under one heading last frame.
+    fn ungroup(&mut self) {
+        for column in self.columns.iter_mut() {
+            column.merged_with_next = false;
+        }
+    }
+
     fn load(ui: &Ui, id: Id) -> Self {
         ui.data_mut(|d| d.get_temp(id)).unwrap_or_default()
     }
@@ -859,6 +886,44 @@ mod tests {
         assert!(
             width >= 300.0,
             "the group came to {width}, narrower than the heading over it"
+        );
+    }
+
+    /// No rule is drawn inside a group: the heading spans it, and a line through
+    /// the middle of a heading is exactly what makes one heading read as two.
+    #[test]
+    fn a_group_under_one_heading_has_no_rule_through_it() {
+        let ctx = Context::default();
+        let mut merged = Vec::new();
+        for _ in 0..3 {
+            let _ = ctx.run_ui(Default::default(), |ui| {
+                Table::new(ui)
+                    .id("merged test")
+                    .header(20.0)
+                    .body(20.0, |t| {
+                        t.row(|r| {
+                            for value in ["1", "2", "3"] {
+                                r.cell(|ui| {
+                                    ui.label(value);
+                                });
+                            }
+                        });
+                    })
+                    .header_row(|r| {
+                        r.spanning_cell(2, |_| 40.0);
+                        r.cell(|_| {});
+                    });
+                merged = State::load(ui, Id::new("merged test"))
+                    .columns
+                    .iter()
+                    .map(|column| column.merged_with_next)
+                    .collect();
+            });
+        }
+        assert_eq!(
+            vec![true, false, false],
+            merged,
+            "only the two columns under one heading are joined"
         );
     }
 

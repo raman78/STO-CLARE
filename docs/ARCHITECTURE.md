@@ -333,6 +333,12 @@ heading needs is returned by the closure rather than read off `min_rect`: a
 heading is laid out without wrapping, and text drawn past its rectangle never
 reaches `min_rect`.
 
+No rule is drawn between columns of a group (`ColumnState::merged_with_next`,
+cleared by `State::ungroup` at the start of every frame so a table that stops
+grouping does not keep the last frame's groups). A rule through the middle of a
+heading is what makes one heading read as two, which is what the split looked
+like even once the heading spanned both columns.
+
 **A column index is not a slot index.** `Comparison::slots` is every run the
 comparison was built from, in the order they were picked; `numbers` maps a
 *column* to the slot it holds, and `columns_in_play` puts the reference first.
