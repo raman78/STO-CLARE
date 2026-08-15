@@ -160,8 +160,8 @@ pub struct Comparison {
     /// `slots`.
     /// The combat every other one is compared against: the first column, the
     /// one the differences are differences from, and the one `⚖ vs rest`
-    /// measures. It starts as the run that dealt the most damage — the natural
-    /// thing to read a set of attempts against — and the reader can move it.
+    /// measures. It starts as the run with the best DPS — the natural thing to
+    /// read a set of attempts against — and the reader can move it.
     reference: usize,
     /// Whether the `⚖ vs rest` column is up. What it measures is the reference.
     show_impact: bool,
@@ -297,7 +297,7 @@ impl Comparison {
             })
             .collect();
         follow_the_reference_player(&mut slots);
-        let reference = biggest_run(&slots);
+        let reference = best_run(&slots);
         let notes = slot_notes(slots.iter(), &settings.combat_notes);
         let mut comparison = Self {
             slots,
@@ -962,7 +962,7 @@ impl Comparison {
             ui.label("Reference").hover(
                 "The combat the others are read against: it leads the table, every difference \
                  beside a figure is against it, and ⚖ vs rest measures it. It starts as the run \
-                 that dealt the most damage.",
+                 with the best DPS.",
             );
             for slot_i in 0..self.slots.len() {
                 if self.dropped.contains(&slot_i) {
@@ -1943,26 +1943,30 @@ fn columns_in_play(slots: usize, dropped: &FxHashSet<usize>, reference: usize) -
     columns
 }
 
-/// The run that dealt the most damage, which is where the reference starts: a
-/// set of attempts at the same map is read against the best of them.
-fn biggest_run(slots: &[Slot]) -> usize {
+/// The run with the best DPS, which is where the reference starts: a set of
+/// attempts at the same map is read against the best of them.
+///
+/// DPS rather than damage dealt, because that is what "the best run" means here
+/// — a long fight can pile up the most damage while going slower than a short
+/// one, and a comparison of attempts is about the rate.
+fn best_run(slots: &[Slot]) -> usize {
     slots
         .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| {
-            total_damage_of(a)
-                .partial_cmp(&total_damage_of(b))
+            dps_of(a)
+                .partial_cmp(&dps_of(b))
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
         .map(|(slot_i, _)| slot_i)
         .unwrap_or(0)
 }
 
-fn total_damage_of(slot: &Slot) -> f64 {
+fn dps_of(slot: &Slot) -> f64 {
     slot.combat
         .players
         .get(&slot.player)
-        .map(|player| player.damage_out.total_damage.all)
+        .map(|player| player.damage_out.dps.all)
         .unwrap_or(0.0)
 }
 

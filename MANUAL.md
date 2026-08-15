@@ -291,7 +291,7 @@ Then press **Compare selected**:
 ![The comparison, with differences](images/compare-result.png)
 
 One run is the **reference**: it leads the table and every other run is read
-against it. It starts as the run that dealt the most damage, and the
+against it. It starts as the run with the best DPS, and the
 **Reference** line under the toolbar changes it — the picked run moves to the
 first column, keeping its own number and colour, so a comparison can read as
 "against my best run" or "against the one I flew the old build in".
