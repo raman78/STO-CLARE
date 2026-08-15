@@ -158,7 +158,13 @@ pub struct Comparison {
     /// The combat whose rows are being measured against the others, while the
     /// reader is asking what that run did differently. Indexes the columns, not
     /// `slots`.
-    impact_slot: Option<usize>,
+    /// The combat every other one is compared against: the first column, the
+    /// one the differences are differences from, and the one `⚖ vs rest`
+    /// measures. It starts as the run that dealt the most damage — the natural
+    /// thing to read a set of attempts against — and the reader can move it.
+    reference: usize,
+    /// Whether the `⚖ vs rest` column is up. What it measures is the reference.
+    show_impact: bool,
     /// Which column the rows are ordered by, and which way round — the same
     /// state the main window's tables keep, so both behave alike.
     sort: SortState<SortBy>,
@@ -291,6 +297,7 @@ impl Comparison {
             })
             .collect();
         follow_the_reference_player(&mut slots);
+        let reference = biggest_run(&slots);
         let notes = slot_notes(slots.iter(), &settings.combat_notes);
         let mut comparison = Self {
             slots,
@@ -307,7 +314,8 @@ impl Comparison {
             hide_unticked: false,
             types: Default::default(),
             of_type: Vec::new(),
-            impact_slot: None,
+            reference,
+            show_impact: false,
             sort: Default::default(),
             open_types: Default::default(),
             show_differences: false,
@@ -326,7 +334,7 @@ impl Comparison {
     /// The slots the comparison is currently of, in order — everything the
     /// reader has not taken out of it.
     fn in_play(&self) -> Vec<usize> {
-        columns_in_play(self.slots.len(), &self.dropped)
+        columns_in_play(self.slots.len(), &self.dropped, self.reference)
     }
 
     fn rebuild(&mut self) {
@@ -534,7 +542,7 @@ impl Comparison {
                 let series = node.series.get(slot_i)?.as_ref()?;
                 Some(
                     PreparedDamageDataSet::new(
-                        &chart_label(numbers[slot_i], note_of(notes, slot_i)),
+                        &chart_label(numbers[slot_i], note_of(notes, numbers[slot_i])),
                         series.total,
                         series.hits.iter(),
                         series.combat_duration_s,
@@ -596,8 +604,8 @@ impl Comparison {
                  combats went into it, and its best and worst."
             } else {
                 "Each column group holds one metric, one column per combat. The small coloured \
-                 number beside a value is its difference against combat #1 — green when it moved \
-                 the better way."
+                 number beside a value is its difference against the reference, which leads the \
+                 table — green when it moved the better way."
             })
             .weak(),
         );
@@ -641,8 +649,11 @@ impl Comparison {
                     }
                     // A combat leaving or rejoining is a different comparison:
                     // every column, every average and the chart are of the
-                    // combats that are in it.
-                    self.impact_slot = None;
+                    // combats that are in it. The reference cannot be a combat
+                    // that has just left, either.
+                    if self.dropped.contains(&self.reference) {
+                        self.reference = self.in_play().first().copied().unwrap_or(self.reference);
+                    }
                     self.rebuild();
                 }
 
@@ -695,10 +706,7 @@ impl Comparison {
                         }
                         // The user's own note, where they wrote one, tells apart
                         // runs the identifier alone cannot.
-                        let note = self
-                            .column_of(slot_i)
-                            .map(|column| note_of(&self.notes, column))
-                            .unwrap_or("");
+                        let note = note_of(&self.notes, slot_i);
                         // The number and the note are drawn in the colour this
                         // combat has on the chart, so the legend, the table and
                         // the chart all say the same thing about which run is
@@ -728,12 +736,16 @@ impl Comparison {
                             // than the window, and the scroll bar goes with it —
                             // off the right-hand edge, where it cannot be seen
                             // or grabbed.
+                            //
+                            // Which run is the reference is said by the
+                            // Reference line under the toolbar, not here: it is
+                            // picked there, and it is no longer whichever run
+                            // happens to be first in this list.
                             ui.add(
                                 Label::new(
                                     RichText::new(
-                                        "(reference — every difference is measured against this \
-                                         combat, and changing the player here moves the others to \
-                                         the same player)",
+                                        "(changing the player here moves the others to the same \
+                                         player)",
                                     )
                                     .weak(),
                                 )
@@ -774,6 +786,18 @@ impl Comparison {
                     .map(|_| theme::series_color(self.numbers[column]))
             })
             .collect()
+    }
+
+    /// The note of the combat a column is of.
+    ///
+    /// Indexed by the combat, never by where its column stands: the columns are
+    /// reordered by which run is the reference, and a note read off the column's
+    /// own position labelled a run with somebody else's words.
+    fn note_of_column(&self, column: usize) -> &str {
+        note_of(
+            &self.notes,
+            self.numbers.get(column).copied().unwrap_or(column),
+        )
     }
 
     /// What a column is called on screen: the combat's own number, which does
@@ -849,7 +873,7 @@ impl Comparison {
             }
 
             if ui
-                .add(Button::new("⚖ vs rest").selected(self.impact_slot.is_some()))
+                .add(Button::new("⚖ vs rest").selected(self.show_impact))
                 .hover(
                     "Pick one combat and read what it did differently. Every row gets a ΔDPS \
                      column: that combat's DPS on the row less what the other combats averaged on \
@@ -860,10 +884,7 @@ impl Comparison {
                 )
                 .clicked()
             {
-                self.impact_slot = match self.impact_slot {
-                    Some(_) => None,
-                    None => Some(0),
-                };
+                self.show_impact = !self.show_impact;
                 impact_changed = true;
             }
 
@@ -905,35 +926,59 @@ impl Comparison {
             });
         });
 
-        impact_changed |= self.show_impact_controls(ui);
+        // A different reference is a different comparison: the columns lead
+        // with it and every difference is against it.
+        if self.show_reference_controls(ui) {
+            self.rebuild();
+            impact_changed = true;
+        }
         if impact_changed {
             self.sort_rows();
         }
         self.show_difference_controls(ui) || differences_toggled
     }
 
-    /// Which combat the impact column is about — a line of its own under the
-    /// toolbar, and only while the column is up.
-    fn show_impact_controls(&mut self, ui: &mut Ui) -> bool {
-        let Some(current) = self.impact_slot else {
-            return false;
-        };
+    /// Which column the `⚖ vs rest` column measures: the reference's, which is
+    /// the first one — the rows hold their figures by column, so this is a
+    /// column index and not a slot. Handing it a slot read another combat's
+    /// DPS the moment the two stopped being the same number.
+    fn impact_column(&self) -> Option<usize> {
+        self.show_impact.then_some(0)
+    }
+
+    /// Which combat the whole comparison is read against — a line of its own
+    /// under the toolbar, there whether or not any extra column is up.
+    ///
+    /// It used to be a control of the `⚖ vs rest` column alone, and the
+    /// reference was whichever run happened to be picked first, said only in a
+    /// note beside that run in the list. One combat is now both: the column the
+    /// table leads with, the one every difference is against, and the one
+    /// `⚖ vs rest` measures.
+    fn show_reference_controls(&mut self, ui: &mut Ui) -> bool {
         let mut changed = false;
-        ui.horizontal(|ui| {
-            ui.label("Measuring");
+        // Wrapped: a comparison can hold a dozen runs, and a single row of them
+        // ran off the right-hand edge with the last few out of reach.
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Reference").hover(
+                "The combat the others are read against: it leads the table, every difference \
+                 beside a figure is against it, and ⚖ vs rest measures it. It starts as the run \
+                 that dealt the most damage.",
+            );
             for slot_i in 0..self.slots.len() {
+                if self.dropped.contains(&slot_i) {
+                    continue;
+                }
                 let note = note_of(&self.notes, slot_i);
                 let label = if note.is_empty() {
-                    format!("#{}", self.number_of(slot_i))
+                    format!("#{}", number_of_slot(slot_i))
                 } else {
-                    format!("#{} {note}", self.number_of(slot_i))
+                    format!("#{} {note}", number_of_slot(slot_i))
                 };
-                if ui.steady_toggle(slot_i == current, label).clicked() {
-                    self.impact_slot = Some(slot_i);
+                if ui.steady_toggle(slot_i == self.reference, label).clicked() {
+                    self.reference = slot_i;
                     changed = true;
                 }
             }
-            ui.label("against the average of the others");
         });
         changed
     }
@@ -952,7 +997,12 @@ impl Comparison {
         let sort = match self.sort.column {
             Some(by) => Some((by, self.sort.natural)),
             // Turning the impact column on orders by it, largest gain first.
-            None => self.impact_slot.map(|slot| (SortBy::Impact { slot }, true)),
+            None => self.show_impact.then_some((
+                SortBy::Impact {
+                    slot: self.reference,
+                },
+                true,
+            )),
         };
         let differences = self.differences();
         let Some(total) = self.nodes.first_mut() else {
@@ -993,7 +1043,6 @@ impl Comparison {
         // The same note line the table's own headers carry, and only when some
         // combat has one — a comparison of runs nobody named keeps two lines.
         let with_notes = self.notes.iter().any(|note| !note.is_empty());
-        let notes = self.notes.clone();
         let mut open = true;
         let open_types = self.open_types.clone();
         let mut folded: Option<String> = None;
@@ -1068,13 +1117,13 @@ impl Comparison {
                                     &font,
                                     text_color,
                                     &format!("#{}", self.number_of(slot_i)),
-                                    with_notes.then(|| note_of(&notes, slot_i)),
+                                    with_notes.then(|| self.note_of_column(slot_i)),
                                     colors.get(slot_i).copied().flatten(),
                                 ))
                                 .hover(format!(
                                     "Combat #{}{}",
-                                    slot_i + 1,
-                                    note_suffix(note_of(&notes, slot_i))
+                                    self.number_of(slot_i),
+                                    note_suffix(self.note_of_column(slot_i))
                                 ));
                             });
                         }
@@ -1194,9 +1243,9 @@ impl Comparison {
         let combats = self
             .columns_slots()
             .enumerate()
-            .map(|(slot_i, slot)| export::Combat {
+            .map(|(column, slot)| export::Combat {
                 identifier: slot.combat.identifier(),
-                note: note_of(&self.notes, slot_i).to_string(),
+                note: self.note_of_column(column).to_string(),
                 player: slot.player.get(&slot.combat.name_manager).to_string(),
             })
             .collect();
@@ -1315,24 +1364,25 @@ impl Comparison {
                 sort: Some(SortBy::Spread),
             });
         }
-        if let Some(slot) = self.impact_slot {
+        if let Some(column) = self.impact_column() {
             headers.push(HeaderCell::Cell {
                 metric: "ΔDPS vs rest",
                 lines: header_lines(
                     &font,
                     text_color,
-                    &format!("#{}", self.number_of(slot)),
-                    with_notes.then(|| note_of(&self.notes, slot)),
-                    colors.get(slot).copied().flatten(),
+                    &format!("#{}", self.number_of(column)),
+                    with_notes.then(|| self.note_of_column(column)),
+                    colors.get(column).copied().flatten(),
                 ),
                 tooltip: format!(
                     "How much DPS each row added to combat #{}{}, or cost it, against the average \
-                     of the other combats. The rows add up to the figure on the Total. Click to \
-                     order the rows by it — largest gain first.",
-                    self.number_of(slot),
-                    note_suffix(note_of(&self.notes, slot))
+                     of the other combats. That combat is the reference, picked on the line under \
+                     the toolbar. The rows add up to the figure on the Total. Click to order the \
+                     rows by it — largest gain first.",
+                    self.number_of(column),
+                    note_suffix(self.note_of_column(column))
                 ),
-                sort: Some(SortBy::Impact { slot }),
+                sort: Some(SortBy::Impact { slot: column }),
             });
         }
 
@@ -1363,18 +1413,18 @@ impl Comparison {
                         } else {
                             format!("#{}", self.number_of(slot_i))
                         },
-                        with_notes.then(|| note_of(&self.notes, slot_i)),
+                        with_notes.then(|| self.note_of_column(slot_i)),
                         colors.get(slot_i).copied().flatten(),
                     ),
                     tooltip: format!(
                         "{} in combat #{}{}{}",
                         column.label(),
                         self.number_of(slot_i),
-                        note_suffix(note_of(&self.notes, slot_i)),
+                        note_suffix(self.note_of_column(slot_i)),
                         if slot_i == 0 {
                             " — the reference every other column is compared against"
                         } else {
-                            ", with its difference against combat #1 beside it"
+                            ", with its difference against the reference beside it"
                         }
                     ),
                     sort: Some(SortBy::Metric {
@@ -1401,14 +1451,15 @@ impl Comparison {
                             &font,
                             text_color,
                             &format!("#{}", self.number_of(slot_i)),
-                            with_notes.then(|| note_of(&self.notes, slot_i)),
+                            with_notes.then(|| self.note_of_column(slot_i)),
                             colors.get(slot_i).copied().flatten(),
                         ),
                         tooltip: format!(
-                            "{} (combat #{}{} against #1)",
+                            "{} (combat #{}{} against the reference #{})",
                             tooltip,
                             self.number_of(slot_i),
-                            note_suffix(note_of(&self.notes, slot_i))
+                            note_suffix(self.note_of_column(slot_i)),
+                            self.number_of(0)
                         ),
                         sort: None,
                     });
@@ -1416,7 +1467,7 @@ impl Comparison {
             }
         }
 
-        let impact_slot = self.impact_slot;
+        let impact_slot = self.impact_column();
         let sort = self.sort;
         let mut sort_clicked: Option<SortBy> = None;
         let mut selected = self.selected;
@@ -1765,7 +1816,7 @@ impl CompareNode {
                                 // each can then dwarf their sum — so spell the
                                 // sum out rather than leave it to be noticed.
                                 let tooltip = format!(
-                                    "{} from landing more often\n{} from each hit landing harder\n= {} DPS against combat #1",
+                                    "{} from landing more often\n{} from each hit landing harder\n= {} DPS against the reference",
                                     signed(breakdown.rate),
                                     signed(breakdown.size),
                                     signed(breakdown.rate + breakdown.size)
@@ -1880,8 +1931,46 @@ impl CompareNode {
 }
 
 /// The slots a comparison is of, in column order: everything not taken out.
-fn columns_in_play(slots: usize, dropped: &FxHashSet<usize>) -> Vec<usize> {
-    (0..slots).filter(|slot| !dropped.contains(slot)).collect()
+fn columns_in_play(slots: usize, dropped: &FxHashSet<usize>, reference: usize) -> Vec<usize> {
+    // The reference leads, because every other column is read against it — as a
+    // difference, and as the run `⚖ vs rest` measures. The rest keep the order
+    // they were picked in, so moving the reference shuffles nothing else.
+    let mut columns = Vec::with_capacity(slots);
+    if reference < slots && !dropped.contains(&reference) {
+        columns.push(reference);
+    }
+    columns.extend((0..slots).filter(|slot| !dropped.contains(slot) && *slot != reference));
+    columns
+}
+
+/// The run that dealt the most damage, which is where the reference starts: a
+/// set of attempts at the same map is read against the best of them.
+fn biggest_run(slots: &[Slot]) -> usize {
+    slots
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| {
+            total_damage_of(a)
+                .partial_cmp(&total_damage_of(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(slot_i, _)| slot_i)
+        .unwrap_or(0)
+}
+
+fn total_damage_of(slot: &Slot) -> f64 {
+    slot.combat
+        .players
+        .get(&slot.player)
+        .map(|player| player.damage_out.total_damage.all)
+        .unwrap_or(0.0)
+}
+
+/// A combat's own number, which is what it is called wherever it appears — the
+/// list, the column heading, the chart's legend — and which does not move when
+/// another combat is taken out or made the reference.
+fn number_of_slot(slot: usize) -> usize {
+    slot + 1
 }
 
 /// The number a column is shown under — the combat's own, so taking one combat
@@ -3850,7 +3939,7 @@ mod tests {
     #[test]
     fn dropping_a_combat_leaves_the_others_their_numbers() {
         let dropped: FxHashSet<usize> = [1usize].into_iter().collect();
-        let numbers = columns_in_play(4, &dropped);
+        let numbers = columns_in_play(4, &dropped, 0);
         assert_eq!(vec![0, 2, 3], numbers);
 
         assert_eq!(1, number_of(&numbers, 0), "the first combat is still #1");
@@ -3864,8 +3953,45 @@ mod tests {
     /// Nothing dropped is every combat, in order.
     #[test]
     fn a_comparison_nobody_has_touched_holds_every_combat() {
-        assert_eq!(vec![0, 1, 2], columns_in_play(3, &Default::default()));
-        assert!(columns_in_play(0, &Default::default()).is_empty());
+        assert_eq!(vec![0, 1, 2], columns_in_play(3, &Default::default(), 0));
+        assert!(columns_in_play(0, &Default::default(), 0).is_empty());
+    }
+
+    /// The reference leads the table, and the rest keep the order they were
+    /// picked in. Their numbers and colours are their own, so a column can be
+    /// headed #3 while standing first.
+    #[test]
+    fn the_reference_leads_and_nothing_else_moves() {
+        let numbers = columns_in_play(4, &Default::default(), 2);
+        assert_eq!(vec![2, 0, 1, 3], numbers);
+        assert_eq!(3, number_of(&numbers, 0), "the reference is still #3");
+        assert_eq!(1, number_of(&numbers, 1), "and #1 has not been renamed");
+        assert_eq!(Some(0), column_of(&numbers, 2), "the reference leads");
+    }
+
+    /// A column carries its own combat's number and its own combat's note.
+    /// Both used to be read off where the column stood, which labelled the
+    /// leading column with the first run's note the moment the reference moved.
+    #[test]
+    fn a_column_is_labelled_with_the_combat_it_holds() {
+        let numbers = columns_in_play(3, &Default::default(), 2);
+        let notes: Vec<String> = ["first", "second", "third"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+
+        assert_eq!(3, number_of(&numbers, 0), "the reference leads as #3");
+        assert_eq!("third", note_of(&notes, numbers[0]), "with its own note");
+        assert_eq!(1, number_of(&numbers, 1));
+        assert_eq!("first", note_of(&notes, numbers[1]));
+    }
+
+    /// A reference that has been taken out of the comparison is not a column at
+    /// all, and must not be conjured into one.
+    #[test]
+    fn a_dropped_reference_is_not_a_column() {
+        let dropped: FxHashSet<usize> = [2usize].into_iter().collect();
+        assert_eq!(vec![0, 1, 3], columns_in_play(4, &dropped, 2));
     }
 
     /// A difference is the largest combat less the smallest, and a combat

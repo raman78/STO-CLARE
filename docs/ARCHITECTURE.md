@@ -320,6 +320,17 @@ The one thing left uneven is the table's `Name` column, which scrolls away with
 everything else — the averages toggle is the answer to a table too wide to
 read, not a frozen first column.
 
+**A column index is not a slot index.** `Comparison::slots` is every run the
+comparison was built from, in the order they were picked; `numbers` maps a
+*column* to the slot it holds, and `columns_in_play` puts the reference first.
+Anything read per run — the note, the number, the colour, `CompareNode::dps` —
+has to be indexed by the right one of the two. They were the same number while
+columns were slots in order, so mixing them cost nothing; making the reference
+lead broke that, and a column was labelled with the first run's note while
+`⚖ vs rest` measured a combat nobody had picked. `note_of_column` and
+`number_of` take a column and do the mapping; `CompareNode::impact` takes a
+column, since a node holds its figures per column.
+
 **The comparison's headers are the main window's headers.** A column header is
 three lines — the metric, the combat's number, the note — and only the lines
 naming the combat take the click (`show_header_cell`), drawn with the same

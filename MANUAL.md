@@ -290,9 +290,14 @@ Then press **Compare selected**:
 
 ![The comparison, with differences](images/compare-result.png)
 
-The first combat you ticked is the reference. Every other combat gets a small
-coloured number next to each value: green when it moved the better way, red when
-it moved the worse way. The ability breakdown is lined up group by group, so you
+One run is the **reference**: it leads the table and every other run is read
+against it. It starts as the run that dealt the most damage, and the
+**Reference** line under the toolbar changes it — the picked run moves to the
+first column, keeping its own number and colour, so a comparison can read as
+"against my best run" or "against the one I flew the old build in".
+
+Every other combat gets a small coloured number next to each value: green when
+it moved the better way, red when it moved the worse way. The ability breakdown is lined up group by group, so you
 are comparing the same ability across runs rather than reading two lists.
 
 The **Columns** menu decides which metrics are shown. All of the compared
@@ -442,9 +447,9 @@ is what you see.
 ### What one run did differently from the rest
 
 **⚖ vs rest** answers the question a pile of runs is usually about: why is *this*
-one different? Press it, pick the run under the toolbar, and a **ΔDPS vs rest**
-column appears beside the name: that run's DPS on the row, less what the other
-runs averaged on it. The rows are put in the order of how much they weighed.
+one different? Press it and a **ΔDPS vs rest** column appears beside the name:
+the reference run's DPS on the row, less what the other runs averaged on it. Pick
+a different run on the **Reference** line to measure that one instead. The rows are put in the order of how much they weighed.
 
 For `Mycelial Lightning` at `0, 0, 19480, 19535, 0`, run #3 reads **+14'596** —
 it did 19'480 where the others averaged 4'884 — and run #1 reads **−9'754**,
