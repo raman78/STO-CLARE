@@ -210,7 +210,10 @@ impl<'a> Table<'a> {
     /// more, and the window ran away across the screen.
     pub fn header(self, header_height: f32) -> TableWithHeader<'a> {
         let state = State::load(self.ui, self.id);
-        let width = state.last_size.x;
+        // Narrower of the two: never wider than the columns, so the overlay's
+        // window cannot grow itself, and never wider than the view, so the
+        // scroll area is not pushed out past the right-hand edge with its bar.
+        let width = state.last_size.x.min(self.ui.available_width());
         let (header_rect, _) = self
             .ui
             .allocate_exact_size(vec2(width, header_height), Sense::hover());
@@ -662,6 +665,49 @@ impl State {
 /// heading in one table.
 pub fn draw_cell_visuals(ui: &mut Ui, checked: bool, response: &Response) {
     draw_visuals(ui, false, Some(checked), response);
+}
+
+/// A row of a list, drawn the way a table row is: every other one on a faint
+/// fill, and the one under the pointer picked out.
+///
+/// Lists elsewhere in the program are rows of widgets with nothing behind them,
+/// which on a list of a dozen combats makes it easy to read one line's tick
+/// against another line's name. The background is reserved before the contents
+/// are drawn and filled in afterwards, since a row is only as tall as whatever
+/// went into it.
+pub fn list_row<R>(
+    ui: &mut Ui,
+    is_stripe: bool,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> InnerResponse<R> {
+    let width = ui.available_width();
+    let background = ui.painter().add(Shape::Noop);
+    let inner = ui.scope_builder(UiBuilder::new().sense(Sense::hover()), |ui| {
+        ui.set_min_width(width);
+        ui.horizontal(|ui| add_contents(ui)).inner
+    });
+
+    // The full width of the list, not only what the widgets came to: a highlight
+    // that stopped at the end of the text would say the row ended there.
+    let rect = Rect::from_min_size(
+        inner.response.rect.min,
+        vec2(width, inner.response.rect.height()),
+    );
+    let fill = if inner.response.hovered() {
+        ui.style()
+            .interact_selectable(&inner.response, false)
+            .bg_fill
+    } else if is_stripe {
+        ui.visuals().faint_bg_color
+    } else {
+        Color32::TRANSPARENT
+    };
+    if fill != Color32::TRANSPARENT {
+        ui.painter()
+            .set(background, epaint::RectShape::filled(rect, 0.0, fill));
+    }
+
+    InnerResponse::new(inner.inner, inner.response)
 }
 
 fn draw_visuals(ui: &mut Ui, is_stripe: bool, checked: Option<bool>, response: &Response) {

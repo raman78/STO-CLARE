@@ -28,6 +28,7 @@ use crate::{
 mod compare_table;
 mod date_range;
 
+use crate::custom_widgets::table::list_row;
 use crate::custom_widgets::tooltip::CloseTooltip;
 use compare_table::Comparison;
 use date_range::DateRange;
@@ -400,7 +401,7 @@ impl CompareView {
             // longest combat name.
             .auto_shrink([false, true])
             .show(ui, |ui| {
-                for (i, matches) in visible {
+                for (row, (i, matches)) in visible.into_iter().enumerate() {
                     let note = notes[i];
                     let mut checked = self.selected.contains(&i);
                     let label = if note.is_empty() {
@@ -408,7 +409,10 @@ impl CompareView {
                     } else {
                         format!("{} — {note}", combats[i])
                     };
-                    ui.horizontal(|ui| {
+                    // Striped and picked out under the pointer, like a table
+                    // row: an evening's worth of runs of the same map differ
+                    // only in the time at the end of the line.
+                    list_row(ui, row.is_multiple_of(2), |ui| {
                         if ui.checkbox(&mut checked, label).clicked() {
                             self.toggle_selected(i, checked);
                         }

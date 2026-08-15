@@ -349,16 +349,26 @@ Table::new(ui)
     .header_row(|r| { … });      // draws the header into the kept room
 ```
 
-The room `header` keeps is as wide as the columns were last frame, never as wide
-as the space on offer. The overlay sizes its window to what its table asks for,
+The room `header` keeps is the narrower of the columns' own width and the width
+of the view — never the space on offer, and never wider than what is on screen. The overlay sizes its window to what its table asks for,
 so a header that took the available width grew the window, which then offered
-more — the overlay ran away across the screen. `HeaderSlot::header_row` shifts
+more — the overlay ran away across the screen. Reserving the columns' full width
+instead pushed the scroll area past the right-hand edge on a wide comparison,
+and took the vertical bar with it; hence the narrower of the two. `HeaderSlot::header_row` shifts
 the header by the offset the body settled on *this* frame, clips it vertically
 to that band and horizontally to the view. Drawing the header first —
 the obvious order — could only ever use the previous frame's offset, and the
 headings would lag behind their columns while the table was dragged. The two
 closures also cannot be alive at once: both borrow the table's own state, which
 is the other reason `header` takes no closure.
+
+**A list of rows is drawn like a table's rows.** `table::list_row` stripes every
+other row and picks out the one under the pointer, and it is what the lists of
+runs use — the one a comparison is picked from and the legend inside one. They
+were rows of widgets on a flat background, where a dozen runs of the same map on
+the same evening differ only by the time at the end of the line. The background
+is reserved with `Shape::Noop` before the contents are drawn and filled in
+afterwards, because a row is only as tall as what went into it.
 
 **A scrolling list must not be wider than its pane.** Every vertical
 `ScrollArea` in the program carries `auto_shrink([false, true])` so its bar sits

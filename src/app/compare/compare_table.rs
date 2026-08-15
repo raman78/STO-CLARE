@@ -73,6 +73,9 @@ const BREAKDOWN_LABELS: [(&str, &str); 2] = [
 /// combat's line on the chart.
 enum HeaderCell {
     Separator,
+    /// Nothing to say: the column under it holds the differences against the
+    /// reference, which the column beside it already names.
+    Blank,
     Cell {
         /// The metric's name, on the first line and only over the column that
         /// opens its group — empty everywhere else, which still keeps the line's
@@ -673,7 +676,11 @@ impl Comparison {
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 for (slot_i, slot) in self.slots.iter().enumerate() {
-                    ui.horizontal(|ui| {
+                    // Striped and picked out under the pointer, like a table
+                    // row: a dozen runs of the same map on the same evening are
+                    // told apart by the note at the end of a long line, and the
+                    // eye has to get there from the right tick.
+                    list_row(ui, slot_i.is_multiple_of(2), |ui| {
                         // A combat can be dropped from the comparison and put
                         // back without going through the picker again: the
                         // quickest way to ask "and what if that run were not in
@@ -1375,6 +1382,11 @@ impl Comparison {
                         slot: slot_i,
                     }),
                 });
+                // The column holding this run's difference against the
+                // reference; see `CompareNode::show`.
+                if slot_i > 0 {
+                    headers.push(HeaderCell::Blank);
+                }
             }
         }
         // The breakdown has nothing to say about the reference, so its groups
@@ -1473,6 +1485,9 @@ impl Comparison {
                     for header in &headers {
                         match header {
                             HeaderCell::Separator => show_group_separator(r),
+                            HeaderCell::Blank => {
+                                r.cell(|_| {});
+                            }
                             HeaderCell::Cell {
                                 metric,
                                 lines,
@@ -1672,24 +1687,39 @@ impl CompareNode {
                     continue;
                 }
                 for slot_i in 0..n_slots {
-                    match self
+                    let metric = self
                         .cells
                         .get(slot_i)
                         .and_then(|c| c.as_ref())
-                        .and_then(|c| c.metrics.get(metric_i))
-                    {
+                        .and_then(|c| c.metrics.get(metric_i));
+                    match metric {
                         Some(metric) => {
                             r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                if let Some(delta) = &metric.delta {
-                                    let palette = theme::palette();
-                                    let color = if delta.improvement {
-                                        palette.improve
-                                    } else {
-                                        palette.worse
-                                    };
-                                    ui.colored_label(color, &delta.text);
-                                }
                                 ui.label(&metric.text);
+                            });
+                        }
+                        None => {
+                            r.cell(|_| {});
+                        }
+                    }
+                    // The difference against the reference goes in a column of
+                    // its own, so the figures themselves line up: drawn beside
+                    // the value it pushed each one left by however wide that
+                    // run's difference happened to be, and no two columns of
+                    // numbers started at the same place.
+                    if slot_i == 0 {
+                        continue;
+                    }
+                    match metric.and_then(|metric| metric.delta.as_ref()) {
+                        Some(delta) => {
+                            let palette = theme::palette();
+                            let color = if delta.improvement {
+                                palette.improve
+                            } else {
+                                palette.worse
+                            };
+                            r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.colored_label(color, &delta.text);
                             });
                         }
                         None => {
