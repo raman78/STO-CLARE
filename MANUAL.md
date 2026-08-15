@@ -172,7 +172,8 @@ you prefer the compact table, turn the split off under
 
 Click any column heading to put the table in that order. The heading lights up
 and carries an arrow for which way the order runs; click it again to turn it
-round. **All**, **Hull** and **Shield** are three headings, not one — click
+round. That includes **Name** — click it and the rows are in alphabetical order,
+which is how you find an ability whose name you know but whose size you do not. **All**, **Hull** and **Shield** are three headings, not one — click
 Shield and the table is ordered by what landed on shields alone. This works the
 same way on every tab, and the order you chose stays put when you open another
 combat.

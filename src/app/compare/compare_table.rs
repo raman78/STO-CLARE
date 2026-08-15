@@ -108,6 +108,9 @@ enum SortBy {
     Spread,
     /// What the row was worth to the combat being measured.
     Impact { slot: usize },
+    /// The row's own name, A to Z — for finding an ability by what it is called
+    /// rather than by what it was worth.
+    Name,
 }
 
 struct Slot {
@@ -1016,6 +1019,15 @@ impl Comparison {
                 .sort_by(|a, b| b.sort_key.total_cmp(&a.sort_key));
             return;
         };
+        // By name the order is alphabetical rather than largest-first, so the
+        // column's own way round is A to Z.
+        if by == SortBy::Name {
+            total.sub_nodes.sort_by(|a, b| {
+                let (a, b) = (a.name.to_lowercase(), b.name.to_lowercase());
+                if descending { a.cmp(&b) } else { b.cmp(&a) }
+            });
+            return;
+        }
         total.sub_nodes.sort_by(|a, b| {
             let (a, b) = (a.sort_value(by, differences), b.sort_value(by, differences));
             if descending {
@@ -1522,7 +1534,16 @@ impl Comparison {
                     r.cell(|_| {});
                     r.cell(|ui| {
                         ui.horizontal(|ui| {
-                            ui.label("Name");
+                            if show_sortable_label(
+                                ui,
+                                sort.is_sorted_by(SortBy::Name),
+                                sort.marker(SortBy::Name),
+                                "Name",
+                            )
+                            .clicked()
+                            {
+                                sort_clicked = Some(SortBy::Name);
+                            }
                             if ui
                                 .add(Button::selectable(hide_unticked, "👁"))
                                 .hover(
@@ -2367,6 +2388,9 @@ impl CompareNode {
                 .map(|(measure, _)| self.difference(measure))
                 .unwrap_or(0.0),
             SortBy::Impact { slot } => self.impact(slot).unwrap_or(0.0),
+            // Names are not numbers; `sort_rows` orders by them without asking
+            // a row what it holds.
+            SortBy::Name => 0.0,
         }
     }
 

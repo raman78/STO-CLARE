@@ -158,6 +158,10 @@ pub struct SummaryTable {
     sort: SortState<ColumnKey>,
 }
 
+/// The heading of the player column, which is not one of the metric columns but
+/// orders the rows all the same.
+const NAME_COLUMN: ColumnKey = ColumnKey::whole("Player");
+
 /// The column the players are in when nothing has been clicked: the first one,
 /// which is how `MetricsTable` decides it too. That is DPS — the question a
 /// summary is opened with is who was doing the most work, and a long fight can
@@ -233,6 +237,11 @@ impl SummaryTable {
             return;
         };
         self.sort = previous.sort;
+        // The player column is not among the metric columns.
+        if key == NAME_COLUMN {
+            self.sort_by_column(|table| table.sort_by_name());
+            return;
+        }
         let Some(column) = COLUMNS.iter().find(|column| column.name == key.column()) else {
             return;
         };
@@ -274,7 +283,19 @@ impl SummaryTable {
             .header_row(|r| {
                 r.cell(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Player");
+                        // Ordering by name, the same as the tables on the damage
+                        // tabs: a team of five is found by who, not by how much.
+                        if show_sortable_label(
+                            ui,
+                            self.sort.is_sorted_by(NAME_COLUMN),
+                            self.sort.marker(NAME_COLUMN),
+                            "Player",
+                        )
+                        .clicked()
+                        {
+                            self.sort.clicked(NAME_COLUMN);
+                            self.sort_by_column(|table| table.sort_by_name());
+                        }
                     });
                 });
 
@@ -352,6 +373,12 @@ impl SummaryTable {
         if !self.sort.natural {
             self.players.reverse();
         }
+    }
+
+    /// By name, A to Z. Case is ignored, so `@Raman` and `@raman` file together.
+    fn sort_by_name(&mut self) {
+        self.players
+            .sort_unstable_by_key(|player| player.name.to_lowercase());
     }
 
     fn sort_by_option_f64(&mut self, mut value: impl FnMut(&Player) -> Option<f64>) {

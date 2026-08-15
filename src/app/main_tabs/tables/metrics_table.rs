@@ -180,6 +180,10 @@ impl ColumnKey {
     }
 }
 
+/// The heading of the name column, which is not one of the metric columns but
+/// can order the rows all the same.
+const NAME_COLUMN: ColumnKey = ColumnKey::whole("Name");
+
 /// One half of a split column.
 #[derive(Clone, Copy)]
 pub struct ColumnPart<T: 'static> {
@@ -298,7 +302,20 @@ impl<T: 'static> MetricsTable<T> {
                 r.cell(|_| {});
                 r.cell(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Name");
+                        // The name orders the rows too — by name, which is how
+                        // an ability is looked for when it is known what it is
+                        // called and not what it is worth.
+                        if show_sortable_label(
+                            ui,
+                            self.sort.is_sorted_by(NAME_COLUMN),
+                            self.sort.marker(NAME_COLUMN),
+                            "Name",
+                        )
+                        .clicked()
+                        {
+                            self.sort.clicked(NAME_COLUMN);
+                            self.sort_by_column(|table| table.sort_by_name());
+                        }
                         ticks.show_eye(ui);
                         ticks.show_types(ui);
                     });
@@ -452,6 +469,12 @@ impl<T: 'static> MetricsTable<T> {
             return;
         }
         self.sort = previous.sort;
+        // The name column is not one of the metric columns, so it is not found
+        // among them; it orders the rows all the same.
+        if self.sort.is_sorted_by(NAME_COLUMN) {
+            self.sort_by_column(|table| table.sort_by_name());
+            return;
+        }
         let column = self
             .sort
             .column
@@ -465,6 +488,13 @@ impl<T: 'static> MetricsTable<T> {
                 .unwrap_or(whole);
             self.sort_by_column(sort);
         }
+    }
+
+    /// By name, A to Z, at every level of the tree. Case is ignored: a reader
+    /// looking for `Gravity Well` does not think of it as filed apart from
+    /// `gravity well`.
+    pub fn sort_by_name(&mut self) {
+        self.sort_by_asc(|part| part.name.to_lowercase());
     }
 
     pub fn sort_by_desc<K: Ord>(&mut self, mut key: impl FnMut(&MetricsTablePart<T>) -> K + Copy) {
@@ -1012,6 +1042,54 @@ mod tests {
             all_types: &[],
             changed: false,
         }
+    }
+
+    fn row(name: &str, children: Vec<MetricsTablePart<()>>) -> MetricsTablePart<()> {
+        MetricsTablePart {
+            data: (),
+            name: name.to_string(),
+            handle: NameHandle::default(),
+            id: 0,
+            sub_parts: children,
+            open: false,
+        }
+    }
+
+    fn names(parts: &[MetricsTablePart<()>]) -> Vec<&str> {
+        parts.iter().map(|part| part.name.as_str()).collect()
+    }
+
+    /// The name column orders the rows by what they are called, at every level
+    /// of the tree, and files `gravity well` with `Gravity Well` rather than
+    /// under a heading of its own.
+    #[test]
+    fn the_name_column_orders_the_rows_by_name() {
+        let mut table = MetricsTable::<()>::empty_base(&[]);
+        table.players = vec![
+            row("Talon", vec![row("torpedo", vec![]), row("Beam", vec![])]),
+            row("kestrel", vec![]),
+        ];
+
+        table.sort_by_name();
+
+        assert_eq!(["kestrel", "Talon"], names(&table.players)[..]);
+        assert_eq!(["Beam", "torpedo"], names(&table.players[1].sub_parts)[..]);
+    }
+
+    /// The name column is not one of the metric columns, so its ordering has to
+    /// survive a rebuild by a route of its own — otherwise a tick left the table
+    /// ordered by name with no heading saying so.
+    #[test]
+    fn the_name_ordering_survives_a_rebuild() {
+        let mut previous = MetricsTable::<()>::empty_base(&[]);
+        previous.sort.clicked(NAME_COLUMN);
+
+        let mut next = MetricsTable::<()>::empty_base(&[]);
+        next.players = vec![row("Talon", vec![]), row("kestrel", vec![])];
+        next.take_state_from(&previous);
+
+        assert!(next.sort.is_sorted_by(NAME_COLUMN));
+        assert_eq!(["kestrel", "Talon"], names(&next.players)[..]);
     }
 
     /// A heading keeps the room its sort mark needs before it has one, so
