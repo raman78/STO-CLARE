@@ -1004,81 +1004,73 @@ impl Comparison {
                     .weak(),
                 );
                 ui.separator();
-                ScrollArea::vertical()
-                    // The bar goes at the edge of the window rather than
-                    // against the table.
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        let height = header_height(ui, with_notes);
-                        Table::new(ui)
-                            .cell_spacing(10.0)
-                            .header(height, |r| {
+                let height = header_height(ui, with_notes);
+                // The table scrolls both ways by itself; its bars belong at the
+                // edges of the window, not against the last column.
+                Table::new(ui)
+                    .cell_spacing(10.0)
+                    .header(height)
+                    .body(ROW_HEIGHT, |t| {
+                        let mut formatter = NumberFormatter::new();
+                        for row in rows.iter() {
+                            let unfolded = open_types.contains(&row.name);
+                            t.row(|r| {
                                 r.cell(|ui| {
-                                    ui.label("Damage type");
+                                    ui.horizontal(|ui| {
+                                        let symbol = if unfolded { "⏷" } else { "⏵" };
+                                        if ui
+                                            .add_visible(
+                                                !row.parts.is_empty(),
+                                                Button::selectable(false, symbol)
+                                                    .min_size(ARROW_SIZE),
+                                            )
+                                            .hover("What this type is made of")
+                                            .clicked()
+                                        {
+                                            folded = Some(row.name.clone());
+                                        }
+                                        ui.label(&row.name);
+                                    });
                                 });
-                                for slot_i in 0..n_slots {
-                                    r.cell(|ui| {
-                                        ui.label(header_lines(
-                                            &font,
-                                            text_color,
-                                            &format!("#{}", self.number_of(slot_i)),
-                                            with_notes.then(|| note_of(&notes, slot_i)),
-                                            colors.get(slot_i).copied().flatten(),
-                                        ))
-                                        .hover(format!(
-                                            "Combat #{}{}",
-                                            slot_i + 1,
-                                            note_suffix(note_of(&notes, slot_i))
-                                        ));
-                                    });
-                                }
-                            })
-                            .body(ROW_HEIGHT, |t| {
-                                let mut formatter = NumberFormatter::new();
-                                for row in rows.iter() {
-                                    let unfolded = open_types.contains(&row.name);
-                                    t.row(|r| {
-                                        r.cell(|ui| {
-                                            ui.horizontal(|ui| {
-                                                let symbol = if unfolded { "⏷" } else { "⏵" };
-                                                if ui
-                                                    .add_visible(
-                                                        !row.parts.is_empty(),
-                                                        Button::selectable(false, symbol)
-                                                            .min_size(ARROW_SIZE),
-                                                    )
-                                                    .hover("What this type is made of")
-                                                    .clicked()
-                                                {
-                                                    folded = Some(row.name.clone());
-                                                }
-                                                ui.label(&row.name);
-                                            });
-                                        });
-                                        show_shares(r, &row.shares, &row.damage, &mut formatter);
-                                    });
-
-                                    if !unfolded {
-                                        continue;
-                                    }
-                                    for part in row.parts.iter() {
-                                        t.row(|r| {
-                                            r.cell(|ui| {
-                                                ui.horizontal(|ui| {
-                                                    ui.add_space(ARROW_SIZE.x);
-                                                    ui.label(RichText::new(&part.name).weak());
-                                                });
-                                            });
-                                            show_shares(
-                                                r,
-                                                &part.shares,
-                                                &part.damage,
-                                                &mut formatter,
-                                            );
-                                        });
-                                    }
-                                }
+                                show_shares(r, &row.shares, &row.damage, &mut formatter);
                             });
+
+                            if !unfolded {
+                                continue;
+                            }
+                            for part in row.parts.iter() {
+                                t.row(|r| {
+                                    r.cell(|ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.add_space(ARROW_SIZE.x);
+                                            ui.label(RichText::new(&part.name).weak());
+                                        });
+                                    });
+                                    show_shares(r, &part.shares, &part.damage, &mut formatter);
+                                });
+                            }
+                        }
+                    })
+                    .header_row(|r| {
+                        r.cell(|ui| {
+                            ui.label("Damage type");
+                        });
+                        for slot_i in 0..n_slots {
+                            r.cell(|ui| {
+                                ui.label(header_lines(
+                                    &font,
+                                    text_color,
+                                    &format!("#{}", self.number_of(slot_i)),
+                                    with_notes.then(|| note_of(&notes, slot_i)),
+                                    colors.get(slot_i).copied().flatten(),
+                                ))
+                                .hover(format!(
+                                    "Combat #{}{}",
+                                    slot_i + 1,
+                                    note_suffix(note_of(&notes, slot_i))
+                                ));
+                            });
+                        }
                     });
             });
 
@@ -1433,74 +1425,75 @@ impl Comparison {
         };
         {
             let nodes = &mut self.nodes;
-            ScrollArea::horizontal().show(ui, |ui| {
-                let height = header_height(ui, with_notes);
-                Table::new(ui)
-                    .cell_spacing(10.0)
-                    .header(height, |r| {
-                        // The tick column's header stays empty: the row it
-                        // belongs to (Total) carries the tick that stands for
-                        // all of them.
-                        r.cell(|_| {});
-                        r.cell(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Name");
-                                if ui
-                                    .add(Button::selectable(hide_unticked, "👁"))
-                                    .hover(
-                                        "Hide the rows that are not ticked, leaving only what the \
+            let height = header_height(ui, with_notes);
+            // The table scrolls both ways by itself, so the bars stay at the
+            // edges of the view; the header goes on last, level with what is
+            // under it.
+            Table::new(ui)
+                .cell_spacing(10.0)
+                .header(height)
+                .body(ROW_HEIGHT, |t| {
+                    for node in nodes.iter_mut() {
+                        node.show(
+                            t,
+                            0,
+                            n_slots,
+                            n_metrics,
+                            show_breakdown,
+                            show_averages,
+                            impact_slot,
+                            &mut ticks,
+                            &mut selected,
+                            &mut selection_changed,
+                        );
+                    }
+                })
+                .header_row(|r| {
+                    // The tick column's header stays empty: the row it
+                    // belongs to (Total) carries the tick that stands for
+                    // all of them.
+                    r.cell(|_| {});
+                    r.cell(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Name");
+                            if ui
+                                .add(Button::selectable(hide_unticked, "👁"))
+                                .hover(
+                                    "Hide the rows that are not ticked, leaving only what the \
                                          Total is added up from. They stay out of the Total either \
                                          way — this only takes them off the screen.",
-                                    )
-                                    .clicked()
-                                {
-                                    hide_toggled = true;
-                                }
-                                show_type_picker(ui, &all_types, &mut picked_types);
-                            });
+                                )
+                                .clicked()
+                            {
+                                hide_toggled = true;
+                            }
+                            show_type_picker(ui, &all_types, &mut picked_types);
                         });
-                        for header in &headers {
-                            match header {
-                                HeaderCell::Separator => show_group_separator(r),
-                                HeaderCell::Cell {
-                                    metric,
-                                    lines,
-                                    tooltip,
-                                    sort: by,
-                                } => {
-                                    let picked = by.is_some_and(|by| sort.is_sorted_by(by));
-                                    let marker = by.map(|by| sort.marker(by)).unwrap_or_default();
-                                    let response =
-                                        show_header_cell(r, metric, lines, picked, marker);
-                                    if let Some(by) = by
-                                        && response.clicked()
-                                    {
-                                        // Clicking the column it is already
-                                        // ordered by turns the order round.
-                                        sort_clicked = Some(*by);
-                                    }
-                                    response.hover(tooltip);
+                    });
+                    for header in &headers {
+                        match header {
+                            HeaderCell::Separator => show_group_separator(r),
+                            HeaderCell::Cell {
+                                metric,
+                                lines,
+                                tooltip,
+                                sort: by,
+                            } => {
+                                let picked = by.is_some_and(|by| sort.is_sorted_by(by));
+                                let marker = by.map(|by| sort.marker(by)).unwrap_or_default();
+                                let response = show_header_cell(r, metric, lines, picked, marker);
+                                if let Some(by) = by
+                                    && response.clicked()
+                                {
+                                    // Clicking the column it is already
+                                    // ordered by turns the order round.
+                                    sort_clicked = Some(*by);
                                 }
+                                response.hover(tooltip);
                             }
                         }
-                    })
-                    .body(ROW_HEIGHT, |t| {
-                        for node in nodes.iter_mut() {
-                            node.show(
-                                t,
-                                0,
-                                n_slots,
-                                n_metrics,
-                                show_breakdown,
-                                show_averages,
-                                impact_slot,
-                                &mut ticks,
-                                &mut selected,
-                                &mut selection_changed,
-                            );
-                        }
-                    });
-            });
+                    }
+                });
         }
 
         let ticks_changed = ticks.changed;

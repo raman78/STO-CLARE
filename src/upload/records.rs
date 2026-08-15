@@ -747,66 +747,62 @@ impl LoadedEntries {
             Either::Right(self.entries.iter().take(self.reduced_columns_count))
         };
         let entries_count = self.entries.first().map(|c| c.values.len()).unwrap_or(0);
-        ScrollArea::horizontal().show(ui, |ui| {
-            Table::new(ui)
-                .header(15.0, |r| {
-                    for column in columns.clone() {
-                        r.cell(|ui| {
-                            ui.label(&column.name);
-                        });
-                    }
-                    r.cell(|ui| {
-                        ui.label("📥");
-                    })
-                    .hover("download log");
-                    r.cell(|ui| {
-                        ui.label("🔍");
-                    })
-                    .hover("open this run in the main window");
-                })
-                .body(25.0, |b| {
-                    for index in 0..entries_count {
-                        if b.selectable_row(self.selected_row == Some(index), |r| {
-                            for column in columns.clone() {
-                                let data = &column.values[index];
-                                if data.is_number {
-                                    r.cell_with_layout(
-                                        Layout::right_to_left(Align::Center),
-                                        |ui| {
-                                            ui.label(&data.value);
-                                        },
-                                    );
-                                } else {
-                                    r.cell(|ui| {
-                                        ui.label(&data.value);
-                                    });
-                                }
-                            }
-
-                            self.download_log_state.show_download_button(
-                                r,
-                                frame,
-                                url,
-                                self.combat_log_ids[index],
-                            );
-                            self.download_log_state.show_open_button(
-                                r,
-                                url,
-                                self.combat_log_ids[index],
-                                open_run,
-                            );
-                        })
-                        .clicked()
-                        {
-                            if self.selected_row == Some(index) {
-                                self.selected_row = None
+        Table::new(ui)
+            .header(15.0)
+            .body(25.0, |b| {
+                for index in 0..entries_count {
+                    if b.selectable_row(self.selected_row == Some(index), |r| {
+                        for column in columns.clone() {
+                            let data = &column.values[index];
+                            if data.is_number {
+                                r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    ui.label(&data.value);
+                                });
                             } else {
-                                self.selected_row = Some(index)
+                                r.cell(|ui| {
+                                    ui.label(&data.value);
+                                });
                             }
                         }
+
+                        self.download_log_state.show_download_button(
+                            r,
+                            frame,
+                            url,
+                            self.combat_log_ids[index],
+                        );
+                        self.download_log_state.show_open_button(
+                            r,
+                            url,
+                            self.combat_log_ids[index],
+                            open_run,
+                        );
+                    })
+                    .clicked()
+                    {
+                        if self.selected_row == Some(index) {
+                            self.selected_row = None
+                        } else {
+                            self.selected_row = Some(index)
+                        }
                     }
-                });
-        });
+                }
+            })
+            .header_row(|r| {
+                for column in columns.clone() {
+                    r.cell(|ui| {
+                        ui.label(&column.name);
+                    });
+                }
+                r.cell(|ui| {
+                    ui.label("📥");
+                })
+                .hover("download log");
+                r.cell(|ui| {
+                    ui.label("🔍");
+                })
+                .hover("open this run in the main window");
+            });
 
         self.download_log_state.show_download(ui, open_run);
     }

@@ -214,11 +214,7 @@ impl AnalysisTab {
             Table::new(ui)
                 .min_scroll_height(300.0)
                 .max_scroll_height(300.0)
-                .header(HEADER_HEIGHT, |r| {
-                    r.cell(|ui| {
-                        ui.label(title);
-                    });
-                })
+                .header(HEADER_HEIGHT)
                 .body(ROW_HEIGHT, |b| {
                     for name in names.filter(|n| {
                         filter.is_empty() || n.to_lowercase().contains(&filter.to_lowercase())
@@ -234,6 +230,11 @@ impl AnalysisTab {
                             });
                         });
                     }
+                })
+                .header_row(|r| {
+                    r.cell(|ui| {
+                        ui.label(title);
+                    });
                 });
         });
     }
@@ -524,20 +525,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
             .min_scroll_height(0.0)
             .max_scroll_height(height)
             .cell_spacing(10.0)
-            .header(HEADER_HEIGHT, |r| {
-                r.cell(|ui| {
-                    ui.label("On");
-                });
-                r.cell(|ui| {
-                    ui.label("Edit");
-                });
-                r.cell(|ui| {
-                    ui.label("Clone");
-                });
-                r.cell(|ui| {
-                    ui.label(self.name_header);
-                });
-            })
+            .header(HEADER_HEIGHT)
             .body(ROW_HEIGHT, |t| {
                 let mut to_remove = Vec::new();
                 // At most one row can be cloned per frame, so the index stays
@@ -607,6 +595,20 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                     self.group_rules.push(clone);
                     *self.selected_group = Some(self.group_rules.len() - 1);
                 }
+            })
+            .header_row(|r| {
+                r.cell(|ui| {
+                    ui.label("On");
+                });
+                r.cell(|ui| {
+                    ui.label("Edit");
+                });
+                r.cell(|ui| {
+                    ui.label("Clone");
+                });
+                r.cell(|ui| {
+                    ui.label(self.name_header);
+                });
             });
     }
 }
@@ -641,23 +643,7 @@ impl<'a> RulesTable<'a> {
                 .min_scroll_height(0.0)
                 .max_scroll_height(height)
                 .cell_spacing(10.0)
-                .header(HEADER_HEIGHT, |r| {
-                    r.cell(|ui| {
-                        ui.label("On");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Clone");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Aspect to match");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Match Method");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Text to match");
-                    });
-                })
+                .header(HEADER_HEIGHT)
                 .body(ROW_HEIGHT, |t| {
                     let mut to_remove = Vec::new();
                     // One clone per frame; see GroupRulesTable for the reasoning.
@@ -730,6 +716,23 @@ impl<'a> RulesTable<'a> {
                         self.rules.push(clone);
                         *self.selected_rule = Some(self.rules.len() - 1);
                     }
+                })
+                .header_row(|r| {
+                    r.cell(|ui| {
+                        ui.label("On");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Clone");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Aspect to match");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Match Method");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Text to match");
+                    });
                 });
         });
     }

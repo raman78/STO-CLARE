@@ -644,17 +644,7 @@ impl OverlayInner {
             let columns_above = self.columns_side.is_above();
             let required_size = Table::new(ui)
                 .min_scroll_height(f32::MAX)
-                .header(15.0, |h| {
-                    h.cell(|ui| {
-                        ui.label("Player");
-                    });
-
-                    for column in self.data.columns.iter() {
-                        h.cell(|ui| {
-                            ui.label(column.name);
-                        });
-                    }
-                })
+                .header(15.0)
                 .body(25.0, |t| {
                     for player in self.data.players.iter() {
                         t.row(|r| {
@@ -667,6 +657,17 @@ impl OverlayInner {
                                     ui.label(column.value_string.as_str());
                                 });
                             }
+                        });
+                    }
+                })
+                .header_row(|h| {
+                    h.cell(|ui| {
+                        ui.label("Player");
+                    });
+
+                    for column in self.data.columns.iter() {
+                        h.cell(|ui| {
+                            ui.label(column.name);
                         });
                     }
                 })

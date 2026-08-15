@@ -110,7 +110,23 @@ pub struct Table<'a> {
 pub struct TableWithHeader<'a> {
     table: Table<'a>,
     state: State,
+    /// The space kept for the header row, which is drawn after the body.
     header_rect: Rect,
+    header_height: f32,
+}
+
+/// A table whose rows are drawn and whose header is still to come.
+pub struct HeaderSlot<'a> {
+    ui: &'a mut Ui,
+    id: Id,
+    state: State,
+    header_rect: Rect,
+    header_height: f32,
+    cell_spacing: f32,
+    body_rect: Rect,
+    /// How far the body settled this frame, which is what the header is shifted
+    /// by so the two stay level.
+    offset_x: f32,
 }
 
 pub struct TableBody<'a> {
@@ -185,47 +201,24 @@ impl<'a> Table<'a> {
         self
     }
 
-    pub fn header(
-        self,
-        header_height: f32,
-        add_header: impl FnOnce(&mut TableRow),
-    ) -> TableWithHeader<'a> {
-        let left_top = self.ui.cursor().left_top();
-        let mut state = State::load(self.ui, self.id);
-        TableRow::show(
-            self.ui,
-            &mut state,
-            0,
-            left_top,
-            header_height,
-            self.cell_spacing,
-            add_header,
-            false,
-            None,
-        );
-        let header_rect = Rect::from_min_size(left_top, vec2(state.last_size.x, header_height));
-        self.ui.allocate_rect(header_rect, Sense::hover());
+    /// Keep the room a header row needs. The row itself is drawn last, by
+    /// [`HeaderSlot::header_row`] — see [`TableWithHeader::body`] for why.
+    pub fn header(self, header_height: f32) -> TableWithHeader<'a> {
+        let state = State::load(self.ui, self.id);
+        let width = self.ui.available_width();
+        let (header_rect, _) = self
+            .ui
+            .allocate_exact_size(vec2(width, header_height), Sense::hover());
 
         TableWithHeader {
             table: self,
             state,
             header_rect,
+            header_height,
         }
     }
 
     pub fn body(self, row_height: f32, add_body: impl FnOnce(&mut TableBody)) -> Rect {
-        let state = State::load(self.ui, self.id);
-
-        self.body_inner(row_height, add_body, state, None)
-    }
-
-    fn body_inner(
-        self,
-        row_height: f32,
-        add_body: impl FnOnce(&mut TableBody),
-        mut state: State,
-        header_rect: Option<Rect>,
-    ) -> Rect {
         let Self {
             ui,
             id,
@@ -234,51 +227,205 @@ impl<'a> Table<'a> {
             striped,
             cell_spacing,
         } = self;
-        let scroll_output = ScrollArea::vertical()
-            .id_salt(id.with("__table_scroll"))
-            // Full width, whatever the columns come to: the scroll bar belongs
-            // at the edge of the space the table was given, not tucked against
-            // the last column with a stretch of empty panel beside it.
-            .auto_shrink([false, true])
-            .min_scrolled_height(min_scroll_height)
-            .max_height(max_scroll_height)
-            .show(ui, |ui| {
-                let left_top = ui.cursor().left_top();
-                let mut body = TableBody {
-                    current_row: 0,
-                    left_top,
-                    row_height,
-                    cell_spacing,
-                    striped,
-                    state: &mut state,
-                    ui,
-                };
-
-                add_body(&mut body);
-
-                let rect = Rect::from_min_size(left_top, state.last_size);
-                ui.allocate_rect(rect, Sense::hover());
-                rect
-            });
-
-        let body_rect = scroll_output.inner.intersect(scroll_output.inner_rect);
-        let full_rect = header_rect.map(|h| h.union(body_rect)).unwrap_or(body_rect);
-        ColumnState::draw_separators(&state.columns, ui, full_rect, cell_spacing);
-        if state.finish(ui, id) {
-            ui.ctx().request_repaint();
-        }
-        full_rect
+        let mut state = State::load(ui, id);
+        let (body_rect, _) = show_body(
+            ui,
+            id,
+            &mut state,
+            Body {
+                row_height,
+                min_scroll_height,
+                max_scroll_height,
+                striped,
+                cell_spacing,
+            },
+            add_body,
+        );
+        finish_table(ui, id, state, body_rect, cell_spacing);
+        body_rect
     }
 }
 
 impl<'a> TableWithHeader<'a> {
-    pub fn body(self, row_height: f32, add_body: impl FnOnce(&mut TableBody)) -> Rect {
+    /// The rows. The header goes on afterwards, through
+    /// [`HeaderSlot::header_row`].
+    ///
+    /// That order is what keeps the header level with the columns under it. The
+    /// table scrolls both ways in one area, so the vertical bar sits at the
+    /// right-hand edge of the view and the horizontal bar along its bottom, the
+    /// way a browser does it — but the header cannot be inside that area or it
+    /// would scroll off the top. It is drawn afterwards instead, shifted by the
+    /// offset the body has just settled on, so it follows sideways within the
+    /// same frame. Drawn first it could only ever be given the previous frame's
+    /// offset and would lag behind the columns while the table was dragged.
+    pub fn body(self, row_height: f32, add_body: impl FnOnce(&mut TableBody)) -> HeaderSlot<'a> {
         let Self {
             table,
+            mut state,
+            header_rect,
+            header_height,
+        } = self;
+        let Table {
+            ui,
+            id,
+            min_scroll_height,
+            max_scroll_height,
+            striped,
+            cell_spacing,
+        } = table;
+
+        let (body_rect, offset_x) = show_body(
+            ui,
+            id,
+            &mut state,
+            Body {
+                row_height,
+                min_scroll_height,
+                max_scroll_height,
+                striped,
+                cell_spacing,
+            },
+            add_body,
+        );
+
+        HeaderSlot {
+            ui,
+            id,
             state,
             header_rect,
+            header_height,
+            cell_spacing,
+            body_rect,
+            offset_x,
+        }
+    }
+}
+
+impl<'a> HeaderSlot<'a> {
+    /// Draws the header in the room kept for it, and finishes the table.
+    pub fn header_row(self, add_header: impl FnOnce(&mut TableRow)) -> Rect {
+        let Self {
+            ui,
+            id,
+            mut state,
+            header_rect,
+            header_height,
+            cell_spacing,
+            body_rect,
+            offset_x,
         } = self;
-        table.body_inner(row_height, add_body, state, Some(header_rect))
+
+        show_header(
+            ui,
+            &mut state,
+            header_rect,
+            header_height,
+            cell_spacing,
+            offset_x,
+            add_header,
+        );
+
+        let full_rect = header_rect.union(body_rect);
+        finish_table(ui, id, state, full_rect, cell_spacing);
+        full_rect
+    }
+}
+
+/// What a body needs to draw itself, kept together so the two `body` methods
+/// hand over the same thing.
+struct Body {
+    row_height: f32,
+    min_scroll_height: f32,
+    max_scroll_height: f32,
+    striped: bool,
+    cell_spacing: f32,
+}
+
+/// Draws the rows, and reports the rectangle they came to and how far the table
+/// is scrolled sideways.
+fn show_body(
+    ui: &mut Ui,
+    id: Id,
+    state: &mut State,
+    body: Body,
+    add_body: impl FnOnce(&mut TableBody),
+) -> (Rect, f32) {
+    let Body {
+        row_height,
+        min_scroll_height,
+        max_scroll_height,
+        striped,
+        cell_spacing,
+    } = body;
+    let scroll_output = ScrollArea::both()
+        .id_salt(id.with("__table_scroll"))
+        // Full width, whatever the columns come to: the scroll bar belongs at
+        // the edge of the space the table was given, not tucked against the last
+        // column with a stretch of empty panel beside it.
+        .auto_shrink([false, true])
+        .min_scrolled_height(min_scroll_height)
+        .max_height(max_scroll_height)
+        .show(ui, |ui| {
+            let left_top = ui.cursor().left_top();
+            let mut body = TableBody {
+                current_row: 0,
+                left_top,
+                row_height,
+                cell_spacing,
+                striped,
+                state,
+                ui,
+            };
+
+            add_body(&mut body);
+
+            let rect = Rect::from_min_size(left_top, state.last_size);
+            ui.allocate_rect(rect, Sense::hover());
+            rect
+        });
+
+    (
+        scroll_output.inner.intersect(scroll_output.inner_rect),
+        scroll_output.state.offset.x,
+    )
+}
+
+/// Draws the header row in the space reserved for it, shifted by how far the
+/// body is scrolled sideways and clipped to that space, so a column heading
+/// stops at the edge of the view rather than running over the panel beside it.
+fn show_header(
+    ui: &mut Ui,
+    state: &mut State,
+    header_rect: Rect,
+    header_height: f32,
+    cell_spacing: f32,
+    offset_x: f32,
+    add_header: impl FnOnce(&mut TableRow),
+) {
+    let left_top = header_rect.left_top() - vec2(offset_x, 0.0);
+    let mut header_ui = ui.new_child(UiBuilder::new().max_rect(Rect::from_min_size(
+        left_top,
+        vec2(state.last_size.x.max(header_rect.width()), header_height),
+    )));
+    header_ui.set_clip_rect(header_rect.intersect(ui.clip_rect()));
+    TableRow::show(
+        &mut header_ui,
+        state,
+        0,
+        left_top,
+        header_height,
+        cell_spacing,
+        add_header,
+        false,
+        None,
+    );
+}
+
+/// The separators between column groups, and the state the next frame reads.
+fn finish_table(ui: &mut Ui, id: Id, state: State, rect: Rect, cell_spacing: f32) {
+    ColumnState::draw_separators(&state.columns, ui, rect, cell_spacing);
+    if state.finish(ui, id) {
+        ui.ctx().request_repaint();
     }
 }
 

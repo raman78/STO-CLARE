@@ -237,7 +237,9 @@ impl SummaryTab {
         // no header; with them the extra cells have to say what they are.
         if split {
             Table::new(ui)
-                .header(HEADER_HEIGHT, |r| {
+                .header(HEADER_HEIGHT)
+                .body(ROW_HEIGHT, |t| body(t))
+                .header_row(|r| {
                     r.cell(|_| {});
                     // The All heading matches the totals under it (see
                     // `ShieldAndHullTextValue::show`); the halves stay plain.
@@ -249,8 +251,7 @@ impl SummaryTab {
                             ui.label(name);
                         });
                     }
-                })
-                .body(ROW_HEIGHT, |t| body(t));
+                });
         } else {
             Table::new(ui).body(ROW_HEIGHT, |t| body(t));
         }

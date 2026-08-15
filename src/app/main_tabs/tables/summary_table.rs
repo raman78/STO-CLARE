@@ -254,31 +254,32 @@ impl SummaryTable {
         } else {
             HEADER_HEIGHT
         };
-        ScrollArea::new([true, false]).show(ui, |ui| {
-            Table::new(ui)
-                .header(header_height, |r| {
-                    r.cell(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("Player");
-                        });
+        // The table scrolls sideways by itself; the header is drawn last so it
+        // stays level with the columns under it.
+        Table::new(ui)
+            .header(header_height)
+            .body(ROW_HEIGHT, |t| {
+                for (i, player) in self.players.iter().enumerate() {
+                    let player_selected = Some(i) == self.selected_player;
+                    if player.show(&columns, t, player_selected, split).clicked() {
+                        self.selected_player = if player_selected { None } else { Some(i) };
+                    }
+                }
+            })
+            .header_row(|r| {
+                r.cell(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Player");
                     });
-
-                    for (index, column) in columns.iter().enumerate() {
-                        self.show_column_header(r, column, split);
-                        if closes_summary_group(&columns, index, split) {
-                            show_group_separator(r);
-                        }
-                    }
-                })
-                .body(ROW_HEIGHT, |t| {
-                    for (i, player) in self.players.iter().enumerate() {
-                        let player_selected = Some(i) == self.selected_player;
-                        if player.show(&columns, t, player_selected, split).clicked() {
-                            self.selected_player = if player_selected { None } else { Some(i) };
-                        }
-                    }
                 });
-        });
+
+                for (index, column) in columns.iter().enumerate() {
+                    self.show_column_header(r, column, split);
+                    if closes_summary_group(&columns, index, split) {
+                        show_group_separator(r);
+                    }
+                }
+            });
     }
 
     /// See `MetricsTable::show_column_header`: the same headings, drawn by the

@@ -838,16 +838,7 @@ impl State {
                     // includes fill-width widgets and makes the surface oscillate).
                     let table_rect = Table::new(ui)
                         .min_scroll_height(f32::MAX)
-                        .header(15.0, |h| {
-                            h.cell(|ui| {
-                                ui.label("Player");
-                            });
-                            for c in &data.columns {
-                                h.cell(|ui| {
-                                    ui.label(c);
-                                });
-                            }
-                        })
+                        .header(15.0)
                         .body(25.0, |t| {
                             for row in &data.rows {
                                 t.row(|r| {
@@ -862,6 +853,16 @@ impl State {
                                             },
                                         );
                                     }
+                                });
+                            }
+                        })
+                        .header_row(|h| {
+                            h.cell(|ui| {
+                                ui.label("Player");
+                            });
+                            for c in &data.columns {
+                                h.cell(|ui| {
+                                    ui.label(c);
                                 });
                             }
                         });

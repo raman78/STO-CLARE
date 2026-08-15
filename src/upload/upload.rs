@@ -86,20 +86,7 @@ impl Upload {
                         );
                     }
                     Table::new(ui)
-                        .header(15.0, |r| {
-                            r.cell(|ui| {
-                                ui.label("Name");
-                            });
-                            r.cell(|ui| {
-                                ui.label("Updated");
-                            });
-                            r.cell(|ui| {
-                                ui.label("Details");
-                            });
-                            r.cell(|ui| {
-                                ui.label("Value");
-                            });
-                        })
+                        .header(15.0)
                         .body(25.0, |b| {
                             for result in result.iter() {
                                 b.row(|r| {
@@ -128,6 +115,20 @@ impl Upload {
                                     });
                                 });
                             }
+                        })
+                        .header_row(|r| {
+                            r.cell(|ui| {
+                                ui.label("Name");
+                            });
+                            r.cell(|ui| {
+                                ui.label("Updated");
+                            });
+                            r.cell(|ui| {
+                                ui.label("Details");
+                            });
+                            r.cell(|ui| {
+                                ui.label("Value");
+                            });
                         });
                     ui.add_space(40.0);
                     ui.button("Close").clicked()

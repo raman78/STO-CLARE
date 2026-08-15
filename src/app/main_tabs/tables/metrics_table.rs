@@ -270,46 +270,47 @@ impl<T: 'static> MetricsTable<T> {
             .iter()
             .filter(|column| shown(column.name))
             .collect();
-        ScrollArea::horizontal().show(ui, |ui| {
-            Table::new(ui)
-                .cell_spacing(10.0)
-                .header(header_height, |r| {
-                    // The tick column's own header stays empty; the eye that
-                    // hides the unticked rows sits beside the name, as it does
-                    // in a comparison.
-                    r.cell(|_| {});
-                    r.cell(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("Name");
-                            ticks.show_eye(ui);
-                            ticks.show_types(ui);
-                        });
+        // The table scrolls both ways by itself, so its bars stay at the edges
+        // of the view; the header is drawn last, level with the columns.
+        Table::new(ui)
+            .cell_spacing(10.0)
+            .header(header_height)
+            .body(ROW_HEIGHT, |t| {
+                for player in self.players.iter_mut() {
+                    let handle = player.handle;
+                    player.show(
+                        &columns,
+                        t,
+                        0.0,
+                        &mut self.selection,
+                        &mut on_selected,
+                        modifiers,
+                        split,
+                        ticks,
+                        handle,
+                    );
+                }
+            })
+            .header_row(|r| {
+                // The tick column's own header stays empty; the eye that hides
+                // the unticked rows sits beside the name, as it does in a
+                // comparison.
+                r.cell(|_| {});
+                r.cell(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Name");
+                        ticks.show_eye(ui);
+                        ticks.show_types(ui);
                     });
-
-                    for (index, column) in columns.iter().enumerate() {
-                        self.show_column_header(r, column, split);
-                        if closes_group(&columns, index, split) {
-                            show_group_separator(r);
-                        }
-                    }
-                })
-                .body(ROW_HEIGHT, |t| {
-                    for player in self.players.iter_mut() {
-                        let handle = player.handle;
-                        player.show(
-                            &columns,
-                            t,
-                            0.0,
-                            &mut self.selection,
-                            &mut on_selected,
-                            modifiers,
-                            split,
-                            ticks,
-                            handle,
-                        );
-                    }
                 });
-        });
+
+                for (index, column) in columns.iter().enumerate() {
+                    self.show_column_header(r, column, split);
+                    if closes_group(&columns, index, split) {
+                        show_group_separator(r);
+                    }
+                }
+            });
     }
 
     fn show_column_header(

@@ -329,6 +329,33 @@ it up said nothing about which column was about to order the rows. The header's
 height comes from `ui.text_style_height` rather than a hand-counted constant: at
 17 points a line, the note line had its bottom half cut off by the first row.
 
+**A table scrolls itself, both ways, and draws its header last.**
+`custom_widgets::table` used to scroll only vertically and be wrapped in a
+`ScrollArea::horizontal` by every caller. That put the vertical bar in the wrong
+place: with the horizontal direction disabled and auto-shrink off, egui sizes
+the inner rect as `inner.max(content_size.x)`, so the bar was pinned to the
+right-hand edge of the *table* — hundreds of points off screen on a wide
+comparison — and with the solid (non-floating) bar style the cross range came
+out inverted and nothing was drawn at all.
+
+`Table` now uses one `ScrollArea::both`, so both bars sit at the edges of the
+view. The header cannot live inside that area or it would scroll off the top, so
+the call order is inverted:
+
+```rust
+Table::new(ui)
+    .header(height)              // keeps the room
+    .body(ROW_HEIGHT, |t| { … }) // draws the rows, settles the offset
+    .header_row(|r| { … });      // draws the header into the kept room
+```
+
+`HeaderSlot::header_row` shifts the header by the offset the body settled on
+*this* frame and clips it to the reserved rectangle. Drawing the header first —
+the obvious order — could only ever use the previous frame's offset, and the
+headings would lag behind their columns while the table was dragged. The two
+closures also cannot be alive at once: both borrow the table's own state, which
+is the other reason `header` takes no closure.
+
 **A scrolling list must not be wider than its pane.** Every vertical
 `ScrollArea` in the program carries `auto_shrink([false, true])` so its bar sits
 at the edge of the pane rather than against the longest line in it. That only
