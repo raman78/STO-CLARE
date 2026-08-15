@@ -28,6 +28,7 @@ const COMBATS_SHOWN_AT_ONCE: usize = 15;
 /// wrapped, so a row stays one row tall.
 const COMBATS_LIST_WIDTH: f32 = 900.0;
 mod compare;
+pub(crate) mod damage_subset;
 pub mod desktop_install;
 mod export;
 mod fonts;
@@ -44,6 +45,7 @@ pub mod theme;
 
 // The layer-shell overlay backend lives under `overlay::layer_shell`; re-export
 // the startup helper so main.rs can build the shared wgpu stack (see main.rs).
+use crate::custom_widgets::tooltip::CloseTooltip;
 #[cfg(target_os = "linux")]
 pub use overlay::layer_shell::create_shared_gpu;
 
@@ -276,7 +278,7 @@ impl eframe::App for App {
                         );
                         if ui
                             .button("Back to my log")
-                            .on_hover_text("Reads your own combat log again.")
+                            .hover("Reads your own combat log again.")
                             .clicked()
                         {
                             self.leave_ladder_run();

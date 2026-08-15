@@ -329,8 +329,13 @@ evidence to lean on.
 | Brotherhood of the Sword | Advanced + Elite          | — (has tables)                            |
 | Khitomer in Stasis       | Normal + Advanced         | — (has tables; the queue offers no Elite) |
 | Undine Infiltration      | Advanced + Elite          | — (has tables)                            |
-| Infected: Manus          | — (anchor only)           | Normal + Advanced                         |
-| Cure Applied             | — (anchor only)           | Normal + Advanced                         |
+| Infected: Manus          | — (no anchor at all)      | an anchor, then Normal + Advanced          |
+| Cure Applied             | — (no anchor at all)      | an anchor, then Normal + Advanced          |
+
+Note that Infected: Manus and Cure Applied are **not detected at all** today —
+their entries in `detection_rules.json` carry only `category`/`combat_type` and no
+`identifiers`, so they never match. The first sample of either is worth taking at
+any difficulty: it buys the anchor. The tier still needs the pair below.
 
 **Which pair a ground map needs depends on the queue.** Three of them top out
 below Elite — Khitomer in Stasis, Infected: Manus and Cure Applied all offer
@@ -434,7 +439,7 @@ numbers need revisiting — that is the point of keeping it global.
 
 ---
 
-## [TFO] Devil's Heart — Ground — DONE (anchor only, no tier)
+## [TFO] Devil's Heart — Ground — DONE (anchor + tier)
 - **Anchor:** the five entities carrying `Devils_Heart` in their name — the Borg
   miniboss, the Aetherian hacker and boss, the boss's explosive drones and the
   miniboss turret. Between them the miniboss (00:18–00:20) and the hacker
@@ -442,8 +447,11 @@ numbers need revisiting — that is the point of keeping it global.
 - ⚠ The `Vtx_` prefix is **not** map-specific: `Space_Federation_Cruiser_Vtx_Tfo_Evacuation_Ship`
   anchors Resistance of Starbase One. It marks the episode, not the map — only
   `Devils_Heart` pins this one.
-- **Tier:** none. Ground maps are excluded from the global table, and this run is
-  what proved a rank-based ground table cannot work (see above).
+- **Tier:** measured `hull_any` bands over four entities, Normal/Advanced/Elite.
+  Ground maps are excluded from the global table, and the Elite run below is what
+  proved a rank-based ground table cannot work (see above). The Advanced run that
+  closed the pair arrived on 2026-07-31; the Normal band is derived
+  (Advanced ÷ 2.11).
 
 | sample           | tier  | Miniboss | Aetherian_Cdr | Aetherian_Lt | Aetherian_Ens |
 |------------------|-------|----------|---------------|--------------|---------------|
@@ -494,7 +502,7 @@ numbers need revisiting — that is the point of keeping it global.
 |------------------|----------|-----------------|-------------|---------|---------|
 | 2026-07-30 22:55 | Advanced | 6,707,080       | 3,081,268   | 446,733 | 181,219 |
 
-## [TFO] Brotherhood of the Sword — Ground — DONE (anchor only, no tier)
+## [TFO] Brotherhood of the Sword — Ground — DONE (anchor + tier)
 - **Anchor:** the seven `Msn_Ico_Qonos_Ground*` allies — Honor Guards (Ferasan,
   Klingon, Nausicaan), MACO (Andorian, Tellarite, Vulcan) and an Orion ally. All
   seven are listed because the escort's species look randomised per run, so a
@@ -506,14 +514,16 @@ numbers need revisiting — that is the point of keeping it global.
   nowhere else in the log, but Heralds appear across the Iconian War content and
   there is no other Herald ground map here to check against — the counting rule
   cannot clear them. If a split ever loses the early part, they are the fallback.
-- **Tier:** none — ground maps are excluded from the global table.
+- **Tier:** measured `hull_any` bands over five entities, Normal/Advanced/Elite —
+  ground maps are excluded from the global table, so the map carries its own.
 
 | sample           | tier     | Capt_Gravity | Cdr_Melee | Lieutenant | Ensign |
 |------------------|----------|--------------|-----------|------------|--------|
 | 2026-07-30 22:40 | Advanced | 24,336       | 5,030     | 2,159      | 1,657  |
 
-Fifth Advanced ground sample. Still no Elite pair from a second ground map, so the
-rank table described above remains unbuilt.
+Fifth Advanced ground sample. An Elite run followed on 2026-07-31 and closed the
+pair (median ratio 1.74x — the widest of the five ground maps); the Normal band is
+derived (Advanced ÷ 2.11). The rank table described above stays unbuilt regardless.
 
 ## [TFO] Peril Over Pahvo — Space — DONE (anchor only, no tier)
 - **Anchor:** `Msn_Dsc_Pahvo_Defense_Queue_System_Upgradeable_Satellite` (runs the
@@ -556,7 +566,7 @@ rank table described above remains unbuilt.
 |------------------|-------|------------|-----------|------------|---------|
 | 2026-07-30 17:22 | Elite | 27,822,587 | 2,274,614 | 2,188,095  | 665,022 |
 
-## [TFO] Khitomer in Stasis — Ground — DONE (anchor only, no tier)
+## [TFO] Khitomer in Stasis — Ground — DONE (anchor + tier)
 - **Anchor:** `Mission_Borgraid03_Borg_Power_Node` plus the `Ground_Borg_*_Raidisode_*`
   troops and `Ground_Borg_Ens_Melee_Wolf_359`.
 - ⚠ **Shares its rank-and-file with Into the Hive.** `Ground_Borg_Capt_Melee`,
@@ -572,13 +582,17 @@ rank table described above remains unbuilt.
   (largest internal gap 57 s), but only barely.
 - `Ground_Borg_Ens_Melee_Wolf_359` is presumably a reused asset; Battle of Wolf 359
   is a *space* queue, so a ground entity of that name should not collide with it.
-- **Tier:** none — ground maps are excluded from the global table.
+- **Tier:** measured `hull_any` bands over five entities, **Normal + Advanced
+  only** — this queue offers no Elite, and ground maps are excluded from the global
+  table. This is the pair that yielded the 2.11x Normal→Advanced ratio the other
+  ground maps' Normal bands are derived from. `Mission_Borgraid03_Borg_Power_Node`
+  is excluded from the bands (1.08x between tiers).
 
 | sample           | tier     | Capt_Melee | Power_Node | Cdr_Melee | Lt_Range | Ens_Melee |
 |------------------|----------|------------|------------|-----------|----------|-----------|
 | 2026-07-30 16:32 | Advanced | 14,047     | 6,401      | 5,325     | 3,795    | 3,181     |
 
-## [TFO] Pahvo Dissension — Ground — DONE (anchor only, no tier)
+## [TFO] Pahvo Dissension — Ground — DONE (anchor + tier)
 - **Anchor:** any-of the two named bosses
   `Ground_Federation_Capt_Range_{Eng,Tac}_Mirror_Dsc_Pahvo_Boss` **plus** the
   rank-and-file `Ground_Federation_Ens_Range_{Tac,Eng,Sci}_Mirror_Dsc`.
@@ -598,7 +612,9 @@ rank table described above remains unbuilt.
   and looks map-specific, but it is a `Device_*` (see the anchoring rules), and
   one sample is not enough to prove it is mission-issued rather than carried.
   Same for `Ground_Universal_Kit_Pahvo_Crystal_Prism_Module_Summon`, a player kit.
-- **Tier:** none — ground maps are excluded from the global table.
+- **Tier:** measured `hull_any` bands over five entities for Advanced and Elite
+  (the Elite run arrived 2026-07-31, median ratio 1.58x), with a derived Normal
+  band (Advanced ÷ 2.11) — ground maps are excluded from the global table.
 
 | sample           | tier     | Boss_Eng | Boss_Tac | Cdr   | Lt    | Ens   |
 |------------------|----------|----------|----------|-------|-------|-------|

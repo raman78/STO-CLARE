@@ -118,6 +118,7 @@ name next to the settings overrides it without a rebuild. See
 | shell, combat picker, menus | `app/mod.rs`             | owns `MainTabs`, `CompareView`, the overlay handle               |
 | per-combat tabs             | `app/main_tabs`          | Summary, Damage Dealt/Taken, the three healing tabs              |
 | tables                      | `app/main_tabs/tables`   | one generic `MetricsTable<T>` driven by a static column list     |
+| part of a tree              | `app/damage_subset.rs`   | the figures of a set of rows, for the ticks and the type pickers |
 | charts                      | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts      |
 | compare                     | `app/compare`            | several combats side by side, averaged, or written to a workbook |
 | spreadsheet export          | `app/export.rs`          | the workbook writer both the compare view and the tabs use       |
@@ -155,7 +156,62 @@ Three conventions worth knowing before changing a table or a chart:
 - **Columns are data.** A table is a `&'static [ColumnDescriptor<T>]`; a column
   carries its label, its sort function and its render function. A metric that
   splits into hull and shield uses `shield_hull_col!`, which adds the two extra
-  cells that the split-columns setting shows.
+  cells that the split-columns setting shows. Each half carries its own `sort`,
+  so All, Hull and Shield order by their own figure; ordering all three by the
+  total made two of the three headings a lie.
+
+- **One heading control, drawn once.** `metrics_table::show_sortable_header` is
+  what every heading in `MetricsTable` and in `SummaryTable` is made of, so the
+  two cannot drift apart. A heading is its column's whole cell — every line of
+  it, the metric name included where that column carries one — painted with
+  `table::draw_cell_visuals`, the fill-when-picked, rim-under-the-pointer look a
+  pickable cell has rather than a button frame. What must *not* happen is one
+  control over a whole split group: All, Hull and Shield are three columns and
+  three cells, so pointing at one says which of the three is about to order the
+  rows. The sort mark sits against the right-hand edge of the cell, on the line
+  the label is on.
+
+  A column whose header carries buttons — Name, with the eye and the type picker
+  — uses `table::show_sortable_header_cell` instead: the cell still orders the
+  rows, and the buttons are drawn on top of it, so egui hands a click on one of
+  them to that button and everything else to the heading. There the mark follows
+  the word rather than sitting at the edge, which is where the buttons are.
+
+  Which heading is in charge lives in `SortState<ColumnKey>` (`custom_widgets::
+  table`): `ColumnKey` is the metric plus which half, `natural` is which way the
+  order runs, and `marker` returns one of `SORT_MARKERS` (`⏷`/`⏶`). A second
+  click on the same heading reverses the rows rather than sorting them again — a
+  column knows one order (largest first, or smallest where small is the good
+  end), and the other way round is that one turned over. Rebuilding a table
+  carries the state across (`MetricsTable::take_state_from`,
+  `SummaryTable::take_state_from`) and re-applies it, so ticking a row off or
+  opening another combat does not undo the order the reader chose. Neither takes
+  the state of a table that has picked no column — that is the empty table a tab
+  is born with, and taking it left the first real table sorted with no heading
+  saying so.
+
+- **A heading keeps room for a mark it has not got.** `show_sort_marker` draws
+  the mark against the right-hand edge of the heading — where the numbers under
+  it end, so it is looked for in one place down the row rather than wherever a
+  name happens to finish — and `heading_width` reserves `sort_marker_width` in
+  every heading whether or not it is carrying one. Laying the mark out with the
+  label made a column widen the moment it took charge of the order, shifting
+  every column right of it. `MetricsTable`, `SummaryTable` and the comparison's
+  headers all measure this way.
+
+- **A chart is dragged sideways, never up and down.** Every chart scales its y
+  axis to the data (`auto_bounds`, `include_y`), so moving it vertically only
+  slides the lines out of a frame that was already the right size. `Plot` takes
+  `PAN_SIDEWAYS_ONLY` (`diagrams::common`) for both `allow_scroll` and
+  `allow_drag`; the wheel is a vertical gesture, so it now does nothing on a
+  chart rather than scrolling the picture away.
+
+- **Nothing in a `PopupButton` may ask for all the width on offer.** The window
+  is sized to what it holds, and `ui.separator()` takes whatever it is given —
+  which in an auto-sized window is the width of the screen. The damage-type
+  pickers opened as a banner across the window until their separators became
+  `add_space`.
+
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
@@ -177,7 +233,10 @@ Three conventions worth knowing before changing a table or a chart:
   the main context in `App::new`; `main_tabs::common::bold_text` is how widgets
   ask for it. epaint panics on a family that is not bound, so any further egui
   context that wants bold text has to call `fonts::install` too (the overlay
-  context does not use it).
+  context does not use it). The compare table uses the same face for anything it
+  draws in a colour — `header_lines` and `delta_text` — because those colours are
+  hues rather than steps in brightness, and on the light face they land as *less*
+  ink than the plain text they sit beside.
 
 Settings changes are gated by cost: only `analysis` invalidates the `Analyzer`
 and forces a re-read of the log; a `general` change just rebuilds the views,
@@ -194,6 +253,95 @@ The start time is the only identifier the log itself fixes — `Combat::identifi
 the map detection produced, so a rename would orphan the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
+
+### Reading part of a tree — `app/damage_subset`
+
+Two views let a reader take rows out: the main window's tables (the player's own
+row is of the rows ticked under it) and a comparison (its Total is, see
+[Picking what the Total is of](#picking-what-the-total-is-of)). Both ask the same
+question — what would these figures be if only these rows counted — and neither
+can answer it by arithmetic on the columns: a percentage does not add, and
+resistance, crit rate and accuracy are ratios of hit counts. The one place that
+answers it is `app/damage_subset.rs`. It pools the hits of the rows that are
+left and puts them back through the pass `DamageGroup::recalculate_metrics`
+makes over a branch, so what comes out is what the analyzer would have said
+about a group holding exactly those rows.
+
+```
+group.sub_groups()
+   │  drop the rows that are out       (subset_hits, player_damage_without)
+   ▼
+Vec<Hit>
+   │  DamageMetrics::calc_and_apply_delta            (subset_group)
+   │  DamageMetrics::recalculate_time_based_metrics(metrics_duration(..))
+   ▼
+DamageGroup { hits: Hits::Leaf(..), .. }
+```
+
+| function                          | answers                                                                         |
+|-----------------------------------|---------------------------------------------------------------------------------|
+| `subset_hits`                     | the kept rows' hits, pooled, or `None` when none of them are there at all        |
+| `subset_group`                    | a `DamageGroup` standing for a pool of hits, every metric recalculated from them |
+| `player_damage_without`           | one player's outgoing damage without the named rows                             |
+| `player_heal_without`             | the same for one heal pool, from `HealTick`s                                     |
+| `damage_of_types` (`TypeFilter`)  | the tree rebuilt from what was dealt in the picked damage types                  |
+| `metrics_duration`                | the seconds a rebuilt metric is divided by                                       |
+
+What holds across both callers:
+
+- **The result is recalculated, never subtracted.** The one thing that is *not*
+  recomputed is `damage_percentage`: it stays a share of the combat's whole
+  outgoing damage (`Combat::total_damage_out`), because the column means the
+  same filtered or not — how much of the fight this is.
+- **An absent combat is `None`; a player who ticked everything off is zero.**
+  `subset_hits` and `damage_of_types` answer `None` when the rows are not there
+  at all, and the comparison leaves that column empty and off the chart — a zero
+  would read as a run that did nothing rather than one that flew something else.
+  `player_damage_without` and `player_heal_without` always hand back a group,
+  zeroed when every row is out: that player is still on screen with every tick
+  box they had, and one click brings the figures back.
+- **A rebuilt group keeps every row under it**, ticked and unticked alike: its
+  `sub_groups` are the whole of the original's. They are what the ticks are
+  *of*: dropping the unticked ones would take their tick boxes off the screen and
+  leave the row above without the count that tells all/some/none apart.
+- **Each pool is divided by the duration the analyzer divides it by** —
+  `Player::combat_time` for outgoing damage, `Player::active_time` for healing,
+  both through `metrics_duration`. The charts' `combat_duration_seconds` is a
+  different question and would state a DPS nothing else in the program agrees
+  with.
+- **Percentages down a rebuilt tree are set by hand** (`set_child_percentages`):
+  the analyzer's own pass is `pub(super)`, and a rebuilt group has nobody to have
+  set them. The top row's share is of the whole fight, each row below of its
+  parent, which is what the analyzer states.
+- **A picked type is applied before the ticks**, since the type decides what the
+  rows even are: `DamageTab::kept_damage` filters by type first and reads the
+  ticks over what is left. (The comparison reaches the same end by two different
+  routes — see [Which rows are on screen](#which-rows-are-on-screen).)
+
+**The main window's side of it.** `RowTicks` (`main_tabs/tables/metrics_table.rs`)
+is the tick column plus the two buttons in the `Name` header, and the tabs own
+the state it edits:
+
+| state                | owner                          | what it is                                                     |
+|----------------------|--------------------------------|-----------------------------------------------------------------|
+| `excluded`           | `DamageTab`, `HealTab`         | per player, the rows that are out — one tick tree each          |
+| `hide_unticked`      | `DamageTab`, `HealTab`         | the `👁`: unticked rows off the screen, out of the figures either way |
+| `types`, `all_types` | `DamageTab`                    | the `☰ Type` picker; `HealTab` passes `all_types: &[]`, healing having no damage type |
+
+| decision | why |
+|----------|-----|
+| the ticks are keyed by `NameHandle`, not by the name | a grouping rule can give a group the name of an ability it collects, and then two different rows read the same; ticking one would take both. The comparison keys by name instead — it aligns its runs by name, so a handle from one combat means nothing in the next |
+| one tick tree per player | two players who both flew a Phaser Beam Array can have it ticked off for one and in for the other |
+| ticks only at two levels | `RowTicks::show_cell`: the player's row carries the tri-state tick that stands for all of theirs, the rows directly under it carry their own, deeper there is none. A branch's hits are the whole branch's, so a row goes in with what it is part of |
+| the table and the chart are built from one function | `DamageTab::rebuild` feeds `kept_damage` to both, so a chart cannot end up drawing rows the table has taken out. `MetricsTable::take_state_from` carries the open tree and the sort order across that rebuild |
+| `MetricsTable::new_base` takes a `Cow<G>` | the unfiltered case — nothing ticked off, no type picked — borrows the analyzer's own group and copies nothing |
+
+Open question: `excluded` is keyed by handles from the open combat, and
+`MainTabs::update` does not clear it when another combat arrives, so ticks made
+on one combat land on whatever rows happen to hold those handles in the next.
+`types` does not have the problem (it holds type names). Nobody has decided
+whether the ticks should be dropped on a combat change or translated through the
+names.
 
 ### Comparing several combats — `app/compare`
 
@@ -272,6 +420,264 @@ The one thing left uneven is the table's `Name` column, which scrolls away with
 everything else — the averages toggle is the answer to a table too wide to
 read, not a frozen first column.
 
+**A heading can stand over a group of columns.** `TableRow::spanning_cell` draws
+one cell across several, which is what a comparison's headings use: a run's
+value and its difference against the reference are two columns so that both line
+up, but they are one metric of one run and take one heading. The group's columns
+keep the widths their numbers need; only a heading wider than the group hands
+the surplus to the group's first column — and it claims that width on *every*
+frame, not only when it does not fit. Claiming nothing while it happened to fit
+let the column shrink back to its numbers on the next frame, and the width
+oscillated (`a_spanning_heading_widens_the_group_under_it` pins it). The width a
+heading needs is returned by the closure rather than read off `min_rect`: a
+heading is laid out without wrapping, and text drawn past its rectangle never
+reaches `min_rect`.
+
+No rule is drawn between columns of a group (`ColumnState::merged_with_next`,
+cleared by `State::ungroup` at the start of every frame so a table that stops
+grouping does not keep the last frame's groups). A rule through the middle of a
+heading is what makes one heading read as two, which is what the split looked
+like even once the heading spanned both columns.
+
+**A column index is not a slot index.** `Comparison::slots` is every run the
+comparison was built from, in the order they were picked; `numbers` maps a
+*column* to the slot it holds, and `columns_in_play` puts the reference first.
+Anything read per run — the note, the number, the colour, `CompareNode::dps` —
+has to be indexed by the right one of the two. They were the same number while
+columns were slots in order, so mixing them cost nothing; making the reference
+lead broke that, and a column was labelled with the first run's note while
+`⚖ vs rest` measured a combat nobody had picked. `note_of_column` and
+`number_of` take a column and do the mapping; `CompareNode::impact` takes a
+column, since a node holds its figures per column.
+
+**The comparison's headers are the main window's headers.** A column header is
+three lines — the metric, the combat's number, the note — and only the lines
+naming the combat take the click (`show_header_cell`), drawn with the same
+`draw_cell_visuals` fill and the same `show_sort_marker` placement as
+`MetricsTable`. The metric's name spans its whole group of columns, so lighting
+it up said nothing about which column was about to order the rows. The header's
+height comes from `ui.text_style_height` rather than a hand-counted constant: at
+17 points a line, the note line had its bottom half cut off by the first row.
+
+**A table scrolls itself, both ways, and draws its header last.**
+`custom_widgets::table` used to scroll only vertically and be wrapped in a
+`ScrollArea::horizontal` by every caller. That put the vertical bar in the wrong
+place: with the horizontal direction disabled and auto-shrink off, egui sizes
+the inner rect as `inner.max(content_size.x)`, so the bar was pinned to the
+right-hand edge of the *table* — hundreds of points off screen on a wide
+comparison — and with the solid (non-floating) bar style the cross range came
+out inverted and nothing was drawn at all.
+
+`Table` now uses one `ScrollArea::both`, so both bars sit at the edges of the
+view. The header cannot live inside that area or it would scroll off the top, so
+the call order is inverted:
+
+```rust
+Table::new(ui)
+    .header(height)              // keeps the room
+    .body(ROW_HEIGHT, |t| { … }) // draws the rows, settles the offset
+    .header_row(|r| { … });      // draws the header into the kept room
+```
+
+The room `header` keeps is the narrower of the columns' own width and the width
+of the view — never the space on offer, and never wider than what is on screen. The overlay sizes its window to what its table asks for,
+so a header that took the available width grew the window, which then offered
+more — the overlay ran away across the screen. Reserving the columns' full width
+instead pushed the scroll area past the right-hand edge on a wide comparison,
+and took the vertical bar with it; hence the narrower of the two. `HeaderSlot::header_row` shifts
+the header by the offset the body settled on *this* frame, clips it vertically
+to that band and horizontally to the view. Drawing the header first —
+the obvious order — could only ever use the previous frame's offset, and the
+headings would lag behind their columns while the table was dragged. The two
+closures also cannot be alive at once: both borrow the table's own state, which
+is the other reason `header` takes no closure.
+
+**A list of rows is drawn like a table's rows.** `table::list_row` stripes every
+other row and picks out the one under the pointer, and it is what the lists of
+runs use — the one a comparison is picked from and the legend inside one. They
+were rows of widgets on a flat background, where a dozen runs of the same map on
+the same evening differ only by the time at the end of the line. The background
+is reserved with `Shape::Noop` before the contents are drawn and filled in
+afterwards, because a row is only as tall as what went into it.
+
+**A scrolling list must not be wider than its pane.** Every vertical
+`ScrollArea` in the program carries `auto_shrink([false, true])` so its bar sits
+at the edge of the pane rather than against the longest line in it. That only
+holds while the content fits: with `direction_enabled[0] == false` and
+`auto_shrink[0] == false`, egui sizes the inner rect as
+`inner.max(content_size.x)` (`scroll_area.rs`), so one over-long line widens the
+whole area and carries the vertical bar off the right-hand edge with it. That is
+what hid the legend's bar — the line explaining the reference run. Any label
+that can outgrow its pane is `Label::truncate()`d.
+
+#### Picking what the Total is of
+
+The table's first column is a tick per row, and the Total row is added up from
+the ticked ones only. `Comparison::excluded` holds the names of the rows that
+are out; `refresh_total` rebuilds the Total row — its cells, its averages, its
+chart series and its name — whenever that set changes.
+
+Only the rows directly under Total carry a tick. A branch's hits are the whole
+branch's (`Values::Branch` is a range over the slot's `HitsManager`), so a row
+goes in with everything under it; a tick deeper in the tree would mean re-adding
+every branch above it on every click, for a granularity the damage tree already
+expresses as a row of its own.
+
+Per slot, the rows named in `Comparison::excluded` are dropped and the rest
+pooled and recalculated by `app/damage_subset` — `subset_hits`, `subset_group`,
+`metrics_duration(&player.combat_time)`, described in
+[Reading part of a tree](#reading-part-of-a-tree--appdamage_subset) along with
+the invariants that hold there. The synthetic group it hands back is fed to the
+same `build_row` and `build_series` the tree is built with, so a filtered Total
+carries deltas, averages and a chart series like any other row, and nothing
+downstream knows it was filtered.
+
+| decision | why |
+|----------|-----|
+| with nothing excluded the row is rebuilt from `player.damage_out` instead | float addition is not associative, and an unfiltered Total should be the analyzer's own figure to the last digit rather than the pieces added back in another order |
+| the ticks are held by row name, not by node id | a column change or another player rebuilds the tree and hands out fresh ids; the reader's selection has no reason to survive one and not the other |
+| a tick is not also a chart selection | the tick sits inside a `selectable_row`, so it clicks the row as well. `CompareNode::show` drops any click whose pointer landed in the tick cell (`show_tick` returns its `Rect`) — not only one that changed a tick, since aiming at a box and missing it by two points would otherwise chart that row |
+| the row is renamed `Total (k of n rows)` while filtered | the one way this can mislead is a filtered figure read as the run's own DPS — on screen and in the exported sheet alike |
+
+The `👁` toggle in the `Name` header (`Comparison::hide_unticked`, `is_hidden`)
+only takes the unticked rows off the screen; they are out of the Total either
+way. Neither it nor the ticks are persisted: `CompareSettings` holds the
+columns, the breakdown and the averages, and a fresh `Comparison` starts with
+every row ticked.
+
+#### Which rows are on screen
+
+Three filters decide it, `and`ed in `is_hidden`, and all three apply only to the
+rows directly under Total — the level the ticks are at, and the level a reader
+compares builds at.
+
+| filter | state | what it asks |
+|--------|-------|--------------|
+| `👁` in the `Name` header | `hide_unticked` | only the rows the Total is added up from |
+| `☰ Type` in the `Name` header | `types` | only the rows that dealt one of these damage types |
+| `Δ Spread` in the toolbar | `show_differences`, `difference_measure`, `share_threshold` / `dps_threshold` | only the rows the combats disagree over |
+
+The type picker is **not** a view filter: picking a type rebuilds the tree from
+a copy of the player's damage holding only what was dealt in it
+(`damage_subset::damage_of_types`, kept per slot in `Comparison::of_type` and
+reached through the local `of_type`). So `Polaron Beam Array` under `Cold` shows
+the 60k its Frostbite proc did, not the 4.3M the beams did around it, and every
+column of that row — DPS, resistance, criticals — is of the proc, having been
+recomputed from its hits. Which level of the tree that rebuild happens at, and
+why the percentages have to be set by hand afterwards, is in
+[Reading part of a tree](#reading-part-of-a-tree--appdamage_subset).
+
+`CompareNode::damage_types` is the union of `DamageGroup::damage_types` over the
+slots. The analyzer already keeps `Shield` out of a group that has a real type
+(`add_damage_type_non_pool`) — the log carries no energy type for a hit on
+shields, only for one on hull — so a row's types are its weapon types, and a
+group holding several weapons carries all of theirs. The picker offers only what
+the comparison actually holds (`all_damage_types`).
+
+A difference is `spread`: the row's largest value across the combats less its
+smallest, **counting a combat that does not have the row as zero**. That zero is
+the point — a row flown in two runs out of five is the difference being looked
+for, and treating the absence as missing data would rank it as agreement. What
+"value" means is the reader's choice, and neither answer is right on its own:
+
+| measure | value per slot | why |
+|---------|----------------|-----|
+| `Share` | `damage_percentage.all` — the row's share of that combat's own damage, so the threshold is in percentage points | a shorter or weaker run does not read as a different build in every row at once |
+| `Dps` | `dps.all` | what the row was actually worth, whatever share of the run it came to |
+
+Each carries its own threshold, from zero up: a number that means something in
+percentage points means nothing in DPS, and the bottom of either scale has to
+mean "hide nothing". The figure itself is shown in a `Spread` column, so the
+threshold is visible rather than an invisible rule the table obeys.
+
+Two decisions worth keeping:
+
+- **The order does not change.** Rows stay sorted by the reference combat's DPS,
+  as they are with the toggle off, so a row known from the full table is where it
+  was. The alternative — largest difference first — makes the toggle a different
+  table rather than the same one with rows taken out.
+- **A row missing from some combats says so** (`missing_from`, "(in 2 of 5)").
+  "Flown in two runs out of five" and "flown in all five, unevenly" are different
+  findings, and the numbers in the columns do not tell them apart at a glance.
+
+Measured on five runs of one map: at a 3 pp threshold the tree drops from 25 rows
+to 9, and at 18.5 pp to the two the runs really differ over — the antiproton
+beams of one build and the phaser group of the other.
+
+**The Total is added up from the rows that are ticked *and* on screen**
+(`rows_left_out_of_the_total`). A figure the reader has filtered away is not
+part of what they are reading, so narrowing to one damage type gives the Total
+of that type, and raising the difference threshold gives the Total of what is
+left. The two filters therefore reach the Total by different routes: the type
+through the tree it is built from, the differences through which rows are
+summed.
+
+#### What one combat did differently
+
+Both of these put their column **beside the name**, before the metrics. They
+were at the far end, behind every metric of every combat, which on a wide
+comparison is a screen or two of sideways scrolling: the reader saw the rows
+reordered and no reason for it, which is exactly the report that came back.
+
+`⚖ vs rest` puts a column beside the name saying what each row added to
+one combat, or cost it, against the other combats in the comparison
+(`CompareNode::impact`, `Comparison::impact_slot`). The rows under Total are
+then ordered by how much they weighed either way (`sort_rows`) — the ranking is
+the point of the column, unlike the differences toggle, which is a filter and
+deliberately leaves the order alone.
+
+The reference is the **mean** of the other combats, and that is not a matter of
+taste:
+
+```
+impact(row) = dps(row, this combat) - mean(dps(row, other combats))
+Σ impact(row) = impact(Total)      exactly, because a mean is additive
+```
+
+A median is steadier against one odd run but sums to nothing, and a column whose
+figures do not add up to the one above them invites arithmetic that is wrong.
+What a median is good for is said separately, in the tooltip:
+`CompareNode::typicality` reports `(value − median) / MAD` over the other
+combats — the median absolute deviation standing in for a standard deviation,
+since a comparison holds a handful of runs and one odd one drags a mean and an
+SD far enough to hide everything else. It is `None` when the others agree
+exactly, or when there are fewer than two of them to disagree.
+
+A combat without the row counts as zero on both measures: not having flown
+something is exactly the difference being looked for.
+
+#### The damage-type summary
+
+`🎯 By type` opens a window of its own (`Comparison::show_type_summary`) holding
+one row per damage type and one column per combat, each cell the share of that
+combat the type came to. A window rather than another panel: the table and the
+chart already divide the screen, and this is read once and put away.
+
+`damage_by_type` walks the tree and **descends until a row has a single type**,
+putting that whole row's damage under it (`collect_types`). Descending is what
+makes the figure whole: the log gives no energy type for a hit on *shields*,
+only for one on hull, so counting log lines by type loses a fifth to a quarter
+of the damage to a `Shield` bucket. A row knows what weapon it is, and its
+shield damage goes with it.
+
+| case | where it lands | why |
+|------|----------------|-----|
+| one type | that type | the ordinary row |
+| several types, sub-rows below | split among its sub-rows | a group of several weapons is told apart by what is under it |
+| several types, nothing below | `mixed` | a proc that deals two types at once and has no rows to split |
+| no type at all | `untyped` | the shares are meant to add up to the run, so nothing is quietly dropped |
+
+Each type carries the rows it was built from (`TypeRow::parts`, largest first),
+which the window unfolds under it — the question after "these two runs differ on
+phaser" is always "on which phaser". A row nested under a group is named with
+its path (`Beams › Phaser Array`), since a bare leaf name is not always enough
+to place it.
+
+Rows are sorted by `spread` — largest disagreement between the combats first,
+since a type every run leaned on equally is the one thing this window has
+nothing to say about — and by name where two are equally far apart, the rows
+coming out of an `FxHashMap`.
+
 #### Averages
 
 `build_row` returns both shapes of a row in one pass: a `SlotCell` per combat,
@@ -327,7 +733,8 @@ compute with.
 | decision | why |
 |----------|-----|
 | `MetricCell::value` carries the raw `f64` beside the formatted text | a workbook wants a number it can add up, not `"1.2M"` |
-| every row of the tree is written, `open` or not | the file is the comparison; a spreadsheet has its own way of hiding rows |
+| every row of the tree is written, `open` or not, ticked or not | the file is the comparison; a spreadsheet has its own way of hiding rows |
+| a filtered Total goes in under its `Total (k of n rows)` name | the file states what its top row is of, since the ticks that made it are not in there |
 | a missing value writes no cell at all | a zero would average and chart as a real number |
 | the name column is indented with spaces | survives a copy into anything else, unlike a cell indent |
 | `Column::decimals` mirrors `CompareMetric::precision` | the file rounds the way the table does |
@@ -350,13 +757,16 @@ their parts differ in colour: the **number and the note** are drawn in the
 colour of that combat's line on the chart, while what stands between them is
 not — the metric name belongs to the whole group of columns, and the identifier
 is long enough that a whole row of it in a chart colour reads as a warning.
-Those colours are **read off the chart** (`DamageDiagrams::series_color`,
-backed by
-`ValuePerSecondGraph::series_names`), not worked out again — `theme::
-series_color` hands colours out by the order the series sorted into (by total,
-largest first), which depends on the numbers and therefore changes with the
-ability row picked. Anything that recomputed that order by hand would drift out
-of step with the chart the moment two totals crossed.
+A combat's colour is `theme::series_color(slot)` — its own, and fixed. The
+charts otherwise colour a series by where it sorted (by total, largest first),
+which is what the ability rows of one fight want and the wrong thing for
+combats: the row ticks under Total change every combat's total, so a colour
+taken from that order moved on every click, and moved at random once several
+totals were equal at zero. `Comparison::rebuild_diagram` therefore pins each
+series with `PreparedDataSet::with_color`, and `slot_colors` states the same
+colour for the table without asking the chart. A slot the charted row is absent
+from still gets `None`, and its number and note stay in the ordinary text
+colour.
 
 The note line is only added when some combat in the comparison carries one, and
 the header height follows (`header_height`): the table reserves the height

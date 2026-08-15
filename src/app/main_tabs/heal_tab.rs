@@ -1,4 +1,7 @@
+use std::borrow::Cow;
+
 use eframe::egui::Ui;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     analyzer::*,
@@ -7,7 +10,9 @@ use crate::{
 };
 
 use super::{common::*, diagrams::*, tables::*};
+use crate::app::damage_subset;
 use crate::custom_widgets::toggle::Toggle;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 pub struct HealTab {
     /// The same healing, nested both ways. Both are built up front so the
@@ -17,6 +22,15 @@ pub struct HealTab {
     table_by_person: HealTable,
     table_by_ability: HealTable,
     grouping: HealGrouping,
+    /// The rows ticked off, and whether they are hidden — the same pair the
+    /// damage tabs keep, so both kinds of table behave alike.
+    /// One tree of ticks per player: a row ticked off for one player says
+    /// nothing about the same row under another.
+    excluded: FxHashMap<NameHandle, FxHashSet<NameHandle>>,
+    hide_unticked: bool,
+    /// Healing has no damage types to pick from, so the picker has nothing to
+    /// offer and does not appear.
+    no_types: FxHashSet<String>,
     main_diagrams: HealDiagrams,
     selection_diagrams: Option<HealDiagrams>,
     heal_pool: fn(&Player) -> &HealPool,
@@ -41,6 +55,9 @@ impl HealTab {
             table_by_person: HealTable::empty(),
             table_by_ability: HealTable::empty(),
             grouping: HealGrouping::ByAbility,
+            excluded: Default::default(),
+            hide_unticked: false,
+            no_types: Default::default(),
             heal_pool,
             other_level,
             main_diagrams: HealDiagrams::empty(),
@@ -55,16 +72,61 @@ impl HealTab {
 
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
         self.combat_duration_s = combat_duration_seconds(combat);
+        self.rebuild(settings, combat);
+    }
+
+    /// The tables and the chart, all of the rows that are ticked.
+    ///
+    /// A player's row is worked out again from the ticks of what is left, the
+    /// way the damage tabs do it — an average heal and a crit rate are ratios
+    /// of tick counts, so they cannot be got by subtracting a column.
+    fn rebuild(&mut self, settings: &Settings, combat: &Combat) {
         let pool = self.heal_pool;
-        self.table_by_person = match self.other_level {
-            Some(_) => HealTable::new(settings, combat, move |p| &pool(p).by_person),
+        let excluded = &self.excluded;
+        let total = combat.total_heal_ally;
+        // The ticks are per player: one player's rows are their own.
+        let kept = |group: &'_ HealGroup, player: &'_ Player| -> Option<HealGroup> {
+            let out = excluded.get(&group.name())?;
+            (!out.is_empty()).then(|| {
+                damage_subset::player_heal_without(
+                    player,
+                    group,
+                    &combat.heal_ticks_manger,
+                    out,
+                    &total,
+                )
+            })
+        };
+
+        let mut by_person = match self.other_level {
+            Some(_) => HealTable::new(settings, combat, |p| {
+                let whole = &pool(p).by_person;
+                kept(whole, p).map_or(Cow::Borrowed(whole), Cow::Owned)
+            }),
             None => HealTable::empty(),
         };
-        self.table_by_ability = HealTable::new(settings, combat, move |p| &pool(p).by_ability);
+        let mut by_ability = HealTable::new(settings, combat, |p| {
+            let whole = &pool(p).by_ability;
+            kept(whole, p).map_or(Cow::Borrowed(whole), Cow::Owned)
+        });
+        // The tree the reader had opened is theirs; a tick must not fold it up.
+        by_person.take_state_from(&self.table_by_person);
+        by_ability.take_state_from(&self.table_by_ability);
+        self.table_by_person = by_person;
+        self.table_by_ability = by_ability;
+
         // Either nesting holds the same ticks, so the per-player chart is the
         // same; build it from one of them.
+        let charted: Vec<HealGroup> = combat
+            .players
+            .values()
+            .map(|p| {
+                let whole = &pool(p).by_person;
+                kept(whole, p).unwrap_or_else(|| whole.clone())
+            })
+            .collect();
         self.main_diagrams = HealDiagrams::from_heal_groups(
-            combat.players.values().map(move |p| &pool(p).by_person),
+            charted.iter(),
             combat,
             self.filter,
             self.diagram_time_slice,
@@ -73,7 +135,8 @@ impl HealTab {
         self.selection_diagrams = None;
     }
 
-    pub fn show(&mut self, settings: &Settings, ui: &mut Ui) {
+    pub fn show(&mut self, settings: &Settings, combat: Option<&Combat>, ui: &mut Ui) {
+        let mut ticks_changed = false;
         Splitter::horizontal()
             .initial_ratio(0.6)
             .ratio_bounds(0.1..=0.9)
@@ -87,9 +150,17 @@ impl HealTab {
                 let combat_duration_s = self.combat_duration_s;
                 let components = self.components;
                 let columns = &settings.columns;
+                let mut ticks = RowTicks {
+                    excluded: &mut self.excluded,
+                    hide_unticked: &mut self.hide_unticked,
+                    types: &mut self.no_types,
+                    all_types: &[],
+                    changed: false,
+                };
                 table.show(
                     top_ui,
                     |column| columns.is_shown(TableKind::Heal, column),
+                    &mut ticks,
                     |p| {
                         Self::process_diagram_change(
                             &mut self.selection_diagrams,
@@ -102,8 +173,15 @@ impl HealTab {
                     },
                 );
 
+                ticks_changed = ticks.changed;
                 self.show_diagrams(settings, bottom_ui);
             });
+
+        // A tick changes what every player's row is of, so both nestings and
+        // the chart are built again from the rows that are left.
+        if ticks_changed && let Some(combat) = combat {
+            self.rebuild(settings, combat);
+        }
     }
 
     /// Switches how the tree is nested. Both nestings are already built, so this
@@ -128,7 +206,7 @@ impl HealTab {
                     HealGrouping::ByPerson,
                     format!("{} ⏵ Ability", other_level),
                 )
-                .on_hover_text(format!(
+                .hover(format!(
                     "Top level is the {}, with the abilities underneath.",
                     other_level.to_lowercase()
                 ))
@@ -138,7 +216,7 @@ impl HealTab {
                     HealGrouping::ByAbility,
                     format!("Ability ⏵ {}", other_level),
                 )
-                .on_hover_text(format!(
+                .hover(format!(
                     "Top level is the ability, with the {} underneath.",
                     other_level.to_lowercase()
                 ))
@@ -275,11 +353,11 @@ impl HealTab {
             let mut shield = self.components.shield;
             changed |= ui
                 .toggle_value(&mut hull, "Hull")
-                .on_hover_text("Include healing that restored hull.")
+                .hover("Include healing that restored hull.")
                 .changed();
             changed |= ui
                 .toggle_value(&mut shield, "Shield")
-                .on_hover_text("Include healing that restored shields.")
+                .hover("Include healing that restored shields.")
                 .changed();
             if !hull && !shield {
                 // Whichever the user just switched off is the one to keep.
@@ -301,25 +379,25 @@ impl HealTab {
                 DiagramType::Hps,
                 DiagramType::Hps.name(),
             )
-            .on_hover_text(DiagramType::Hps.tooltip());
+            .hover(DiagramType::Hps.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::Heal,
                 DiagramType::Heal.name(),
             )
-            .on_hover_text(DiagramType::Heal.tooltip());
+            .hover(DiagramType::Heal.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HealTicksPerSecond,
                 DiagramType::HealTicksPerSecond.name(),
             )
-            .on_hover_text(DiagramType::HealTicksPerSecond.tooltip());
+            .hover(DiagramType::HealTicksPerSecond.tooltip());
             ui.steady_toggle_value(
                 &mut self.active_diagram,
                 DiagramType::HealTicksCount,
                 DiagramType::HealTicksCount.name(),
             )
-            .on_hover_text(DiagramType::HealTicksCount.tooltip());
+            .hover(DiagramType::HealTicksCount.tooltip());
         });
 
         let mut update_required = self.show_component_picker(ui);

@@ -7,6 +7,7 @@ use crate::analyzer::{Combat, curated_map_identifiers, curated_map_names};
 use crate::app::theme;
 use crate::custom_widgets::table::Table;
 use crate::custom_widgets::toggle::Toggle;
+use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::unwrap_or_return;
 use crate::{analyzer::settings::*, custom_widgets::popup_button::PopupButton};
 
@@ -213,11 +214,7 @@ impl AnalysisTab {
             Table::new(ui)
                 .min_scroll_height(300.0)
                 .max_scroll_height(300.0)
-                .header(HEADER_HEIGHT, |r| {
-                    r.cell(|ui| {
-                        ui.label(title);
-                    });
-                })
+                .header(HEADER_HEIGHT)
                 .body(ROW_HEIGHT, |b| {
                     for name in names.filter(|n| {
                         filter.is_empty() || n.to_lowercase().contains(&filter.to_lowercase())
@@ -227,12 +224,17 @@ impl AnalysisTab {
                                 ui.label(name);
                             });
                             r.cell(|ui| {
-                                if ui.button("🗐").on_hover_text("Copy").clicked() {
+                                if ui.button("🗐").hover("Copy").clicked() {
                                     ui.ctx().copy_text(name.to_string());
                                 }
                             });
                         });
                     }
+                })
+                .header_row(|r| {
+                    r.cell(|ui| {
+                        ui.label(title);
+                    });
                 });
         });
     }
@@ -417,6 +419,9 @@ impl CombatNameRules {
         let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
         ScrollArea::vertical()
             .id_salt("auto detected maps")
+            // The bar goes at the edge of the panel rather than against the
+            // longest map name.
+            .auto_shrink([false, true])
             .max_height(ui.available_height().min(max_height).at_least(row * 4.0))
             .show(ui, |ui| {
                 for map in curated_map_names() {
@@ -520,20 +525,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
             .min_scroll_height(0.0)
             .max_scroll_height(height)
             .cell_spacing(10.0)
-            .header(HEADER_HEIGHT, |r| {
-                r.cell(|ui| {
-                    ui.label("On");
-                });
-                r.cell(|ui| {
-                    ui.label("Edit");
-                });
-                r.cell(|ui| {
-                    ui.label("Clone");
-                });
-                r.cell(|ui| {
-                    ui.label(self.name_header);
-                });
-            })
+            .header(HEADER_HEIGHT)
             .body(ROW_HEIGHT, |t| {
                 let mut to_remove = Vec::new();
                 // At most one row can be cloned per frame, so the index stays
@@ -555,7 +547,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
 
                         r.cell(|ui| {
                             // A framed button, to match the ✏ next to it.
-                            if ui.button("🗐").on_hover_text("Clone this rule").clicked() {
+                            if ui.button("🗐").hover("Clone this rule").clicked() {
                                 to_clone = Some(id);
                             }
                         });
@@ -569,8 +561,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         if let Some(row_warning) = row_warning {
                             r.cell(|ui| match row_warning(rule.borrow()) {
                                 Some(tooltip) => {
-                                    ui.colored_label(theme::palette().warn, "⚠")
-                                        .on_hover_text(tooltip);
+                                    ui.colored_label(theme::palette().warn, "⚠").hover(tooltip);
                                 }
                                 // Keep the column width constant whether or not a
                                 // warning shows, so toggling rules doesn't shift the row.
@@ -604,6 +595,20 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                     self.group_rules.push(clone);
                     *self.selected_group = Some(self.group_rules.len() - 1);
                 }
+            })
+            .header_row(|r| {
+                r.cell(|ui| {
+                    ui.label("On");
+                });
+                r.cell(|ui| {
+                    ui.label("Edit");
+                });
+                r.cell(|ui| {
+                    ui.label("Clone");
+                });
+                r.cell(|ui| {
+                    ui.label(self.name_header);
+                });
             });
     }
 }
@@ -638,23 +643,7 @@ impl<'a> RulesTable<'a> {
                 .min_scroll_height(0.0)
                 .max_scroll_height(height)
                 .cell_spacing(10.0)
-                .header(HEADER_HEIGHT, |r| {
-                    r.cell(|ui| {
-                        ui.label("On");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Clone");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Aspect to match");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Match Method");
-                    });
-                    r.cell(|ui| {
-                        ui.label("Text to match");
-                    });
-                })
+                .header(HEADER_HEIGHT)
                 .body(ROW_HEIGHT, |t| {
                     let mut to_remove = Vec::new();
                     // One clone per frame; see GroupRulesTable for the reasoning.
@@ -666,11 +655,7 @@ impl<'a> RulesTable<'a> {
                             });
 
                             r.cell(|ui| {
-                                if ui
-                                    .button("🗐")
-                                    .on_hover_text("Clone this condition")
-                                    .clicked()
-                                {
+                                if ui.button("🗐").hover("Clone this condition").clicked() {
                                     to_clone = Some(id);
                                 }
                             });
@@ -731,6 +716,23 @@ impl<'a> RulesTable<'a> {
                         self.rules.push(clone);
                         *self.selected_rule = Some(self.rules.len() - 1);
                     }
+                })
+                .header_row(|r| {
+                    r.cell(|ui| {
+                        ui.label("On");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Clone");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Aspect to match");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Match Method");
+                    });
+                    r.cell(|ui| {
+                        ui.label("Text to match");
+                    });
                 });
         });
     }

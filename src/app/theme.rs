@@ -18,8 +18,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use eframe::{
     egui::{
-        Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Visuals,
-        style::Selection,
+        Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Ui, Visuals,
+        style::{ScrollStyle, Selection},
     },
     epaint::{Rgba, Shadow},
 };
@@ -64,6 +64,27 @@ pub struct ThemeEntry {
     pub name: &'static str,
     visuals: fn() -> Visuals,
     pub palette: &'static Palette,
+}
+
+/// How faint the accent rim is on a widget nobody is pointing at. Enough to be
+/// picked out of a row of ordinary buttons, not so much that it reads as the
+/// pressed state the accent otherwise means.
+const RESTING_ACCENT: f32 = 0.7;
+
+/// Paints every state of `ui`'s buttons with the theme's accent rim.
+///
+/// The accent is the theme's own `hyperlink_color` — the one colour every theme
+/// declares as bright enough for its background — which is also what a pressed
+/// widget's rim is painted with (`theme::glassify`). The widths are left at
+/// 1.0: egui takes the frame's stroke width off the button's inner margin, so a
+/// wider rim here would make the button change size the moment it is hovered.
+pub fn accent_rim(ui: &mut Ui) {
+    let accent = ui.visuals().hyperlink_color;
+    let widgets = &mut ui.visuals_mut().widgets;
+    widgets.inactive.bg_stroke = Stroke::new(1.0, accent.gamma_multiply(RESTING_ACCENT));
+    for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        state.bg_stroke = Stroke::new(1.0, accent);
+    }
 }
 
 /// Every theme the app offers, in the order the settings tab lists them.
@@ -247,12 +268,15 @@ pub fn apply(ctx: &Context, theme: Theme) {
     // start a text selection instead of doing nothing.
     style.interaction.selectable_labels = false;
     style.interaction.tooltip_delay = 0.0;
-    // Floating scroll bars grow when the pointer comes near them and would then
-    // be drawn on top of the content — the horizontal bar of a table covering
-    // its last row. Reserve a strip as wide as the fully grown bar, so it sits
-    // next to the content instead of over it. The strip is only taken while the
-    // bar is actually shown.
-    style.spacing.scroll.floating_allocated_width = style.spacing.scroll.bar_width;
+    // Scroll bars sit beside the content instead of floating over it, in the
+    // shape a browser uses: always drawn, thin, and hard against the edge of
+    // what they scroll. A floating bar is a sliver until the pointer comes near
+    // it and is drawn on top of what it scrolls — and the bar that most needs
+    // finding is the horizontal one under a table too wide for the window,
+    // which is exactly the one nobody knows is there. `solid` also drops the
+    // outer margin, so the bar sits at the edge rather than a few points inside
+    // it, and takes it down from ten points to six.
+    style.spacing.scroll = ScrollStyle::solid();
 
     // The app picks its own theme, so both of egui's slots get the same style;
     // following the desktop's light/dark preference would override the choice.
@@ -545,6 +569,50 @@ fn frost_light_visuals() -> Visuals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::RawInput;
+
+    /// The accent rim has to differ from an ordinary button's in colour and in
+    /// nothing else. A wider stroke would come off the button's inner margin
+    /// and make it change size under the pointer, which is the very thing
+    /// `custom_widgets::toggle` exists to stop.
+    #[test]
+    fn the_accent_rim_changes_the_colour_and_not_the_width() {
+        // `apply` writes the active theme every test in here reads, so they
+        // take turns.
+        let _active = ACTIVE_THEME.lock().unwrap();
+        for theme in THEMES.iter() {
+            let ctx = Context::default();
+            apply(&ctx, theme.theme);
+            let mut ordinary = None;
+            let mut accented = None;
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                ordinary = Some(ui.visuals().widgets.clone());
+                ui.scope(|ui| {
+                    accent_rim(ui);
+                    accented = Some(ui.visuals().widgets.clone());
+                });
+            });
+            let (ordinary, accented) = (ordinary.unwrap(), accented.unwrap());
+
+            for (ordinary, accented) in [
+                (&ordinary.inactive, &accented.inactive),
+                (&ordinary.hovered, &accented.hovered),
+                (&ordinary.active, &accented.active),
+                (&ordinary.open, &accented.open),
+            ] {
+                assert_eq!(
+                    ordinary.bg_stroke.width, accented.bg_stroke.width,
+                    "{}: an accented button must be the same size as an ordinary one",
+                    theme.name
+                );
+                assert_ne!(
+                    ordinary.bg_stroke.color, accented.bg_stroke.color,
+                    "{}: the accent has to be visible against the ordinary rim",
+                    theme.name
+                );
+            }
+        }
+    }
 
     /// Which theme is active is one value for the whole process, so the tests
     /// that set it take turns instead of running over each other.
@@ -909,9 +977,9 @@ mod tests {
             "the text sizes come from TEXT_SIZES"
         );
         assert!(!style.interaction.selectable_labels);
-        assert_eq!(
-            style.spacing.scroll.bar_width, style.spacing.scroll.floating_allocated_width,
-            "a floating scroll bar has to get a strip of its own"
+        assert!(
+            !style.spacing.scroll.floating,
+            "a scroll bar has to be visible without being hunted for"
         );
         assert_eq!(
             style.visuals.dark_mode,

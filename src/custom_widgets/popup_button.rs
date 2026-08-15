@@ -4,6 +4,11 @@
 //! again puts the window away. Without that, the only way to close one was to
 //! click somewhere else entirely, and nothing on screen said which button the
 //! window belonged to.
+//!
+//! The window is sized to what it holds, so nothing inside it may ask for all
+//! the width on offer — `ui.separator()` does, and one of those opened a list
+//! of words like "Phaser" as a banner across the screen. Use `add_space` for a
+//! gap between groups.
 
 use std::hash::Hash;
 

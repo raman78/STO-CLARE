@@ -1,6 +1,7 @@
 use eframe::egui::*;
 use itertools::Itertools;
 
+use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::{
     analyzer::*,
     app::settings::CombatNotes,
@@ -44,7 +45,7 @@ impl SummaryCopy {
                 .show(ui, |ui| {
                     ui.label("Configure copy elements");
                     ui.checkbox(&mut self.include_note, "Your note for the combat")
-                        .on_hover_text(
+                        .hover(
                             "Adds the note you wrote for this combat after its name. Nothing is \
                              added when there is no note.",
                         );

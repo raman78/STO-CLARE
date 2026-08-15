@@ -41,11 +41,23 @@ click() { xdotool mousemove --window "$W" "$1" "$2" click 1; sleep 1; }
 if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
   echo "main tabs:"
   start LightDark
+  # Every picture in this section is of one run. The newest fight in the demo
+  # log is whatever the log ends on — often a short solo scrap with a single
+  # row, which shows nothing the manual is talking about — so the entry under
+  # it is picked instead. Check the list picture if the choice looks wrong.
+  click 480 38; click 480 84; sleep 2
   shot summary-tab
   click 122 101; shot damage-dealt-tab
-  click 27 160;  shot ability-breakdown          # open the player's row
-  click 220 101; shot damage-taken-tab
-  click 393 101; shot healing-tab
+  click 66 168;  shot ability-breakdown            # the arrow, right of the tick
+  click 163 133; shot damage-type-picker           # ☰ Type in the Name header
+  click 163 133
+  # Two abilities out of the player's figures. They are not put back: taking
+  # them out drops that player's DPS, the table re-sorts under the pointer, and
+  # the same two coordinates no longer name the same two rows. Nothing after
+  # this photographs Damage Dealt, and every other tab keeps its own ticks.
+  click 25 218; click 25 243; shot damage-row-ticks
+  click 223 101; shot damage-taken-tab
+  click 400 101; shot healing-tab
   click 39 101
   click 598 101; shot columns-menu                 # the Columns menu, open
   click 598 101
@@ -54,22 +66,28 @@ if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
 fi
 
 if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
-  echo "settings, compare, records:"
+  echo "settings and compare:"
   start LightDark
   click 34 17;   shot settings-general
-  click 110 49;  shot settings-analysis
-  click 166 49;  shot settings-visuals
-  click 221 49;  shot settings-upload
-  click 274 49;  shot settings-debug
-  click 79 688                                   # Cancel
+  click 110 65;  shot settings-analysis
+  click 169 65;  shot settings-visuals
+  click 226 65;  shot settings-upload
+  click 282 65;  shot settings-debug
+  click 79 607                                     # Cancel
   click 193 17; sleep 1; shot compare-pick
-  # Tick the first two runs, then Compare selected — which sits on a line of its
-  # own above the list, under the Selected/Select all row.
-  click 15 133; click 15 154; click 65 103; sleep 2; shot compare-result
+  # Five runs of one patrol — the set the manual's worked example is about. A
+  # click anywhere on a row picks that run, so the name column will do; then
+  # Compare selected, which sits on a line of its own under Selected/Select all.
+  for y in 311 336 361 386 411; do click 300 "$y"; done
+  click 65 103; sleep 5; shot compare-result
   click 124 68; shot compare-averages              # Σ Averages, on the same row
   click 124 68
-  click 193 17
-  click 95 17; sleep 9; shot records              # give the ladder time to load
+  # Two rows out of the Total. Safe to undo by the same coordinates: ticking
+  # changes what the Total is of, never the order of the rows under it.
+  click 25 340; click 25 365; shot compare-row-ticks
+  click 25 340; click 25 365
+  click 197 68; sleep 1; shot compare-differences   # Δ Spread
+  click 197 68
   stop
 fi
 

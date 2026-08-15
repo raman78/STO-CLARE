@@ -18,6 +18,7 @@ use crate::{
 };
 
 use super::common::{RequestError, spawn_request};
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 #[derive(Default)]
 pub struct Upload {
@@ -35,11 +36,7 @@ impl Upload {
         url: &str,
     ) {
         ui.add_enabled_ui(self.state.is_idle() && combat.is_some(), |ui| {
-            if ui
-                .button("Upload 🌎")
-                .on_hover_text(UPLOAD_TOOLTIP)
-                .clicked()
-            {
+            if ui.button("Upload 🌎").hover(UPLOAD_TOOLTIP).clicked() {
                 self.state = self.begin_upload(ui.ctx().clone(), combat.unwrap(), settings, url);
             };
         });
@@ -89,20 +86,7 @@ impl Upload {
                         );
                     }
                     Table::new(ui)
-                        .header(15.0, |r| {
-                            r.cell(|ui| {
-                                ui.label("Name");
-                            });
-                            r.cell(|ui| {
-                                ui.label("Updated");
-                            });
-                            r.cell(|ui| {
-                                ui.label("Details");
-                            });
-                            r.cell(|ui| {
-                                ui.label("Value");
-                            });
-                        })
+                        .header(15.0)
                         .body(25.0, |b| {
                             for result in result.iter() {
                                 b.row(|r| {
@@ -131,6 +115,20 @@ impl Upload {
                                     });
                                 });
                             }
+                        })
+                        .header_row(|r| {
+                            r.cell(|ui| {
+                                ui.label("Name");
+                            });
+                            r.cell(|ui| {
+                                ui.label("Updated");
+                            });
+                            r.cell(|ui| {
+                                ui.label("Details");
+                            });
+                            r.cell(|ui| {
+                                ui.label("Value");
+                            });
                         });
                     ui.add_space(40.0);
                     ui.button("Close").clicked()

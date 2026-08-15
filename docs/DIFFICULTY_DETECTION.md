@@ -10,12 +10,15 @@ hand before detection existed, exported from his live settings on 2026-07-30 and
 kept purely as a safety net — they are not loaded by anything.
 
 Detection has been replacing them one map at a time, and the export records how
-far that got: **37 of the 41 are already switched off**, leaving four still doing
-work — Breach, Brotherhood of the Sword, Iuppiter Iratus and Peril Over Pahvo.
-Those four are exactly the maps still missing an anchor, so the file doubles as a
-to-do list: each still-enabled rule names a map worth adding, and its match
-expression is a hint at what to anchor on (though rules match *display* names,
-which the detection cannot use — it keys on unique names).
+far that got: **37 of the 41 were already switched off** at export time, leaving
+four still doing work — Breach, Brotherhood of the Sword, Iuppiter Iratus and
+Peril Over Pahvo. All four have since been given anchors, so the export is now a
+historical snapshot rather than a to-do list; every map it names is detected.
+
+The pattern it recorded still holds for future maps: a still-enabled rule names a
+map worth adding, and its match expression hints at what to anchor on (though
+rules match *display* names, which the detection cannot use — it keys on unique
+names).
 
 To restore any of them, paste the entry back into the `analysis.combat_name_rules`
 array of the settings file. Note the format is the app's own settings schema, not
@@ -149,8 +152,11 @@ combats — it is never cleared/recomputed like `hits_manger`.
 A map-independent Advanced/Elite split, applied **after** the per-map tables and
 overriding them. Rationale and the measured numbers live in
 `DETECTION_SAMPLES.md`; in short, space HP is a property of the ship *class*, so
-one table tiers maps we never sampled — 18 of the 37 detectable maps have an
-anchor but no tier tables of their own.
+one table tiers maps we never sampled — 31 of the 53 detectable maps have an
+anchor but no tier tables of their own (counted 2026-08-12). Of those 31, 12 pin a
+single difficulty in the rules instead, and exactly one ends up with no difficulty
+at all: Nukara Prime: Transdimensional Tactics, a ground map — the global table
+skips ground entities, so it needs a measured pair like the other ground maps.
 
 ```
 GlobalTier { exclude: Vec<String>, classes: Vec<ShipClassBand> }
@@ -183,8 +189,9 @@ disagreement with a hand-verified per-map table surfaces instead of being masked
 Disagreements are logged via `warn!`. Against the live log the two never
 disagreed on the 19 tabled maps.
 
-⚠ Unit tests built with `hull_critter` have `deaths = 0`, so the global tier does
-not vote in them; use `dead_hull_critter` to exercise it.
+⚠ The `hull_critter` test helper now sets `deaths = 1` (a median hull figure is
+meaningless for an entity that survived), so fixtures built with it *do* vote in
+the global tier. The separate `dead_hull_critter` helper is gone, folded into it.
 
 ### Presence vs. tier data (why the two branches differ)
 

@@ -3,6 +3,7 @@ use std::ops::RangeInclusive;
 use chrono::Duration;
 use eframe::egui::*;
 
+use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::{
     analyzer::*,
     app::fonts::bold_family,
@@ -12,14 +13,35 @@ use crate::{
 
 pub const ROW_HEIGHT: f32 = 25.0;
 pub const HEADER_HEIGHT: f32 = 15.0;
-/// Header height when Hull/Shield have their own columns: the metric name sits
-/// on the first line, the All/Hull/Shield label on the second.
-pub const SPLIT_HEADER_HEIGHT: f32 = 32.0;
+/// Header height when Hull/Shield have their own columns: the metric name on
+/// the first line, and under it the All/Hull/Shield label as a widget of its
+/// own — which is what carries the click, so it needs a widget's height rather
+/// than a line's.
+pub const SPLIT_HEADER_HEIGHT: f32 = 40.0;
 
 #[derive(Default)]
 pub struct TextValue {
     pub text: Option<String>,
     pub value: Option<f64>,
+}
+
+/// The number a cell is ordered by. Values and counts answer it the same way,
+/// so one column definition can order by either half of a split column without
+/// knowing which of the two it is holding.
+pub trait OrderingValue {
+    fn ordering_value(&self) -> Option<f64>;
+}
+
+impl OrderingValue for TextValue {
+    fn ordering_value(&self) -> Option<f64> {
+        self.value
+    }
+}
+
+impl OrderingValue for TextCount {
+    fn ordering_value(&self) -> Option<f64> {
+        Some(self.count as f64)
+    }
 }
 
 #[derive(Default)]
@@ -31,15 +53,17 @@ pub struct TextCount {
 #[derive(Default)]
 pub struct ShieldAndHullTextValue {
     pub all: TextValue,
-    pub shield: String,
-    pub hull: String,
+    /// The halves carry their number as well as their text, so a table can be
+    /// ordered by the shield or the hull column and not only by the total.
+    pub shield: TextValue,
+    pub hull: TextValue,
 }
 
 #[derive(Default)]
 pub struct ShieldAndHullTextCount {
     pub all: TextCount,
-    pub shield: String,
-    pub hull: String,
+    pub shield: TextCount,
+    pub hull: TextCount,
 }
 
 pub struct TextDuration {
@@ -55,8 +79,8 @@ impl ShieldAndHullTextValue {
     ) -> Self {
         Self {
             all: TextValue::new(value.all, precision, number_formatter),
-            shield: number_formatter.format(value.shield, precision),
-            hull: number_formatter.format(value.hull, precision),
+            shield: TextValue::new(value.shield, precision, number_formatter),
+            hull: TextValue::new(value.hull, precision, number_formatter),
         }
     }
 
@@ -67,14 +91,8 @@ impl ShieldAndHullTextValue {
     ) -> Self {
         Self {
             all: TextValue::option(value.all, precision, number_formatter),
-            shield: value
-                .shield
-                .map(|s| number_formatter.format(s, precision))
-                .unwrap_or_default(),
-            hull: value
-                .hull
-                .map(|h| number_formatter.format(h, precision))
-                .unwrap_or_default(),
+            shield: TextValue::option(value.shield, precision, number_formatter),
+            hull: TextValue::option(value.hull, precision, number_formatter),
         }
     }
 
@@ -85,7 +103,11 @@ impl ShieldAndHullTextValue {
         if halves_in_tooltip {
             let response = self.all.show(row);
             if let Some(response) = response {
-                show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+                show_shield_hull_values_tool_tip(
+                    response,
+                    self.shield.text.as_deref().unwrap_or_default(),
+                    self.hull.text.as_deref().unwrap_or_default(),
+                );
             }
             return;
         }
@@ -103,12 +125,12 @@ impl ShieldAndHullTextValue {
 
     /// The hull half as its own cell (split-columns mode).
     pub fn show_hull(&self, row: &mut TableRow) {
-        show_value_text(row, &self.hull);
+        show_value_text(row, self.hull.text.as_deref().unwrap_or_default());
     }
 
     /// The shield half as its own cell (split-columns mode).
     pub fn show_shield(&self, row: &mut TableRow) {
-        show_value_text(row, &self.shield);
+        show_value_text(row, self.shield.text.as_deref().unwrap_or_default());
     }
 }
 
@@ -165,8 +187,8 @@ impl ShieldAndHullTextCount {
     pub fn new(counts: &ShieldHullCounts) -> Self {
         Self {
             all: TextCount::new(counts.all),
-            shield: counts.shield.to_string(),
-            hull: counts.hull.to_string(),
+            shield: TextCount::new(counts.shield),
+            hull: TextCount::new(counts.hull),
         }
     }
 
@@ -174,7 +196,7 @@ impl ShieldAndHullTextCount {
     pub fn show(&self, row: &mut TableRow, halves_in_tooltip: bool) {
         if halves_in_tooltip {
             let response = self.all.show(row);
-            show_shield_hull_values_tool_tip(response, &self.shield, &self.hull);
+            show_shield_hull_values_tool_tip(response, &self.shield.text, &self.hull.text);
             return;
         }
         show_value_text_strong(row, &self.all.text);
@@ -182,12 +204,12 @@ impl ShieldAndHullTextCount {
 
     /// The hull half as its own cell (split-columns mode).
     pub fn show_hull(&self, row: &mut TableRow) {
-        show_value_text(row, &self.hull);
+        show_value_text(row, &self.hull.text);
     }
 
     /// The shield half as its own cell (split-columns mode).
     pub fn show_shield(&self, row: &mut TableRow) {
-        show_value_text(row, &self.shield);
+        show_value_text(row, &self.shield.text);
     }
 }
 
@@ -217,35 +239,6 @@ fn show_value_text_strong(row: &mut TableRow, value_text: &str) -> Response {
 /// emphasis.
 pub fn bold_text(text: impl Into<String>) -> RichText {
     RichText::new(text).family(bold_family()).strong()
-}
-
-/// The heading of a split column's total cell: the metric name on the first
-/// line as usual, and a bold `All` on the second, so the heading is as heavy as
-/// the values under it. One galley, so the cell keeps sorting on a single click.
-pub fn split_total_header_text(ui: &Ui, name: &str) -> text::LayoutJob {
-    let font_id = TextStyle::Body.resolve(ui.style());
-    let mut job = text::LayoutJob::default();
-    job.append(
-        &format!("{}\n", name),
-        0.0,
-        TextFormat {
-            font_id: font_id.clone(),
-            // Replaced with the label's own color, so the heading follows the
-            // theme and the hover/selection visuals like any other cell.
-            color: Color32::PLACEHOLDER,
-            ..Default::default()
-        },
-    );
-    job.append(
-        "All",
-        0.0,
-        TextFormat {
-            font_id: FontId::new(font_id.size, bold_family()),
-            color: ui.visuals().strong_text_color(),
-            ..Default::default()
-        },
-    );
-    job
 }
 
 fn show_value_text(row: &mut TableRow, value_text: &str) -> Response {
@@ -322,7 +315,7 @@ pub fn show_time_filter_setting(filter: &mut f64, combat_duration_s: f64, ui: &m
             .show(ui)
             .changed();
         ui.label("Gauss Filter Standard Deviation (how much to smooth the graph)")
-            .on_hover_text(format!(
+            .hover(format!(
                 "How far either side of a moment the graph averages.\n\
                  Capped at {max:.0} s for this combat: the smoothing reaches four \
                  times this far, and a window approaching the length of the fight \

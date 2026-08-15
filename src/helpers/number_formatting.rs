@@ -11,41 +11,28 @@ impl NumberFormatter {
         }
     }
 
+    /// The number with `precision` decimals and an apostrophe every three
+    /// digits, the way every table in the program shows a figure.
+    ///
+    /// Rounded **once, over the whole number**. Rounding the fraction on its
+    /// own and gluing it back onto the integer part loses the carry: 8.972 came
+    /// out as `8.0` rather than `9.0`, since the fraction rounded to `1.0` and
+    /// only the digits after its point were kept. That went for anything whose
+    /// fraction rounded up — about one figure in twenty at a single decimal.
     pub fn format(&mut self, number: f64, precision: usize) -> String {
-        let mut result = String::new();
-
         let is_negative = number.is_sign_negative();
 
-        let mut number = number.abs();
-        let fract = number.fract();
-
-        if precision == 0 {
-            number = number.round();
-        }
-
-        let mut number = number as u64;
-
-        loop {
-            self.buffer.clear();
-            if number < 1000 {
-                write!(&mut self.buffer, "{}", number).unwrap();
-                result.insert_str(0, &self.buffer);
-                break;
-            }
-
-            write!(&mut self.buffer, "'{:03}", number % 1000).unwrap();
-            result.insert_str(0, &self.buffer);
-            number /= 1000;
-        }
-
-        if precision == 0 {
-            return Self::add_sign(result, is_negative);
-        }
-
         self.buffer.clear();
-        write!(&mut self.buffer, "{:.*}", precision, fract).unwrap();
-        self.buffer.remove(0);
-        result.push_str(&self.buffer);
+        write!(&mut self.buffer, "{:.*}", precision, number.abs()).unwrap();
+
+        let digits = self.buffer.find('.').unwrap_or(self.buffer.len());
+        let mut result = String::with_capacity(self.buffer.len() + digits / 3);
+        for (index, character) in self.buffer.chars().enumerate() {
+            if index > 0 && index < digits && (digits - index).is_multiple_of(3) {
+                result.push('\'');
+            }
+            result.push(character);
+        }
 
         Self::add_sign(result, is_negative)
     }
@@ -102,6 +89,28 @@ impl NumberFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fraction that rounds up has to carry into the integer part: 8.972 to
+    /// one decimal is 9.0, not 8.0.
+    #[test]
+    fn a_fraction_that_rounds_up_carries() {
+        let mut f = NumberFormatter::new();
+        assert_eq!("9.0", f.format(8.972, 1));
+        assert_eq!("9.00", f.format(8.9972, 2));
+        assert_eq!("1'000.0", f.format(999.97, 1));
+        assert_eq!("-9.0", f.format(-8.972, 1));
+        // The carry can also cross a group boundary, at any precision.
+        assert_eq!("1'000", f.format(999.6, 0));
+        assert_eq!("1'000'000.00", f.format(999_999.999, 2));
+    }
+
+    /// A figure past what a `u64` holds is written out rather than pinned to
+    /// that ceiling — the digits come from the float, not from a cast.
+    #[test]
+    fn a_very_large_number_keeps_its_digits() {
+        let mut f = NumberFormatter::new();
+        assert_eq!("100'000'000'000'000'000'000", f.format(1e20, 0));
+    }
 
     #[test]
     fn format_numbers() {

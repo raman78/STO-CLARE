@@ -5,6 +5,7 @@ use crate::{
     helpers::number_formatting::NumberFormatter,
     shield_hull_col,
 };
+use std::borrow::Cow;
 
 use super::metrics_table::*;
 
@@ -88,7 +89,7 @@ impl HealTable {
     pub fn new(
         settings: &Settings,
         combat: &Combat,
-        heal_group: impl FnMut(&Player) -> &HealGroup,
+        heal_group: impl FnMut(&Player) -> Cow<'_, HealGroup>,
     ) -> Self {
         Self::new_base(
             settings,

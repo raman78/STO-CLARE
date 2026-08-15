@@ -6,8 +6,10 @@ use crate::{
     helpers::number_formatting::NumberFormatter,
     shield_hull_col,
 };
+use std::borrow::Cow;
 
 use super::{common::Kills, metrics_table::*};
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 /// Every column of this table, for the column picker.
 pub fn column_names() -> Vec<&'static str> {
@@ -212,7 +214,7 @@ impl DamageTable {
     pub fn new(
         settings: &Settings,
         combat: &Combat,
-        damage_group: impl FnMut(&Player) -> &DamageGroup,
+        damage_group: impl FnMut(&Player) -> Cow<'_, DamageGroup>,
     ) -> Self {
         Self::new_base(
             settings,
@@ -349,7 +351,7 @@ impl MaxOneHit {
 
     fn show(&self, row: &mut TableRow) {
         if let Some(response) = self.damage.show(row) {
-            response.on_hover_text(&self.name);
+            response.hover(&self.name);
         }
     }
 }

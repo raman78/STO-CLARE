@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, sync::Arc};
 
 use educe::Educe;
-use eframe::egui::{TextStyle, Ui};
+use eframe::egui::{Color32, TextStyle, Ui, Vec2b};
 use egui_plot::*;
 
 use crate::{
@@ -16,6 +16,12 @@ pub struct PreparedDataSet<T: PreparedValue> {
     pub values: Arc<[PreparedPoint<T>]>,
     pub start_time_s: f64,
     pub duration_s: f64,
+    /// The colour to draw this series in, when it must not depend on where the
+    /// series ended up in the chart's own order. `None` — the ordinary case —
+    /// takes the colour of its place in that order (see [`with_color`]).
+    ///
+    /// [`with_color`]: PreparedDataSet::with_color
+    pub color: Option<Color32>,
 }
 
 pub type PreparedDamageDataSet = PreparedDataSet<PreparedHitValue>;
@@ -192,7 +198,21 @@ impl<T: PreparedValue> PreparedDataSet<T> {
             values: Arc::from(values),
             start_time_s: 0.0,
             duration_s: combat_duration_s.max(end_time_s),
+            color: None,
         }
+    }
+
+    /// Pins the colour this series is drawn in, instead of taking the one that
+    /// comes with its place in the chart's order.
+    ///
+    /// The charts sort by total, largest first, so a series' colour otherwise
+    /// moves whenever the totals do. That is what a reader wants when the
+    /// series are the abilities of one fight — the biggest is always the same
+    /// colour — and the wrong thing when they are several combats, where a
+    /// colour is how a run is told from the next and has to hold still.
+    pub fn with_color(mut self, color: Color32) -> Self {
+        self.color = Some(color);
+        self
     }
 }
 
@@ -221,6 +241,13 @@ impl PreparedHealDataSet {
     ) -> Self {
         Self::base_new(name, total_heal, ticks, combat_duration_s)
     }
+}
+
+/// The colour to draw a series in: the one it brought, or the one that comes
+/// with its place in the chart's order.
+pub fn series_color<T: PreparedValue>(data: &PreparedDataSet<T>, index: usize) -> Color32 {
+    data.color
+        .unwrap_or_else(|| crate::app::theme::series_color(index))
 }
 
 /// How long a combat ran, first record to last, in seconds. Charts use it as
@@ -386,6 +413,15 @@ pub fn y_axis_width(ui: &Ui) -> f32 {
     digit * WIDEST_Y_LABEL_CHARS + ui.spacing().item_spacing.x * 2.0
 }
 
+/// Which way a chart may be moved by hand: sideways only.
+///
+/// Every chart here fits its own height — the y axis is scaled to what the
+/// data reaches (`auto_bounds`, `include_y`) — so dragging or scrolling it up
+/// and down only slides the lines out of the frame and leaves blank space in
+/// their place. Sideways is a different matter: on a long fight, moving along
+/// the time axis is the point.
+pub const PAN_SIDEWAYS_ONLY: Vec2b = Vec2b { x: true, y: false };
+
 pub fn format_axis(mark: GridMark, _: &RangeInclusive<f64>) -> String {
     if mark.value < 0.0 {
         return String::new();
@@ -465,6 +501,26 @@ mod tests {
             values.into_iter(),
             combat_duration_s,
         )
+    }
+
+    /// Without a colour of its own a series takes the one that comes with its
+    /// place in the chart's order — the abilities of one fight, where the
+    /// biggest is always the same colour.
+    #[test]
+    fn a_series_takes_the_colour_of_its_place_by_default() {
+        let series = heal_series(&[1], 10.0);
+        assert_eq!(None, series.color);
+        assert_eq!(crate::app::theme::series_color(2), series_color(&series, 2));
+    }
+
+    /// A pinned colour holds whatever place the series ends up in. The compare
+    /// view needs this: its series are combats, and a combat has to keep its
+    /// colour when a tick in the table moves the totals the order is made of.
+    #[test]
+    fn a_pinned_colour_survives_a_change_of_place() {
+        let series = heal_series(&[1], 10.0).with_color(Color32::RED);
+        assert_eq!(Color32::RED, series_color(&series, 0));
+        assert_eq!(Color32::RED, series_color(&series, 4));
     }
 
     /// A series whose first value lands well into the fight still starts at the

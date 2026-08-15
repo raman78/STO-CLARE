@@ -6,6 +6,7 @@ use crate::{
     custom_widgets::table::*,
 };
 
+#[derive(Default)]
 pub struct Kills {
     total: String,
     pub total_count: u32,

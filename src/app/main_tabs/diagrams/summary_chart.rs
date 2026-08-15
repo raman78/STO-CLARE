@@ -61,6 +61,8 @@ impl SummaryChart {
             .collect();
         Plot::new(&self.identifier)
             .auto_bounds(true)
+            .allow_scroll(PAN_SIDEWAYS_ONLY)
+            .allow_drag(PAN_SIDEWAYS_ONLY)
             .y_axis_formatter(|_, _| String::new())
             .x_axis_formatter(format_axis)
             // With the bars themselves not hoverable (below), this is what
