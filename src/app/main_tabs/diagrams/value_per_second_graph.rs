@@ -4,10 +4,7 @@ use eframe::egui::*;
 use egui_plot::*;
 use itertools::Itertools;
 
-use crate::{
-    app::{settings::Settings, theme},
-    helpers::number_formatting::NumberFormatter,
-};
+use crate::{app::settings::Settings, helpers::number_formatting::NumberFormatter};
 
 use super::common::*;
 
@@ -94,14 +91,6 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         }
     }
 
-    /// The series in draw order, which is the order [`theme::series_color`]
-    /// hands the colours out in. Lets a caller paint something outside the
-    /// chart — a table header, a legend of its own — in a series' own colour
-    /// without having to guess at that order.
-    pub fn series_names(&self) -> impl Iterator<Item = &str> {
-        self.lines.iter().map(|line| line.data.name.as_str())
-    }
-
     /// Largest total first, the same order the bar charts use, so a series
     /// keeps its colour and its place in the legend from one chart to the next.
     fn sort(&mut self) {
@@ -133,6 +122,8 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
 
         let mut plot = Plot::new(("per second graph", self.diagram_type.name()))
             .auto_bounds(true)
+            .allow_scroll(PAN_SIDEWAYS_ONLY)
+            .allow_drag(PAN_SIDEWAYS_ONLY)
             .y_axis_min_width(y_axis_width(ui))
             .y_axis_formatter(format_axis)
             .x_axis_formatter(format_axis)
@@ -153,9 +144,11 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
 
         plot.show(ui, |p| {
             // Series are sorted largest first, so the colour a series gets is
-            // the same on every chart it appears on.
+            // the same on every chart it appears on — unless it brought a
+            // colour of its own, which is how a caller keeps one series the
+            // same colour while the totals move under it.
             for (index, line) in self.lines.iter().enumerate() {
-                p.line(line.to_line().color(theme::series_color(index)));
+                p.line(line.to_line().color(series_color(&line.data, index)));
             }
         });
     }
@@ -403,6 +396,7 @@ mod tests {
             values: Arc::from(Vec::new()),
             start_time_s: 0.0,
             duration_s: 10.0,
+            color: None,
         };
         let graph = ValuePerSecondGraph::<PreparedHitValue>::from_data(
             DiagramType::Dps,
@@ -426,6 +420,7 @@ mod tests {
                 values: Arc::from(steady_fire(100.0, 10)),
                 start_time_s: 0.0,
                 duration_s: 10.0,
+                color: None,
             }]
             .into_iter(),
             1.0,

@@ -7,6 +7,7 @@ use crate::{
 };
 
 use super::Settings;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 #[derive(Default)]
 pub struct GeneralTab {
@@ -68,7 +69,7 @@ impl GeneralTab {
 
             if ui
                 .add_enabled(!current.is_empty() && !is_default, Button::new("Remember"))
-                .on_hover_text("Remember the file above as the one to come back to.")
+                .hover("Remember the file above as the one to come back to.")
                 .clicked()
             {
                 modified_settings.general.default_combatlog_file = Some(current);
@@ -107,7 +108,7 @@ impl GeneralTab {
             &mut modified_settings.analysis.consolidate_combatlog,
             "Merge rotating combat logs into one file",
         )
-        .on_hover_text(
+        .hover(
             "STO starts a new combat log every hour unless the launcher is given \
              -NoAutoRotateLogs, which scatters your fights across many files. When enabled, \
              CLARE keeps a single combatlog.log up to date in the same folder (merging completed \
@@ -154,7 +155,7 @@ impl GeneralTab {
             &mut modified_settings.general.more_decimals,
             "Show more decimals",
         )
-        .on_hover_text(
+        .hover(
             "Shows more numbers after the decimal point in the tables of the different tabs and the overlay",
         );
 
@@ -162,7 +163,7 @@ impl GeneralTab {
             &mut modified_settings.general.split_shield_hull_columns,
             "Show Hull and Shield as separate columns",
         )
-        .on_hover_text(
+        .hover(
             "Metrics that split into a hull and a shield half (damage, hits, healing, ticks) get \
              their own Hull and Shield columns next to the total, so you can see how much of each \
              ability went where. When off, the halves only show in the hover tooltip.",
@@ -230,20 +231,25 @@ impl ClearLogDialog {
             });
 
             ui.separator();
-            ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                // Newest first, matching the combats dropdown.
-                let newest = combats.len().wrapping_sub(1);
-                for i in (0..combats.len()).rev() {
-                    if let Some(flag) = self.to_delete.get_mut(i) {
-                        let label = if i == newest {
-                            format!("{}  (newest)", combats[i])
-                        } else {
-                            combats[i].clone()
-                        };
-                        ui.checkbox(flag, label);
+            ScrollArea::vertical()
+                .max_height(320.0)
+                // The bar goes at the edge of the panel rather than against the
+                // longest combat name.
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    // Newest first, matching the combats dropdown.
+                    let newest = combats.len().wrapping_sub(1);
+                    for i in (0..combats.len()).rev() {
+                        if let Some(flag) = self.to_delete.get_mut(i) {
+                            let label = if i == newest {
+                                format!("{}  (newest)", combats[i])
+                            } else {
+                                combats[i].clone()
+                            };
+                            ui.checkbox(flag, label);
+                        }
                     }
-                }
-            });
+                });
             ui.separator();
 
             let delete_count = self.to_delete.iter().filter(|&&d| d).count();

@@ -9,6 +9,7 @@ use chrono::{Duration, NaiveDateTime};
 use eframe::egui::*;
 
 use crate::app::theme;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 /// What the two fields are typed in. Minutes rather than seconds: a combats
 /// list is never dense enough for a second to tell two runs apart, and typing
@@ -91,7 +92,7 @@ impl DateRange {
             for (label, hours) in PRESETS {
                 if ui
                     .button(label)
-                    .on_hover_text(format!(
+                    .hover(format!(
                         "The last {label} of play, counted back from the newest combat in the list"
                     ))
                     .clicked()
@@ -120,7 +121,7 @@ fn field(text: &mut String, fill_with: Option<NaiveDateTime>, id: &str, ui: &mut
     if invalid {
         edit = edit.text_color(theme::palette().worse);
     }
-    let response = ui.add(edit).on_hover_text(match fill_with {
+    let response = ui.add(edit).hover(match fill_with {
         Some(bound) => format!(
             "Date and time as {FORMAT}, e.g. {}. Leave it empty for no bound at this end.",
             format(bound)

@@ -87,7 +87,11 @@ impl SummaryTab {
         self.total_kills = TextCount::new(combat.total_kills as _);
         self.total_deaths = TextCount::new(combat.total_deaths as _);
 
-        self.summary_table = SummaryTable::new(settings, combat);
+        let mut summary_table = SummaryTable::new(settings, combat);
+        // The column the reader put the table in order by is theirs, and opening
+        // another combat is not a reason to take it away.
+        summary_table.take_state_from(&self.summary_table);
+        self.summary_table = summary_table;
         self.summary_dps_chart = SummaryChart::from_data(
             "summary dps chart",
             "DPS",
@@ -233,7 +237,9 @@ impl SummaryTab {
         // no header; with them the extra cells have to say what they are.
         if split {
             Table::new(ui)
-                .header(HEADER_HEIGHT, |r| {
+                .header(HEADER_HEIGHT)
+                .body(ROW_HEIGHT, |t| body(t))
+                .header_row(|r| {
                     r.cell(|_| {});
                     // The All heading matches the totals under it (see
                     // `ShieldAndHullTextValue::show`); the halves stay plain.
@@ -245,8 +251,7 @@ impl SummaryTab {
                             ui.label(name);
                         });
                     }
-                })
-                .body(ROW_HEIGHT, |t| body(t));
+                });
         } else {
             Table::new(ui).body(ROW_HEIGHT, |t| body(t));
         }

@@ -4,3 +4,4 @@ pub mod slider_text_edit;
 pub mod splitter;
 pub mod table;
 pub mod toggle;
+pub mod tooltip;

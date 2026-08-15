@@ -28,6 +28,10 @@ use crate::{
 mod compare_table;
 mod date_range;
 
+use crate::custom_widgets::table::Table;
+/// The height a row of the picker takes — the tables' own.
+const ROW_HEIGHT: f32 = 25.0;
+use crate::custom_widgets::tooltip::CloseTooltip;
 use compare_table::Comparison;
 use date_range::DateRange;
 
@@ -318,6 +322,9 @@ impl CompareView {
             })
             .collect();
         let visible = self.visible_combats(combats, &notes, &entries, start_times);
+        // Which run the reader ticked this pass, applied once the table has
+        // finished drawing — the rows borrow the selection while they draw.
+        let mut toggled: Option<(usize, bool)> = None;
 
         ui.horizontal_wrapped(|ui| {
             // The pinned run counts: it is in the comparison whatever else is
@@ -338,7 +345,7 @@ impl CompareView {
             if !matching.is_empty()
                 && ui
                     .button("Select all")
-                    .on_hover_text("Add every combat the filters above leave in the list")
+                    .hover("Add every combat the filters above leave in the list")
                     .clicked()
             {
                 for i in matching {
@@ -359,7 +366,7 @@ impl CompareView {
             if let Some(pinned) = &pinned {
                 let mut always = true;
                 ui.add_enabled_ui(false, |ui| {
-                    ui.checkbox(&mut always, pinned).on_disabled_hover_text(
+                    ui.checkbox(&mut always, pinned).disabled_hover(
                         "The run you opened from the ladder. It is what the \
                              comparison is of, so it cannot be taken out of it.",
                     );
@@ -368,6 +375,10 @@ impl CompareView {
             // With a run pinned, one of the reader's own fights is enough to
             // have something to compare it against.
             let enough = if pinned.is_some() { 1 } else { 2 };
+            // The one button on this screen that does anything: everything
+            // around it only ticks, unticks or narrows the list. It carries the
+            // theme's accent rim so it is not read as one more of them.
+            theme::accent_rim(ui);
             if ui
                 .add_enabled(
                     self.selected.len() >= enough,
@@ -390,29 +401,48 @@ impl CompareView {
 
         ui.separator();
 
-        ScrollArea::vertical().show(ui, |ui| {
+        // A table rather than a list of lines: the note is a column of its own,
+        // so a row of runs of the same map does not read as one long string of
+        // name-and-note with the note starting wherever the name happened to
+        // end. Striping, the highlight under the pointer and the bar at the
+        // edge of the panel all come with it.
+        Table::new(ui).body(ROW_HEIGHT, |t| {
             for (i, matches) in visible {
                 let note = notes[i];
                 let mut checked = self.selected.contains(&i);
-                let label = if note.is_empty() {
-                    combats[i].clone()
-                } else {
-                    format!("{} — {note}", combats[i])
-                };
-                ui.horizontal(|ui| {
-                    if ui.checkbox(&mut checked, label).clicked() {
-                        self.toggle_selected(i, checked);
-                    }
-                    if !matches {
-                        ui.colored_label(theme::palette().warn, "⚠").on_hover_text(
-                            "Ticked, but it does not match the filters above — it is shown so a \
-                             combat cannot go into a comparison out of sight. Untick it, or \
-                             widen the filters to see it in place.",
-                        );
-                    }
+                let row = t.selectable_row(checked, |r| {
+                    r.cell(|ui| {
+                        if ui.checkbox(&mut checked, "").clicked() {
+                            toggled = Some((i, checked));
+                        }
+                    });
+                    r.cell(|ui| {
+                        ui.label(&combats[i]);
+                    });
+                    r.cell(|ui| {
+                        ui.label(note);
+                    });
+                    r.cell(|ui| {
+                        if !matches {
+                            ui.colored_label(theme::palette().warn, "⚠").hover(
+                                "Ticked, but it does not match the filters above — it is shown so \
+                                 a combat cannot go into a comparison out of sight. Untick it, or \
+                                 widen the filters to see it in place.",
+                            );
+                        }
+                    });
                 });
+                // The whole row picks the run, not the tick box alone: the row
+                // is what lights up under the pointer, so it is what a click
+                // lands on.
+                if row.clicked() {
+                    toggled = Some((i, !checked));
+                }
             }
         });
+        if let Some((i, checked)) = toggled {
+            self.toggle_selected(i, checked);
+        }
         picked
     }
 

@@ -9,6 +9,7 @@ use crate::{
 };
 
 use super::Settings;
+use crate::custom_widgets::tooltip::CloseTooltip;
 
 #[derive(Default)]
 pub struct VisualsTab {}
@@ -36,7 +37,7 @@ impl VisualsTab {
                 &mut visuals.color_blind_series,
                 "Colour-blind friendly chart colours",
             )
-            .on_hover_text(
+            .hover(
                 "Draws chart lines and bars in a set of colours that stay apart for red-green \
                  colour blindness, which the ordinary set only manages between neighbouring \
                  series. Nothing else changes colour: the +/- differences in Compare and the \
@@ -62,7 +63,7 @@ impl VisualsTab {
         .display_precision(3)
         .desired_text_edit_width(40.0)
         .show(ui)
-        .on_hover_text("How solid the overlay is over the game. Only the overlay is affected.");
+        .hover("How solid the overlay is over the game. Only the overlay is affected.");
 
         ui.add_space(10.0);
         ui.separator();
