@@ -158,8 +158,13 @@ pub struct SummaryTable {
     sort: SortState<ColumnKey>,
 }
 
-/// The column the players are in when nothing has been clicked.
-const DEFAULT_SORT: ColumnKey = ColumnKey::whole("Damage Dealt");
+/// The column the players are in when nothing has been clicked: the first one,
+/// which is how `MetricsTable` decides it too. That is DPS — the question a
+/// summary is opened with is who was doing the most work, and a long fight can
+/// pile up more damage than a short one while going slower.
+fn default_sort() -> ColumnKey {
+    ColumnKey::whole(COLUMNS[0].name)
+}
 
 #[derive(Default)]
 struct Player {
@@ -210,11 +215,11 @@ impl SummaryTable {
             selected_player: None,
             split_shield_hull: settings.general.split_shield_hull_columns,
             sort: SortState {
-                column: Some(DEFAULT_SORT),
+                column: Some(default_sort()),
                 natural: true,
             },
         };
-        table.sort_by_option_f64(|p| p.total_out_damage.all.value);
+        (COLUMNS[0].sort)(&mut table);
         table
     }
 
@@ -573,12 +578,20 @@ mod tests {
     fn the_table_a_tab_starts_with_says_nothing_about_the_order() {
         let mut first = table(vec![player("Kestrel", 900.0, 0.0, 0.0)]);
         first.sort = SortState {
-            column: Some(DEFAULT_SORT),
+            column: Some(default_sort()),
             natural: true,
         };
         first.take_state_from(&SummaryTable::empty());
 
-        assert_eq!(first.sort.column, Some(DEFAULT_SORT));
+        assert_eq!(first.sort.column, Some(default_sort()));
+    }
+
+    /// A summary opens on DPS, the same question the damage tabs open on. It
+    /// opened on damage dealt, which reads differently on a long fight: more
+    /// damage piled up at a lower rate.
+    #[test]
+    fn a_summary_opens_ordered_by_dps() {
+        assert_eq!(ColumnKey::whole("DPS Dealt"), default_sort());
     }
 
     /// Opening another combat builds the table again. The column the reader put

@@ -28,7 +28,9 @@ use crate::{
 mod compare_table;
 mod date_range;
 
-use crate::custom_widgets::table::list_row;
+use crate::custom_widgets::table::Table;
+/// The height a row of the picker takes — the tables' own.
+const ROW_HEIGHT: f32 = 25.0;
 use crate::custom_widgets::tooltip::CloseTooltip;
 use compare_table::Comparison;
 use date_range::DateRange;
@@ -320,6 +322,9 @@ impl CompareView {
             })
             .collect();
         let visible = self.visible_combats(combats, &notes, &entries, start_times);
+        // Which run the reader ticked this pass, applied once the table has
+        // finished drawing — the rows borrow the selection while they draw.
+        let mut toggled: Option<(usize, bool)> = None;
 
         ui.horizontal_wrapped(|ui| {
             // The pinned run counts: it is in the comparison whatever else is
@@ -396,36 +401,48 @@ impl CompareView {
 
         ui.separator();
 
-        ScrollArea::vertical()
-            // The bar goes at the edge of the panel rather than against the
-            // longest combat name.
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for (row, (i, matches)) in visible.into_iter().enumerate() {
-                    let note = notes[i];
-                    let mut checked = self.selected.contains(&i);
-                    let label = if note.is_empty() {
-                        combats[i].clone()
-                    } else {
-                        format!("{} — {note}", combats[i])
-                    };
-                    // Striped and picked out under the pointer, like a table
-                    // row: an evening's worth of runs of the same map differ
-                    // only in the time at the end of the line.
-                    list_row(ui, row.is_multiple_of(2), |ui| {
-                        if ui.checkbox(&mut checked, label).clicked() {
-                            self.toggle_selected(i, checked);
-                        }
-                        if !matches {
-                            ui.colored_label(theme::palette().warn, "⚠").hover(
-                            "Ticked, but it does not match the filters above — it is shown so a \
-                             combat cannot go into a comparison out of sight. Untick it, or \
-                             widen the filters to see it in place.",
-                        );
+        // A table rather than a list of lines: the note is a column of its own,
+        // so a row of runs of the same map does not read as one long string of
+        // name-and-note with the note starting wherever the name happened to
+        // end. Striping, the highlight under the pointer and the bar at the
+        // edge of the panel all come with it.
+        Table::new(ui).body(ROW_HEIGHT, |t| {
+            for (i, matches) in visible {
+                let note = notes[i];
+                let mut checked = self.selected.contains(&i);
+                let row = t.selectable_row(checked, |r| {
+                    r.cell(|ui| {
+                        if ui.checkbox(&mut checked, "").clicked() {
+                            toggled = Some((i, checked));
                         }
                     });
+                    r.cell(|ui| {
+                        ui.label(&combats[i]);
+                    });
+                    r.cell(|ui| {
+                        ui.label(note);
+                    });
+                    r.cell(|ui| {
+                        if !matches {
+                            ui.colored_label(theme::palette().warn, "⚠").hover(
+                                "Ticked, but it does not match the filters above — it is shown so \
+                                 a combat cannot go into a comparison out of sight. Untick it, or \
+                                 widen the filters to see it in place.",
+                            );
+                        }
+                    });
+                });
+                // The whole row picks the run, not the tick box alone: the row
+                // is what lights up under the pointer, so it is what a click
+                // lands on.
+                if row.clicked() {
+                    toggled = Some((i, !checked));
                 }
-            });
+            }
+        });
+        if let Some((i, checked)) = toggled {
+            self.toggle_selected(i, checked);
+        }
         picked
     }
 
