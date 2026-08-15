@@ -232,7 +232,10 @@ Three conventions worth knowing before changing a table or a chart:
   the main context in `App::new`; `main_tabs::common::bold_text` is how widgets
   ask for it. epaint panics on a family that is not bound, so any further egui
   context that wants bold text has to call `fonts::install` too (the overlay
-  context does not use it).
+  context does not use it). The compare table uses the same face for anything it
+  draws in a colour — `header_lines` and `delta_text` — because those colours are
+  hues rather than steps in brightness, and on the light face they land as *less*
+  ink than the plain text they sit beside.
 
 Settings changes are gated by cost: only `analysis` invalidates the `Analyzer`
 and forces a re-read of the log; a `general` change just rebuilds the views,

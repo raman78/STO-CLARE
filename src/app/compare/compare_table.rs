@@ -25,6 +25,7 @@ use crate::{
     analyzer::{
         AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager, ValueFlags,
     },
+    app::fonts::bold_family,
     app::main_tabs::diagrams::{
         DamageDiagrams, DiagramType, PreparedDamageDataSet, PreparedHit, combat_duration_seconds,
     },
@@ -1736,7 +1737,7 @@ impl CompareNode {
                         );
                         let tooltip = self.impact_tooltip(slot, impact, &mut formatter);
                         r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.colored_label(color, text).hover(tooltip);
+                            ui.label(delta_text(text, color)).hover(tooltip);
                         });
                     }
                     None => {
@@ -1796,7 +1797,7 @@ impl CompareNode {
                                 palette.worse
                             };
                             r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.colored_label(color, &delta.text);
+                                ui.label(delta_text(&delta.text, color));
                             });
                         }
                         None => {
@@ -1850,7 +1851,7 @@ impl CompareNode {
                                 r.cell_with_layout(
                                     Layout::right_to_left(Align::Center),
                                     |ui| {
-                                        ui.colored_label(color, text).hover(tooltip);
+                                        ui.label(delta_text(text, color)).hover(tooltip);
                                     },
                                 );
                             }
@@ -2803,6 +2804,16 @@ fn show_header_cell(
     strip.expect("the cell's contents are drawn before it returns")
 }
 
+/// A signed figure in the colour that says which way it went, in the bold face.
+///
+/// Same reason the header takes that face: green and red are hues, not steps in
+/// brightness, and on the light face they land as a thinner-looking figure than
+/// the plain number in the column beside them — the reader has to hunt for the
+/// one thing on the row that is meant to catch the eye.
+fn delta_text(text: impl Into<String>, color: Color32) -> RichText {
+    RichText::new(text).family(bold_family()).color(color)
+}
+
 /// The lines of a header cell that name the combat: its number and, where any
 /// combat in the comparison carries one, its note.
 ///
@@ -2811,6 +2822,12 @@ fn show_header_cell(
 /// belongs to the whole group of columns rather than to one combat, and it sits
 /// on a line of its own that takes no clicks. `note` is `None` when no combat
 /// has one and the line is left out entirely.
+///
+/// Set in the bold face. The colour here is a hue rather than a step in
+/// brightness, and on the light face epaint ships there is too little ink behind
+/// it: a coloured number at body size read fainter than the plain text beside
+/// it instead of standing out from it. Every one of these lines takes the face,
+/// coloured or not, so a header row keeps one weight across its columns.
 fn header_lines(
     font: &FontId,
     text_color: Color32,
@@ -2818,6 +2835,7 @@ fn header_lines(
     note: Option<&str>,
     color: Option<Color32>,
 ) -> LayoutJob {
+    let font = &FontId::new(font.size, bold_family());
     let combat = TextFormat::simple(font.clone(), color.unwrap_or(text_color));
     let mut job = LayoutJob::default();
     job.append(number, 0.0, combat.clone());
@@ -3347,6 +3365,41 @@ mod tests {
             colors,
             "combat number, note"
         );
+    }
+
+    /// A colour is a hue and not a step in brightness, so on the light face
+    /// epaint ships a coloured header read fainter than the plain text beside
+    /// it. Both lines take the bold face — and so do the uncoloured headers, or
+    /// one header row would carry two weights.
+    #[test]
+    fn the_header_lines_are_set_in_the_bold_face() {
+        for job in [
+            header(Some("FAW build"), Some(Color32::RED)),
+            header(None, None),
+        ] {
+            assert!(
+                job.sections
+                    .iter()
+                    .all(|s| s.format.font_id.family == bold_family()),
+                "{:?}",
+                job.text
+            );
+        }
+    }
+
+    /// The +/- figures are the one thing on a row meant to catch the eye, and
+    /// they carry the same face for the same reason the headers do — without
+    /// giving up the colour that says which way the row went.
+    #[test]
+    fn a_delta_is_bold_and_keeps_its_colour() {
+        let job = WidgetText::from(delta_text("+1.2k", Color32::RED)).into_layout_job(
+            &Style::default(),
+            FontSelection::Default,
+            Align::Center,
+        );
+        let format = &job.sections[0].format;
+        assert_eq!(bold_family(), format.font_id.family);
+        assert_eq!(Color32::RED, format.color);
     }
 
     /// The legend colours the same two things the header does, and leaves the
