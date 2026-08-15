@@ -27,15 +27,14 @@ use crate::{
     helpers::time_range_to_duration_or_zero,
 };
 
-/// A player's outgoing damage with the named rows left out, or `None` when
-/// nothing is left.
+/// A player's outgoing damage with the named rows left out; zeroes when every
+/// row is.
 ///
-/// Used by the compare view's Total; the main window's player row is next.
-///
-/// `None` is not the same as zero: a player with none of the kept rows has
-/// nothing to say, and showing a zero would read as a run that did nothing
-/// rather than one that did something else.
-#[allow(dead_code)] // wired into the main window's tables next
+/// Used by the compare view's Total and by the main window's player row. The
+/// player is still on screen with every tick box they had, so zeroes are what
+/// "you have taken all of it out" looks like and one click brings it back. A
+/// *combat* with none of the kept rows is a different case — see
+/// [`subset_hits`], which answers `None` so the cell is left empty.
 pub fn player_damage_without(
     player: &Player,
     group: &DamageGroup,

@@ -118,6 +118,7 @@ name next to the settings overrides it without a rebuild. See
 | shell, combat picker, menus | `app/mod.rs`             | owns `MainTabs`, `CompareView`, the overlay handle               |
 | per-combat tabs             | `app/main_tabs`          | Summary, Damage Dealt/Taken, the three healing tabs              |
 | tables                      | `app/main_tabs/tables`   | one generic `MetricsTable<T>` driven by a static column list     |
+| part of a tree              | `app/damage_subset.rs`   | the figures of a set of rows, for the ticks and the type pickers |
 | charts                      | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts      |
 | compare                     | `app/compare`            | several combats side by side, averaged, or written to a workbook |
 | spreadsheet export          | `app/export.rs`          | the workbook writer both the compare view and the tabs use       |
@@ -252,6 +253,95 @@ The start time is the only identifier the log itself fixes — `Combat::identifi
 the map detection produced, so a rename would orphan the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
+
+### Reading part of a tree — `app/damage_subset`
+
+Two views let a reader take rows out: the main window's tables (the player's own
+row is of the rows ticked under it) and a comparison (its Total is, see
+[Picking what the Total is of](#picking-what-the-total-is-of)). Both ask the same
+question — what would these figures be if only these rows counted — and neither
+can answer it by arithmetic on the columns: a percentage does not add, and
+resistance, crit rate and accuracy are ratios of hit counts. The one place that
+answers it is `app/damage_subset.rs`. It pools the hits of the rows that are
+left and puts them back through the pass `DamageGroup::recalculate_metrics`
+makes over a branch, so what comes out is what the analyzer would have said
+about a group holding exactly those rows.
+
+```
+group.sub_groups()
+   │  drop the rows that are out       (subset_hits, player_damage_without)
+   ▼
+Vec<Hit>
+   │  DamageMetrics::calc_and_apply_delta            (subset_group)
+   │  DamageMetrics::recalculate_time_based_metrics(metrics_duration(..))
+   ▼
+DamageGroup { hits: Hits::Leaf(..), .. }
+```
+
+| function                          | answers                                                                         |
+|-----------------------------------|---------------------------------------------------------------------------------|
+| `subset_hits`                     | the kept rows' hits, pooled, or `None` when none of them are there at all        |
+| `subset_group`                    | a `DamageGroup` standing for a pool of hits, every metric recalculated from them |
+| `player_damage_without`           | one player's outgoing damage without the named rows                             |
+| `player_heal_without`             | the same for one heal pool, from `HealTick`s                                     |
+| `damage_of_types` (`TypeFilter`)  | the tree rebuilt from what was dealt in the picked damage types                  |
+| `metrics_duration`                | the seconds a rebuilt metric is divided by                                       |
+
+What holds across both callers:
+
+- **The result is recalculated, never subtracted.** The one thing that is *not*
+  recomputed is `damage_percentage`: it stays a share of the combat's whole
+  outgoing damage (`Combat::total_damage_out`), because the column means the
+  same filtered or not — how much of the fight this is.
+- **An absent combat is `None`; a player who ticked everything off is zero.**
+  `subset_hits` and `damage_of_types` answer `None` when the rows are not there
+  at all, and the comparison leaves that column empty and off the chart — a zero
+  would read as a run that did nothing rather than one that flew something else.
+  `player_damage_without` and `player_heal_without` always hand back a group,
+  zeroed when every row is out: that player is still on screen with every tick
+  box they had, and one click brings the figures back.
+- **A rebuilt group keeps every row under it**, ticked and unticked alike: its
+  `sub_groups` are the whole of the original's. They are what the ticks are
+  *of*: dropping the unticked ones would take their tick boxes off the screen and
+  leave the row above without the count that tells all/some/none apart.
+- **Each pool is divided by the duration the analyzer divides it by** —
+  `Player::combat_time` for outgoing damage, `Player::active_time` for healing,
+  both through `metrics_duration`. The charts' `combat_duration_seconds` is a
+  different question and would state a DPS nothing else in the program agrees
+  with.
+- **Percentages down a rebuilt tree are set by hand** (`set_child_percentages`):
+  the analyzer's own pass is `pub(super)`, and a rebuilt group has nobody to have
+  set them. The top row's share is of the whole fight, each row below of its
+  parent, which is what the analyzer states.
+- **A picked type is applied before the ticks**, since the type decides what the
+  rows even are: `DamageTab::kept_damage` filters by type first and reads the
+  ticks over what is left. (The comparison reaches the same end by two different
+  routes — see [Which rows are on screen](#which-rows-are-on-screen).)
+
+**The main window's side of it.** `RowTicks` (`main_tabs/tables/metrics_table.rs`)
+is the tick column plus the two buttons in the `Name` header, and the tabs own
+the state it edits:
+
+| state                | owner                          | what it is                                                     |
+|----------------------|--------------------------------|-----------------------------------------------------------------|
+| `excluded`           | `DamageTab`, `HealTab`         | per player, the rows that are out — one tick tree each          |
+| `hide_unticked`      | `DamageTab`, `HealTab`         | the `👁`: unticked rows off the screen, out of the figures either way |
+| `types`, `all_types` | `DamageTab`                    | the `☰ Type` picker; `HealTab` passes `all_types: &[]`, healing having no damage type |
+
+| decision | why |
+|----------|-----|
+| the ticks are keyed by `NameHandle`, not by the name | a grouping rule can give a group the name of an ability it collects, and then two different rows read the same; ticking one would take both. The comparison keys by name instead — it aligns its runs by name, so a handle from one combat means nothing in the next |
+| one tick tree per player | two players who both flew a Phaser Beam Array can have it ticked off for one and in for the other |
+| ticks only at two levels | `RowTicks::show_cell`: the player's row carries the tri-state tick that stands for all of theirs, the rows directly under it carry their own, deeper there is none. A branch's hits are the whole branch's, so a row goes in with what it is part of |
+| the table and the chart are built from one function | `DamageTab::rebuild` feeds `kept_damage` to both, so a chart cannot end up drawing rows the table has taken out. `MetricsTable::take_state_from` carries the open tree and the sort order across that rebuild |
+| `MetricsTable::new_base` takes a `Cow<G>` | the unfiltered case — nothing ticked off, no type picked — borrows the analyzer's own group and copies nothing |
+
+Open question: `excluded` is keyed by handles from the open combat, and
+`MainTabs::update` does not clear it when another combat arrives, so ticks made
+on one combat land on whatever rows happen to hold those handles in the next.
+`types` does not have the problem (it holds type names). Nobody has decided
+whether the ticks should be dropped on a combat change or translated through the
+names.
 
 ### Comparing several combats — `app/compare`
 
@@ -433,31 +523,19 @@ goes in with everything under it; a tick deeper in the tree would mean re-adding
 every branch above it on every click, for a granularity the damage tree already
 expresses as a row of its own.
 
-Per slot, with rows excluded:
-
-```
-player.damage_out.sub_groups()
-   │  drop the rows named in Comparison::excluded        (subset_hits)
-   ▼
-Vec<Hit>
-   │  DamageMetrics::calc_and_apply_delta                (subset_group)
-   │  DamageMetrics::recalculate_time_based_metrics(player.combat_time)
-   ▼
-DamageGroup { hits: Hits::Leaf(..), .. }  ──►  build_row, build_series
-```
-
-The synthetic group is fed to the same `build_row` and `build_series` the tree
-is built with, so a filtered Total carries deltas, averages and a chart series
-like any other row, and nothing downstream knows it was filtered.
+Per slot, the rows named in `Comparison::excluded` are dropped and the rest
+pooled and recalculated by `app/damage_subset` — `subset_hits`, `subset_group`,
+`metrics_duration(&player.combat_time)`, described in
+[Reading part of a tree](#reading-part-of-a-tree--appdamage_subset) along with
+the invariants that hold there. The synthetic group it hands back is fed to the
+same `build_row` and `build_series` the tree is built with, so a filtered Total
+carries deltas, averages and a chart series like any other row, and nothing
+downstream knows it was filtered.
 
 | decision | why |
 |----------|-----|
-| the metrics are recalculated from the hits, not summed from the columns | a percentage cannot be added up: the resistance, crit rate and accuracy of a subset are only defined against that subset's hits. `DamageGroup::recalculate_metrics` does exactly this for a branch, so a filtered Total is what the analyzer would give a group holding those rows |
 | with nothing excluded the row is rebuilt from `player.damage_out` instead | float addition is not associative, and an unfiltered Total should be the analyzer's own figure to the last digit rather than the pieces added back in another order |
-| `metrics_duration` reads `Player::combat_time` | `damage_out` is measured against the time in combat (`Player::recalculate_metrics`). `combat_duration_seconds`, which the charts use, is `active_time`; dividing by it would state a DPS no other part of the program agrees with |
-| `damage_percentage` stays a share of `Combat::total_damage_out` | the column means the same filtered or not — how much of the fight this is |
 | the ticks are held by row name, not by node id | a column change or another player rebuilds the tree and hands out fresh ids; the reader's selection has no reason to survive one and not the other |
-| a combat that has none of the ticked rows leaves an empty cell | `subset_hits` answers `None` rather than an empty pool. That is what an absent row is everywhere else in the table: no cell, out of the averages, off the chart. A zero would draw a flat line along the bottom and pull every average down for a run that simply flew something else |
 | a tick is not also a chart selection | the tick sits inside a `selectable_row`, so it clicks the row as well. `CompareNode::show` drops any click whose pointer landed in the tick cell (`show_tick` returns its `Rect`) — not only one that changed a tick, since aiming at a box and missing it by two points would otherwise chart that row |
 | the row is renamed `Total (k of n rows)` while filtered | the one way this can mislead is a filtered figure read as the run's own DPS — on screen and in the exported sheet alike |
 
@@ -477,22 +555,17 @@ compares builds at.
 |--------|-------|--------------|
 | `👁` in the `Name` header | `hide_unticked` | only the rows the Total is added up from |
 | `☰ Type` in the `Name` header | `types` | only the rows that dealt one of these damage types |
-| `Δ Differences` in the toolbar | `show_differences`, `difference_measure`, `share_threshold` / `dps_threshold` | only the rows the combats disagree over |
+| `Δ Spread` in the toolbar | `show_differences`, `difference_measure`, `share_threshold` / `dps_threshold` | only the rows the combats disagree over |
 
 The type picker is **not** a view filter: picking a type rebuilds the tree from
-a copy of the player's damage holding only what was dealt in it (`of_type`,
-`TypeFilter::keep`, kept per slot in `Comparison::of_type`). A group of one
-picked type is kept whole; a group of several is rebuilt from the sub-groups
-that survive, since a hit carries no damage type of its own — the group it lands
-in does, and that is the only level the log separates them at. So `Polaron Beam
-Array` under `Cold` shows the 60k its Frostbite proc did, not the 4.3M the beams
-did around it, and every column of that row — DPS, resistance, criticals — is of
-the proc, having been recomputed from its hits.
-
-Percentages are set by hand on the rebuilt tree (`set_child_percentages`): the
-analyzer's own pass is `pub(super)`, and a rebuilt group has nobody to have set
-them. The top row's is of the whole fight, each row below of its parent, which
-is what the analyzer states.
+a copy of the player's damage holding only what was dealt in it
+(`damage_subset::damage_of_types`, kept per slot in `Comparison::of_type` and
+reached through the local `of_type`). So `Polaron Beam Array` under `Cold` shows
+the 60k its Frostbite proc did, not the 4.3M the beams did around it, and every
+column of that row — DPS, resistance, criticals — is of the proc, having been
+recomputed from its hits. Which level of the tree that rebuild happens at, and
+why the percentages have to be set by hand afterwards, is in
+[Reading part of a tree](#reading-part-of-a-tree--appdamage_subset).
 
 `CompareNode::damage_types` is the union of `DamageGroup::damage_types` over the
 slots. The analyzer already keeps `Shield` out of a group that has a real type

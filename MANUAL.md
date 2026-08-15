@@ -28,24 +28,6 @@ Then fight something, and press **Refresh Now**.
 
 Everything lives in one window. From top to bottom:
 
-```
-┌─ STO-CLARE ─────────────────────────────────────────────────────────┐
-│ Settings  Ladder  Compare Combats                      ← top row    │
-├─────────────────────────────────────────────────────────────────────┤
-│ [combat you are reading ▼]  Combats  Refresh Now  Clear Log File    │
-│ Auto Refresh  Save Combat  Upload  Copy Combat Summary  Overlay     │
-│ Show only: [type ▼] [level ▼] [map ▼]                  ← filters    │
-├─────────────────────────────────────────────────────────────────────┤
-│ Summary │ Damage Dealt │ … │ Columns ▾ │      [Export XLSX] ← tabs   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   the table for the tab you picked                                  │
-│                                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│   charts for the rows you selected                                  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
 ![The Summary tab](images/summary-tab.png)
 
 ---
@@ -172,15 +154,16 @@ you prefer the compact table, turn the split off under
 
 Click any column heading to put the table in that order. The heading lights up
 and carries an arrow for which way the order runs; click it again to turn it
-round. That includes **Name** — click it and the rows are in alphabetical order,
-which is how you find an ability whose name you know but whose size you do not. **All**, **Hull** and **Shield** are three headings, not one — click
+round. That includes **Name** — click it and the rows are in alphabetical
+order, which is how you find an ability whose name you know but whose size you
+do not. **All**, **Hull** and **Shield** are three headings, not one: click
 Shield and the table is ordered by what landed on shields alone. This works the
 same way on every tab, and the order you chose stays put when you open another
 combat.
 
 ### Damage Dealt
 
-One row per player, ordered by damage. This is where you find your DPS.
+One row per player, ordered by DPS. This is where you find yours.
 
 ![The Damage Dealt tab](images/damage-dealt-tab.png)
 
@@ -225,6 +208,59 @@ Healing is split into three tabs that never count the same heal twice:
 This split matters: on a normal run one gear proc healing you can be most of
 your healing number, and if that is mixed in with what you did for the team, it
 buries everything the team actually did.
+
+### Reading part of a build
+
+On the damage and healing tabs, every ability row has a tick box at the start
+of it, and the player's own row carries the tick that stands for all of theirs.
+Untick an ability and that player's figures are worked out again without it:
+
+![Two abilities ticked off, and the player's figures worked out without them](images/damage-row-ticks.png)
+
+The row you unticked stays on screen with its own numbers — it is only left out
+of the player above. Everything up there is worked out from the hits that are
+left, not scaled down: the resistance, critical rate and accuracy are those of
+the abilities you kept, and on a healing tab the same goes for HPS and the
+average heal. The chart under the table follows, so "what do my beams alone
+look like, and when in the fight were they working" is a few clicks.
+
+The table stays in the order you put it in, so a player whose figures drop can
+move down it — in the picture above, the one with two abilities set aside has
+slipped to third.
+
+Ticks are that player's own. Ticking off a Phaser Beam Array under one player
+says nothing about the same weapon under another. Only the rows directly under
+a player carry a tick; anything deeper goes in with the row above it, which is
+the row it is part of.
+
+Tip: the tick on the player's row takes every row of theirs out at once, and
+brings them all back. Half-filled means some are out.
+
+The eye next to **Name** takes the unticked rows oftrzeba f the screen, leaving only
+what the figures are made of. Press it again to bring them back — it only
+hides them; ticking is what decides the numbers.
+
+The same tick boxes run down a comparison, where they decide what the **Total**
+is added up from — see
+[Comparing only part of a run](#comparing-only-part-of-a-run).
+
+### One damage type at a time
+
+**☰ Type** next to the **Name** heading on the two damage tabs lists the damage
+types the combat holds — Phaser, Antiproton, Plasma, Polaron, Kinetic and
+whatever else was flown. Pick one and every figure on screen is of that type
+alone, recalculated rather than filtered: a weapon that also procs something
+else shows only the proc when you pick the proc's type. Pick as many types as
+you like — the list stays open — and **Every type** puts them all back, which
+is how it starts.
+
+![The damage-type list, open](images/damage-type-picker.png)
+
+The healing tabs have no such list: healing has no damage type.
+
+A comparison has the same picker, next to its own **Name** heading, with more
+about how a picked type is read in
+[Finding what a run did differently](#finding-what-a-run-did-differently).
 
 ### The charts
 
@@ -343,16 +379,7 @@ Down the left of the table there is a tick box on every ability row, and one on
 the **Total** row that stands for all of them. Untick a row and it drops out of
 the Total above, which is worked out again without it:
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  [x] │ Name  👁            │   DPS #1   │   DPS #2           │
-├──────────────────────────────────────────────────────────────┤
-│  [–] │ Total (16 of 18 rows)│  334'696  │  314'242           │
-│  [x] │  Phaser Beam Array   │  140'953  │  127'423           │
-│  [ ] │  Broadside Beam Sup. │   87'580  │   91'975           │  ← out
-│  [x] │  Pahvan Proton Beam  │   70'537  │   72'949           │
-└──────────────────────────────────────────────────────────────┘
-```
+![Two rows out of the Total, which says how much of the run is left in it](images/compare-row-ticks.png)
 
 This answers questions a whole-run number cannot: how the two runs compare on
 your beams alone, with the torpedo spread and the console procs set aside, or
@@ -396,12 +423,12 @@ the proc when you pick the proc's type — "Polaron Beam Array" under `Cold` is
 the few hundred DPS its Frostbite did, not the beams around it. Pick nothing and
 you see everything, which is how it starts.
 
-**Δ Differences** in the toolbar hides the rows the runs agree on, leaving what
-they differ over. Two controls appear with it:
+**Δ Spread** in the toolbar hides the rows the runs agree on, leaving what they
+differ over. Two controls appear with it:
 
-| control | what it does |
-|---|---|
-| Damage % / DPS | what the spread is measured in |
+| control                | what it does                                     |
+|------------------------|--------------------------------------------------|
+| Damage % / DPS         | what the spread is measured in                   |
 | − and + and the slider | how large a spread has to be for the row to stay |
 
 A **Spread** column appears beside the name, holding the figure the slider is
@@ -431,14 +458,7 @@ from 25 rows to 9. Turned up, two rows are left — the antiproton beams one bui
 flew and the phaser group the other leaned on. That is the difference between a
 rainbow build and a single-flavour one, without reading a single number.
 
-```
-Δ Differences   [share of combat] [DPS]   ──○────  18.5   min difference (pp)
-
-  Name  👁  ☰ Type                        #1      #2      #3      #4      #5
-  Total                                317'792 424'411 392'343 441'869 406'217
-  Ba'ul Antiproton Beam Array  (in 3 of 5)
-  Omni-Directional&Standard Phaser Beam Array  (in 2 of 5)
-```
+![Another five runs of one patrol, at a 3% spread: 13 of the 24 rows are left, and the rows missing from some of the runs say so](images/compare-differences.png)
 
 The Total above follows both of them: it counts the rows that are ticked **and**
 on screen. Narrow the table to one damage type and the Total is that type's;
@@ -620,13 +640,13 @@ away.
 
 Instead of one long list of tables, five menus narrow it down:
 
-| Menu             | What it picks                                                     |
-|------------------|-------------------------------------------------------------------|
-| Season           | Newest first. **All seasons** searches the whole ladder at once.   |
-| Map              | Choosing one also settles whether it was space or ground.          |
-| Space and ground | Where the fight was.                                               |
-| Solo and team    | The ladder keeps separate tables for solo runs.                    |
-| All levels       | Normal, Advanced, Elite, or Any for tables that are not split.     |
+| Menu             | What it picks                                                    |
+|------------------|------------------------------------------------------------------|
+| Season           | Newest first. **All seasons** searches the whole ladder at once. |
+| Map              | Choosing one also settles whether it was space or ground.        |
+| Space and ground | Where the fight was.                                             |
+| Solo and team    | The ladder keeps separate tables for solo runs.                  |
+| All levels       | Normal, Advanced, Elite, or Any for tables that are not split.   |
 
 Each menu only offers what the other four leave reachable, so no combination you
 can pick empties the list. A choice that cannot survive your next one is let go —
@@ -704,15 +724,15 @@ bottom.
 
 ![Settings, General](images/settings-general.png)
 
-| Setting                                  | What it does                                                                                                                                                                                        |
-|------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Combatlog File                           | The path to the game's `combatlog.log`. Use **Browse** to find it; it sits in `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.                                                     |
-| Remember / Go back to default / Forget   | Keeps one log as the one to come back to — see below.                                                                                                                                               |
+| Setting                                  | What it does                                                                                                                                                                                                                                         |
+|------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Combatlog File                           | The path to the game's `combatlog.log`. Use **Browse** to find it; it sits in `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.                                                                                                      |
+| Remember / Go back to default / Forget   | Keeps one log as the one to come back to — see below.                                                                                                                                                                                                |
 | Merge rotating combat logs into one file | The game starts a new log every hour, so your fights end up spread over many files. With this on, they are merged back into one so everything shows up together. The originals are only removed once the merged file has been checked byte for byte. |
-| Combat Separation Time                   | How long a lull has to last before the next fighting counts as a new combat.                                                                                                                        |
-| Auto Refresh / interval                  | Whether the numbers keep themselves current, and how often.                                                                                                                                         |
-| Show more decimals                       | More precision in the tables.                                                                                                                                                                       |
-| Show Hull and Shield as separate columns | Off gives you the compact table, with hull and shield only in the hover box.                                                                                                                        |
+| Combat Separation Time                   | How long a lull has to last before the next fighting counts as a new combat.                                                                                                                                                                         |
+| Auto Refresh / interval                  | Whether the numbers keep themselves current, and how often.                                                                                                                                                                                          |
+| Show more decimals                       | More precision in the tables.                                                                                                                                                                                                                        |
+| Show Hull and Shield as separate columns | Off gives you the compact table, with hull and shield only in the hover box.                                                                                                                                                                         |
 
 #### A log to come back to
 
@@ -856,19 +876,21 @@ written into the settings folder under the new name.
 | Share your numbers in chat           | Copy Combat Summary, then paste in the game.                |
 | Keep one fight and clear the rest    | Clear Log File, untick the one you are keeping.             |
 | See one ability over time            | Select its row; the charts at the bottom follow it.         |
+| Read your beams alone                | Untick the rows you do not want; your own figures follow.   |
 
 ## What can go wrong
 
-| Symptom                                  | Likely cause                                                              | What to do                                                                                                 |
-|------------------------------------------|---------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| The combats list is empty                | Combat logging is off in the game                                         | Type `/Combatlog 1` in the game chat, fight something, press Refresh Now.                                  |
-| Still empty after that                   | The path to the log is wrong                                              | Settings → General: the path must end in `combatlog.log`.                                                  |
-| Only your newest fights show up          | The game split the log into several files                                 | On Linux, leave log merging switched on. On Windows, add `-NoAutoRotateLogs` to the game's launch options. |
-| The overlay shows only the word "Player" | It has not been handed a combat yet                                       | Press Refresh Now in the main window.                                                                      |
-| The overlay sits behind the game         | X11 session, or your window manager decided otherwise                     | Use a Wayland session, or run the game in windowed mode.                                                   |
-| Numbers look far too low                 | The fight is split across two entries in the list                         | Check the neighbouring entry.                                                                              |
-| A combat is named wrongly                | One of your own naming rules is matching first                            | Settings → Analysis → Combat Names; a warning mark shows which rule overlaps.                              |
-| The upload produced no ladder entries    | That map and difficulty have no ladder for the period, or it is solo-only | Nothing to fix; the run is still uploaded.                                                                 |
+| Symptom                                       | Likely cause                                                              | What to do                                                                                                 |
+|-----------------------------------------------|---------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| The combats list is empty                     | Combat logging is off in the game                                         | Type `/Combatlog 1` in the game chat, fight something, press Refresh Now.                                  |
+| Still empty after that                        | The path to the log is wrong                                              | Settings → General: the path must end in `combatlog.log`.                                                  |
+| Only your newest fights show up               | The game split the log into several files                                 | On Linux, leave log merging switched on. On Windows, add `-NoAutoRotateLogs` to the game's launch options. |
+| The overlay shows only the word "Player"      | It has not been handed a combat yet                                       | Press Refresh Now in the main window.                                                                      |
+| The overlay sits behind the game              | X11 session, or your window manager decided otherwise                     | Use a Wayland session, or run the game in windowed mode.                                                   |
+| Numbers look far too low                      | The fight is split across two entries in the list                         | Check the neighbouring entry.                                                                              |
+| A combat is named wrongly                     | One of your own naming rules is matching first                            | Settings → Analysis → Combat Names; a warning mark shows which rule overlaps.                              |
+| The upload produced no ladder entries         | That map and difficulty have no ladder for the period, or it is solo-only | Nothing to fix; the run is still uploaded.                                                                 |
+| A player's DPS is lower than the summary says | Rows are ticked off, or the table is narrowed to a damage type            | Tick the player's own row to bring every row back, and pick **Every type** in the `☰ Type` list.           |
 
 ## FAQ
 
