@@ -203,9 +203,14 @@ impl<'a> Table<'a> {
 
     /// Keep the room a header row needs. The row itself is drawn last, by
     /// [`HeaderSlot::header_row`] — see [`TableWithHeader::body`] for why.
+    ///
+    /// The room is as wide as the columns were last frame, never as wide as the
+    /// space on offer: the overlay sizes its window to what the table asks for,
+    /// so a header that took everything available grew the window, which offered
+    /// more, and the window ran away across the screen.
     pub fn header(self, header_height: f32) -> TableWithHeader<'a> {
         let state = State::load(self.ui, self.id);
-        let width = self.ui.available_width();
+        let width = state.last_size.x;
         let (header_rect, _) = self
             .ui
             .allocate_exact_size(vec2(width, header_height), Sense::hover());
@@ -407,7 +412,11 @@ fn show_header(
         left_top,
         vec2(state.last_size.x.max(header_rect.width()), header_height),
     )));
-    header_ui.set_clip_rect(header_rect.intersect(ui.clip_rect()));
+    // Clipped to its own band vertically, but to the view horizontally: the
+    // reserved rectangle is only as wide as the columns, and on a table's first
+    // frame it has no width at all.
+    let band = Rect::from_x_y_ranges(ui.clip_rect().x_range(), header_rect.y_range());
+    header_ui.set_clip_rect(band.intersect(ui.clip_rect()));
     TableRow::show(
         &mut header_ui,
         state,

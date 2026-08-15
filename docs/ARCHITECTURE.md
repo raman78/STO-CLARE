@@ -349,8 +349,12 @@ Table::new(ui)
     .header_row(|r| { … });      // draws the header into the kept room
 ```
 
-`HeaderSlot::header_row` shifts the header by the offset the body settled on
-*this* frame and clips it to the reserved rectangle. Drawing the header first —
+The room `header` keeps is as wide as the columns were last frame, never as wide
+as the space on offer. The overlay sizes its window to what its table asks for,
+so a header that took the available width grew the window, which then offered
+more — the overlay ran away across the screen. `HeaderSlot::header_row` shifts
+the header by the offset the body settled on *this* frame, clips it vertically
+to that band and horizontally to the view. Drawing the header first —
 the obvious order — could only ever use the previous frame's offset, and the
 headings would lag behind their columns while the table was dragged. The two
 closures also cannot be alive at once: both borrow the table's own state, which
