@@ -1,5 +1,15 @@
 # Change Log
 
+## v2.4.1
+
+### Other Changes
+- the **Damage by type** window is the size of its table. Two runs of a handful of damage types no longer open in a pane wide enough for a dozen, and a dozen no longer have to be scrolled sideways in a window with room to spare beside it; opening a damage type or comparing more runs resizes it there and then. Past the size of the program's own window it stops growing and the table scrolls inside, as before
+
+### Fixes
+- the warning above a comparison is about the run everything is measured against, and names the odd runs by the numbers their columns carry. It was worked out against whichever run came first in the list, so once the reference could be moved it could report a run as "not showing" a player who is not the one being compared against — and it counted runs that had been taken out of the comparison
+- the **Damage by type** window shows a column per run that is in the comparison. A run taken out of it left an empty column behind, headed with a number no run carries
+- the description written for a run stays with that run in a comparison. Where the run everything is measured against was not the first one in the list, the descriptions slid one run along — the list at the top, the column headings, the chart legend and the **Damage by type** window all named a run after another run's build, so a run could be studied under the wrong name
+
 ## v2.4.0
 
 ### Major Changes

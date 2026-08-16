@@ -44,6 +44,10 @@ use crate::app::export;
 use crate::custom_widgets::tooltip::CloseTooltip;
 
 const ROW_HEIGHT: f32 = 25.0;
+/// The line above the Damage by type table. Held here because the window is
+/// sized around it as well as drawing it.
+const TYPE_SUMMARY_CAPTION: &str = "What share of each run this damage type came to. The types the runs differ over most are at \
+     the top; hover a figure for the damage behind it.";
 /// The size the open/close arrow of a tree row is drawn at.
 ///
 /// Pinned rather than left to the text in it: the arrow is frameless while
@@ -337,6 +341,25 @@ impl Comparison {
         comparison
     }
 
+    /// Takes the notes again, and says whether any of them moved.
+    ///
+    /// A note can be written (or changed) in the main window while a comparison
+    /// is still up, and the chart's series names are built from these, so they
+    /// are checked every pass rather than taken once and kept.
+    ///
+    /// **Per slot** — the way `new` builds them and the way every reader indexes
+    /// them (`note_of`). Taken in column order they slid along the runs the
+    /// moment the reference was not the first run, and a run was then read under
+    /// another run's name.
+    fn refresh_notes(&mut self, notes: &CombatNotes) -> bool {
+        let notes = slot_notes(self.slots.iter(), notes);
+        if notes == self.notes {
+            return false;
+        }
+        self.notes = notes;
+        true
+    }
+
     /// The slots the comparison is currently of, in order — everything the
     /// reader has not taken out of it.
     fn in_play(&self) -> Vec<usize> {
@@ -578,12 +601,7 @@ impl Comparison {
             return;
         }
 
-        // A note can be written (or changed) in the main window while a
-        // comparison is still up, and the chart's series names are built from
-        // these, so check them rather than take them once and keep them.
-        let notes = slot_notes(self.columns_slots(), &settings.combat_notes);
-        if notes != self.notes {
-            self.notes = notes;
+        if self.refresh_notes(&settings.combat_notes) {
             self.rebuild_diagram();
         }
 
@@ -627,7 +645,7 @@ impl Comparison {
         // Comparing two different people's numbers looks like a build changed
         // when nothing did, so say so rather than let it pass unnoticed — in
         // one short line, with the particulars a hover away.
-        if let Some(warning) = odd_player_warning(&slot_player_names(&self.slots)) {
+        if let Some(warning) = odd_player_warning(&players_in_play(&self.numbers, &self.slots)) {
             ui.label(RichText::new(warning.line).color(theme::palette().worse))
                 .hover(warning.detail);
         }
@@ -1052,6 +1070,82 @@ impl Comparison {
     ///
     /// Sorted by how far apart the runs are on it, so the types that tell them
     /// apart are at the top and the ones they all lean on equally are below.
+    /// How big the Damage by type window has to be to hold its table.
+    ///
+    /// Worked out from the text, not from the drawn table. Sizing a window to
+    /// what it is drawing, while the drawing is confined to that size, is a loop
+    /// with one fixed point: a table cell reports the width it was *given*
+    /// rather than the width it wanted, so every frame comes out narrower than
+    /// the last and the window folds down to its title bar. Words do not change
+    /// with the window, so measuring those settles it.
+    ///
+    /// Deliberately close rather than exact — a few points short and the table
+    /// scrolls inside the window, which is what it does past the cap anyway.
+    fn type_summary_size(&self, ui: &Ui, rows: &[TypeRow], with_notes: bool) -> Vec2 {
+        const SPACING: f32 = 10.0;
+        // What a cell puts around its own contents, on top of the spacing
+        // between columns.
+        let padding = ui.spacing().item_spacing.x;
+        let name_column = rows
+            .iter()
+            .flat_map(|row| {
+                let parts: &[TypePart] = if self.open_types.contains(&row.name) {
+                    &row.parts
+                } else {
+                    &[]
+                };
+                std::iter::once(&row.name).chain(parts.iter().map(|part| &part.name))
+            })
+            .map(|name| ARROW_SIZE.x + SPACING + text_width(ui, name))
+            .fold(text_width(ui, "Damage type"), f32::max)
+            + padding;
+
+        // A column is as wide as its heading — which carries the run's number
+        // and, where one is written, its description — or as the widest figure
+        // it can hold, which is a whole run in one damage type.
+        let figure = text_width(ui, "100.0%");
+        // The headings are drawn in the bold face (`header_lines`), which is
+        // wider than the body face the figures under them use — measuring them
+        // in the wrong face is how a column ends up cut off at the window's edge.
+        let columns: f32 = (0..self.numbers.len())
+            .map(|column| {
+                let number = bold_text_width(ui, &format!("#{}", self.number_of(column)));
+                let note = if with_notes {
+                    bold_text_width(ui, self.note_of_column(column))
+                } else {
+                    0.0
+                };
+                figure.max(number).max(note) + SPACING + padding
+            })
+            .sum();
+        // The table's own margin, and then some. Erring high costs a hair of
+        // empty space at the right-hand edge; erring low costs a scroll bar
+        // under a table that very nearly fits, which is worse to look at and
+        // worse to use.
+        let width = name_column + columns + 3.0 * SPACING;
+
+        let visible_rows = rows.len()
+            + rows
+                .iter()
+                .filter(|row| self.open_types.contains(&row.name))
+                .map(|row| row.parts.len())
+                .sum::<usize>();
+        let caption = ui
+            .painter()
+            .layout(
+                TYPE_SUMMARY_CAPTION.to_owned(),
+                TextStyle::Body.resolve(ui.style()),
+                Color32::PLACEHOLDER,
+                width,
+            )
+            .size()
+            .y;
+        let line = ui.text_style_height(&TextStyle::Body);
+        let height =
+            caption + header_height(ui, with_notes) + visible_rows as f32 * ROW_HEIGHT + 3.0 * line;
+        vec2(width, height)
+    }
+
     fn show_type_summary(&mut self, ui: &mut Ui, colors: &[Option<Color32>]) {
         if !self.show_type_summary {
             return;
@@ -1059,7 +1153,10 @@ impl Comparison {
         let Some(total) = self.nodes.first() else {
             return;
         };
-        let n_slots = self.slots.len();
+        // Per column in play, not per slot: a run taken out of the comparison
+        // has no column here either, and its header would fall back to a number
+        // no run carries.
+        let n_slots = self.numbers.len();
         let rows = damage_by_type(total, n_slots);
         let font = TextStyle::Body.resolve(ui.style());
         let text_color = ui.visuals().text_color();
@@ -1070,24 +1167,37 @@ impl Comparison {
         let open_types = self.open_types.clone();
         let mut folded: Option<String> = None;
 
+        // Sized to what it holds, and no larger than the program's own window:
+        // three runs of nine damage types is a small table and used to open in a
+        // The window is the size of its table and nothing else — it follows the
+        // runs and the types on screen, so opening a type or comparing five runs
+        // instead of two resizes it there and then. That leaves no drag handle,
+        // which is the deal: a window whose contents decide its size has nothing
+        // for a reader to decide. Never larger than the program's own window;
+        // past that the table scrolls inside, as it always has.
+        let cap = ui.ctx().content_rect().size() * 0.9;
+        let size = self.type_summary_size(ui, &rows, with_notes);
+        let width = size.x;
         Window::new("Damage by type")
             .open(&mut open)
-            .default_width(520.0)
+            .fixed_size(vec2(size.x.min(cap.x), size.y.min(cap.y)))
             .show(ui.ctx(), |ui| {
-                ui.label(
-                    RichText::new(
-                        "What share of each run this damage type came to. The types the runs \
-                         differ over most are at the top; hover a figure for the damage behind \
-                         it.",
-                    )
-                    .weak(),
-                );
+                // Wrapped to the table, not the other way round. Unwrapped, this
+                // sentence is the widest thing in the window and the window opens
+                // around it; the table's width from last frame is what it should
+                // wrap to, and on the first frame anything sensible will do for
+                // the one frame before the table has been measured.
+                ui.scope(|ui| {
+                    ui.set_max_width(width);
+                    ui.label(RichText::new(TYPE_SUMMARY_CAPTION).weak());
+                });
                 ui.separator();
                 let height = header_height(ui, with_notes);
-                // The table scrolls both ways by itself; its bars belong at the
-                // edges of the window, not against the last column.
+                // Only as wide as its columns, so the window can be sized around
+                // it rather than the other way round.
                 Table::new(ui)
                     .cell_spacing(10.0)
+                    .shrink_to_content()
                     .header(height)
                     .body(ROW_HEIGHT, |t| {
                         let mut formatter = NumberFormatter::new();
@@ -2812,6 +2922,15 @@ fn show_header_cell(
     strip.expect("the cell's contents are drawn before it returns")
 }
 
+/// How wide a piece of text is in the bold face the headings are drawn in.
+fn bold_text_width(ui: &Ui, text: &str) -> f32 {
+    let font = FontId::new(TextStyle::Body.resolve(ui.style()).size, bold_family());
+    ui.painter()
+        .layout_no_wrap(text.to_owned(), font, Color32::PLACEHOLDER)
+        .size()
+        .x
+}
+
 /// A signed figure in the colour that says which way it went, in the bold face.
 ///
 /// Same reason the header takes that face: green and red are hues, not steps in
@@ -2913,14 +3032,13 @@ struct OddPlayerWarning {
 /// only a word: the line names how many and the hover names which, because a
 /// comparison of a whole session would otherwise put a paragraph of handles
 /// above the table.
-fn odd_player_warning(names: &[String]) -> Option<OddPlayerWarning> {
-    let reference = names.first()?;
-    let odd: Vec<String> = names
+fn odd_player_warning(runs: &[(usize, String)]) -> Option<OddPlayerWarning> {
+    let reference = &runs.first()?.1;
+    let odd: Vec<String> = runs
         .iter()
-        .enumerate()
         .skip(1)
-        .filter(|(_, name)| *name != reference)
-        .map(|(slot_i, name)| format!("#{} is {name}", slot_i + 1))
+        .filter(|(_, name)| name != reference)
+        .map(|(number, name)| format!("#{number} is {name}"))
         .collect();
     if odd.is_empty() {
         return None;
@@ -2929,7 +3047,7 @@ fn odd_player_warning(names: &[String]) -> Option<OddPlayerWarning> {
         line: format!(
             "⚠ {} of {} combats {} not showing {reference}",
             odd.len(),
-            names.len(),
+            runs.len(),
             if odd.len() == 1 { "is" } else { "are" }
         ),
         detail: format!(
@@ -2941,12 +3059,24 @@ fn odd_player_warning(names: &[String]) -> Option<OddPlayerWarning> {
     })
 }
 
-/// The players a comparison is showing, one per slot, for the warning above the
-/// table.
-fn slot_player_names(slots: &[Slot]) -> Vec<String> {
-    slots
+/// The runs a comparison is showing and who each one is about, **reference
+/// first**, each under the number its column carries — what the warning above
+/// the table is worked out from.
+///
+/// Reference first because that is the player every other run is read against,
+/// and it is no longer whichever run happens to be first in the list. Runs
+/// taken out of the comparison are left out: a warning about a run that is not
+/// on screen is a warning about nothing.
+fn players_in_play(numbers: &[usize], slots: &[Slot]) -> Vec<(usize, String)> {
+    numbers
         .iter()
-        .map(|s| s.player.get(&s.combat.name_manager).to_string())
+        .map(|&slot_i| {
+            let slot = &slots[slot_i];
+            (
+                number_of_slot(slot_i),
+                slot.player.get(&slot.combat.name_manager).to_string(),
+            )
+        })
         .collect()
 }
 
@@ -3505,8 +3635,14 @@ mod tests {
         }
     }
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|n| n.to_string()).collect()
+    /// The runs a warning is worked out from: reference first, each under the
+    /// number its column carries.
+    fn names(names: &[&str]) -> Vec<(usize, String)> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (i + 1, n.to_string()))
+            .collect()
     }
 
     /// One player's runs are what the comparison is normally about, and that
@@ -3531,6 +3667,28 @@ mod tests {
         assert!(warning.line.len() < 60, "{}", warning.line);
         // Which ones, by the number the columns are labelled with.
         assert!(warning.detail.starts_with("#3 is Somebody, #5 is Else"));
+    }
+
+    /// The warning is about the run everything is read against, and names the
+    /// odd ones by the number their column carries. Both were "whatever comes
+    /// first in the list of runs", which stopped being the reference when the
+    /// reference became something to pick: it then measured every run against
+    /// another run's player and pointed at numbers those runs do not carry.
+    #[test]
+    fn the_warning_is_measured_against_the_reference() {
+        // #3 is the reference, so it leads; #1 is showing somebody else.
+        let runs = vec![
+            (3usize, "Kestrel".to_string()),
+            (1, "Somebody".to_string()),
+            (2, "Kestrel".to_string()),
+        ];
+        let warning = odd_player_warning(&runs).expect("one of them shows somebody else");
+        assert_eq!("⚠ 1 of 3 combats is not showing Kestrel", warning.line);
+        assert!(
+            warning.detail.starts_with("#1 is Somebody"),
+            "{}",
+            warning.detail
+        );
     }
 
     /// One odd combat reads as one, not as "1 combats are".
@@ -4090,6 +4248,85 @@ mod tests {
         assert_eq!("third", note_of(&notes, numbers[0]), "with its own note");
         assert_eq!(1, number_of(&numbers, 1));
         assert_eq!("first", note_of(&notes, numbers[1]));
+    }
+
+    /// Two real combats, an hour apart, from a log written for the test — the
+    /// cheapest way to a `Comparison`, whose slots hold whole `Combat`s.
+    fn two_combats(dir: &str) -> Vec<Arc<Combat>> {
+        let dir = std::env::temp_dir().join(dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        let shot = |time: &str| {
+            format!(
+                "{time}::Kestrel,P[1@2 Kestrel@handle],,*,Talon Battleship,\
+                 C[11759 Space_Nausicaan_Battleship],Phaser Array,Pn.Cedjls,Phaser,,100.0,100.0\n"
+            )
+        };
+        // Far enough apart to be two combats at any separation setting.
+        std::fs::write(
+            &log,
+            format!(
+                "{}{}",
+                shot("26:08:16:13:41:30.0"),
+                shot("26:08:16:13:58:45.8")
+            ),
+        )
+        .unwrap();
+        let mut analyzer =
+            crate::analyzer::Analyzer::new(crate::analyzer::settings::AnalysisSettings {
+                combatlog_file: log.to_string_lossy().into_owned(),
+                ..Default::default()
+            })
+            .unwrap();
+        analyzer.update();
+        let combats: Vec<Arc<Combat>> = analyzer
+            .result()
+            .iter()
+            .map(|combat| Arc::new(combat.clone()))
+            .collect();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(2, combats.len(), "two combats");
+        combats
+    }
+
+    /// A note belongs to the run it was written for, wherever that run is
+    /// standing. The notes were taken again every pass in *column* order while
+    /// every reader indexes them by slot, so as soon as the reference was not
+    /// the first run they slid one run along: the legend, the column headings
+    /// and the chart then named a run after another run's build, and a reader
+    /// comparing them was studying the wrong fight.
+    #[test]
+    fn a_note_stays_with_its_run_when_the_reference_leads() {
+        let combats = two_combats("cla-compare-note-order-test");
+        let mut settings = Settings::default();
+        // The note is on the *second* combat.
+        settings
+            .combat_notes
+            .set(&CombatNotes::key(&combats[1]), "FAW_Standard");
+
+        let fetched: Vec<(usize, Arc<Combat>)> = combats.iter().cloned().enumerate().collect();
+        let mut comparison = Comparison::new(fetched, &settings);
+        assert_eq!(vec!["", "FAW_Standard"], comparison.notes);
+
+        // Move the reference to the second run, which puts it in front.
+        comparison.reference = 1;
+        comparison.rebuild();
+        assert_eq!(vec![1, 0], comparison.numbers, "the reference leads");
+
+        // A pass over the notes must not re-order them under the runs.
+        comparison.refresh_notes(&settings.combat_notes);
+        assert_eq!(
+            vec!["", "FAW_Standard"],
+            comparison.notes,
+            "the notes are per slot, not per column"
+        );
+        assert_eq!(
+            "FAW_Standard",
+            comparison.note_of_column(0),
+            "the leading column is the run the note was written for"
+        );
+        assert_eq!("", comparison.note_of_column(1));
     }
 
     /// A reference that has been taken out of the comparison is not a column at
