@@ -1,5 +1,10 @@
 # Change Log
 
+## unreleased
+
+### Fixes
+- the description written for a run stays with that run in a comparison. Where the run everything is measured against was not the first one in the list, the descriptions slid one run along — the list at the top, the column headings, the chart legend and the **Damage by type** window all named a run after another run's build, so a run could be studied under the wrong name
+
 ## v2.4.0
 
 ### Major Changes

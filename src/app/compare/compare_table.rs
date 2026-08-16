@@ -337,6 +337,25 @@ impl Comparison {
         comparison
     }
 
+    /// Takes the notes again, and says whether any of them moved.
+    ///
+    /// A note can be written (or changed) in the main window while a comparison
+    /// is still up, and the chart's series names are built from these, so they
+    /// are checked every pass rather than taken once and kept.
+    ///
+    /// **Per slot** — the way `new` builds them and the way every reader indexes
+    /// them (`note_of`). Taken in column order they slid along the runs the
+    /// moment the reference was not the first run, and a run was then read under
+    /// another run's name.
+    fn refresh_notes(&mut self, notes: &CombatNotes) -> bool {
+        let notes = slot_notes(self.slots.iter(), notes);
+        if notes == self.notes {
+            return false;
+        }
+        self.notes = notes;
+        true
+    }
+
     /// The slots the comparison is currently of, in order — everything the
     /// reader has not taken out of it.
     fn in_play(&self) -> Vec<usize> {
@@ -578,12 +597,7 @@ impl Comparison {
             return;
         }
 
-        // A note can be written (or changed) in the main window while a
-        // comparison is still up, and the chart's series names are built from
-        // these, so check them rather than take them once and keep them.
-        let notes = slot_notes(self.columns_slots(), &settings.combat_notes);
-        if notes != self.notes {
-            self.notes = notes;
+        if self.refresh_notes(&settings.combat_notes) {
             self.rebuild_diagram();
         }
 
@@ -4090,6 +4104,80 @@ mod tests {
         assert_eq!("third", note_of(&notes, numbers[0]), "with its own note");
         assert_eq!(1, number_of(&numbers, 1));
         assert_eq!("first", note_of(&notes, numbers[1]));
+    }
+
+    /// Two real combats, an hour apart, from a log written for the test — the
+    /// cheapest way to a `Comparison`, whose slots hold whole `Combat`s.
+    fn two_combats(dir: &str) -> Vec<Arc<Combat>> {
+        let dir = std::env::temp_dir().join(dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        let shot = |time: &str| {
+            format!(
+                "{time}::Kestrel,P[1@2 Kestrel@handle],,*,Talon Battleship,\
+                 C[11759 Space_Nausicaan_Battleship],Phaser Array,Pn.Cedjls,Phaser,,100.0,100.0\n"
+            )
+        };
+        // Far enough apart to be two combats at any separation setting.
+        std::fs::write(
+            &log,
+            format!("{}{}", shot("26:08:16:13:41:30.0"), shot("26:08:16:13:58:45.8")),
+        )
+        .unwrap();
+        let mut analyzer = crate::analyzer::Analyzer::new(crate::analyzer::settings::AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+        let combats: Vec<Arc<Combat>> = analyzer
+            .result()
+            .iter()
+            .map(|combat| Arc::new(combat.clone()))
+            .collect();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(2, combats.len(), "two combats");
+        combats
+    }
+
+    /// A note belongs to the run it was written for, wherever that run is
+    /// standing. The notes were taken again every pass in *column* order while
+    /// every reader indexes them by slot, so as soon as the reference was not
+    /// the first run they slid one run along: the legend, the column headings
+    /// and the chart then named a run after another run's build, and a reader
+    /// comparing them was studying the wrong fight.
+    #[test]
+    fn a_note_stays_with_its_run_when_the_reference_leads() {
+        let combats = two_combats("cla-compare-note-order-test");
+        let mut settings = Settings::default();
+        // The note is on the *second* combat.
+        settings
+            .combat_notes
+            .set(&CombatNotes::key(&combats[1]), "FAW_Standard");
+
+        let fetched: Vec<(usize, Arc<Combat>)> = combats.iter().cloned().enumerate().collect();
+        let mut comparison = Comparison::new(fetched, &settings);
+        assert_eq!(vec!["", "FAW_Standard"], comparison.notes);
+
+        // Move the reference to the second run, which puts it in front.
+        comparison.reference = 1;
+        comparison.rebuild();
+        assert_eq!(vec![1, 0], comparison.numbers, "the reference leads");
+
+        // A pass over the notes must not re-order them under the runs.
+        comparison.refresh_notes(&settings.combat_notes);
+        assert_eq!(
+            vec!["", "FAW_Standard"],
+            comparison.notes,
+            "the notes are per slot, not per column"
+        );
+        assert_eq!(
+            "FAW_Standard",
+            comparison.note_of_column(0),
+            "the leading column is the run the note was written for"
+        );
+        assert_eq!("", comparison.note_of_column(1));
     }
 
     /// A reference that has been taken out of the comparison is not a column at
