@@ -1,6 +1,6 @@
 # Change Log
 
-## unreleased
+## v2.4.1
 
 ### Other Changes
 - the **Damage by type** window is the size of its table. Two runs of a handful of damage types no longer open in a pane wide enough for a dozen, and a dozen no longer have to be scrolled sideways in a window with room to spare beside it; opening a damage type or comparing more runs resizes it there and then. Past the size of the program's own window it stops growing and the table scrolls inside, as before
