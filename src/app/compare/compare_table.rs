@@ -641,7 +641,7 @@ impl Comparison {
         // Comparing two different people's numbers looks like a build changed
         // when nothing did, so say so rather than let it pass unnoticed — in
         // one short line, with the particulars a hover away.
-        if let Some(warning) = odd_player_warning(&slot_player_names(&self.slots)) {
+        if let Some(warning) = odd_player_warning(&players_in_play(&self.numbers, &self.slots)) {
             ui.label(RichText::new(warning.line).color(theme::palette().worse))
                 .hover(warning.detail);
         }
@@ -1073,7 +1073,10 @@ impl Comparison {
         let Some(total) = self.nodes.first() else {
             return;
         };
-        let n_slots = self.slots.len();
+        // Per column in play, not per slot: a run taken out of the comparison
+        // has no column here either, and its header would fall back to a number
+        // no run carries.
+        let n_slots = self.numbers.len();
         let rows = damage_by_type(total, n_slots);
         let font = TextStyle::Body.resolve(ui.style());
         let text_color = ui.visuals().text_color();
@@ -2927,14 +2930,13 @@ struct OddPlayerWarning {
 /// only a word: the line names how many and the hover names which, because a
 /// comparison of a whole session would otherwise put a paragraph of handles
 /// above the table.
-fn odd_player_warning(names: &[String]) -> Option<OddPlayerWarning> {
-    let reference = names.first()?;
-    let odd: Vec<String> = names
+fn odd_player_warning(runs: &[(usize, String)]) -> Option<OddPlayerWarning> {
+    let reference = &runs.first()?.1;
+    let odd: Vec<String> = runs
         .iter()
-        .enumerate()
         .skip(1)
-        .filter(|(_, name)| *name != reference)
-        .map(|(slot_i, name)| format!("#{} is {name}", slot_i + 1))
+        .filter(|(_, name)| name != reference)
+        .map(|(number, name)| format!("#{number} is {name}"))
         .collect();
     if odd.is_empty() {
         return None;
@@ -2943,7 +2945,7 @@ fn odd_player_warning(names: &[String]) -> Option<OddPlayerWarning> {
         line: format!(
             "⚠ {} of {} combats {} not showing {reference}",
             odd.len(),
-            names.len(),
+            runs.len(),
             if odd.len() == 1 { "is" } else { "are" }
         ),
         detail: format!(
@@ -2955,12 +2957,24 @@ fn odd_player_warning(names: &[String]) -> Option<OddPlayerWarning> {
     })
 }
 
-/// The players a comparison is showing, one per slot, for the warning above the
-/// table.
-fn slot_player_names(slots: &[Slot]) -> Vec<String> {
-    slots
+/// The runs a comparison is showing and who each one is about, **reference
+/// first**, each under the number its column carries — what the warning above
+/// the table is worked out from.
+///
+/// Reference first because that is the player every other run is read against,
+/// and it is no longer whichever run happens to be first in the list. Runs
+/// taken out of the comparison are left out: a warning about a run that is not
+/// on screen is a warning about nothing.
+fn players_in_play(numbers: &[usize], slots: &[Slot]) -> Vec<(usize, String)> {
+    numbers
         .iter()
-        .map(|s| s.player.get(&s.combat.name_manager).to_string())
+        .map(|&slot_i| {
+            let slot = &slots[slot_i];
+            (
+                number_of_slot(slot_i),
+                slot.player.get(&slot.combat.name_manager).to_string(),
+            )
+        })
         .collect()
 }
 
@@ -3519,8 +3533,14 @@ mod tests {
         }
     }
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|n| n.to_string()).collect()
+    /// The runs a warning is worked out from: reference first, each under the
+    /// number its column carries.
+    fn names(names: &[&str]) -> Vec<(usize, String)> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (i + 1, n.to_string()))
+            .collect()
     }
 
     /// One player's runs are what the comparison is normally about, and that
@@ -3545,6 +3565,28 @@ mod tests {
         assert!(warning.line.len() < 60, "{}", warning.line);
         // Which ones, by the number the columns are labelled with.
         assert!(warning.detail.starts_with("#3 is Somebody, #5 is Else"));
+    }
+
+    /// The warning is about the run everything is read against, and names the
+    /// odd ones by the number their column carries. Both were "whatever comes
+    /// first in the list of runs", which stopped being the reference when the
+    /// reference became something to pick: it then measured every run against
+    /// another run's player and pointed at numbers those runs do not carry.
+    #[test]
+    fn the_warning_is_measured_against_the_reference() {
+        // #3 is the reference, so it leads; #1 is showing somebody else.
+        let runs = vec![
+            (3usize, "Kestrel".to_string()),
+            (1, "Somebody".to_string()),
+            (2, "Kestrel".to_string()),
+        ];
+        let warning = odd_player_warning(&runs).expect("one of them shows somebody else");
+        assert_eq!("⚠ 1 of 3 combats is not showing Kestrel", warning.line);
+        assert!(
+            warning.detail.starts_with("#1 is Somebody"),
+            "{}",
+            warning.detail
+        );
     }
 
     /// One odd combat reads as one, not as "1 combats are".
