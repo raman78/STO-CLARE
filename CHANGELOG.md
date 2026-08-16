@@ -3,7 +3,7 @@
 ## unreleased
 
 ### Other Changes
-- the **Damage by type** window opens at the size of the table it holds, rather than at one width whatever is in it. Two runs of a handful of damage types no longer open in a pane wide enough for a dozen, and a dozen no longer have to be scrolled sideways in a window with room to spare beside it. It can still be dragged to any size from there, and past the size of the program's own window it stops growing and the table scrolls inside, as before
+- the **Damage by type** window is the size of its table. Two runs of a handful of damage types no longer open in a pane wide enough for a dozen, and a dozen no longer have to be scrolled sideways in a window with room to spare beside it; opening a damage type or comparing more runs resizes it there and then. Past the size of the program's own window it stops growing and the table scrolls inside, as before
 
 ### Fixes
 - the warning above a comparison is about the run everything is measured against, and names the odd runs by the numbers their columns carry. It was worked out against whichever run came first in the list, so once the reference could be moved it could report a run as "not showing" a player who is not the one being compared against — and it counted runs that had been taken out of the comparison

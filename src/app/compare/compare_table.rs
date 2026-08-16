@@ -183,9 +183,6 @@ pub struct Comparison {
     show_differences: bool,
     /// The damage types whose rows are unfolded in that window.
     open_types: FxHashSet<String>,
-    /// Set when the Damage by type window has just been opened, so it is sized
-    /// to its table once and left alone — and to the reader's own size — after.
-    fit_type_summary: bool,
     /// Whether the damage-type summary is up. A window of its own: the table
     /// and the chart already have the screen between them, and this is read
     /// once and put away.
@@ -331,7 +328,6 @@ impl Comparison {
             show_impact: false,
             sort: Default::default(),
             open_types: Default::default(),
-            fit_type_summary: false,
             show_differences: false,
             show_type_summary: false,
             difference_measure: DifferenceMeasure::Share,
@@ -934,8 +930,6 @@ impl Comparison {
                 .clicked()
             {
                 self.show_type_summary = !self.show_type_summary;
-                // Opened afresh: size it to the table it is about to hold.
-                self.fit_type_summary = self.show_type_summary;
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1175,116 +1169,104 @@ impl Comparison {
 
         // Sized to what it holds, and no larger than the program's own window:
         // three runs of nine damage types is a small table and used to open in a
-        // pane wide enough for a dozen, while a dozen runs opened at the same
-        // width and scrolled sideways with room to spare beside it. Past the cap
-        // the table scrolls inside the window, as it did before.
-        // Never larger than the program's own window; past that the table
-        // scrolls inside, as it always has.
+        // The window is the size of its table and nothing else — it follows the
+        // runs and the types on screen, so opening a type or comparing five runs
+        // instead of two resizes it there and then. That leaves no drag handle,
+        // which is the deal: a window whose contents decide its size has nothing
+        // for a reader to decide. Never larger than the program's own window;
+        // past that the table scrolls inside, as it always has.
         let cap = ui.ctx().content_rect().size() * 0.9;
         let size = self.type_summary_size(ui, &rows, with_notes);
         let width = size.x;
-        // Sized to the table on the frame it opens — including every reopen,
-        // since the next comparison may hold twice the runs — and freely
-        // resizable from then on. Sitting on the size for good (`fixed_size`)
-        // fits just as well and takes the drag handle away with it, which is a
-        // poor trade for a window somebody may want wider.
-        let fit = std::mem::take(&mut self.fit_type_summary);
-        let size = vec2(size.x.min(cap.x), size.y.min(cap.y));
-        let mut window = Window::new("Damage by type").open(&mut open).max_size(cap);
-        window = if fit {
-            window.fixed_size(size)
-        } else {
-            window.default_size(size)
-        };
-        window.show(ui.ctx(), |ui| {
-            // Wrapped to the table, not the other way round. Unwrapped, this
-            // sentence is the widest thing in the window and the window opens
-            // around it; the table's width from last frame is what it should
-            // wrap to, and on the first frame anything sensible will do for
-            // the one frame before the table has been measured.
-            ui.scope(|ui| {
-                ui.set_max_width(width);
-                ui.label(RichText::new(TYPE_SUMMARY_CAPTION).weak());
-            });
-            ui.separator();
-            let height = header_height(ui, with_notes);
-            // Only as wide as its columns, so the window can be sized around
-            // it rather than the other way round.
-            Table::new(ui)
-                .cell_spacing(10.0)
-                .shrink_to_content()
-                .header(height)
-                .body(ROW_HEIGHT, |t| {
-                    let mut formatter = NumberFormatter::new();
-                    for row in rows.iter() {
-                        let unfolded = open_types.contains(&row.name);
-                        t.row(|r| {
-                            r.cell(|ui| {
-                                ui.horizontal(|ui| {
-                                    let symbol = if unfolded { "⏷" } else { "⏵" };
-                                    if ui
-                                        .add_visible(
-                                            !row.parts.is_empty(),
-                                            Button::selectable(false, symbol).min_size(ARROW_SIZE),
-                                        )
-                                        .hover("What this type is made of")
-                                        .clicked()
-                                    {
-                                        folded = Some(row.name.clone());
-                                    }
-                                    ui.label(&row.name);
-                                });
-                            });
-                            show_shares(r, &row.shares, &row.damage, &mut formatter);
-                        });
-
-                        if !unfolded {
-                            continue;
-                        }
-                        for part in row.parts.iter() {
+        Window::new("Damage by type")
+            .open(&mut open)
+            .fixed_size(vec2(size.x.min(cap.x), size.y.min(cap.y)))
+            .show(ui.ctx(), |ui| {
+                // Wrapped to the table, not the other way round. Unwrapped, this
+                // sentence is the widest thing in the window and the window opens
+                // around it; the table's width from last frame is what it should
+                // wrap to, and on the first frame anything sensible will do for
+                // the one frame before the table has been measured.
+                ui.scope(|ui| {
+                    ui.set_max_width(width);
+                    ui.label(RichText::new(TYPE_SUMMARY_CAPTION).weak());
+                });
+                ui.separator();
+                let height = header_height(ui, with_notes);
+                // Only as wide as its columns, so the window can be sized around
+                // it rather than the other way round.
+                Table::new(ui)
+                    .cell_spacing(10.0)
+                    .shrink_to_content()
+                    .header(height)
+                    .body(ROW_HEIGHT, |t| {
+                        let mut formatter = NumberFormatter::new();
+                        for row in rows.iter() {
+                            let unfolded = open_types.contains(&row.name);
                             t.row(|r| {
                                 r.cell(|ui| {
                                     ui.horizontal(|ui| {
-                                        ui.add_space(ARROW_SIZE.x);
-                                        ui.label(RichText::new(&part.name).weak());
+                                        let symbol = if unfolded { "⏷" } else { "⏵" };
+                                        if ui
+                                            .add_visible(
+                                                !row.parts.is_empty(),
+                                                Button::selectable(false, symbol)
+                                                    .min_size(ARROW_SIZE),
+                                            )
+                                            .hover("What this type is made of")
+                                            .clicked()
+                                        {
+                                            folded = Some(row.name.clone());
+                                        }
+                                        ui.label(&row.name);
                                     });
                                 });
-                                show_shares(r, &part.shares, &part.damage, &mut formatter);
+                                show_shares(r, &row.shares, &row.damage, &mut formatter);
+                            });
+
+                            if !unfolded {
+                                continue;
+                            }
+                            for part in row.parts.iter() {
+                                t.row(|r| {
+                                    r.cell(|ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.add_space(ARROW_SIZE.x);
+                                            ui.label(RichText::new(&part.name).weak());
+                                        });
+                                    });
+                                    show_shares(r, &part.shares, &part.damage, &mut formatter);
+                                });
+                            }
+                        }
+                    })
+                    .header_row(|r| {
+                        r.cell(|ui| {
+                            ui.label("Damage type");
+                        });
+                        for slot_i in 0..n_slots {
+                            r.cell(|ui| {
+                                ui.label(header_lines(
+                                    &font,
+                                    text_color,
+                                    &format!("#{}", self.number_of(slot_i)),
+                                    with_notes.then(|| self.note_of_column(slot_i)),
+                                    colors.get(slot_i).copied().flatten(),
+                                ))
+                                .hover(format!(
+                                    "Combat #{}{}",
+                                    self.number_of(slot_i),
+                                    note_suffix(self.note_of_column(slot_i))
+                                ));
                             });
                         }
-                    }
-                })
-                .header_row(|r| {
-                    r.cell(|ui| {
-                        ui.label("Damage type");
                     });
-                    for slot_i in 0..n_slots {
-                        r.cell(|ui| {
-                            ui.label(header_lines(
-                                &font,
-                                text_color,
-                                &format!("#{}", self.number_of(slot_i)),
-                                with_notes.then(|| self.note_of_column(slot_i)),
-                                colors.get(slot_i).copied().flatten(),
-                            ))
-                            .hover(format!(
-                                "Combat #{}{}",
-                                self.number_of(slot_i),
-                                note_suffix(self.note_of_column(slot_i))
-                            ));
-                        });
-                    }
-                });
-        });
+            });
 
-        if let Some(name) = folded {
-            if !self.open_types.remove(&name) {
-                self.open_types.insert(name);
-            }
-            // Opening a type puts its beams and procs on screen, closing it
-            // takes them off: either way the window is about to hold something
-            // else, so it is sized again.
-            self.fit_type_summary = true;
+        if let Some(name) = folded
+            && !self.open_types.remove(&name)
+        {
+            self.open_types.insert(name);
         }
         if !open {
             self.show_type_summary = false;
