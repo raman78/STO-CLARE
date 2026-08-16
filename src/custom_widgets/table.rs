@@ -147,6 +147,9 @@ pub struct Table<'a> {
     max_scroll_height: f32,
     cell_spacing: f32,
     striped: bool,
+    /// Whether the table takes only the width its columns come to. See
+    /// [`Table::shrink_to_content`].
+    shrink_to_content: bool,
 }
 
 pub struct TableWithHeader<'a> {
@@ -219,7 +222,20 @@ impl<'a> Table<'a> {
             max_scroll_height: f32::INFINITY,
             cell_spacing: 5.0,
             striped: true,
+            shrink_to_content: false,
         }
+    }
+
+    /// Take no more width than the columns come to.
+    ///
+    /// The default is the other way round — a table fills the panel it is in, so
+    /// its scroll bar sits at the edge of that panel rather than tucked against
+    /// the last column. In a window sized to what it holds that is backwards:
+    /// the table would ask for everything on offer, and the window would open as
+    /// wide as the screen around three columns of figures.
+    pub fn shrink_to_content(mut self) -> Self {
+        self.shrink_to_content = true;
+        self
     }
 
     pub fn id(mut self, id: impl Into<Id>) -> Self {
@@ -284,6 +300,7 @@ impl<'a> Table<'a> {
             max_scroll_height,
             striped,
             cell_spacing,
+            shrink_to_content,
         } = self;
         let mut state = State::load(ui, id);
         // A table with no header row has no groups; see `Table::header`.
@@ -298,6 +315,7 @@ impl<'a> Table<'a> {
                 max_scroll_height,
                 striped,
                 cell_spacing,
+                shrink_to_content,
             },
             add_body,
         );
@@ -332,6 +350,7 @@ impl<'a> TableWithHeader<'a> {
             max_scroll_height,
             striped,
             cell_spacing,
+            shrink_to_content,
         } = table;
 
         let (body_rect, offset_x) = show_body(
@@ -344,6 +363,7 @@ impl<'a> TableWithHeader<'a> {
                 max_scroll_height,
                 striped,
                 cell_spacing,
+                shrink_to_content,
             },
             add_body,
         );
@@ -399,6 +419,7 @@ struct Body {
     max_scroll_height: f32,
     striped: bool,
     cell_spacing: f32,
+    shrink_to_content: bool,
 }
 
 /// Draws the rows, and reports the rectangle they came to and how far the table
@@ -416,13 +437,16 @@ fn show_body(
         max_scroll_height,
         striped,
         cell_spacing,
+        shrink_to_content,
     } = body;
     let scroll_output = ScrollArea::both()
         .id_salt(id.with("__table_scroll"))
         // Full width, whatever the columns come to: the scroll bar belongs at
         // the edge of the space the table was given, not tucked against the last
-        // column with a stretch of empty panel beside it.
-        .auto_shrink([false, true])
+        // column with a stretch of empty panel beside it. A table that sizes a
+        // window around itself asks for the other behaviour
+        // (`Table::shrink_to_content`).
+        .auto_shrink([shrink_to_content, true])
         .min_scrolled_height(min_scroll_height)
         .max_height(max_scroll_height)
         .show(ui, |ui| {

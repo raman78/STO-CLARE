@@ -44,6 +44,10 @@ use crate::app::export;
 use crate::custom_widgets::tooltip::CloseTooltip;
 
 const ROW_HEIGHT: f32 = 25.0;
+/// The line above the Damage by type table. Held here because the window is
+/// sized around it as well as drawing it.
+const TYPE_SUMMARY_CAPTION: &str = "What share of each run this damage type came to. The types the runs differ over most are at \
+     the top; hover a figure for the damage behind it.";
 /// The size the open/close arrow of a tree row is drawn at.
 ///
 /// Pinned rather than left to the text in it: the arrow is frameless while
@@ -1066,6 +1070,79 @@ impl Comparison {
     ///
     /// Sorted by how far apart the runs are on it, so the types that tell them
     /// apart are at the top and the ones they all lean on equally are below.
+    /// How big the Damage by type window has to be to hold its table.
+    ///
+    /// Worked out from the text, not from the drawn table. Sizing a window to
+    /// what it is drawing, while the drawing is confined to that size, is a loop
+    /// with one fixed point: a table cell reports the width it was *given*
+    /// rather than the width it wanted, so every frame comes out narrower than
+    /// the last and the window folds down to its title bar. Words do not change
+    /// with the window, so measuring those settles it.
+    ///
+    /// Deliberately close rather than exact — a few points short and the table
+    /// scrolls inside the window, which is what it does past the cap anyway.
+    fn type_summary_size(&self, ui: &Ui, rows: &[TypeRow], with_notes: bool) -> Vec2 {
+        const SPACING: f32 = 10.0;
+        // What a cell puts around its own contents, on top of the spacing
+        // between columns.
+        let padding = ui.spacing().item_spacing.x;
+        let name_column = rows
+            .iter()
+            .flat_map(|row| {
+                let parts: &[TypePart] = if self.open_types.contains(&row.name) {
+                    &row.parts
+                } else {
+                    &[]
+                };
+                std::iter::once(&row.name).chain(parts.iter().map(|part| &part.name))
+            })
+            .map(|name| ARROW_SIZE.x + SPACING + text_width(ui, name))
+            .fold(text_width(ui, "Damage type"), f32::max)
+            + padding;
+
+        // A column is as wide as its heading — which carries the run's number
+        // and, where one is written, its description — or as the widest figure
+        // it can hold, which is a whole run in one damage type.
+        let figure = text_width(ui, "100.0%");
+        // The headings are drawn in the bold face (`header_lines`), which is
+        // wider than the body face the figures under them use — measuring them
+        // in the wrong face is how a column ends up cut off at the window's edge.
+        let columns: f32 = (0..self.numbers.len())
+            .map(|column| {
+                let number = bold_text_width(ui, &format!("#{}", self.number_of(column)));
+                let note = if with_notes {
+                    bold_text_width(ui, self.note_of_column(column))
+                } else {
+                    0.0
+                };
+                figure.max(number).max(note) + SPACING + padding
+            })
+            .sum();
+        // The last few points are the table's own margin.
+        let width = name_column + columns + SPACING + SPACING / 2.0;
+
+        let visible_rows = rows.len()
+            + rows
+                .iter()
+                .filter(|row| self.open_types.contains(&row.name))
+                .map(|row| row.parts.len())
+                .sum::<usize>();
+        let caption = ui
+            .painter()
+            .layout(
+                TYPE_SUMMARY_CAPTION.to_owned(),
+                TextStyle::Body.resolve(ui.style()),
+                Color32::PLACEHOLDER,
+                width,
+            )
+            .size()
+            .y;
+        let line = ui.text_style_height(&TextStyle::Body);
+        let height =
+            caption + header_height(ui, with_notes) + visible_rows as f32 * ROW_HEIGHT + 3.0 * line;
+        vec2(width, height)
+    }
+
     fn show_type_summary(&mut self, ui: &mut Ui, colors: &[Option<Color32>]) {
         if !self.show_type_summary {
             return;
@@ -1087,24 +1164,36 @@ impl Comparison {
         let open_types = self.open_types.clone();
         let mut folded: Option<String> = None;
 
+        // Sized to what it holds, and no larger than the program's own window:
+        // three runs of nine damage types is a small table and used to open in a
+        // pane wide enough for a dozen, while a dozen runs opened at the same
+        // width and scrolled sideways with room to spare beside it. Past the cap
+        // the table scrolls inside the window, as it did before.
+        // Never larger than the program's own window; past that the table
+        // scrolls inside, as it always has.
+        let cap = ui.ctx().content_rect().size() * 0.9;
+        let size = self.type_summary_size(ui, &rows, with_notes);
+        let width = size.x;
         Window::new("Damage by type")
             .open(&mut open)
-            .default_width(520.0)
+            .fixed_size(vec2(size.x.min(cap.x), size.y.min(cap.y)))
             .show(ui.ctx(), |ui| {
-                ui.label(
-                    RichText::new(
-                        "What share of each run this damage type came to. The types the runs \
-                         differ over most are at the top; hover a figure for the damage behind \
-                         it.",
-                    )
-                    .weak(),
-                );
+                // Wrapped to the table, not the other way round. Unwrapped, this
+                // sentence is the widest thing in the window and the window opens
+                // around it; the table's width from last frame is what it should
+                // wrap to, and on the first frame anything sensible will do for
+                // the one frame before the table has been measured.
+                ui.scope(|ui| {
+                    ui.set_max_width(width);
+                    ui.label(RichText::new(TYPE_SUMMARY_CAPTION).weak());
+                });
                 ui.separator();
                 let height = header_height(ui, with_notes);
-                // The table scrolls both ways by itself; its bars belong at the
-                // edges of the window, not against the last column.
+                // Only as wide as its columns, so the window can be sized around
+                // it rather than the other way round.
                 Table::new(ui)
                     .cell_spacing(10.0)
+                    .shrink_to_content()
                     .header(height)
                     .body(ROW_HEIGHT, |t| {
                         let mut formatter = NumberFormatter::new();
@@ -2829,6 +2918,15 @@ fn show_header_cell(
     strip.expect("the cell's contents are drawn before it returns")
 }
 
+/// How wide a piece of text is in the bold face the headings are drawn in.
+fn bold_text_width(ui: &Ui, text: &str) -> f32 {
+    let font = FontId::new(TextStyle::Body.resolve(ui.style()).size, bold_family());
+    ui.painter()
+        .layout_no_wrap(text.to_owned(), font, Color32::PLACEHOLDER)
+        .size()
+        .x
+}
+
 /// A signed figure in the colour that says which way it went, in the bold face.
 ///
 /// Same reason the header takes that face: green and red are hues, not steps in
@@ -4164,14 +4262,19 @@ mod tests {
         // Far enough apart to be two combats at any separation setting.
         std::fs::write(
             &log,
-            format!("{}{}", shot("26:08:16:13:41:30.0"), shot("26:08:16:13:58:45.8")),
+            format!(
+                "{}{}",
+                shot("26:08:16:13:41:30.0"),
+                shot("26:08:16:13:58:45.8")
+            ),
         )
         .unwrap();
-        let mut analyzer = crate::analyzer::Analyzer::new(crate::analyzer::settings::AnalysisSettings {
-            combatlog_file: log.to_string_lossy().into_owned(),
-            ..Default::default()
-        })
-        .unwrap();
+        let mut analyzer =
+            crate::analyzer::Analyzer::new(crate::analyzer::settings::AnalysisSettings {
+                combatlog_file: log.to_string_lossy().into_owned(),
+                ..Default::default()
+            })
+            .unwrap();
         analyzer.update();
         let combats: Vec<Arc<Combat>> = analyzer
             .result()
