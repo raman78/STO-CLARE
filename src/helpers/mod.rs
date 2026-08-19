@@ -41,6 +41,23 @@ pub fn format_duration(duration: Duration) -> String {
     format!("{}", time.format("%M:%S%.3f"))
 }
 
+/// How long a fight ran, as a *list* of fights says it: `04:12`, growing an
+/// hours part only once there is one.
+///
+/// [`format_duration`] keeps milliseconds, which matter when a single combat is
+/// being read closely and only push a column of lengths apart when a hundred of
+/// them are being skimmed.
+pub fn format_duration_hms(duration: Duration) -> String {
+    // A fight cannot run backwards; a length that came out negative means the
+    // combat had no damage in it at all, and reads as no time.
+    let seconds = duration.num_seconds().max(0);
+    let (hours, minutes, seconds) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    if hours > 0 {
+        return format!("{hours}:{minutes:02}:{seconds:02}");
+    }
+    format!("{minutes:02}:{seconds:02}")
+}
+
 #[macro_export]
 macro_rules! unwrap_or_continue {
     ($expression:expr) => {
@@ -144,5 +161,21 @@ mod tests {
         let unterminated = b"26:07:19:12:00:01.0::older";
         let composed = compose_comparison_log(unterminated, NEWER);
         assert!(composed.starts_with(b"26:07:19:12:00:01.0::older\n26:08:09"));
+    }
+
+    #[test]
+    fn a_fight_length_reads_as_minutes_and_seconds() {
+        assert_eq!("04:12", format_duration_hms(Duration::seconds(252)));
+        assert_eq!("00:07", format_duration_hms(Duration::milliseconds(7400)));
+        assert_eq!("00:00", format_duration_hms(Duration::zero()));
+    }
+
+    /// An hours part appears only when the fight actually ran that long — a
+    /// column of `00:04:12` would spend a third of its width on a zero.
+    #[test]
+    fn an_hours_part_appears_only_once_there_is_one() {
+        assert_eq!("59:59", format_duration_hms(Duration::seconds(3599)));
+        assert_eq!("1:00:00", format_duration_hms(Duration::seconds(3600)));
+        assert_eq!("2:03:04", format_duration_hms(Duration::seconds(7384)));
     }
 }

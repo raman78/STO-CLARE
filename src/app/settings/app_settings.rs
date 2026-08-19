@@ -87,6 +87,26 @@ pub struct General {
     /// has been moved, and it then opens in the middle of the main window.
     #[serde(default)]
     pub ladder_window_position: Option<[f32; 2]>,
+    /// Whose log this is: the account handle, `@` and all, whose figures the
+    /// combats list shows. Unset means "work it out from the log", which is
+    /// what it does on every start — this is only written when the reader says
+    /// otherwise (a shared machine, a second account, a log that is not theirs).
+    #[serde(default)]
+    pub my_handle: Option<String>,
+    /// The handle the log last said it belonged to, remembered so a log that
+    /// cannot say — one saved fight, a run fetched from the ladder, an evening
+    /// of nothing but duo runs — still shows the reader their own figures.
+    /// Written by the program, not by the reader; [`Self::my_handle`] is the
+    /// one they set.
+    #[serde(default)]
+    pub last_detected_handle: Option<String>,
+    /// Whether the combats panel was folded out when the app last closed.
+    #[serde(default = "default_true")]
+    pub combats_panel_open: bool,
+    /// How wide the reader dragged the combats panel. Zero (or missing) opens
+    /// it at its own default width.
+    #[serde(default)]
+    pub combats_panel_width: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -199,6 +219,10 @@ impl Default for General {
             overlay_shown: false,
             default_combatlog_file: None,
             ladder_window_position: None,
+            my_handle: None,
+            last_detected_handle: None,
+            combats_panel_open: true,
+            combats_panel_width: 0.0,
         }
     }
 }

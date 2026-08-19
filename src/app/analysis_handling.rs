@@ -9,14 +9,14 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-use chrono::{Duration, NaiveDateTime};
+use chrono::Duration;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use eframe::egui::{Context, ViewportId};
 use log::info;
 use notify::{RecommendedWatcher, Watcher, recommended_watcher};
 
 use crate::{
-    analyzer::{Analyzer, Combat, Difficulty, settings::AnalysisSettings},
+    analyzer::{Analyzer, Combat, CombatSummaries, settings::AnalysisSettings},
     unwrap_or_return,
 };
 
@@ -51,7 +51,15 @@ struct AnalysisContext {
 #[derive(Debug)]
 struct HandlerContext {
     tx: Sender<AnalysisInfo>,
+    /// Follow the log as it grows, combat and all: this handler is put on the
+    /// newest fight whenever one appears. What the "Auto Refresh" setting turns
+    /// on, and what the overlay always wants.
     auto_refresh: bool,
+    /// Follow the log as it grows, but only for the *list* of combats — the
+    /// fight on screen is left alone. What the main window's combats panel
+    /// wants: a list that is never out of date, under a view that only moves
+    /// when the reader moves it.
+    list_refresh: bool,
     id: u32,
     viewport: ViewportId,
 }
@@ -83,6 +91,7 @@ enum Instruction {
     KeepCombats(Vec<usize>),
     SaveCombat(usize, PathBuf),
     EnableAutoRefresh(bool, u32),
+    EnableListRefresh(bool, u32),
     SetAutoRefreshInterval(f64),
     AddHandler(HandlerContext),
     RemoveHandler(u32),
@@ -97,37 +106,17 @@ pub enum AnalysisInfo {
     Combats(Vec<(usize, Arc<Combat>)>),
     Refreshed {
         latest_combat: Arc<Combat>,
-        combats: Vec<String>,
-        /// Detected difficulty per combat, aligned with `combats`, for the
-        /// compare view's difficulty filter.
-        difficulties: Vec<Option<Difficulty>>,
-        /// Each combat's name without the environment and difficulty suffixes,
-        /// aligned with `combats`. The views group and filter by it instead of
-        /// picking it back out of the formatted identifier.
-        base_names: Vec<String>,
-        /// Each combat's environment ("Space" / "Ground" / …) where the map was
-        /// recognized, aligned with `combats`.
-        environments: Vec<Option<String>>,
-        /// Each combat's start time, aligned with `combats`. The views key the
-        /// user's own note by it.
-        start_times: Vec<NaiveDateTime>,
-        /// Whether each combat was fought alone, aligned with `combats`.
-        solos: Vec<bool>,
+        /// Every combat in the log, oldest first — one entry each, carrying
+        /// everything a list of fights shows or filters by.
+        combats: CombatSummaries,
         file_size: Option<u64>,
     },
     // Like `Refreshed`, but without a combat to switch the main view to. Used
-    // by the "Clear Log File" dialog and by the compare view, so both refresh
-    // the list without moving off the combat being viewed. Carries the same
-    // per-combat metadata as `Refreshed`, because the filters read it by index
-    // and a list that grew past it would leave the new combats unlabelled.
+    // by the combats panel following the log as it grows, by the "Clear Log
+    // File" dialog and by the compare view, so all three see the current list
+    // without moving off the combat being viewed.
     CombatsListRefreshed {
-        combats: Vec<String>,
-        difficulties: Vec<Option<Difficulty>>,
-        base_names: Vec<String>,
-        environments: Vec<Option<String>>,
-        start_times: Vec<NaiveDateTime>,
-        /// Whether each combat was fought alone, aligned with `combats`.
-        solos: Vec<bool>,
+        combats: CombatSummaries,
         file_size: Option<u64>,
     },
     RefreshError,
@@ -144,6 +133,7 @@ impl AnalysisHandler {
         let (info_tx, info_rx) = unbounded();
         let is_busy = Arc::new(AtomicBool::new(false));
         let handler_ctx = HandlerContext {
+            list_refresh: false,
             auto_refresh: enable_auto_refresh,
             id: 0,
             tx: info_tx,
@@ -228,6 +218,14 @@ impl AnalysisHandler {
             .unwrap();
     }
 
+    /// Keep this handler's combats list current as the log grows, without ever
+    /// moving it onto another combat.
+    pub fn enable_list_refresh(&self, enable: bool) {
+        self.tx
+            .send(Instruction::EnableListRefresh(enable, self.id))
+            .unwrap();
+    }
+
     pub fn set_auto_refresh_interval(&self, refresh_interval: f64) {
         self.tx
             .send(Instruction::SetAutoRefreshInterval(refresh_interval))
@@ -239,6 +237,7 @@ impl AnalysisHandler {
         let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
         let ctx = HandlerContext {
             auto_refresh,
+            list_refresh: false,
             id,
             tx,
             viewport,
@@ -362,6 +361,17 @@ impl AnalysisContext {
                         }
                     }
                 }
+                Instruction::EnableListRefresh(enable, handler) => {
+                    self.handler_mut(handler, |h| h.list_refresh = enable);
+                    self.update_auto_refresh();
+                    if enable {
+                        // Hand over the list as it stands, so a panel that has
+                        // just subscribed is not empty until the log next grows.
+                        if let info @ AnalysisInfo::Refreshed { .. } = self.latest_info() {
+                            self.send_info(Self::into_list_only(info), handler);
+                        }
+                    }
+                }
                 Instruction::SetAutoRefreshInterval(refresh_interval) => {
                     self.set_auto_refresh_interval(refresh_interval)
                 }
@@ -395,8 +405,16 @@ impl AnalysisContext {
         // reload) always rebuilds the list so every combat shows up.
         if let Some(info) = self.try_refresh(only_when_auto_refresh) {
             if only_when_auto_refresh {
-                for handler in self.handlers.iter().filter(|h| h.auto_refresh) {
-                    handler.send(info.clone(), &self.ctx);
+                // Each handler gets the half of the news it asked for: the
+                // whole thing, which moves it onto the newest fight, or the
+                // list alone, which leaves what it is showing where it is.
+                let list_only = Self::into_list_only(info.clone());
+                for handler in self.handlers.iter() {
+                    if handler.auto_refresh {
+                        handler.send(info.clone(), &self.ctx);
+                    } else if handler.list_refresh {
+                        handler.send(list_only.clone(), &self.ctx);
+                    }
                 }
             } else {
                 self.send_info_all(info);
@@ -419,28 +437,7 @@ impl AnalysisContext {
     fn refresh_combats_list(&mut self, handler: u32) {
         Self::set_is_busy(&self.is_busy, true);
         if let Some(info) = self.try_refresh(false) {
-            let info = match info {
-                AnalysisInfo::Refreshed {
-                    combats,
-                    difficulties,
-                    base_names,
-                    environments,
-                    start_times,
-                    solos,
-                    file_size,
-                    ..
-                } => AnalysisInfo::CombatsListRefreshed {
-                    combats,
-                    difficulties,
-                    base_names,
-                    environments,
-                    start_times,
-                    solos,
-                    file_size,
-                },
-                other => other,
-            };
-            self.send_info(info, handler);
+            self.send_info(Self::into_list_only(info), handler);
         }
     }
 
@@ -491,27 +488,21 @@ impl AnalysisContext {
         };
         AnalysisInfo::Refreshed {
             latest_combat: latest_combat.into(),
-            combats: analyzer.result().iter().map(|c| c.identifier()).collect(),
-            difficulties: analyzer
-                .result()
-                .iter()
-                .map(|c| c.detected_difficulty)
-                .collect(),
-            base_names: analyzer.result().iter().map(|c| c.base_name()).collect(),
-            environments: analyzer
-                .result()
-                .iter()
-                .map(|c| c.detected_combat_type.clone())
-                .collect(),
-            start_times: analyzer
-                .result()
-                .iter()
-                .map(|c| c.active_time.start)
-                .collect(),
-            solos: analyzer.result().iter().map(|c| c.is_solo()).collect(),
+            combats: analyzer.result().iter().map(|c| c.summary()).collect(),
             file_size: std::fs::metadata(&analyzer.settings().combatlog_file)
                 .ok()
                 .map(|m| m.len()),
+        }
+    }
+
+    /// The same news with the combat to switch to taken out, for the handlers
+    /// that only follow the list. Anything else is passed through untouched.
+    fn into_list_only(info: AnalysisInfo) -> AnalysisInfo {
+        match info {
+            AnalysisInfo::Refreshed {
+                combats, file_size, ..
+            } => AnalysisInfo::CombatsListRefreshed { combats, file_size },
+            other => other,
         }
     }
 
@@ -692,8 +683,14 @@ impl AnalysisContext {
         }
     }
 
+    /// Whether anything is following the log. The watcher runs for a handler
+    /// that only wants the list too: a combats list that goes stale the moment
+    /// the reader turns "Auto Refresh" off is a list they cannot trust, and
+    /// what it costs is one incremental read of what the log has grown by.
     fn auto_refresh_enabled(&self) -> bool {
-        self.handlers.iter().any(|h| h.auto_refresh)
+        self.handlers
+            .iter()
+            .any(|h| h.auto_refresh || h.list_refresh)
     }
 }
 
@@ -852,6 +849,7 @@ mod tests {
             instruction_rx,
             HandlerContext {
                 tx: main_tx,
+                list_refresh: false,
                 auto_refresh: true,
                 id: 0,
                 viewport: ViewportId::ROOT,
@@ -933,6 +931,7 @@ mod tests {
         let (main_tx, main_rx) = unbounded();
         let main_handler = HandlerContext {
             tx: main_tx,
+            list_refresh: false,
             auto_refresh: false,
             id: 0,
             viewport: ViewportId::ROOT,
@@ -949,6 +948,7 @@ mod tests {
         let (overlay_tx, overlay_rx) = unbounded();
         context.handlers.push(HandlerContext {
             tx: overlay_tx,
+            list_refresh: false,
             auto_refresh: true,
             id: 1,
             viewport: ViewportId::ROOT,
@@ -1001,6 +1001,138 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The combats panel follows the log as it grows without the view ever
+    /// moving: a handler subscribed to the list alone must be told about a new
+    /// combat, and told about it as a `CombatsListRefreshed` — a `Refreshed`
+    /// would put the main window on the fight the reader is still in the middle
+    /// of, whatever they had opened to look at.
+    #[test]
+    fn a_list_subscriber_hears_about_a_new_combat_without_being_moved_onto_it() {
+        let dir = std::env::temp_dir().join(format!("cla-list-live-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        let combat = |hh: u32, mm: u32| {
+            format!(
+                "26:07:23:{hh:02}:{mm:02}:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+            )
+        };
+        std::fs::write(&log, combat(20, 0)).unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (main_tx, main_rx) = unbounded();
+        // The main window as the app sets it up: not following the newest
+        // combat, but following the list.
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            HandlerContext {
+                tx: main_tx,
+                auto_refresh: false,
+                list_refresh: true,
+                id: 0,
+                viewport: ViewportId::ROOT,
+            },
+            instruction_tx,
+            settings,
+            Context::default(),
+            Arc::new(AtomicBool::new(false)),
+            1.0,
+        );
+
+        // The watcher has to be running for a change to reach anyone at all,
+        // and nothing here wants the newest combat on screen.
+        context.update_auto_refresh();
+        assert!(
+            context.auto_refresh.is_some(),
+            "following the list alone still has to watch the log"
+        );
+
+        context.refresh(false);
+        let _ = main_rx.try_iter().count();
+
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+            f.write_all(combat(20, 10).as_bytes()).unwrap();
+        }
+        context.refresh(true);
+
+        let infos: Vec<_> = main_rx.try_iter().collect();
+        assert_eq!(1, infos.len(), "one message about the new combat");
+        match &infos[0] {
+            AnalysisInfo::CombatsListRefreshed { combats, .. } => {
+                assert_eq!(2, combats.len(), "the new fight is in the list");
+            }
+            AnalysisInfo::Refreshed { .. } => {
+                panic!("a list subscriber must not be moved onto the newest combat")
+            }
+            _ => panic!("expected CombatsListRefreshed"),
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A handler that wants both — the main window with "Auto Refresh" ticked —
+    /// hears about a change once, as the whole thing. Two messages would mean
+    /// the list arriving a second time right after the view had already moved.
+    #[test]
+    fn wanting_both_kinds_of_news_still_means_one_message() {
+        let dir = std::env::temp_dir().join(format!("cla-list-both-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        std::fs::write(
+            &log,
+            "26:07:23:20:00:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n",
+        )
+        .unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (main_tx, main_rx) = unbounded();
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            HandlerContext {
+                tx: main_tx,
+                auto_refresh: true,
+                list_refresh: true,
+                id: 0,
+                viewport: ViewportId::ROOT,
+            },
+            instruction_tx,
+            settings,
+            Context::default(),
+            Arc::new(AtomicBool::new(false)),
+            1.0,
+        );
+        context.refresh(false);
+        let _ = main_rx.try_iter().count();
+
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+            f.write_all(
+                "26:07:23:20:10:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n".as_bytes(),
+            )
+            .unwrap();
+        }
+        context.refresh(true);
+
+        let infos: Vec<_> = main_rx.try_iter().collect();
+        assert_eq!(1, infos.len(), "one message, not one of each kind");
+        assert!(matches!(infos[0], AnalysisInfo::Refreshed { .. }));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The "Clear Log File" dialog refreshes the combats list via
     /// `refresh_combats_list`. That must deliver the list only to the requesting
     /// handler (the main window) as a `CombatsListRefreshed` — never a
@@ -1030,6 +1162,7 @@ mod tests {
         let (main_tx, main_rx) = unbounded();
         let main_handler = HandlerContext {
             tx: main_tx,
+            list_refresh: false,
             auto_refresh: false,
             id: 0,
             viewport: ViewportId::ROOT,
@@ -1046,6 +1179,7 @@ mod tests {
         let (overlay_tx, overlay_rx) = unbounded();
         context.handlers.push(HandlerContext {
             tx: overlay_tx,
+            list_refresh: false,
             auto_refresh: true,
             id: 1,
             viewport: ViewportId::ROOT,
@@ -1056,21 +1190,15 @@ mod tests {
         let main_infos: Vec<_> = main_rx.try_iter().collect();
         assert_eq!(main_infos.len(), 1, "main window gets exactly one message");
         match &main_infos[0] {
-            AnalysisInfo::CombatsListRefreshed {
-                combats,
-                difficulties,
-                base_names,
-                environments,
-                ..
-            } => {
+            AnalysisInfo::CombatsListRefreshed { combats, .. } => {
                 assert_eq!(combats.len(), 2, "the refreshed list holds every combat");
-                // The views index these three alongside `combats`; a list-only
-                // refresh that left them behind would leave every combat added
-                // since the last full refresh without an environment, a level
-                // or a map name, and so out of a filtered list.
-                assert_eq!(difficulties.len(), combats.len());
-                assert_eq!(base_names.len(), combats.len());
-                assert_eq!(environments.len(), combats.len());
+                // Each entry describes its own fight. What the views filter and
+                // sort by travels with the combat rather than in a list beside
+                // it, so a refresh cannot leave the two out of step.
+                assert!(
+                    combats.iter().all(|combat| !combat.base_name.is_empty()),
+                    "every combat says which map it was"
+                );
             }
             AnalysisInfo::Refreshed { .. } => {
                 panic!("list-only refresh must not send Refreshed (it switches the main view)")

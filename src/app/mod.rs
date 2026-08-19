@@ -1,34 +1,33 @@
 use std::{path::PathBuf, sync::Arc};
 
-use chrono::NaiveDateTime;
 use eframe::egui::*;
 use rfd::FileDialog;
 
 use crate::{
-    analyzer::{Combat, Difficulty},
+    analyzer::{Combat, CombatSummaries, Difficulty, detect_log_owner},
     custom_widgets::toggle::Toggle,
     upload::{Records, Upload},
 };
 
 use self::{
-    analysis_handling::AnalysisInfo, combat_filter::DifficultyFilter, compare::CompareView,
-    main_tabs::*, settings::*, state::AppState, status::*, summary_copy::SummaryCopy,
+    analysis_handling::AnalysisInfo,
+    combat_filter::DifficultyFilter,
+    combats_list::{CombatsListView, CombatsPanel, ListAction},
+    compare::CompareView,
+    main_tabs::*,
+    settings::*,
+    state::AppState,
+    status::*,
+    summary_copy::SummaryCopy,
 };
 
 mod analysis_handling;
 pub mod app_icon;
 mod combat_filter;
-
-/// How many combats the picker shows before it starts to scroll.
-const COMBATS_SHOWN_AT_ONCE: usize = 15;
-
-/// Width of the combats picker, in points. Holds a full identifier — map,
-/// environment, level, date and time — followed by a note of the full 50
-/// characters. Entries longer than this are cut with an ellipsis rather than
-/// wrapped, so a row stays one row tall.
-const COMBATS_LIST_WIDTH: f32 = 900.0;
+mod combats_list;
 mod compare;
 pub(crate) mod damage_subset;
+mod date_range;
 pub mod desktop_install;
 mod export;
 mod fonts;
@@ -61,43 +60,27 @@ fn is_wayland(cc: &eframe::CreationContext) -> bool {
     )
 }
 
-/// The lists that describe a set of combats to the comparison picker, kept
-/// together because they are indexed alongside each other and a mismatch reads
-/// the wrong entry for every combat after it.
-#[derive(Default, Clone)]
-struct OwnCombatList {
-    combats: Vec<String>,
-    difficulties: Vec<Option<Difficulty>>,
-    base_names: Vec<String>,
-    environments: Vec<Option<String>>,
-    start_times: Vec<NaiveDateTime>,
-    solos: Vec<bool>,
-}
-
 pub struct App {
     settings_window: SettingsWindow,
-    combats: Vec<String>,
-    /// Detected difficulty per combat, aligned with `combats` (compare filter).
-    combat_difficulties: Vec<Option<Difficulty>>,
-    /// Each combat's name without the environment and difficulty suffixes, for
-    /// the type filters.
-    combat_base_names: Vec<String>,
-    /// Each combat's environment ("Space" / "Ground" / …), for the same.
-    combat_environments: Vec<Option<String>>,
-    /// Whether each combat was fought alone, aligned with `combats` (the fourth
-    /// axis of the picker's filter).
-    combat_solos: Vec<bool>,
-    /// Each combat's start time, aligned with `combats`. It is what a user note
-    /// is keyed by, and the only per-combat value the log itself fixes.
-    combat_start_times: Vec<NaiveDateTime>,
-    /// Narrows the combat picker to one environment, level and/or map.
-    combat_filter: combat_filter::CombatFilter,
-    /// Bumped whenever the filter changes, and mixed into the picker's id.
+    /// Every combat in the log, oldest first. One entry per fight, carrying
+    /// everything the lists show and filter by.
+    combats: CombatSummaries,
+    /// The list of fights down the side of the window.
+    combats_panel: CombatsPanel,
+    /// How wide the panel has been dragged. Kept here rather than in the live
+    /// settings because the settings dialog replaces the whole settings object
+    /// when it is applied, which would undo a drag made while it was open — the
+    /// same reason the window geometry is kept here. Written out on exit.
+    combats_panel_width: f32,
+    /// Whose log this is, worked out from it: the handle in more of its combats
+    /// than any other. What the reader named themselves in the settings wins
+    /// over it.
     ///
-    /// egui keeps a scroll area's measured size under that id, so the list kept
-    /// opening at the height it had while filtered however much it then held.
-    /// A new id makes it a new scroll area, measured from scratch.
-    combat_filter_generation: u64,
+    /// Kept once found, and remembered across launches. A log the fight came
+    /// from cannot always say — a single saved fight has every player in it
+    /// exactly once, and so does an evening of duo runs — and in that case the
+    /// last log that *could* say is a far better answer than none.
+    log_owner: Option<String>,
     selected_combat_index: Option<usize>,
     selected_combat: Option<Arc<Combat>>,
     status_indicator: StatusIndicator,
@@ -131,11 +114,11 @@ pub struct App {
     /// in their log, which is what a comparison has to be cut from, and once the
     /// analyzer has moved to the run there is no asking for them.
     pending_ladder_run: Option<PathBuf>,
-    /// The reader's own combats and the lists that describe them, as they were
+    /// The reader's own combats and the list that describes them, as they were
     /// before the ladder run took over. What the comparison picker offers while
     /// a run is on screen.
     own_combats: Vec<(usize, Arc<Combat>)>,
-    own_combat_list: OwnCombatList,
+    own_combat_list: CombatSummaries,
     state: AppState,
     // Deferred persistence of the window size: written once resizing settles
     // (see track_window_geometry).
@@ -172,16 +155,17 @@ impl App {
         let state = AppState::new(&cc.egui_ctx);
         let settings_window =
             SettingsWindow::new(&cc.egui_ctx, cc.egui_ctx.native_pixels_per_point());
+        // The list follows the log from the moment the window is up, whatever
+        // "Auto Refresh" is set to: that setting is about the *view* moving to
+        // the newest fight, and a list of what the log holds is no use if it is
+        // only right at the moment it was last read by hand.
+        state.analysis_handler.enable_list_refresh(true);
         let app = Self {
             settings_window,
             combats: Default::default(),
-            combat_difficulties: Default::default(),
-            combat_base_names: Default::default(),
-            combat_environments: Default::default(),
-            combat_start_times: Default::default(),
-            combat_solos: Default::default(),
-            combat_filter: Default::default(),
-            combat_filter_generation: 0,
+            combats_panel: CombatsPanel::new(state.settings.general.combats_panel_open),
+            combats_panel_width: state.settings.general.combats_panel_width,
+            log_owner: state.settings.general.last_detected_handle.clone(),
             selected_combat_index: None,
             selected_combat: None,
             status_indicator: StatusIndicator::new(),
@@ -256,7 +240,7 @@ impl eframe::App for App {
                     self.settings_window.show(
                         &mut self.state,
                         self.selected_combat.as_deref(),
-                        &self.combats,
+                        self.log_owner.as_deref(),
                         ui,
                         frame,
                     );
@@ -309,111 +293,39 @@ impl eframe::App for App {
                         self.status_indicator
                             .show(self.state.analysis_handler.is_busy(), ui);
 
-                        // One row of the popup, used both for its height cap
-                        // and for the room reserved inside it, so the two agree
-                        // whatever the UI scale is.
-                        let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
-                        // The combat on show, with its note where there is one,
-                        // so the closed box says the same as the list entry it
-                        // came from.
-                        let selected = {
-                            let note = self
-                                .selected_combat
-                                .as_deref()
-                                .map(|combat| {
-                                    self.state
-                                        .settings
-                                        .combat_notes
-                                        .get(&CombatNotes::key(combat))
-                                })
-                                .unwrap_or("");
-                            if note.is_empty() {
-                                self.main_tabs.identifier.clone()
-                            } else {
-                                format!("{} — {}", self.main_tabs.identifier, note)
-                            }
-                        };
-                        ComboBox::new(("combat list", self.combat_filter_generation), "Combats")
-                            // Room for a full identifier — map, environment,
-                            // level, date and time — plus a note of the full 50
-                            // characters, on one line.
-                            .width(COMBATS_LIST_WIDTH)
-                            .height(row * COMBATS_SHOWN_AT_ONCE as f32)
-                            .selected_text(selected)
-                            .show_ui(ui, |ui| {
-                                // Reserve the room here. The popup reports only
-                                // about three rows of available height, and
-                                // egui's scroll area sizes its viewport to that,
-                                // so without a minimum the list opens three tall
-                                // however many combats it holds. Clamping the
-                                // minimum to the reported height puts the same
-                                // three rows straight back.
-                                let visible = (0..self.combats.len())
-                                    .filter(|&i| self.combat_matches_filter(i))
-                                    .count();
-                                ui.set_min_height(row * visible.min(COMBATS_SHOWN_AT_ONCE) as f32);
-                                // The scroll area takes its viewport from the
-                                // content size it measured last frame. After a
-                                // filter is cleared the first frame still has
-                                // the narrowed list's size, and nothing else
-                                // asks for another one — so the list would stay
-                                // as short as it was while filtered.
-                                ui.ctx().request_repaint();
-                                // An entry that is too long is cut with an
-                                // ellipsis rather than wrapped onto a second
-                                // line: a wrapped row is twice as tall, and the
-                                // height reserved above counts single rows.
-                                ui.style_mut().wrap_mode = Some(TextWrapMode::Truncate);
-                                for (i, combat) in self.combats.iter().enumerate().rev() {
-                                    if !self.combat_matches_filter(i) {
-                                        continue;
-                                    }
-                                    // The user's own note, where there is one,
-                                    // is what tells two runs of the same map
-                                    // apart at a glance.
-                                    let note = self
-                                        .combat_start_times
-                                        .get(i)
-                                        .map(|&start| {
-                                            self.state
-                                                .settings
-                                                .combat_notes
-                                                .get(&CombatNotes::key_at(start))
-                                        })
-                                        .unwrap_or("");
-                                    let entry = if note.is_empty() {
-                                        combat.clone()
-                                    } else {
-                                        format!("{combat} — {note}")
-                                    };
-                                    if ui
-                                        .selectable_value(
-                                            &mut self.selected_combat_index,
-                                            Some(i),
-                                            entry,
-                                        )
-                                        .changed()
-                                        && let Some(combat_index) = self.selected_combat_index
-                                    {
-                                        self.state.analysis_handler.get_combat(combat_index);
-                                    }
-                                }
-                            });
+                        // Folds the list of fights in and out, the way a browser
+                        // does its sidebar. Kept as a toggle rather than a plain
+                        // button so the toolbar says whether the panel is out.
+                        if ui
+                            .steady_toggle(self.combats_panel.is_open(), "☰ Combats")
+                            .hover("Show the list of fights in the log.")
+                            .clicked()
+                        {
+                            self.combats_panel.toggle();
+                        }
 
-                        if ui.button("Refresh Now ⟲").clicked() {
+                        // Reads the log again and puts the newest fight on
+                        // screen. The list beside it keeps itself current on its
+                        // own, so this button is about the *view*.
+                        if ui
+                            .button("Analysis of Newest Fight ⟲")
+                            .hover("Read the log again and analyze the fight at the end of it.")
+                            .clicked()
+                        {
                             self.state.analysis_handler.refresh();
                         }
 
-                        self.settings_window.show_clear_log_dialog(
-                            &self.state.analysis_handler,
-                            &self.combats,
-                            ui,
-                        );
-
+                        // Beside the button it repeats: the two do the same
+                        // thing, one when it is pressed and one whenever the log
+                        // grows.
                         if ui
                             .checkbox(
                                 &mut self.state.settings.auto_refresh.enable,
-                                "Auto Refresh when log changes",
+                                "Always show analysis of Newest Fight",
+                            )
+                            .hover(
+                                "Move to the fight at the end of the log whenever it grows. The \
+                                 list of fights keeps itself current either way.",
                             )
                             .clicked()
                         {
@@ -422,6 +334,8 @@ impl eframe::App for App {
                                 .enable_auto_refresh(self.state.settings.auto_refresh.enable);
                             self.state.settings.save();
                         }
+
+                        ui.separator();
 
                         if ui
                             .add_enabled(
@@ -459,39 +373,6 @@ impl eframe::App for App {
                         ui.separator();
                         self.state.overlay.show_button(ui);
                     });
-
-                    // Own row: a "Clear filter" button appearing next to the
-                    // pickers would otherwise shove the toolbar buttons sideways.
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Show only:");
-                        let before = self.combat_filter.clone();
-                        // Each menu offers only what the other two leave
-                        // reachable, so no combination can empty the list.
-                        let entries: Vec<combat_filter::CombatEntry> = (0..self.combats.len())
-                            .map(|i| combat_filter::CombatEntry {
-                                environment: self
-                                    .combat_environments
-                                    .get(i)
-                                    .and_then(|e| e.as_deref()),
-                                difficulty: self.combat_difficulties.get(i).copied().flatten(),
-                                solo: self.combat_solos.get(i).copied().unwrap_or(false),
-                                base_name: self
-                                    .combat_base_names
-                                    .get(i)
-                                    .map(String::as_str)
-                                    .unwrap_or(""),
-                            })
-                            .collect();
-                        self.combat_filter.show("combats", &entries, ui);
-                        if self.combat_filter.is_active() && ui.button("Clear filter").clicked() {
-                            self.combat_filter.clear();
-                        }
-                        if self.combat_filter != before {
-                            self.combat_filter_generation =
-                                self.combat_filter_generation.wrapping_add(1);
-                            self.follow_filter_change();
-                        }
-                    });
                 }
 
                 if self.compare.is_open() {
@@ -500,30 +381,15 @@ impl eframe::App for App {
                     // own fights, captured before the switch, with the run
                     // itself pinned at the top of the list.
                     // Cloned rather than borrowed: the picker takes the state
-                    // mutably, and these come off the same `self`.
+                    // mutably, and these come off the same `self`. The clone is
+                    // an `Arc`, so it costs nothing.
                     let ladder = self.ladder_run.is_some();
                     let own = ladder.then(|| self.own_combat_list.clone());
                     let pinned = ladder.then(|| self.ladder_run_label());
                     let picked = self.compare.show(
                         &mut self.state,
-                        own.as_ref()
-                            .map(|own| own.combats.as_slice())
-                            .unwrap_or(&self.combats),
-                        own.as_ref()
-                            .map(|own| own.difficulties.as_slice())
-                            .unwrap_or(&self.combat_difficulties),
-                        own.as_ref()
-                            .map(|own| own.base_names.as_slice())
-                            .unwrap_or(&self.combat_base_names),
-                        own.as_ref()
-                            .map(|own| own.environments.as_slice())
-                            .unwrap_or(&self.combat_environments),
-                        own.as_ref()
-                            .map(|own| own.start_times.as_slice())
-                            .unwrap_or(&self.combat_start_times),
-                        own.as_ref()
-                            .map(|own| own.solos.as_slice())
-                            .unwrap_or(&self.combat_solos),
+                        own.as_deref().unwrap_or(&self.combats),
+                        self.log_owner.as_deref(),
                         pinned,
                         ui,
                         frame,
@@ -532,6 +398,43 @@ impl eframe::App for App {
                         self.compare_ladder_run_with(&picked);
                     }
                 } else {
+                    // The list of fights goes down the side, under the toolbar,
+                    // and the tabs take what is left — a browser's sidebar, not
+                    // a column beside the whole window.
+                    let view = CombatsListView {
+                        combats: &self.combats,
+                        notes: &self.state.settings.combat_notes,
+                        my_handle: effective_handle(
+                            self.state.settings.general.my_handle.as_deref(),
+                            self.log_owner.as_deref(),
+                        ),
+                        shown: self
+                            .selected_combat
+                            .as_ref()
+                            .map(|combat| combat.active_time.start),
+                    };
+                    let action = self
+                        .combats_panel
+                        .show(view, &mut self.combats_panel_width, ui);
+                    match action {
+                        Some(ListAction::Open(index)) => {
+                            self.selected_combat_index = Some(index);
+                            self.state.analysis_handler.get_combat(index);
+                        }
+                        // Rewrites the log without the fights that were ticked.
+                        // The list comes back through the ordinary channel, so
+                        // nothing here has to put it right.
+                        Some(ListAction::Keep(keep)) => {
+                            log::info!(
+                                "clearing the log: keeping {} of {} combats",
+                                keep.len(),
+                                self.combats.len()
+                            );
+                            self.state.analysis_handler.keep_combats(keep);
+                        }
+                        None => (),
+                    }
+
                     self.main_tabs.show(
                         &mut self.state.settings,
                         self.selected_combat.as_deref(),
@@ -563,8 +466,27 @@ impl eframe::App for App {
         // compared when the settings dialog is applied, and a difference there
         // re-analyzes the log.
         self.state.settings.general.overlay_shown = self.state.overlay.is_shown();
+        // Same for the panel, and for one more reason: applying the settings
+        // replaces the whole settings object with the copy the dialog took when
+        // it opened, so a panel folded or dragged in the meantime would be put
+        // back the way it was.
+        self.state.settings.general.last_detected_handle = self.log_owner.clone();
+        self.state.settings.general.combats_panel_open = self.combats_panel.is_open();
+        self.state.settings.general.combats_panel_width = self.combats_panel_width;
         self.state.settings.save();
     }
+}
+
+/// Whose figures the combats list shows: what the reader named themselves in
+/// the settings, else what the log itself says.
+///
+/// A blank setting counts as "not set" — a field cleared to nothing means the
+/// reader wants the log to decide again, not that nobody is to be shown.
+fn effective_handle<'a>(configured: Option<&'a str>, detected: Option<&'a str>) -> Option<&'a str> {
+    configured
+        .map(str::trim)
+        .filter(|handle| !handle.is_empty())
+        .or(detected)
 }
 
 impl App {
@@ -607,17 +529,10 @@ impl App {
         // Only on the way in from the reader's own log. A second run opened
         // while the first is on screen would otherwise capture that first run.
         if self.ladder_run.is_none() {
-            self.own_combat_list = OwnCombatList {
-                combats: self.combats.clone(),
-                difficulties: self.combat_difficulties.clone(),
-                base_names: self.combat_base_names.clone(),
-                environments: self.combat_environments.clone(),
-                start_times: self.combat_start_times.clone(),
-                solos: self.combat_solos.clone(),
-            };
+            self.own_combat_list = self.combats.clone();
             log::info!(
                 "ladder: captured {} of my combats ({} with positions)",
-                self.own_combat_list.combats.len(),
+                self.own_combat_list.len(),
                 self.own_combats.len()
             );
         }
@@ -706,8 +621,8 @@ impl App {
     /// opened. Done when its own analysis arrives, which is the first moment
     /// there is anything to read them off.
     fn suggest_compare_filter_from_run(&mut self) {
-        let map = self.combat_base_names.first().cloned();
-        let difficulty = match self.combat_difficulties.first().copied().flatten() {
+        let map = self.combats.first().map(|combat| combat.base_name.clone());
+        let difficulty = match self.combats.first().and_then(|combat| combat.difficulty) {
             Some(Difficulty::Normal) => DifficultyFilter::Normal,
             Some(Difficulty::Advanced) => DifficultyFilter::Advanced,
             Some(Difficulty::Elite) => DifficultyFilter::Elite,
@@ -721,10 +636,9 @@ impl App {
         // view; falling back to nothing shows them all.
         let own = &self.own_combat_list;
         let leaves_something = |map: &Option<String>, difficulty: DifficultyFilter| {
-            (0..own.combats.len()).any(|i| {
-                map.as_ref()
-                    .is_none_or(|map| own.base_names.get(i) == Some(map))
-                    && difficulty.matches(own.difficulties.get(i).copied().flatten())
+            own.iter().any(|combat| {
+                map.as_ref().is_none_or(|map| &combat.base_name == map)
+                    && difficulty.matches(combat.difficulty)
             })
         };
         let (map, difficulty) = if leaves_something(&map, difficulty) {
@@ -750,7 +664,7 @@ impl App {
         self.ladder_run_name = None;
         self.suggest_filter_from_run = false;
         self.own_combats.clear();
-        self.own_combat_list = OwnCombatList::default();
+        self.own_combat_list = Default::default();
         if self.ladder_run.take().is_some() {
             self.state
                 .analysis_handler
@@ -833,42 +747,37 @@ impl App {
         self.window_geometry_dirty = false;
     }
 
-    /// Whether the combat at `index` passes the combat picker's filter.
-    fn combat_matches_filter(&self, index: usize) -> bool {
-        self.combat_filter.matches(
-            self.combat_environments
-                .get(index)
-                .and_then(|e| e.as_deref()),
-            self.combat_difficulties.get(index).copied().flatten(),
-            self.combat_base_names
-                .get(index)
-                .map(String::as_str)
-                .unwrap_or(""),
-            self.combat_solos.get(index).copied().unwrap_or(false),
-        )
+    /// Takes a fresh combats list, and reads off it whose log this is.
+    ///
+    /// Worked out here rather than per frame: the answer only changes when the
+    /// list does, and the panel asks for it on every row of every frame.
+    fn set_combats(&mut self, combats: CombatSummaries) {
+        self.combats = combats;
+        // Only ever replaced by an answer, never cleared by the lack of one:
+        // see the field.
+        if let Some(owner) = detect_log_owner(&self.combats) {
+            self.log_owner = Some(owner);
+        }
     }
 
-    /// After the filter changed, move to the newest combat that still passes it.
+    /// Puts `selected_combat_index` back on the combat the window is showing,
+    /// after a fresh list may have moved it.
     ///
-    /// Without this the window keeps showing a combat the list no longer offers,
-    /// which reads as the filter having done nothing. A selection that still
-    /// passes is left alone, so narrowing around the combat being looked at does
-    /// not jump away from it.
-    fn follow_filter_change(&mut self) {
-        if self
-            .selected_combat_index
-            .is_some_and(|index| self.combat_matches_filter(index))
-        {
-            return;
-        }
-        let Some(index) = (0..self.combats.len())
-            .rev()
-            .find(|&index| self.combat_matches_filter(index))
+    /// That index is what Save Combat, the upload and a comparison ask the
+    /// analyzer by, and the list is live now: a fight the analyzer drops
+    /// (nobody dealt any damage in it) shifts every index after it. The start
+    /// of a fight is the one thing about it the log fixes, so that is what it
+    /// is found by again. `None` when it is no longer in the log at all —
+    /// better than an index that now points at somebody else's fight.
+    fn follow_shown_combat(&mut self) {
+        let Some(shown) = self
+            .selected_combat
+            .as_ref()
+            .map(|combat| combat.active_time.start)
         else {
             return;
         };
-        self.selected_combat_index = Some(index);
-        self.state.analysis_handler.get_combat(index);
+        self.selected_combat_index = self.combats.iter().position(|c| c.start == shown);
     }
 
     fn handle_analysis_infos(&mut self) {
@@ -898,20 +807,10 @@ impl App {
                 AnalysisInfo::Refreshed {
                     latest_combat,
                     combats,
-                    difficulties,
-                    base_names,
-                    environments,
-                    start_times,
-                    solos,
                     file_size,
                 } => {
                     self.main_tabs.update(&self.state.settings, &latest_combat);
-                    self.combats = combats;
-                    self.combat_difficulties = difficulties;
-                    self.combat_base_names = base_names;
-                    self.combat_environments = environments;
-                    self.combat_start_times = start_times;
-                    self.combat_solos = solos;
+                    self.set_combats(combats);
                     self.selected_combat_index = Some(self.combats.len() - 1);
                     self.selected_combat = Some(latest_combat);
                     self.status_indicator.status = Status::Loaded {
@@ -940,27 +839,18 @@ impl App {
                             .get_combats((0..self.combats.len()).collect());
                     }
                 }
-                AnalysisInfo::CombatsListRefreshed {
-                    combats,
-                    difficulties,
-                    base_names,
-                    environments,
-                    start_times,
-                    solos,
-                    file_size,
-                } => {
-                    // Only the combats list is refreshed here (the "Clear Log
-                    // File" dialog opening, or the compare view being opened);
-                    // the currently-viewed combat in the main view is
-                    // deliberately left untouched. The three metadata lists are
-                    // indexed alongside `combats` and must move with it, or the
-                    // filters read the wrong entry for every new combat.
-                    self.combats = combats;
-                    self.combat_difficulties = difficulties;
-                    self.combat_base_names = base_names;
-                    self.combat_environments = environments;
-                    self.combat_start_times = start_times;
-                    self.combat_solos = solos;
+                AnalysisInfo::CombatsListRefreshed { combats, file_size } => {
+                    // Only the combats list is refreshed here — the log growing
+                    // under the panel, the "Clear Log File" dialog opening, the
+                    // compare view being opened. The combat the main view is
+                    // showing is deliberately left where it is.
+                    //
+                    // The index of the combat on screen can move when this
+                    // arrives (a fight without damage in it is dropped from the
+                    // list as it goes on), so it is re-found by the one thing
+                    // that does not move: when it started.
+                    self.set_combats(combats);
+                    self.follow_shown_combat();
                     self.status_indicator.status = Status::Loaded {
                         combatlog_file: combatlog_file.clone(),
                         file_size,

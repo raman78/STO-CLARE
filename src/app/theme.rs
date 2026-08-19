@@ -18,7 +18,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use eframe::{
     egui::{
-        Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Ui, Visuals,
+        Color32, Context, CornerRadius, FontFamily, FontId, Frame, Stroke, Style, TextStyle, Ui,
+        Visuals,
         style::{ScrollStyle, Selection},
     },
     epaint::{Rgba, Shadow},
@@ -85,6 +86,51 @@ pub fn accent_rim(ui: &mut Ui) {
     for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
         state.bg_stroke = Stroke::new(1.0, accent);
     }
+}
+
+/// How much of the theme's accent a section's rim carries. Enough to draw the
+/// edge, not enough to read as something that has been selected.
+const SECTION_RIM: f32 = 0.45;
+
+/// The rim a section of the window is drawn inside.
+///
+/// Taken from the theme's own accent — the one colour every theme declares as
+/// bright enough for its background (see [`accent_rim`]) — and faded. That way
+/// it lands right in all seven themes, where a fixed grey would suit two of
+/// them and disappear into the rest.
+pub fn section_frame(ui: &Ui) -> Frame {
+    let accent = ui.visuals().hyperlink_color.gamma_multiply(SECTION_RIM);
+    let mut frame = Frame::group(ui.style()).stroke(Stroke::new(1.0, accent));
+    // No margin along the bottom: a section ends in a strip of buttons, and
+    // that strip is a panel of its own laid out against the inside of this
+    // margin — so a margin there leaves a band of empty section below it and
+    // everything in the strip reads as sitting above the middle of it. Without
+    // one the strip runs down to the rim and its own margin is the whole gap.
+    frame.inner_margin.bottom = 0;
+    frame
+}
+
+/// A part of the window that stands on its own: a rim around it and a heading
+/// at the top of it, so a list of fights or a picker reads as one thing rather
+/// than as widgets that happen to be near each other.
+///
+/// One function so every such section is the same rim, the same heading and the
+/// same spacing — and so changing that is one edit rather than four.
+pub fn section<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    let height = ui.available_height();
+    section_frame(ui)
+        .show(ui, |ui| {
+            // Down to the bottom of what it was given, so a strip pinned to the
+            // section's bottom edge lands there rather than under whatever the
+            // contents happened to come to.
+            ui.set_min_height(height);
+            ui.horizontal(|ui| {
+                ui.heading(title);
+            });
+            ui.separator();
+            add_contents(ui)
+        })
+        .inner
 }
 
 /// Every theme the app offers, in the order the settings tab lists them.

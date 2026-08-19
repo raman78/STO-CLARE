@@ -769,6 +769,17 @@ impl ColumnState {
     }
 }
 
+/// How wide the columns of the table under `id` came to when it was last drawn.
+///
+/// For a caller that sizes something *around* a table — the combats panel makes
+/// itself wide enough to hold its list rather than making the reader drag it
+/// there. `None` before the table's first frame, when there is nothing measured
+/// to report.
+pub fn table_content_width(ui: &Ui, id: impl Into<Id>) -> Option<f32> {
+    let state: State = ui.data_mut(|d| d.get_temp(id.into()))?;
+    (state.last_size.x > 0.0).then_some(state.last_size.x)
+}
+
 impl State {
     /// Forget which columns were drawn under one heading last frame.
     fn ungroup(&mut self) {
