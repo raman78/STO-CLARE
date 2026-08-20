@@ -14,6 +14,7 @@ use log::warn;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
+mod combat_summary;
 mod common;
 mod damage;
 mod detection;
@@ -23,6 +24,7 @@ mod name_manager;
 mod parser;
 pub mod settings;
 mod values_manager;
+pub use combat_summary::{CombatSummaries, CombatSummary, PlayerSummary, detect_log_owner};
 pub use common::*;
 pub use damage::*;
 use detection::{CritterMeta, DETECTION_RULES};
@@ -74,6 +76,10 @@ pub struct Combat {
     /// metadata rather than anything the log states. Appended to the combat's
     /// name in parentheses.
     pub detected_combat_type: Option<String>,
+    /// What kind of content the detected map is ("TFO", "Patrol"), curated
+    /// metadata like the environment. Already the `[TFO]` prefix of the name;
+    /// kept apart as well so a list of fights can order by it.
+    pub detected_category: Option<String>,
     pub name_manager: NameManager,
     pub hits_manger: HitsManager,
     pub heal_ticks_manger: HealTicksManager,
@@ -293,6 +299,7 @@ impl Combat {
             detected_map: None,
             detected_difficulty: None,
             detected_combat_type: None,
+            detected_category: None,
             name_manager: Default::default(),
             hits_manger: Default::default(),
             heal_ticks_manger: Default::default(),
@@ -345,17 +352,22 @@ impl Combat {
         self.players.len() == 1
     }
 
+    /// The fight's full name, in the order the combats list reads its columns:
+    /// where it was fought, who fought it, what kind of content it was, which
+    /// map, and at which level. So a fight named in the list, in a comparison,
+    /// in a summary pasted into chat and in the name of a saved log all say the
+    /// same things in the same order.
+    ///
+    /// The base name carries the content type already (`[TFO] `, from the
+    /// curated rules), which is why nothing here adds it: it is part of what a
+    /// naming rule matches and of what the compare view groups by.
     pub fn name(&self) -> String {
         // The detected difficulty is always appended on top of the base name —
         // it is computed from the log's entities, independent of naming, so the
         // tier shows even when a rule provides the name.
         let base =
-            append_detected_combat_type(self.base_name(), self.detected_combat_type.as_deref());
+            prepend_detected_combat_type(self.base_name(), self.detected_combat_type.as_deref());
         let named = append_detected_difficulty(base, self.detected_difficulty);
-        // Whether it was fought alone leads the name, the way the ladder writes
-        // it, so a fight of your own and one read from the ladder line up
-        // wherever they meet — the combats list, a comparison, a summary pasted
-        // into chat, a spreadsheet, the name of a saved log.
         format!(
             "{} {named}",
             if self.is_solo() { "[Solo]" } else { "[Team]" }
@@ -451,6 +463,7 @@ impl Combat {
         self.detected_map = detected.map;
         self.detected_difficulty = detected.difficulty;
         self.detected_combat_type = detected.combat_type;
+        self.detected_category = detected.category;
     }
 
     fn recalculate_damage_group_percentage(
@@ -894,14 +907,17 @@ fn append_detected_difficulty(base: String, difficulty: Option<Difficulty>) -> S
     }
 }
 
-/// Append the map's environment in parentheses (e.g. `(Ground)`), unless the
-/// base name already mentions it — a user rule named "Bug Hunt Ground" should
-/// not become "Bug Hunt Ground (Ground)". Comes from the curated rules, since
+/// Put the map's environment in front of the name (e.g. `[Ground] `), unless
+/// the name already mentions it — a user rule named "Bug Hunt Ground" should
+/// not become "[Ground] Bug Hunt Ground". Comes from the curated rules, since
 /// the log itself never states whether a fight was in space or on the ground.
-fn append_detected_combat_type(base: String, combat_type: Option<&str>) -> String {
+///
+/// In front rather than trailing in parentheses, so a name reads in the same
+/// order as the columns of the combats list.
+fn prepend_detected_combat_type(base: String, combat_type: Option<&str>) -> String {
     match combat_type.map(str::trim).filter(|t| !t.is_empty()) {
         Some(label) if !base.to_lowercase().contains(&label.to_lowercase()) => {
-            format!("{base} ({label})")
+            format!("[{label}] {base}")
         }
         _ => base,
     }
@@ -1405,23 +1421,23 @@ mod tests {
     }
 
     #[test]
-    fn append_combat_type_adds_parenthesised_environment() {
+    fn the_environment_leads_the_name() {
         assert_eq!(
-            append_detected_combat_type("[TFO] Into the Hive".to_string(), Some("Ground")),
-            "[TFO] Into the Hive (Ground)"
+            prepend_detected_combat_type("[TFO] Into the Hive".to_string(), Some("Ground")),
+            "[Ground] [TFO] Into the Hive"
         );
         // A name that already says it is not doubled.
         assert_eq!(
-            append_detected_combat_type("Bug Hunt Ground".to_string(), Some("Ground")),
+            prepend_detected_combat_type("Bug Hunt Ground".to_string(), Some("Ground")),
             "Bug Hunt Ground"
         );
         // No curated environment, or a blank one, leaves the name alone.
         assert_eq!(
-            append_detected_combat_type("Combat".to_string(), None),
+            prepend_detected_combat_type("Combat".to_string(), None),
             "Combat"
         );
         assert_eq!(
-            append_detected_combat_type("Combat".to_string(), Some("  ")),
+            prepend_detected_combat_type("Combat".to_string(), Some("  ")),
             "Combat"
         );
     }

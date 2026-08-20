@@ -41,6 +41,23 @@ pub fn format_duration(duration: Duration) -> String {
     format!("{}", time.format("%M:%S%.3f"))
 }
 
+/// How long a fight ran, as a *list* of fights says it: `04:12`, growing an
+/// hours part only once there is one.
+///
+/// [`format_duration`] keeps milliseconds, which matter when a single combat is
+/// being read closely and only push a column of lengths apart when a hundred of
+/// them are being skimmed.
+pub fn format_duration_hms(duration: Duration) -> String {
+    // A fight cannot run backwards; a length that came out negative means the
+    // combat had no damage in it at all, and reads as no time.
+    let seconds = duration.num_seconds().max(0);
+    let (hours, minutes, seconds) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    if hours > 0 {
+        return format!("{hours}:{minutes:02}:{seconds:02}");
+    }
+    format!("{minutes:02}:{seconds:02}")
+}
+
 #[macro_export]
 macro_rules! unwrap_or_continue {
     ($expression:expr) => {
@@ -85,64 +102,23 @@ macro_rules! unwrap_or_return {
     };
 }
 
-/// Puts two fights into one log, older first, so they can be compared.
-///
-/// The analyzer splits combats on a gap in time and reads a log forwards, so a
-/// fight appended after a newer one is not a second combat — it is folded into
-/// the first, producing one mangled fight out of two. Order is therefore not a
-/// nicety here.
-///
-/// Log lines open with `YY:MM:DD:HH:MM:SS.mmm`, which sorts as text in the same
-/// order it sorts in time, so the first line of each is enough to tell which
-/// came first — no parsing, and nothing to get wrong about time zones the log
-/// does not carry anyway.
-pub fn compose_comparison_log(one: &[u8], other: &[u8]) -> Vec<u8> {
-    let (first, second) = if first_line(one) <= first_line(other) {
-        (one, other)
-    } else {
-        (other, one)
-    };
-    let mut composed = Vec::with_capacity(first.len() + second.len() + 1);
-    composed.extend_from_slice(first);
-    if !first.ends_with(b"\n") {
-        composed.push(b'\n');
-    }
-    composed.extend_from_slice(second);
-    composed
-}
-
-fn first_line(data: &[u8]) -> &[u8] {
-    let end = data
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .unwrap_or(data.len());
-    &data[..end]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const OLDER: &[u8] = b"26:07:19:12:00:01.0::older\n26:07:19:12:00:02.0::older\n";
-    const NEWER: &[u8] = b"26:08:09:12:00:01.0::newer\n";
-
-    /// The analyzer reads forwards and splits on a gap, so a fight written after
-    /// a newer one is folded into it rather than becoming a combat of its own.
     #[test]
-    fn the_older_fight_is_written_first_whichever_way_round_it_comes() {
-        assert_eq!(
-            compose_comparison_log(OLDER, NEWER),
-            compose_comparison_log(NEWER, OLDER)
-        );
-        assert!(compose_comparison_log(NEWER, OLDER).starts_with(OLDER));
+    fn a_fight_length_reads_as_minutes_and_seconds() {
+        assert_eq!("04:12", format_duration_hms(Duration::seconds(252)));
+        assert_eq!("00:07", format_duration_hms(Duration::milliseconds(7400)));
+        assert_eq!("00:00", format_duration_hms(Duration::zero()));
     }
 
-    /// A fight cut out of a log may not end in a newline, and without one the
-    /// last line of the first would run into the first line of the second.
+    /// An hours part appears only when the fight actually ran that long — a
+    /// column of `00:04:12` would spend a third of its width on a zero.
     #[test]
-    fn the_two_fights_never_run_into_one_line() {
-        let unterminated = b"26:07:19:12:00:01.0::older";
-        let composed = compose_comparison_log(unterminated, NEWER);
-        assert!(composed.starts_with(b"26:07:19:12:00:01.0::older\n26:08:09"));
+    fn an_hours_part_appears_only_once_there_is_one() {
+        assert_eq!("59:59", format_duration_hms(Duration::seconds(3599)));
+        assert_eq!("1:00:00", format_duration_hms(Duration::seconds(3600)));
+        assert_eq!("2:03:04", format_duration_hms(Duration::seconds(7384)));
     }
 }

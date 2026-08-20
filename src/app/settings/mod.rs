@@ -12,7 +12,7 @@ use self::{
     visuals::VisualsTab,
 };
 
-use super::{analysis_handling::AnalysisHandler, logging, overlay::Overlay, state::AppState};
+use super::{logging, overlay::Overlay, state::AppState};
 use crate::custom_widgets::toggle::Toggle;
 
 mod analysis;
@@ -71,7 +71,7 @@ impl SettingsWindow {
         &mut self,
         state: &mut AppState,
         selected_combat: Option<&Combat>,
-        combats: &[String],
+        detected_owner: Option<&str>,
         ui: &mut Ui,
         frame: &Frame,
     ) {
@@ -139,9 +139,8 @@ impl SettingsWindow {
                     .max_height((ui.available_height() - bottom_bar).at_least(80.0))
                     .show(ui, |ui| match self.selected_tab {
                         SettingsTab::General => self.general_tab.show(
-                            &state.analysis_handler,
                             &mut self.modified_settings,
-                            combats,
+                            detected_owner,
                             ui,
                             frame,
                         ),
@@ -194,16 +193,6 @@ impl SettingsWindow {
         }
     }
 
-    pub fn show_clear_log_dialog(
-        &mut self,
-        analysis_handler: &AnalysisHandler,
-        combats: &[String],
-        ui: &mut Ui,
-    ) {
-        self.general_tab
-            .show_clear_log_dialog(analysis_handler, combats, ui);
-    }
-
     fn handle_dropped_file(&mut self, ui: &mut Ui, state: &mut AppState) {
         ui.ctx().input(|i| {
             let file = i.raw.dropped_files.last().and_then(|f| f.path.as_ref());
@@ -223,7 +212,6 @@ impl SettingsWindow {
     fn initialize(&mut self, state: &AppState) {
         self.is_open = true;
         self.modified_settings = state.settings.clone();
-        self.general_tab.initialize();
     }
 
     fn apply_setting_changes(&mut self, state: &mut AppState) {

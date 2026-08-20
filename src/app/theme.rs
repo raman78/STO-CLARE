@@ -18,7 +18,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use eframe::{
     egui::{
-        Color32, Context, CornerRadius, FontFamily, FontId, Stroke, Style, TextStyle, Ui, Visuals,
+        Color32, Context, CornerRadius, FontFamily, FontId, Frame, Stroke, Style, TextStyle, Ui,
+        Visuals,
         style::{ScrollStyle, Selection},
     },
     epaint::{Rgba, Shadow},
@@ -85,6 +86,51 @@ pub fn accent_rim(ui: &mut Ui) {
     for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
         state.bg_stroke = Stroke::new(1.0, accent);
     }
+}
+
+/// How much of the theme's accent a section's rim carries. Enough to draw the
+/// edge, not enough to read as something that has been selected.
+const SECTION_RIM: f32 = 0.45;
+
+/// The rim a section of the window is drawn inside.
+///
+/// Taken from the theme's own accent — the one colour every theme declares as
+/// bright enough for its background (see [`accent_rim`]) — and faded. That way
+/// it lands right in all seven themes, where a fixed grey would suit two of
+/// them and disappear into the rest.
+pub fn section_frame(ui: &Ui) -> Frame {
+    let accent = ui.visuals().hyperlink_color.gamma_multiply(SECTION_RIM);
+    let mut frame = Frame::group(ui.style()).stroke(Stroke::new(1.0, accent));
+    // No margin along the bottom: a section ends in a strip of buttons, and
+    // that strip is a panel of its own laid out against the inside of this
+    // margin — so a margin there leaves a band of empty section below it and
+    // everything in the strip reads as sitting above the middle of it. Without
+    // one the strip runs down to the rim and its own margin is the whole gap.
+    frame.inner_margin.bottom = 0;
+    frame
+}
+
+/// A part of the window that stands on its own: a rim around it and a heading
+/// at the top of it, so a list of fights or a picker reads as one thing rather
+/// than as widgets that happen to be near each other.
+///
+/// One function so every such section is the same rim, the same heading and the
+/// same spacing — and so changing that is one edit rather than four.
+pub fn section<R>(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    let height = ui.available_height();
+    section_frame(ui)
+        .show(ui, |ui| {
+            // Down to the bottom of what it was given, so a strip pinned to the
+            // section's bottom edge lands there rather than under whatever the
+            // contents happened to come to.
+            ui.set_min_height(height);
+            ui.horizontal(|ui| {
+                ui.heading(title);
+            });
+            ui.separator();
+            add_contents(ui)
+        })
+        .inner
 }
 
 /// Every theme the app offers, in the order the settings tab lists them.
@@ -298,6 +344,65 @@ pub fn palette() -> &'static Palette {
 pub fn series_color(index: usize) -> Color32 {
     let series = series();
     series[index % series.len()]
+}
+
+/// How far apart a badge's fill and its text have to be to be read at a
+/// glance: the ratio asked of text this size.
+const BADGE_CONTRAST: f32 = 3.0;
+
+/// A patch of `color` to write on, and what to write on it in.
+///
+/// For anything drawn *on* a series colour rather than *in* it — a run's number
+/// in the combats list, which has to hold up over a row highlighted blue as
+/// well as over the ordinary striping.
+///
+/// The fill is the series colour itself wherever black or white can be read on
+/// it. Where neither can — a mid-toned green in the light theme reaches only
+/// 2.8:1 either way — the fill is taken a shade further from the text until it
+/// can. Its hue is what says which run this is, and a shade of it still says
+/// the same thing; an unreadable number says nothing at all.
+pub fn badge_colors(color: Color32) -> (Color32, Color32) {
+    let mut fill = color;
+    for _ in 0..8 {
+        let text = readable_on(fill);
+        if contrast(fill, text) >= BADGE_CONTRAST {
+            return (fill, text);
+        }
+        fill = match text {
+            Color32::WHITE => fill.gamma_multiply(0.8),
+            _ => fill.lerp_to_gamma(Color32::WHITE, 0.2),
+        };
+    }
+    (fill, readable_on(fill))
+}
+
+/// Black or white, whichever stands out more against `background`.
+pub fn readable_on(background: Color32) -> Color32 {
+    match contrast(background, Color32::BLACK) >= contrast(background, Color32::WHITE) {
+        true => Color32::BLACK,
+        false => Color32::WHITE,
+    }
+}
+
+/// How far apart two colours read, as the ratio a contrast is measured by.
+fn contrast(a: Color32, b: Color32) -> f32 {
+    let (a, b) = (relative_luminance(a), relative_luminance(b));
+    let (lighter, darker) = if a > b { (a, b) } else { (b, a) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+/// The luminance a contrast ratio is worked out from: the gamma-encoded
+/// channels linearized, weighted the way the eye weighs them.
+fn relative_luminance(color: Color32) -> f32 {
+    let linear = |c: f32| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let [r, g, b, _] = color.to_normalized_gamma_f32();
+    0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
 }
 
 /// The series colours in force: the theme's own, or its colour-blind set when
@@ -568,6 +673,53 @@ fn frost_light_visuals() -> Visuals {
 
 #[cfg(test)]
 mod tests {
+    /// The number a run carries has to be readable on its own colour, whichever
+    /// of the eight it got — that is the whole point of drawing it on a patch
+    /// of that colour rather than in it.
+    ///
+    /// Measured as a contrast ratio rather than by repeating the rule the code
+    /// uses: what has to hold is that the text can be read, not that two copies
+    /// of one formula agree. Three to one is the threshold for text this size.
+    ///
+    /// The palettes are read straight off the themes rather than by applying
+    /// one: which theme is in force is global, and a test that set it would be
+    /// setting it under every other test running beside it.
+    #[test]
+    fn a_number_reads_on_every_series_colour() {
+        /// Relative luminance, the way a contrast ratio is worked out: the
+        /// gamma-encoded channels linearized first.
+        fn luminance(color: super::Color32) -> f32 {
+            let linear = |c: f32| {
+                if c <= 0.04045 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            let [r, g, b, _] = color.to_normalized_gamma_f32();
+            0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+        }
+
+        for entry in THEMES {
+            let palette = entry.palette;
+            for series in [palette.series, palette.color_blind_series] {
+                for (index, &color) in series.iter().enumerate() {
+                    let (background, text) = badge_colors(color);
+                    let (lighter, darker) = {
+                        let (a, b) = (luminance(background), luminance(text));
+                        if a > b { (a, b) } else { (b, a) }
+                    };
+                    let ratio = (lighter + 0.05) / (darker + 0.05);
+                    assert!(
+                        ratio >= 3.0,
+                        "{}: series {index} ({color:?}) reads at {ratio:.1}:1",
+                        entry.name
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
     use eframe::egui::RawInput;
 

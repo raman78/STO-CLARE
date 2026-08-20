@@ -82,14 +82,6 @@ fn migrate_dir(from: &Path, to: &Path) -> std::io::Result<usize> {
     Ok(copied)
 }
 
-/// The two fights being compared, written into one log so the analyzer can see
-/// them side by side. Scratch, like the run itself, and rewritten each time.
-pub fn comparison_log() -> PathBuf {
-    std::env::temp_dir()
-        .join(APP_CONFIG_DIR)
-        .join("comparison.log")
-}
-
 /// Where a run fetched from the ladder is put so it can be looked at.
 ///
 /// A scratch directory rather than the config one: it is data the program can

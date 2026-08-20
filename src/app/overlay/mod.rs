@@ -784,16 +784,7 @@ impl OverlayInner {
 
     fn poll_update(&mut self, ctx: &Context) {
         let combat = match self.analysis_handler.check_for_info().last() {
-            Some(AnalysisInfo::Refreshed {
-                latest_combat,
-                combats: _,
-                difficulties: _,
-                base_names: _,
-                environments: _,
-                start_times: _,
-                solos: _,
-                file_size: _,
-            }) => latest_combat,
+            Some(AnalysisInfo::Refreshed { latest_combat, .. }) => latest_combat,
             _ => return,
         };
         self.state = State::Update(combat);

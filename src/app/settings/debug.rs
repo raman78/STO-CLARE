@@ -8,9 +8,7 @@ pub struct DebugTab {}
 impl DebugTab {
     pub fn show(&mut self, modified_settings: &mut Settings, ui: &mut Ui) {
         ui.label("App Log Settings");
-        ui.label(
-            "Any change to these settings requires a restart of the application to take affect.",
-        );
+        ui.label("These settings take effect as soon as this window is closed with Ok.");
         ui.checkbox(&mut modified_settings.debug.enable_log, "Enable Log");
         ComboBox::from_label("Log Filter Level")
             .selected_text(modified_settings.debug.log_level_filter.as_str())

@@ -1,5 +1,31 @@
 # Change Log
 
+# unreleased
+
+### Major Changes
+- the log's fights are a **table down the side of the window** instead of a drop-down: map, what kind of content it was, space or ground, solo or team, level, when it started, how long it ran, your DPS and the description you wrote for it. Any column puts the list in order, a team fight folds out to show what every player did, and the panel widens itself to fit. Double-click a fight to read it. It opens folded away — the **☰ Combats** button in the toolbar brings it out
+- the list keeps itself current as you play. New fights appear as they are logged **without moving what you are reading**; "Auto Refresh", now **Always show analysis of Newest Fight**, is only about whether the window follows the newest fight
+- the list knows whose DPS to show. Your account is worked out from the log — your handle is in every fight in it, where even a regular team-mate is in a fraction of them — so the DPS column is yours without being told. Where the log cannot say, it shows the best figure of each fight and says so, and **Settings ▸ General ▸ My handle** settles it
+- a comparison is picked in that same list. Tick a fight and it joins the comparison there and then, untick it and it leaves — no separate list to pick from, and no button to press when you are done. Each ticked fight carries a number in its own colour, the one its column and its chart line use, and a **Player** column for whose figures are being read from it
+- a run fetched from the ladder is now a fight in your list like any other, in a colour that says where it came from. **Your log stays open beside it**, several runs can be open at once, and each is ticked into a comparison, read and taken back out the ordinary way. The mode you used to be in — and the button to leave it — are gone
+- clearing the log is done in the list too: one button turns it into tick boxes, everything but the newest is ticked for you, and anything past a single fight asks first. The separate Delete Combats window is gone
+- which fight is on screen — its name, the day and the times it ran between, and the description you wrote for it — now sits in a box above the tabs, so all six tabs say what they are of
+
+### Other Changes
+- the fights can be narrowed by when they were played, from the same list, with 24 h / 7 days / 30 days to fill the window in
+- a fight's name reads in the same order as the columns: where it was fought, who fought it, what kind of content, which map, at which level
+- the run a comparison is of is named where it is ticked, so the line above the table counting how many runs were showing somebody else is gone — the **Player** column says it, per run
+- the magnifier in the Ladder window is spent once its run is in your list, and no longer throws away a fetch already running when pressed twice
+- a run fetched from the ladder is not offered for upload — it is already on the ladder, and it is somebody else's fight
+- the Upload settings call the program by its name
+
+### Fixes
+- the Debug settings no longer ask you to start the program again. Logging has taken effect the moment you press Ok since 2.3.0; the line above the switch still said otherwise
+- the magnifier in the Ladder window opens the run on the row you pressed. A fight entered into several of the ladder's tables is shown once, and the button was reading its run from the list before that folding — so it opened a different run than the row named, or one already on screen, in which case nothing happened at all
+- comparing a run from the ladder against several of your own no longer loses some of them. Which ones went missing depended on the order you picked them in
+- the hourglass in the toolbar comes down when the program is done. It could stay up for good after a refresh nothing had asked for
+- a fight you have open stays open while the list refreshes underneath it, even as fights are added or deleted
+
 ## v2.4.1
 
 ### Other Changes

@@ -11,10 +11,13 @@ use crate::{
     },
 };
 
-use self::{damage_tab::DamageTab, heal_tab::HealTab, summary_tab::SummaryTab};
+use self::{
+    combat_header::CombatHeader, damage_tab::DamageTab, heal_tab::HealTab, summary_tab::SummaryTab,
+};
 use crate::custom_widgets::toggle::Toggle;
 use crate::custom_widgets::tooltip::CloseTooltip;
 
+mod combat_header;
 mod common;
 mod damage_tab;
 // Exposed so the compare view can reuse the same charts.
@@ -26,7 +29,9 @@ mod summary_tab;
 pub(crate) mod tables;
 
 pub struct MainTabs {
-    pub identifier: String,
+    /// Which fight is on screen, and the reader's note on it. Above the tabs
+    /// rather than inside one of them, because it is true of all six.
+    pub header: CombatHeader,
     pub summary_tab: SummaryTab,
     pub damage_out_tab: DamageTab,
     pub damage_in_tab: DamageTab,
@@ -82,7 +87,7 @@ const SELF_HEALING_INFO: &str = "Healing you did to yourself: self-buffs, your o
 impl MainTabs {
     pub fn empty() -> Self {
         Self {
-            identifier: String::new(),
+            header: CombatHeader::empty(),
             damage_out_tab: DamageTab::empty(|p| &p.damage_out),
             damage_in_tab: DamageTab::empty(|p| &p.damage_in),
             heal_ally_tab: HealTab::empty(|p| &p.heal_ally, Some("Person")),
@@ -159,7 +164,7 @@ impl MainTabs {
     }
 
     pub fn update(&mut self, settings: &Settings, combat: &Combat) {
-        self.identifier = combat.identifier();
+        self.header.update(settings, combat);
         self.summary_tab.update(settings, combat);
         self.damage_out_tab.update(settings, combat);
         self.damage_in_tab.update(settings, combat);
@@ -198,6 +203,8 @@ impl MainTabs {
         frame: &Frame,
         ui: &mut Ui,
     ) {
+        self.header.show(settings, ui);
+
         ui.horizontal(|ui| {
             ui.steady_toggle_value(&mut self.active_tab, MainTab::Summary, "Summary");
 
