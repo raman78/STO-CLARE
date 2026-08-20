@@ -102,29 +102,36 @@ macro_rules! unwrap_or_return {
     };
 }
 
-/// Puts two fights into one log, older first, so they can be compared.
+/// Puts fights into one log, oldest first, so they can be compared.
 ///
 /// The analyzer splits combats on a gap in time and reads a log forwards, so a
-/// fight appended after a newer one is not a second combat — it is folded into
-/// the first, producing one mangled fight out of two. Order is therefore not a
-/// nicety here.
+/// fight written after a newer one is not a second combat — it is folded into
+/// the one before it, producing one mangled fight out of two. Order is
+/// therefore not a nicety here.
+///
+/// Every fight is placed in one go rather than added to what is already
+/// composed one at a time. Added one at a time, each was only weighed against
+/// the *first* of them: a fight from between two already in the log went on the
+/// end, behind a newer one, and was swallowed by it. Which fights that happened
+/// to depended on the order they were picked in, which is why it looked like
+/// some of them simply would not load.
 ///
 /// Log lines open with `YY:MM:DD:HH:MM:SS.mmm`, which sorts as text in the same
 /// order it sorts in time, so the first line of each is enough to tell which
 /// came first — no parsing, and nothing to get wrong about time zones the log
 /// does not carry anyway.
-pub fn compose_comparison_log(one: &[u8], other: &[u8]) -> Vec<u8> {
-    let (first, second) = if first_line(one) <= first_line(other) {
-        (one, other)
-    } else {
-        (other, one)
-    };
-    let mut composed = Vec::with_capacity(first.len() + second.len() + 1);
-    composed.extend_from_slice(first);
-    if !first.ends_with(b"\n") {
-        composed.push(b'\n');
+pub fn compose_comparison_log(fights: impl IntoIterator<Item = Vec<u8>>) -> Vec<u8> {
+    let mut fights: Vec<Vec<u8>> = fights.into_iter().filter(|f| !f.is_empty()).collect();
+    fights.sort_by(|one, other| first_line(one).cmp(first_line(other)));
+
+    let mut composed =
+        Vec::with_capacity(fights.iter().map(Vec::len).sum::<usize>() + fights.len());
+    for fight in fights {
+        composed.extend_from_slice(&fight);
+        if !composed.ends_with(b"\n") {
+            composed.push(b'\n');
+        }
     }
-    composed.extend_from_slice(second);
     composed
 }
 
@@ -147,19 +154,45 @@ mod tests {
     /// a newer one is folded into it rather than becoming a combat of its own.
     #[test]
     fn the_older_fight_is_written_first_whichever_way_round_it_comes() {
-        assert_eq!(
-            compose_comparison_log(OLDER, NEWER),
-            compose_comparison_log(NEWER, OLDER)
-        );
-        assert!(compose_comparison_log(NEWER, OLDER).starts_with(OLDER));
+        let one = compose_comparison_log([OLDER.to_vec(), NEWER.to_vec()]);
+        let other = compose_comparison_log([NEWER.to_vec(), OLDER.to_vec()]);
+        assert_eq!(one, other);
+        assert!(other.starts_with(OLDER));
+    }
+
+    /// Every fight is placed against every other, not against the first of
+    /// them. A fight from between two already in the log used to go on the end,
+    /// behind a newer one — where the analyzer reads it as part of that one
+    /// rather than as a fight of its own, so it never appeared in the
+    /// comparison at all.
+    #[test]
+    fn a_fight_from_between_two_others_lands_between_them() {
+        const MIDDLE: &[u8] = b"26:08:01:12:00:01.0::middle\n";
+        let composed = compose_comparison_log([OLDER.to_vec(), NEWER.to_vec(), MIDDLE.to_vec()]);
+        let text = String::from_utf8(composed).unwrap();
+        let at = |needle: &str| text.find(needle).unwrap();
+        assert!(at("older") < at("middle"), "{text}");
+        assert!(at("middle") < at("newer"), "{text}");
+    }
+
+    /// Whatever order they are handed over in.
+    #[test]
+    fn the_order_they_are_picked_in_makes_no_difference() {
+        const MIDDLE: &[u8] = b"26:08:01:12:00:01.0::middle\n";
+        let parts = [OLDER.to_vec(), MIDDLE.to_vec(), NEWER.to_vec()];
+        let composed = compose_comparison_log(parts.clone());
+        for order in [[2, 0, 1], [1, 2, 0], [2, 1, 0]] {
+            let shuffled = order.map(|i| parts[i].clone());
+            assert_eq!(composed, compose_comparison_log(shuffled));
+        }
     }
 
     /// A fight cut out of a log may not end in a newline, and without one the
     /// last line of the first would run into the first line of the second.
     #[test]
     fn the_two_fights_never_run_into_one_line() {
-        let unterminated = b"26:07:19:12:00:01.0::older";
-        let composed = compose_comparison_log(unterminated, NEWER);
+        let unterminated = b"26:07:19:12:00:01.0::older".to_vec();
+        let composed = compose_comparison_log([unterminated, NEWER.to_vec()]);
         assert!(composed.starts_with(b"26:07:19:12:00:01.0::older\n26:08:09"));
     }
 

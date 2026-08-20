@@ -100,9 +100,6 @@ pub struct General {
     /// one they set.
     #[serde(default)]
     pub last_detected_handle: Option<String>,
-    /// Whether the combats panel was folded out when the app last closed.
-    #[serde(default = "default_true")]
-    pub combats_panel_open: bool,
     /// How wide the reader dragged the combats panel. Zero (or missing) opens
     /// it at its own default width.
     #[serde(default)]
@@ -221,7 +218,6 @@ impl Default for General {
             ladder_window_position: None,
             my_handle: None,
             last_detected_handle: None,
-            combats_panel_open: true,
             combats_panel_width: 0.0,
         }
     }

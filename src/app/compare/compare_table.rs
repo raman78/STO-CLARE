@@ -11,6 +11,7 @@
 //! into one mean per metric, and the export, which writes the same table to a
 //! spreadsheet (`export`).
 
+use chrono::NaiveDateTime;
 use std::{path::PathBuf, sync::Arc};
 
 use eframe::{
@@ -118,8 +119,27 @@ enum SortBy {
     Name,
 }
 
+/// One run of a comparison, as the combats list beside it needs to draw it.
+///
+/// Only whose figures are being read: which run it is, and in which colour, the
+/// list knows on its own — it is the order the reader ticked them in, and the
+/// list is where they ticked.
+pub struct ComparisonSlot {
+    /// When the fight started, which is what the combats list knows it by.
+    ///
+    /// Not where it sits in that list: with a run from the ladder on screen the
+    /// comparison is built from a log composed for it, and a place in *that*
+    /// names a different fight than the same place in the list. The start of a
+    /// fight is the one thing both agree on.
+    pub start: NaiveDateTime,
+    /// The `@handle` whose figures are being read for it.
+    pub player: String,
+}
+
 struct Slot {
-    /// Index in the combats list (shown in the legend as combat 1/2/3).
+    /// Index in the combats list it was fetched from. Kept for the log line
+    /// that records what a comparison was built of; what the list matches a
+    /// slot by is when its fight started (see [`ComparisonSlot`]).
     #[allow(dead_code)]
     index: usize,
     combat: Arc<Combat>,
@@ -652,147 +672,70 @@ impl Comparison {
 
         ui.separator();
 
-        // Three stacked panes, two draggable boundaries: the list of runs, the
-        // table, the chart. The list starts at the height of what it holds (up
-        // to a few rows) rather than at a fixed share, so an ordinary
-        // comparison of two runs does not open with a third of the window given
-        // to two lines — and a session's worth can be dragged open from there.
-        let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
-        let legend_ratio = legend_ratio(row, self.slots.len(), ui.available_height());
+        // Two panes, one draggable boundary: the table and the chart. Which
+        // runs the comparison is of — their numbers, their colours and whose
+        // figures are being read — is said in the combats list beside the
+        // window, where they were ticked in the first place. A second list of
+        // the same runs here disagreed with that one about which of them was
+        // filtered how, and let a run be dropped in one and not the other.
         Splitter::horizontal()
-            .initial_ratio(legend_ratio)
-            .ratio_bounds(MIN_LEGEND_RATIO..=MAX_LEGEND_RATIO)
-            .show(ui, |legend_ui, rest_ui| {
-                let change = self.show_legend(legend_ui, &colors);
-                if let Some((slot_i, handle)) = change.player {
-                    self.slots[slot_i].player = handle;
-                    // Changing who the reference is about moves the others with
-                    // it, where that player took part: the deltas are all
-                    // measured against the reference, so leaving them on
-                    // somebody else would compare two different people again.
-                    if slot_i == 0 {
-                        follow_the_reference_player(&mut self.slots);
-                    }
-                    self.rebuild();
-                }
-                if let Some(slot_i) = change.dropped {
-                    if !self.dropped.remove(&slot_i) {
-                        self.dropped.insert(slot_i);
-                    }
-                    // A combat leaving or rejoining is a different comparison:
-                    // every column, every average and the chart are of the
-                    // combats that are in it. The reference cannot be a combat
-                    // that has just left, either.
-                    if self.dropped.contains(&self.reference) {
-                        self.reference = self.in_play().first().copied().unwrap_or(self.reference);
-                    }
-                    self.rebuild();
-                }
-
-                Splitter::horizontal()
-                    .initial_ratio(0.6)
-                    .ratio_bounds(0.15..=0.9)
-                    .show(rest_ui, |top_ui, bottom_ui| {
-                        self.show_table(
-                            top_ui,
-                            settings.compare.show_dps_breakdown,
-                            settings.compare.show_averages,
-                            &colors,
-                        );
-                        self.show_diagram(bottom_ui, settings);
-                    });
+            .initial_ratio(0.6)
+            .ratio_bounds(0.15..=0.9)
+            .show(ui, |top_ui, bottom_ui| {
+                self.show_table(
+                    top_ui,
+                    settings.compare.show_dps_breakdown,
+                    settings.compare.show_averages,
+                    &colors,
+                );
+                self.show_diagram(bottom_ui, settings);
             });
     }
 
-    /// The list of runs the comparison is of, one row each: which combat it is,
-    /// and whose numbers are being shown for it. Returns the slot whose player
-    /// was picked, if one was.
+    /// The runs the comparison is *showing*, as the combats list needs them:
+    /// where each sits in that list, its number and colour here, and whose
+    /// figures are being read.
     ///
-    /// It scrolls inside whatever height the pane has been given, so a session's
-    /// worth of runs is reachable without pushing the table off the window.
-    fn show_legend(&self, ui: &mut Ui, colors: &[Option<Color32>]) -> LegendChange {
-        let mut change = LegendChange::default();
-        ScrollArea::vertical()
-            .id_salt("compare legend")
-            // The bar goes at the edge of the pane rather than against the
-            // longest run's name.
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for (slot_i, slot) in self.slots.iter().enumerate() {
-                    // Striped and picked out under the pointer, like a table
-                    // row: a dozen runs of the same map on the same evening are
-                    // told apart by the note at the end of a long line, and the
-                    // eye has to get there from the right tick.
-                    list_row(ui, slot_i.is_multiple_of(2), |ui| {
-                        // A combat can be dropped from the comparison and put
-                        // back without going through the picker again: the
-                        // quickest way to ask "and what if that run were not in
-                        // this?" is to take it out and look.
-                        let mut kept = !self.dropped.contains(&slot_i);
-                        if ui
-                            .checkbox(&mut kept, "")
-                            .hover("Keep this combat in the comparison")
-                            .changed()
-                        {
-                            change.dropped = Some(slot_i);
-                        }
-                        // The user's own note, where they wrote one, tells apart
-                        // runs the identifier alone cannot.
-                        let note = note_of(&self.notes, slot_i);
-                        // The number and the note are drawn in the colour this
-                        // combat has on the chart, so the legend, the table and
-                        // the chart all say the same thing about which run is
-                        // which.
-                        ui.label(legend_text(
-                            &TextStyle::Body.resolve(ui.style()),
-                            ui.visuals().text_color(),
-                            slot_i,
-                            &slot.combat.identifier(),
-                            note,
-                            self.column_of(slot_i)
-                                .and_then(|column| colors.get(column).copied().flatten()),
-                        ));
-                        let current = slot.player.get(&slot.combat.name_manager).to_string();
-                        ComboBox::new(("compare player", slot_i), "player")
-                            .selected_text(current)
-                            .show_ui(ui, |ui| {
-                                for (handle, name) in players_by_dps(&slot.combat) {
-                                    if ui.selectable_label(handle == slot.player, name).clicked() {
-                                        change.player = Some((slot_i, handle));
-                                    }
-                                }
-                            });
-                        if slot_i == 0 {
-                            // Cut off rather than run past the pane: a line
-                            // wider than the list makes the list itself wider
-                            // than the window, and the scroll bar goes with it —
-                            // off the right-hand edge, where it cannot be seen
-                            // or grabbed.
-                            //
-                            // Which run is the reference is said by the
-                            // Reference line under the toolbar, not here: it is
-                            // picked there, and it is no longer whichever run
-                            // happens to be first in this list.
-                            ui.add(
-                                Label::new(
-                                    RichText::new(
-                                        "(changing the player here moves the others to the same \
-                                         player)",
-                                    )
-                                    .weak(),
-                                )
-                                .truncate(),
-                            );
-                        }
-                    });
-                }
-            });
-        change
+    /// A run taken out of the comparison is not among them: its number and its
+    /// colour belong to the comparison, and it is no longer in one.
+    pub fn list_slots(&self) -> Vec<ComparisonSlot> {
+        self.slots
+            .iter()
+            .map(|slot| ComparisonSlot {
+                start: slot.combat.active_time.start,
+                player: handle_of(slot.player.get(&slot.combat.name_manager)),
+            })
+            .collect()
     }
 
-    /// Which column a slot is shown in, if it is in the comparison at all.
-    fn column_of(&self, slot_i: usize) -> Option<usize> {
-        column_of(&self.numbers, slot_i)
+    /// Reads a run's figures for another of its players, by when that fight
+    /// started.
+    pub fn set_player(&mut self, start: NaiveDateTime, handle: &str) {
+        let Some(slot_i) = self
+            .slots
+            .iter()
+            .position(|slot| slot.combat.active_time.start == start)
+        else {
+            return;
+        };
+        let Some((picked, _)) = players_by_dps(&self.slots[slot_i].combat)
+            .into_iter()
+            .find(|(_, name)| handle_of(name) == handle)
+        else {
+            return;
+        };
+        if self.slots[slot_i].player == picked {
+            return;
+        }
+        self.slots[slot_i].player = picked;
+        // Changing who the reference is about moves the others with it, where
+        // that player took part: the deltas are all measured against the
+        // reference, so leaving them on somebody else would compare two
+        // different people again.
+        if slot_i == 0 {
+            follow_the_reference_player(&mut self.slots);
+        }
+        self.rebuild();
     }
 
     /// The colour each slot's combat is drawn in on the chart, `None` for a
@@ -2128,20 +2071,6 @@ fn number_of(numbers: &[usize], column: usize) -> usize {
     numbers.get(column).copied().unwrap_or(column) + 1
 }
 
-/// Which column a slot is shown in, if it is in the comparison at all.
-fn column_of(numbers: &[usize], slot: usize) -> Option<usize> {
-    numbers.iter().position(|&number| number == slot)
-}
-
-/// What the reader changed in the list of runs this pass.
-#[derive(Default)]
-struct LegendChange {
-    /// The slot whose player was picked.
-    player: Option<(usize, NameHandle)>,
-    /// The slot that was taken out of the comparison, or put back.
-    dropped: Option<usize>,
-}
-
 /// What the tick column needs while the tree draws itself: which rows are out
 /// of the Total, which rows are on screen at all, and whether this pass changed
 /// any of that.
@@ -2824,35 +2753,6 @@ fn note_suffix(note: &str) -> String {
     }
 }
 
-/// How many legend rows the list opens at before the user drags its boundary.
-/// Six: enough that an ordinary comparison shows every run without scrolling,
-/// few enough that a session's worth still leaves the table its room.
-const LEGEND_ROWS: usize = 6;
-
-/// How small and how large the list of runs may be dragged, as a share of the
-/// space the three panes share. The lower bound leaves a row visible rather
-/// than letting the list be closed by accident; the upper leaves the table
-/// something to be a table in.
-const MIN_LEGEND_RATIO: f32 = 0.05;
-const MAX_LEGEND_RATIO: f32 = 0.5;
-
-/// How tall the list of runs wants to be, for `row` points per row: the height
-/// of what it holds, capped at [`LEGEND_ROWS`].
-fn legend_height(row: f32, combats: usize) -> f32 {
-    row * combats.min(LEGEND_ROWS) as f32
-}
-
-/// Where the boundary between the list and the table starts out, as a share of
-/// `available`. Sized to what the list holds, so two runs do not open with a
-/// third of the window under them, and thirty do not open with the table
-/// squeezed to nothing.
-fn legend_ratio(row: f32, combats: usize, available: f32) -> f32 {
-    if available <= 0.0 {
-        return MIN_LEGEND_RATIO;
-    }
-    (legend_height(row, combats) / available).clamp(MIN_LEGEND_RATIO, MAX_LEGEND_RATIO)
-}
-
 /// The height of the header: the metric's line, the combat's number, and a
 /// third line when the notes are shown.
 ///
@@ -2972,34 +2872,6 @@ fn header_lines(
     job
 }
 
-/// One line of the legend above the table: the combat's number, what the
-/// program calls it, and the user's note where they wrote one.
-///
-/// The number and the note carry the combat's colour from the chart. The
-/// identifier between them does not: it is the longest part of the line, and a
-/// whole row of it in a chart colour reads as a warning rather than a label.
-fn legend_text(
-    font: &FontId,
-    text_color: Color32,
-    slot_i: usize,
-    identifier: &str,
-    note: &str,
-    color: Option<Color32>,
-) -> LayoutJob {
-    let combat = TextFormat::simple(font.clone(), color.unwrap_or(text_color));
-    let mut job = LayoutJob::default();
-    job.append(&format!("{}:", slot_i + 1), 0.0, combat.clone());
-    job.append(
-        &format!(" {identifier}"),
-        0.0,
-        TextFormat::simple(font.clone(), text_color),
-    );
-    if !note.is_empty() {
-        job.append(&format!(" — {note}"), 0.0, combat);
-    }
-    job
-}
-
 /// One combat's chart label: its slot number, and the user's note where they
 /// wrote one.
 ///
@@ -3086,6 +2958,16 @@ fn top_dps_player(combat: &Combat) -> NameHandle {
         .next()
         .map(|(handle, _)| handle)
         .unwrap_or(NameHandle::UNKNOWN)
+}
+
+/// The `@handle` part of a player's full name, or the whole of it when there is
+/// none — the same rule the combats list reads a handle by, so the two agree
+/// about which player a row is of.
+fn handle_of(full_name: &str) -> String {
+    match full_name.find('@') {
+        Some(at) => full_name[at..].to_owned(),
+        None => full_name.to_owned(),
+    }
 }
 
 fn players_by_dps(combat: &Combat) -> Vec<(NameHandle, String)> {
@@ -3540,42 +3422,6 @@ mod tests {
         assert_eq!(Color32::RED, format.color);
     }
 
-    /// The legend colours the same two things the header does, and leaves the
-    /// identifier between them alone.
-    #[test]
-    fn the_legend_colours_the_number_and_the_note() {
-        let job = legend_text(
-            &FontId::default(),
-            Color32::WHITE,
-            1,
-            "Infected Space",
-            "FAW build",
-            Some(Color32::RED),
-        );
-        assert_eq!("2: Infected Space — FAW build", job.text);
-        let colors: Vec<Color32> = job.sections.iter().map(|s| s.format.color).collect();
-        assert_eq!(
-            vec![Color32::RED, Color32::WHITE, Color32::RED],
-            colors,
-            "number, identifier, note"
-        );
-    }
-
-    /// A run with no note is just the number and the identifier — no dash left
-    /// hanging at the end of the line.
-    #[test]
-    fn the_legend_of_an_unnamed_run_ends_at_the_identifier() {
-        let job = legend_text(
-            &FontId::default(),
-            Color32::WHITE,
-            0,
-            "Infected Space",
-            "",
-            None,
-        );
-        assert_eq!("1: Infected Space", job.text);
-    }
-
     /// The table reserves the header's height before it draws anything, so the
     /// reserve has to come from the font in use. It was a hand-counted constant,
     /// and a taller line had its bottom half cut off by the first row.
@@ -3696,79 +3542,6 @@ mod tests {
     fn a_single_odd_combat_reads_as_one() {
         let warning = odd_player_warning(&names(&["Kestrel", "Somebody"])).unwrap();
         assert_eq!("⚠ 1 of 2 combats is not showing Kestrel", warning.line);
-    }
-
-    /// The list opens at the height of what it holds — no room reserved for
-    /// rows that are not there.
-    #[test]
-    fn a_short_legend_takes_only_the_rows_it_has() {
-        assert_eq!(0.0, legend_height(21.0, 0));
-        assert_eq!(63.0, legend_height(21.0, 3));
-        assert_eq!(126.0, legend_height(21.0, LEGEND_ROWS));
-    }
-
-    /// Past the cap it stops growing, whatever the selection. Measured at 21
-    /// points a row, a legend of fifty combats would otherwise fill a 1080-point
-    /// window on its own and leave the table and the chart drawn past the bottom
-    /// edge, with no way to scroll to them.
-    #[test]
-    fn a_long_legend_stops_at_the_cap() {
-        let capped = legend_height(21.0, LEGEND_ROWS);
-        for combats in [LEGEND_ROWS + 1, 20, 50, 500] {
-            assert_eq!(capped, legend_height(21.0, combats), "{combats} combats");
-        }
-        assert!(
-            capped < 720.0,
-            "the cap has to leave a short window something to draw the table in"
-        );
-    }
-
-    /// Two runs open with the list at a couple of rows, not at a fixed share of
-    /// the window — the boundary is there to be dragged, not to start in the
-    /// way.
-    #[test]
-    fn the_list_opens_at_the_height_of_what_it_holds() {
-        // Four rows of 21 points in a 900-point window is a tenth of it.
-        let ratio = legend_ratio(21.0, 4, 900.0);
-        assert!((ratio - 84.0 / 900.0).abs() < 1e-6, "{ratio}");
-
-        // Two rows want less than the floor allows, so they get the floor —
-        // which in that window is about two rows anyway.
-        assert_eq!(MIN_LEGEND_RATIO, legend_ratio(21.0, 2, 900.0));
-    }
-
-    /// However many runs are compared, the table keeps at least half the room
-    /// until the user says otherwise — and however few, the boundary stays
-    /// grabbable rather than collapsing onto the edge.
-    #[test]
-    fn the_opening_split_stays_between_its_bounds() {
-        for (combats, available) in [(1, 900.0), (50, 900.0), (500, 200.0), (3, 40.0)] {
-            let ratio = legend_ratio(21.0, combats, available);
-            assert!(
-                (MIN_LEGEND_RATIO..=MAX_LEGEND_RATIO).contains(&ratio),
-                "{combats} combats in {available}: {ratio}"
-            );
-        }
-    }
-
-    /// A window with no room yet — the first frame, before egui has laid
-    /// anything out — must not divide by zero or open at a NaN.
-    #[test]
-    fn a_window_with_no_room_opens_at_the_smallest_split() {
-        assert_eq!(MIN_LEGEND_RATIO, legend_ratio(21.0, 3, 0.0));
-        assert_eq!(MIN_LEGEND_RATIO, legend_ratio(21.0, 3, -10.0));
-    }
-
-    /// The row height is asked of the style rather than written down, so the
-    /// list follows the UI scale instead of being six rows at one zoom level
-    /// and four at another.
-    #[test]
-    fn the_cap_follows_the_row_height_it_is_given() {
-        assert_eq!(
-            2.0 * legend_height(10.0, 4),
-            legend_height(20.0, 4),
-            "twice the row height is twice the height"
-        );
     }
 
     fn averages_of(raw: &[Option<Vec<Option<f64>>>]) -> Vec<Option<AverageCell>> {
@@ -4210,8 +3983,9 @@ mod tests {
         assert_eq!(3, number_of(&numbers, 1), "the third is still #3");
         assert_eq!(4, number_of(&numbers, 2));
 
-        assert_eq!(Some(2), column_of(&numbers, 3), "#4 is the third column");
-        assert_eq!(None, column_of(&numbers, 1), "the one taken out has none");
+        let column_of = |slot| numbers.iter().position(|&number| number == slot);
+        assert_eq!(Some(2), column_of(3), "#4 is the third column");
+        assert_eq!(None, column_of(1), "the one taken out has none");
     }
 
     /// Nothing dropped is every combat, in order.
@@ -4230,7 +4004,11 @@ mod tests {
         assert_eq!(vec![2, 0, 1, 3], numbers);
         assert_eq!(3, number_of(&numbers, 0), "the reference is still #3");
         assert_eq!(1, number_of(&numbers, 1), "and #1 has not been renamed");
-        assert_eq!(Some(0), column_of(&numbers, 2), "the reference leads");
+        assert_eq!(
+            Some(0),
+            numbers.iter().position(|&number| number == 2),
+            "the reference leads"
+        );
     }
 
     /// A column carries its own combat's number and its own combat's note.

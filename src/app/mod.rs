@@ -10,7 +10,7 @@ use crate::{
 };
 
 use self::{
-    analysis_handling::AnalysisInfo,
+    analysis_handling::{AnalysisInfo, CombatsPurpose},
     combat_filter::DifficultyFilter,
     combats_list::{CombatsListView, CombatsPanel, ListAction},
     compare::CompareView,
@@ -163,7 +163,11 @@ impl App {
         let app = Self {
             settings_window,
             combats: Default::default(),
-            combats_panel: CombatsPanel::new(state.settings.general.combats_panel_open),
+            // Folded away, every time. The window opens on the fight it
+            // analyzed and the list is one button from it — restoring whatever
+            // the list was doing at the last exit only means opening on a
+            // window somebody else's session arranged.
+            combats_panel: CombatsPanel::new(false),
             combats_panel_width: state.settings.general.combats_panel_width,
             log_owner: state.settings.general.last_detected_handle.clone(),
             selected_combat_index: None,
@@ -268,173 +272,199 @@ impl eframe::App for App {
                             self.leave_ladder_run();
                         }
                     }
+                });
 
-                    // Compare toggle (ON/OFF) as the last item on the top bar so it
-                    // stays put regardless of mode. Rendered as a frameless toggle to
-                    // match the Settings and Records buttons (highlighted while active).
+                ui.horizontal_wrapped(|ui| {
+                    self.status_indicator
+                        .show(self.state.analysis_handler.is_busy(), ui);
+
+                    // Folds the list of fights in and out, the way a browser
+                    // does its sidebar. Kept as a toggle rather than a plain
+                    // button so the toolbar says whether the panel is out.
+                    if ui
+                        .steady_toggle(self.combats_panel.is_open(), "☰ Combats")
+                        .hover("Show the list of fights in the log.")
+                        .clicked()
+                    {
+                        self.combats_panel.toggle();
+                    }
+
+                    // Beside the button that shows the list, because that
+                    // is where a comparison is put together: this only says
+                    // what the ticks in it are for.
                     if ui
                         .steady_toggle(self.compare.is_open(), "Compare Combats")
+                        .hover("Tick fights in the list beside this to put them side by side.")
                         .clicked()
                     {
                         self.compare.toggle();
-                        // The toolbar below carries "Refresh Now" and is hidden
-                        // while comparing, so opening the view is the moment to
-                        // pick up combats logged since the list was last read.
-                        // Only the list is refreshed; the viewed combat stays.
+                        // The list can be out of date by now — a fight
+                        // finished while something else was on screen. Only
+                        // the list is refreshed; the combat being viewed
+                        // stays.
                         if self.compare.is_open() {
                             self.state.analysis_handler.refresh_combats_list();
                         }
                     }
+
+                    // Reads the log again and puts the newest fight on
+                    // screen. The list beside it keeps itself current on its
+                    // own, so this button is about the *view*.
+                    if ui
+                        .button("Analysis of Newest Fight ⟲")
+                        .hover("Read the log again and analyze the fight at the end of it.")
+                        .clicked()
+                    {
+                        self.state.analysis_handler.refresh();
+                    }
+
+                    // Beside the button it repeats: the two do the same
+                    // thing, one when it is pressed and one whenever the log
+                    // grows.
+                    if ui
+                        .checkbox(
+                            &mut self.state.settings.auto_refresh.enable,
+                            "Always show analysis of Newest Fight",
+                        )
+                        .hover(
+                            "Move to the fight at the end of the log whenever it grows. The \
+                             list of fights keeps itself current either way.",
+                        )
+                        .clicked()
+                    {
+                        self.state
+                            .analysis_handler
+                            .enable_auto_refresh(self.state.settings.auto_refresh.enable);
+                        self.state.settings.save();
+                    }
+
+                    // The rest of the row is about the one fight on screen,
+                    // which a comparison is not.
+                    if self.compare.is_open() {
+                        return;
+                    }
+
+                    ui.separator();
+
+                    if ui
+                        .add_enabled(
+                            self.selected_combat.is_some(),
+                            Button::new("Save Combat 💾"),
+                        )
+                        .hover("Write the fight on screen out as a log of its own.")
+                        .disabled_hover("Open a fight first — this saves the one on screen.")
+                        .clicked()
+                        && let Some(file) = FileDialog::new()
+                            .set_title("Save Combat")
+                            .add_filter("log", &["log"])
+                            .set_file_name(self.selected_combat.as_ref().unwrap().file_identifier())
+                            .set_parent(frame)
+                            .save_file()
+                    {
+                        self.state
+                            .analysis_handler
+                            .save_combat(self.selected_combat_index.unwrap(), file);
+                    }
+
+                    self.upload.show(
+                        ui,
+                        self.selected_combat.as_deref(),
+                        &self.state.settings.analysis,
+                        &self.state.settings.upload.oscr_url,
+                    );
+
+                    ui.separator();
+                    self.summary_copy.show(
+                        self.selected_combat.as_deref(),
+                        &self.state.settings.combat_notes,
+                        ui,
+                    );
+                    ui.separator();
+                    self.state.overlay.show_button(ui);
                 });
 
-                // The single-combat toolbar; hidden entirely while comparing.
-                if !self.compare.is_open() {
-                    ui.horizontal_wrapped(|ui| {
-                        self.status_indicator
-                            .show(self.state.analysis_handler.is_busy(), ui);
-
-                        // Folds the list of fights in and out, the way a browser
-                        // does its sidebar. Kept as a toggle rather than a plain
-                        // button so the toolbar says whether the panel is out.
-                        if ui
-                            .steady_toggle(self.combats_panel.is_open(), "☰ Combats")
-                            .hover("Show the list of fights in the log.")
-                            .clicked()
-                        {
-                            self.combats_panel.toggle();
-                        }
-
-                        // Reads the log again and puts the newest fight on
-                        // screen. The list beside it keeps itself current on its
-                        // own, so this button is about the *view*.
-                        if ui
-                            .button("Analysis of Newest Fight ⟲")
-                            .hover("Read the log again and analyze the fight at the end of it.")
-                            .clicked()
-                        {
-                            self.state.analysis_handler.refresh();
-                        }
-
-                        // Beside the button it repeats: the two do the same
-                        // thing, one when it is pressed and one whenever the log
-                        // grows.
-                        if ui
-                            .checkbox(
-                                &mut self.state.settings.auto_refresh.enable,
-                                "Always show analysis of Newest Fight",
-                            )
-                            .hover(
-                                "Move to the fight at the end of the log whenever it grows. The \
-                                 list of fights keeps itself current either way.",
-                            )
-                            .clicked()
-                        {
+                // The list of fights goes down the side, under the toolbar,
+                // and whatever is being read takes what is left — a browser's
+                // sidebar, not a column beside the whole window.
+                //
+                // While a run fetched from the ladder is on screen the analyzer
+                // holds that run rather than the reader's log, so a comparison
+                // is picked from the fights of their own captured before the
+                // switch. The clone is an `Arc` and costs nothing.
+                let ladder = self.ladder_run.is_some();
+                let own = (ladder && self.compare.is_open()).then(|| self.own_combat_list.clone());
+                // The run itself, as the analyzer read it: while one is on
+                // screen it is the only fight in the log the analyzer holds.
+                let pinned_run = ladder.then(|| self.combats.last()).flatten();
+                let pinned = ladder.then(|| self.ladder_run_label());
+                // What the comparison on screen is of, so the list can put its
+                // numbers, its colours and its players on the rows it was built
+                // from. Empty when there is no comparison.
+                let slots = self.compare.slots();
+                let view = CombatsListView {
+                    combats: own.as_deref().unwrap_or(&self.combats),
+                    notes: &self.state.settings.combat_notes,
+                    my_handle: effective_handle(
+                        self.state.settings.general.my_handle.as_deref(),
+                        self.log_owner.as_deref(),
+                    ),
+                    shown: self
+                        .selected_combat
+                        .as_ref()
+                        .map(|combat| combat.active_time.start),
+                    comparing: self.compare.is_open(),
+                    comparison: &slots,
+                    pinned_run,
+                };
+                let action = self
+                    .combats_panel
+                    .show(view, &mut self.combats_panel_width, ui);
+                match action {
+                    Some(ListAction::Open(index)) => {
+                        self.selected_combat_index = Some(index);
+                        self.state.analysis_handler.get_combat(index);
+                    }
+                    // Rewrites the log without the fights that were ticked.
+                    // The list comes back through the ordinary channel, so
+                    // nothing here has to put it right.
+                    Some(ListAction::Keep(keep)) => {
+                        log::info!(
+                            "clearing the log: keeping {} of {} combats",
+                            keep.len(),
+                            self.combats.len()
+                        );
+                        self.state.analysis_handler.keep_combats(keep);
+                    }
+                    Some(ListAction::Compare(picked)) => {
+                        // The comparison is of exactly what is ticked, and it
+                        // is built again whenever that changes: numbering the
+                        // runs from one each time is what keeps a fight
+                        // unticked and another ticked from walking the numbers
+                        // — and their colours — up and up.
+                        if picked.len() < 2 && !ladder {
+                            self.compare.forget();
+                        } else if ladder {
+                            // With a run from the ladder on screen the
+                            // comparison cannot be built from this log at all —
+                            // the fights live in two different ones, and they
+                            // have to be written into a third first.
+                            self.compare_ladder_run_with(&picked);
+                        } else {
                             self.state
                                 .analysis_handler
-                                .enable_auto_refresh(self.state.settings.auto_refresh.enable);
-                            self.state.settings.save();
+                                .get_combats(picked, CombatsPurpose::Compare);
                         }
-
-                        ui.separator();
-
-                        if ui
-                            .add_enabled(
-                                self.selected_combat.is_some(),
-                                Button::new("Save Combat 💾"),
-                            )
-                            .clicked()
-                            && let Some(file) = FileDialog::new()
-                                .set_title("Save Combat")
-                                .add_filter("log", &["log"])
-                                .set_file_name(
-                                    self.selected_combat.as_ref().unwrap().file_identifier(),
-                                )
-                                .set_parent(frame)
-                                .save_file()
-                        {
-                            self.state
-                                .analysis_handler
-                                .save_combat(self.selected_combat_index.unwrap(), file);
-                        }
-
-                        self.upload.show(
-                            ui,
-                            self.selected_combat.as_deref(),
-                            &self.state.settings.analysis,
-                            &self.state.settings.upload.oscr_url,
-                        );
-
-                        ui.separator();
-                        self.summary_copy.show(
-                            self.selected_combat.as_deref(),
-                            &self.state.settings.combat_notes,
-                            ui,
-                        );
-                        ui.separator();
-                        self.state.overlay.show_button(ui);
-                    });
+                    }
+                    Some(ListAction::LeaveLadderRun) => self.leave_ladder_run(),
+                    Some(ListAction::ComparePlayer { start, handle }) => {
+                        self.compare.set_player(start, &handle)
+                    }
+                    None => (),
                 }
 
                 if self.compare.is_open() {
-                    // While a ladder run is on screen the analyzer holds that
-                    // run, not the reader's log — so the picker is offered their
-                    // own fights, captured before the switch, with the run
-                    // itself pinned at the top of the list.
-                    // Cloned rather than borrowed: the picker takes the state
-                    // mutably, and these come off the same `self`. The clone is
-                    // an `Arc`, so it costs nothing.
-                    let ladder = self.ladder_run.is_some();
-                    let own = ladder.then(|| self.own_combat_list.clone());
-                    let pinned = ladder.then(|| self.ladder_run_label());
-                    let picked = self.compare.show(
-                        &mut self.state,
-                        own.as_deref().unwrap_or(&self.combats),
-                        self.log_owner.as_deref(),
-                        pinned,
-                        ui,
-                        frame,
-                    );
-                    if let Some(picked) = picked {
-                        self.compare_ladder_run_with(&picked);
-                    }
+                    self.compare.show(&mut self.state, pinned, ui, frame);
                 } else {
-                    // The list of fights goes down the side, under the toolbar,
-                    // and the tabs take what is left — a browser's sidebar, not
-                    // a column beside the whole window.
-                    let view = CombatsListView {
-                        combats: &self.combats,
-                        notes: &self.state.settings.combat_notes,
-                        my_handle: effective_handle(
-                            self.state.settings.general.my_handle.as_deref(),
-                            self.log_owner.as_deref(),
-                        ),
-                        shown: self
-                            .selected_combat
-                            .as_ref()
-                            .map(|combat| combat.active_time.start),
-                    };
-                    let action = self
-                        .combats_panel
-                        .show(view, &mut self.combats_panel_width, ui);
-                    match action {
-                        Some(ListAction::Open(index)) => {
-                            self.selected_combat_index = Some(index);
-                            self.state.analysis_handler.get_combat(index);
-                        }
-                        // Rewrites the log without the fights that were ticked.
-                        // The list comes back through the ordinary channel, so
-                        // nothing here has to put it right.
-                        Some(ListAction::Keep(keep)) => {
-                            log::info!(
-                                "clearing the log: keeping {} of {} combats",
-                                keep.len(),
-                                self.combats.len()
-                            );
-                            self.state.analysis_handler.keep_combats(keep);
-                        }
-                        None => (),
-                    }
-
                     self.main_tabs.show(
                         &mut self.state.settings,
                         self.selected_combat.as_deref(),
@@ -466,12 +496,11 @@ impl eframe::App for App {
         // compared when the settings dialog is applied, and a difference there
         // re-analyzes the log.
         self.state.settings.general.overlay_shown = self.state.overlay.is_shown();
-        // Same for the panel, and for one more reason: applying the settings
-        // replaces the whole settings object with the copy the dialog took when
-        // it opened, so a panel folded or dragged in the meantime would be put
-        // back the way it was.
+        // Same for the handle and the panel's width, and for one more reason:
+        // applying the settings replaces the whole settings object with the
+        // copy the dialog took when it opened, so a panel dragged in the
+        // meantime would be put back the way it was.
         self.state.settings.general.last_detected_handle = self.log_owner.clone();
-        self.state.settings.general.combats_panel_open = self.combats_panel.is_open();
         self.state.settings.general.combats_panel_width = self.combats_panel_width;
         self.state.settings.save();
     }
@@ -500,6 +529,7 @@ impl App {
     /// channel, so the move itself happens in `handle_analysis_infos`.
     fn show_ladder_run(&mut self, run: PathBuf) {
         if self.ladder_run_file.as_ref() == Some(&run) {
+            log::info!("ladder: {} is already the run on screen", run.display());
             return;
         }
         // Already reading a run: what the analyzer holds is that run, not the
@@ -511,9 +541,10 @@ impl App {
             return;
         }
         self.pending_ladder_run = Some(run);
-        self.state
-            .analysis_handler
-            .get_combats((0..self.combats.len()).collect());
+        self.state.analysis_handler.get_combats(
+            (0..self.combats.len()).collect(),
+            CombatsPurpose::CaptureOwn,
+        );
     }
 
     /// Moves the analysis onto the run now that the reader's own fights are
@@ -537,6 +568,10 @@ impl App {
             );
         }
         log::info!("ladder: showing {}", run.display());
+        // A comparison on screen is of the run being replaced, and of fights
+        // read out of a log the analyzer is about to put down. Whatever it is
+        // showing, it is no longer about what is on screen.
+        self.compare.forget();
         self.suggest_filter_from_run = true;
         self.ladder_run.get_or_insert(own_log);
         let mut analysis = self.state.settings.analysis.clone();
@@ -563,21 +598,22 @@ impl App {
         let (Some(run), Some(own_log)) = (self.ladder_run_path(), self.ladder_run.clone()) else {
             return;
         };
-        let Ok(mut composed) = std::fs::read(&run) else {
+        let Ok(run_data) = std::fs::read(&run) else {
             return;
         };
         let own_log = std::path::Path::new(&own_log);
-        for index in picked {
-            let Some(combat) = self
-                .own_combats
+        // Every fight handed over at once, so each is placed against all the
+        // others rather than against whichever happened to be first. Placed one
+        // at a time, a fight from between two already composed went on the end,
+        // behind a newer one — where the analyzer reads it as part of that one
+        // and it never reaches the comparison.
+        let fights = std::iter::once(run_data).chain(picked.iter().filter_map(|index| {
+            self.own_combats
                 .iter()
                 .find(|(i, _)| i == index)
                 .and_then(|(_, combat)| combat.read_log_combat_data(own_log))
-            else {
-                continue;
-            };
-            composed = crate::helpers::compose_comparison_log(&composed, &combat);
-        }
+        }));
+        let composed = crate::helpers::compose_comparison_log(fights);
         let path = crate::helpers::paths::comparison_log();
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -650,7 +686,7 @@ impl App {
             log::info!("ladder: nothing of my own matches that run, leaving the pickers open");
             (None, DifficultyFilter::Any)
         };
-        self.compare.suggest_filter(map, difficulty);
+        self.combats_panel.suggest_filter(map, difficulty);
     }
 
     /// The run on screen, when one is.
@@ -791,18 +827,18 @@ impl App {
                     self.main_tabs.update(&self.state.settings, &combat);
                     self.selected_combat = Some(combat);
                 }
-                AnalysisInfo::Combats(combats) => {
-                    // Either the answer to "show me this ladder run", which had
-                    // to capture the reader's own fights before the analyzer
-                    // moved off their log, or the ordinary one the comparison
-                    // asked for.
-                    match self.pending_ladder_run.take() {
-                        Some(run) => {
-                            self.own_combats = combats;
-                            self.enter_ladder_run(run);
-                        }
-                        None => self.compare.set_combats(combats, &self.state.settings),
+                // Each answer says what it was asked for, so one cannot be
+                // taken for the other: a comparison follows the ticks in the
+                // list as they are made, and opening a run from the ladder
+                // captures the reader's own fights — both can be in flight.
+                AnalysisInfo::Combats(combats, CombatsPurpose::CaptureOwn) => {
+                    if let Some(run) = self.pending_ladder_run.take() {
+                        self.own_combats = combats;
+                        self.enter_ladder_run(run);
                     }
+                }
+                AnalysisInfo::Combats(combats, CombatsPurpose::Compare) => {
+                    self.compare.set_combats(combats, &self.state.settings)
                 }
                 AnalysisInfo::Refreshed {
                     latest_combat,
@@ -834,9 +870,10 @@ impl App {
                             "ladder: comparison log holds {} combats, building",
                             self.combats.len()
                         );
-                        self.state
-                            .analysis_handler
-                            .get_combats((0..self.combats.len()).collect());
+                        self.state.analysis_handler.get_combats(
+                            (0..self.combats.len()).collect(),
+                            CombatsPurpose::Compare,
+                        );
                     }
                 }
                 AnalysisInfo::CombatsListRefreshed { combats, file_size } => {

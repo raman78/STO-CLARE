@@ -594,7 +594,11 @@ mod tests {
         table.sort_by_column(column("Damage Dealt").sort);
         assert_eq!(names(&table), ["Talon", "Kestrel"], "the same click again");
 
-        assert_eq!(table.sort.marker(key), " ⏶", "and the heading says so");
+        assert_eq!(
+            table.sort.marker(key),
+            SORT_MARKERS[1],
+            "and the heading says so"
+        );
     }
 
     /// A tab starts with an empty table nobody has clicked. It must not hand

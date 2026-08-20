@@ -719,9 +719,8 @@ impl LoadedEntries {
         show_full_data: bool,
     ) -> Self {
         let mut formatter = NumberFormatter::new();
-        let (reduced_columns_count, entries) =
+        let (reduced_columns_count, entries, combat_log_ids) =
             TableColumn::build_table(&model, tables, team_only, &mut formatter);
-        let combat_log_ids = model.results.iter().map(|e| e.combatlog).collect();
         Self {
             page_count: model.count / PAGE_SIZE + if model.count % PAGE_SIZE > 0 { 1 } else { 0 },
             page,
@@ -1287,12 +1286,20 @@ struct TableColumn {
 }
 
 impl TableColumn {
+    /// The rows of the table, and the run each of them is of.
+    ///
+    /// The ids come from here rather than from the answer the rows were built
+    /// from: a run is entered into several of the ladder's tables and its rows
+    /// are folded back into one (and some are filtered out entirely), so the
+    /// two lists are not the same length and not in the same order. Read off
+    /// the answer, the magnifier on a row fetched somebody else's run — the one
+    /// standing at that position in a list nobody was looking at.
     fn build_table(
         entries: &LadderEntriesModel,
         tables: &FxHashMap<i32, LadderFacts>,
         team_only: bool,
         formatter: &mut NumberFormatter,
-    ) -> (usize, Vec<Self>) {
+    ) -> (usize, Vec<Self>, Vec<i32>) {
         // Rank is per table, so a page drawn from several of them repeats "1"
         // with nothing to say which race each was won. Named only then: with one
         // table in play the column would say the same thing on every row.
@@ -1363,6 +1370,7 @@ impl TableColumn {
         } else {
             entries.results.iter().collect()
         };
+        let combat_log_ids: Vec<i32> = folded.iter().map(|entry| entry.combatlog).collect();
         let mut from = Vec::new();
         let mut ranks = Vec::new();
         let mut players = Vec::new();
@@ -1449,7 +1457,7 @@ impl TableColumn {
             }
         }
 
-        (new_index, columns)
+        (new_index, columns, combat_log_ids)
     }
 }
 
@@ -1634,6 +1642,61 @@ mod tests {
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
+    }
+
+    /// The magnifier on a row has to fetch *that* row's run.
+    ///
+    /// A run is entered into several of the ladder's tables, and those rows are
+    /// folded back into one. Reading the ids off the answer instead of off the
+    /// rows left them a different length and a different order — so the button
+    /// on a row asked for whichever run stood at that position in a list nobody
+    /// was looking at: the one already on screen (and nothing happened), or the
+    /// one before it.
+    #[test]
+    fn a_row_asks_for_its_own_run() {
+        let tables: FxHashMap<i32, LadderFacts> = ladders()
+            .into_iter()
+            .map(|ladder| {
+                (
+                    ladder.id,
+                    LadderFacts {
+                        map: ladder.map,
+                        space: ladder.is_space,
+                        difficulty: ladder.difficulty,
+                        solo: ladder.is_solo,
+                    },
+                )
+            })
+            .collect();
+        // Three runs across two tables: the first is in both (a fight is
+        // entered into the catch-all as well as its own level), so its two rows
+        // fold into one.
+        let entry = |ladder: i32, combatlog: i32, rank: i32, player: &str| LadderEntryModel {
+            ladder,
+            date: "2026-08-19T21:14:03Z".into(),
+            player: player.into(),
+            rank,
+            ladder_rank: rank,
+            combatlog,
+            data: Default::default(),
+        };
+        let model = LadderEntriesModel {
+            count: 4,
+            results: vec![
+                entry(1, 100, 1, "A@a"),
+                entry(2, 100, 1, "A@a"),
+                entry(1, 200, 2, "B@b"),
+                entry(3, 300, 3, "C@c"),
+            ],
+        };
+
+        let mut formatter = NumberFormatter::new();
+        let (_, columns, ids) = TableColumn::build_table(&model, &tables, false, &mut formatter);
+
+        let rows = columns.first().map(|c| c.values.len()).unwrap_or(0);
+        assert_eq!(3, rows, "the two rows of one run are folded into one");
+        assert_eq!(rows, ids.len(), "one run named per row");
+        assert_eq!(vec![100, 200, 300], ids);
     }
 
     /// A run from the ladder should read like one of your own combats, so the

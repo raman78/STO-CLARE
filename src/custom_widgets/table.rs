@@ -54,7 +54,7 @@ impl<C: PartialEq + Copy> SortState<C> {
 
 /// Every mark a heading can end up carrying — the order running the column's
 /// way, and the other way round.
-pub const SORT_MARKERS: [&str; 2] = [" ⏷", " ⏶"];
+pub const SORT_MARKERS: [&str; 2] = ["⏷", "⏶"];
 
 /// The room the sort mark needs, whichever of the two it turns out to be.
 ///
@@ -94,11 +94,44 @@ pub fn show_sortable_header_cell(
     text: &str,
     buttons: impl FnOnce(&mut Ui),
 ) -> Response {
+    let wanted = text_width(ui, text) + sort_marker_width(ui) + ui.spacing().item_spacing.x;
+    show_header_cell(ui, wanted, true, picked, marker, text, buttons)
+}
+
+/// The same, at a width the caller has worked out.
+///
+/// For a table whose columns are sized by what a column *can* hold rather than
+/// by its heading: a column of four-letter words should not carry the room for
+/// a mark only one heading at a time ever draws.
+pub fn show_sortable_header_cell_sized(
+    ui: &mut Ui,
+    wanted: f32,
+    picked: bool,
+    marker: &str,
+    text: &str,
+    buttons: impl FnOnce(&mut Ui),
+) -> Response {
+    show_header_cell(ui, wanted, false, picked, marker, text, buttons)
+}
+
+/// `keep_marker_room` holds the mark's width beside a heading that is not
+/// carrying one, so whatever is drawn after it — the eye and the type picker on
+/// the damage tables' Name column — does not move when the ordering changes
+/// hands. A heading with nothing after it has nothing to hold still, and the
+/// room would only make its column wider.
+#[allow(clippy::too_many_arguments)]
+fn show_header_cell(
+    ui: &mut Ui,
+    wanted: f32,
+    keep_marker_room: bool,
+    picked: bool,
+    marker: &str,
+    text: &str,
+    buttons: impl FnOnce(&mut Ui),
+) -> Response {
     // The whole cell, top to bottom, the way every other heading works.
     let height = ui.available_height().max(ui.spacing().interact_size.y);
-    let width = ui
-        .available_width()
-        .max(text_width(ui, text) + sort_marker_width(ui) + ui.spacing().item_spacing.x);
+    let width = ui.available_width().max(wanted);
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     draw_cell_visuals(ui, picked, &response);
     // Drawn after the strip, so the pointer finds them first: egui gives a click
@@ -110,9 +143,10 @@ pub fn show_sortable_header_cell(
             // column is where the buttons are: a mark drawn there sat on top of
             // one. The room is kept either way, so nothing shifts when the
             // column takes charge of the order.
-            match marker.is_empty() {
-                true => ui.add_space(sort_marker_width(ui)),
-                false => {
+            match (marker.is_empty(), keep_marker_room) {
+                (true, true) => ui.add_space(sort_marker_width(ui)),
+                (true, false) => (),
+                (false, _) => {
                     ui.label(marker);
                 }
             }
@@ -775,6 +809,14 @@ impl ColumnState {
 /// itself wide enough to hold its list rather than making the reader drag it
 /// there. `None` before the table's first frame, when there is nothing measured
 /// to report.
+#[cfg(test)]
+pub fn table_column_widths(ui: &Ui, id: impl Into<Id>) -> Vec<f32> {
+    let state: Option<State> = ui.data_mut(|d| d.get_temp(id.into()));
+    state
+        .map(|state| state.columns.iter().map(|c| c.last_size).collect())
+        .unwrap_or_default()
+}
+
 pub fn table_content_width(ui: &Ui, id: impl Into<Id>) -> Option<f32> {
     let state: State = ui.data_mut(|d| d.get_temp(id.into()))?;
     (state.last_size.x > 0.0).then_some(state.last_size.x)
@@ -831,64 +873,6 @@ impl State {
 /// heading in one table.
 pub fn draw_cell_visuals(ui: &mut Ui, checked: bool, response: &Response) {
     draw_visuals(ui, false, Some(checked), response);
-}
-
-/// How much darker a list row goes under the pointer. Enough to read at a
-/// glance against both a plain row and a striped one, on a dark theme where the
-/// two are close together.
-const ROW_HIGHLIGHT: Color32 = Color32::from_black_alpha(60);
-
-/// A row of a list, drawn the way a table row is: every other one on a faint
-/// fill, and the one under the pointer picked out.
-///
-/// Lists elsewhere in the program are rows of widgets with nothing behind them,
-/// which on a list of a dozen combats makes it easy to read one line's tick
-/// against another line's name. The background is reserved before the contents
-/// are drawn and filled in afterwards, since a row is only as tall as whatever
-/// went into it.
-pub fn list_row<R>(
-    ui: &mut Ui,
-    is_stripe: bool,
-    add_contents: impl FnOnce(&mut Ui) -> R,
-) -> InnerResponse<R> {
-    let width = ui.available_width();
-    let background = ui.painter().add(Shape::Noop);
-    let highlight = ui.painter().add(Shape::Noop);
-    let inner = ui.scope_builder(UiBuilder::new().sense(Sense::hover()), |ui| {
-        ui.set_min_width(width);
-        ui.horizontal(|ui| add_contents(ui)).inner
-    });
-
-    // The full width of the list, not only what the widgets came to: a highlight
-    // that stopped at the end of the text would say the row ended there.
-    let rect = Rect::from_min_size(
-        inner.response.rect.min,
-        vec2(width, inner.response.rect.height()),
-    );
-    if is_stripe {
-        ui.painter().set(
-            background,
-            epaint::RectShape::filled(rect, 0.0, ui.visuals().faint_bg_color),
-        );
-    }
-
-    // `contains_pointer` rather than `hovered`: a row is mostly tick box and
-    // text, and those are the widgets on top, so the row itself counted as
-    // hovered only in the gaps between them.
-    //
-    // Drawn as a shade over whatever the row's background is, rather than as a
-    // colour of its own: a theme's hover fill is meant for a small control
-    // against a panel, and across a whole row the bright one glared while the
-    // dark one barely showed. A shade is the same step on every theme, and it
-    // reads as the row being pointed at whichever way round the theme runs.
-    if inner.response.contains_pointer() {
-        ui.painter().set(
-            highlight,
-            epaint::RectShape::filled(rect, 0.0, ROW_HIGHLIGHT),
-        );
-    }
-
-    InnerResponse::new(inner.inner, inner.response)
 }
 
 fn draw_visuals(ui: &mut Ui, is_stripe: bool, checked: Option<bool>, response: &Response) {

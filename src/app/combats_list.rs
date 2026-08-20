@@ -6,9 +6,13 @@
 //! as `Infected Space | Team | Elite | 19.08 21:14 | 04:12 | 121.7k` in one of
 //! them reads the same in the others.
 //!
-//! The panel keeps its own filter and its own fold-outs, but it does not keep a
-//! *selection*: what is highlighted is whatever combat the window is showing,
-//! and what a click does is ask for another one.
+//! The panel is where a fight is chosen, whatever the choosing is for: reading
+//! one (a double click), clearing the log of some, or picking the ones a
+//! comparison is built from. The ticks are the same ticks in each case, and so
+//! is the strip of buttons at the bottom; only what the mode does with them
+//! differs. That is why there is no second list anywhere: the compare view used
+//! to carry a picker of its own, and two lists of the same fights disagreed
+//! about which of them was filtered how.
 
 use std::cmp::Ordering;
 
@@ -18,8 +22,9 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     analyzer::{CombatSummary, Difficulty, PlayerSummary},
+    app::compare::ComparisonSlot,
     app::{
-        combat_filter::{CombatEntry, CombatFilter},
+        combat_filter::{CombatEntry, CombatFilter, DifficultyFilter},
         date_range::DateRange,
         settings::CombatNotes,
         theme,
@@ -32,12 +37,32 @@ use crate::{
 const ROW_HEIGHT: f32 = 25.0;
 const HEADER_HEIGHT: f32 = 25.0;
 
-/// How wide the panel opens the first time, and the range a drag may take it
-/// to. The low end still holds the map name and the DPS beside it; below that
-/// the table would be a column of ellipses.
-const DEFAULT_WIDTH: f32 = 520.0;
+/// The narrowest the panel may be dragged. It still holds the map name and the
+/// DPS beside it; below that the table would be a column of ellipses.
 const MIN_WIDTH: f32 = 260.0;
-const MAX_WIDTH: f32 = 1100.0;
+/// How wide the panel will make *itself* to fit its table. Enough for the
+/// longest map the program knows — "[TFO] Nukara Prime: Transdimensional
+/// Tactics" — beside every other column, including the two a comparison adds
+/// (measured; see `print_column_widths`). Past this it stops widening on its
+/// own, because a list that takes the whole window leaves nothing to read a
+/// fight in.
+const AUTO_WIDTH: f32 = 1200.0;
+
+/// How much room the run's number keeps around itself inside its badge.
+const BADGE_PADDING: f32 = 4.0;
+
+/// The panel's own id, which its remembered width is kept under.
+const PANEL_ID: &str = "combats panel";
+
+/// The gap either side of a column's contents. Narrower than the tables' own
+/// default: a column holding "Solo" carried five points of gap on each side,
+/// which is a third as much again as the word.
+const CELL_SPACING: f32 = 3.0;
+
+/// How wide the picker that says whose figures a run is read for is drawn. Wide
+/// enough for an ordinary handle without the column following the longest one
+/// in the log about.
+const PLAYER_PICKER_WIDTH: f32 = 130.0;
 
 /// The size of the fold-out arrow, matching the one in the damage tables.
 const ARROW_SIZE: Vec2 = vec2(14.0, 14.0);
@@ -49,6 +74,20 @@ pub enum ListAction {
     /// Rewrite the log keeping only these fights, in the order they are in it.
     /// Everything else was ticked for deletion.
     Keep(Vec<usize>),
+    /// The fights the comparison should be of, in the order they are in the
+    /// log. Empty when the last of them has been unticked.
+    Compare(Vec<usize>),
+    /// Give up the run fetched from the ladder and go back to the reader's own
+    /// log.
+    LeaveLadderRun,
+    /// Read this fight's figures for another of its players. The fight is named
+    /// by when it started: with a run from the ladder on screen, the comparison
+    /// is built from a log composed for it, where the same fight sits somewhere
+    /// else entirely.
+    ComparePlayer {
+        start: NaiveDateTime,
+        handle: String,
+    },
 }
 
 /// What the list is being shown: the fights, what the reader wrote about them,
@@ -62,6 +101,29 @@ pub struct CombatsListView<'a> {
     /// The start time of the combat the main window is showing, which is the
     /// row that reads as picked.
     pub shown: Option<NaiveDateTime>,
+    /// Whether the window beside the list is showing a comparison, which is
+    /// what the ticks on the rows are for while it is.
+    pub comparing: bool,
+    /// The runs the comparison on screen is of, where there is one: which row
+    /// of the list each is, its number and colour in that comparison, and whose
+    /// figures are being read for it.
+    pub comparison: &'a [ComparisonSlot],
+    /// A run fetched from the ladder, when one is on screen. It is in the
+    /// comparison whatever else is ticked, so it leads the list whichever way
+    /// the list is sorted, and one fight of the reader's own is then enough to
+    /// compare it against.
+    pub pinned_run: Option<&'a CombatSummary>,
+}
+
+/// What ticking a row does, if anything.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PanelMode {
+    /// No ticks: a click opens a fight.
+    Browse,
+    /// Ticked to be deleted from the log.
+    Clearing,
+    /// Ticked to be compared against each other.
+    Comparing,
 }
 
 /// The list of combats down the side of the main window.
@@ -81,13 +143,25 @@ pub struct CombatsPanel {
     /// Which column the rows are in the order of. Starts on the newest fight
     /// first, which is what a list of fights is nearly always opened for.
     sort: SortState<CombatColumn>,
-    /// The fights ticked for deletion while "Clear Log File" is on, by start
-    /// time; `None` while it is off and the list is only for reading.
+    /// What the ticks on the rows are for, if anything.
+    mode: PanelMode,
+    /// The fights ticked for deletion, by start time. Kept while the panel is
+    /// open even when the ticking is switched off, so turning "Clear Log File"
+    /// back on picks up where it was left rather than starting over.
     ///
     /// Ticked by start time rather than by index for the same reason the
     /// fold-outs are: the list is live, and a fight dropped from the log shifts
     /// every index after it — which, here, would delete the wrong fight.
-    to_delete: Option<FxHashSet<NaiveDateTime>>,
+    to_delete: FxHashSet<NaiveDateTime>,
+    /// The fights ticked for a comparison, in the order they were ticked —
+    /// which is the order they are numbered and coloured in, and the order the
+    /// comparison puts its columns in. A set would leave the numbers to fall
+    /// out of however the log happens to be ordered, which is not the order the
+    /// reader picked them in.
+    to_compare: Vec<NaiveDateTime>,
+    /// Set while the reader is being asked whether they mean to leave the run
+    /// they opened from the ladder.
+    confirm_leave_run: bool,
     /// Set while the reader is being asked whether they mean it. Deleting
     /// rewrites the log and cannot be taken back, so anything past a single
     /// fight is worth one question first.
@@ -107,8 +181,11 @@ impl CombatsPanel {
             filter_generation: 0,
             search: String::new(),
             range: Default::default(),
-            to_delete: None,
+            mode: PanelMode::Browse,
+            to_delete: Default::default(),
+            to_compare: Vec::new(),
             confirm_delete: false,
+            confirm_leave_run: false,
             sort: SortState {
                 column: Some(CombatColumn::Start),
                 natural: true,
@@ -123,6 +200,76 @@ impl CombatsPanel {
 
     pub fn toggle(&mut self) {
         self.open = !self.open;
+        // Folding the list away gives up what was ticked for deletion: the
+        // ticks are a train of thought about the list on screen, and coming
+        // back to it later is a new one. What is ticked for a comparison stays
+        // — the comparison itself is still on screen, and it is those ticks.
+        if !self.open {
+            self.mode = PanelMode::Browse;
+            self.to_delete.clear();
+            self.confirm_delete = false;
+        }
+    }
+
+    /// Starts the list on the map and level of the run being compared against,
+    /// because that is what a comparison is nearly always of — the same fight
+    /// fought differently. Nothing is locked: these are the ordinary pickers
+    /// and the reader can widen them the moment they want something else.
+    pub fn suggest_filter(&mut self, map: Option<String>, difficulty: DifficultyFilter) {
+        self.filter.map = map;
+        self.filter.difficulty = difficulty;
+        self.filter.environment = None;
+        self.filter_generation = self.filter_generation.wrapping_add(1);
+    }
+
+    /// The ticks the current mode is collecting, if it collects any.
+    /// Whether this fight is ticked, where the mode ticks anything at all.
+    fn is_ticked(&self, start: NaiveDateTime) -> Option<bool> {
+        match self.mode {
+            PanelMode::Browse => None,
+            PanelMode::Clearing => Some(self.to_delete.contains(&start)),
+            PanelMode::Comparing => Some(self.to_compare.contains(&start)),
+        }
+    }
+
+    /// Which fight this is of those ticked for a comparison, from one.
+    ///
+    /// The number is the panel's own, not the comparison's: ticking the first
+    /// fight makes it #1 there and then, before there is a second one to
+    /// compare it against.
+    fn compare_number(&self, start: NaiveDateTime) -> Option<usize> {
+        self.to_compare
+            .iter()
+            .position(|&ticked| ticked == start)
+            .map(|position| position + 1)
+    }
+
+    fn tick(&mut self, start: NaiveDateTime, ticked: bool) {
+        let list = match self.mode {
+            PanelMode::Browse => return,
+            PanelMode::Clearing => {
+                if ticked {
+                    self.to_delete.insert(start);
+                } else {
+                    self.to_delete.remove(&start);
+                }
+                return;
+            }
+            PanelMode::Comparing => &mut self.to_compare,
+        };
+        list.retain(|&already| already != start);
+        if ticked {
+            list.push(start);
+        }
+    }
+
+    /// How many fights the mode has ticked.
+    fn ticks(&self) -> Option<usize> {
+        match self.mode {
+            PanelMode::Browse => None,
+            PanelMode::Clearing => Some(self.to_delete.len()),
+            PanelMode::Comparing => Some(self.to_compare.len()),
+        }
     }
 
     /// Draws the panel and reports what the reader asked of it.
@@ -138,13 +285,43 @@ impl CombatsPanel {
         let mut action = None;
         // The panel follows the table: as columns grow — a longer map name, a
         // note somebody wrote — it widens itself to fit rather than making the
-        // reader drag it. A floor rather than a fixed width, so it can still be
-        // dragged wider, and it stops at `MAX_WIDTH`, where the scroll bars the
-        // table already has take over.
-        let panel = Panel::left("combats panel")
+        // reader drag it.
+        let fits = self.fitting_width(ui);
+        // Whether the reader has hold of the panel's edge right now. It is the
+        // only thing that sets a width of their own — and the only thing that
+        // may change one. A width read back off the panel every frame was worse
+        // than useless: open the list while the log is still being read, when
+        // the table is a heading and nothing else, and the width they had set
+        // was overwritten by that — and written to the settings on the way out.
+        let resize_id = Id::new(PANEL_ID).with("__resize");
+        let dragging = ui.ctx().dragged_id() == Some(resize_id)
+            || ui.ctx().drag_stopped_id() == Some(resize_id);
+        // Until they do, the panel *is* its table: exactly as wide as the
+        // columns come to, and following them as they change — including as
+        // they arrive, which is what the first seconds of a large log look
+        // like.
+        if *width <= 0.0
+            && dragging
+            && let Some(fits) = fits
+        {
+            *width = fits;
+        }
+        let following_the_table = *width <= 0.0;
+        // Pinned to the table while following it. A range is the only way to
+        // say so: a panel is drawn at the width it was last drawn at, and what
+        // it was last drawn at is the width of its own contents — which is what
+        // the reader would be left with, rather than a panel that fits its
+        // table. A width of their own is theirs, and only the area we allow
+        // ourselves caps it.
+        let range = match (following_the_table, fits) {
+            (true, Some(fits)) => fits..=fits,
+            (true, None) => MIN_WIDTH..=AUTO_WIDTH,
+            (false, _) => MIN_WIDTH..=AUTO_WIDTH,
+        };
+        let panel = Panel::left(PANEL_ID)
             .resizable(true)
-            .default_size(if *width > 0.0 { *width } else { DEFAULT_WIDTH })
-            .size_range(self.fitting_width(ui)..=MAX_WIDTH)
+            .default_size(if *width > 0.0 { *width } else { AUTO_WIDTH })
+            .size_range(range)
             // The rim goes round the whole panel, not round the table inside
             // it: the search box, the filters and the strip at the bottom are
             // as much a part of the list as its rows. Without it the panel ran
@@ -155,34 +332,57 @@ impl CombatsPanel {
             .show_animated_inside(ui, self.open, |ui| {
                 action = self.show_contents(view, ui);
             });
-        if let Some(panel) = panel {
-            *width = panel.response.rect.width();
+        if let Some(panel) = panel
+            && dragging
+        {
+            *width = panel.response.rect.width().clamp(MIN_WIDTH, AUTO_WIDTH);
         }
         action
     }
 
     /// The narrowest the panel may be drawn: enough for the whole table, as
-    /// wide as it came to when it was last drawn, within the panel's own
-    /// limits. Before the first frame there is nothing to measure and the
-    /// ordinary minimum stands.
-    fn fitting_width(&self, ui: &Ui) -> f32 {
-        let Some(content) = table_content_width(ui, self.table_id()) else {
-            return MIN_WIDTH;
-        };
+    /// wide as it came to when it was last drawn, up to [`AUTO_WIDTH`]. Before
+    /// the first frame there is nothing to measure and the ordinary minimum
+    /// stands.
+    fn fitting_width(&self, ui: &Ui) -> Option<f32> {
+        let content = table_content_width(ui, self.table_id())?;
         // What the table asks for is its columns; the panel around it also has
         // its frame, and the table its own scroll bar.
         let chrome = ui.spacing().scroll.bar_width + ui.spacing().item_spacing.x * 4.0;
-        (content + chrome).clamp(MIN_WIDTH, MAX_WIDTH)
+        Some((content + chrome).clamp(MIN_WIDTH, AUTO_WIDTH))
     }
 
-    /// The table's id. Carries the filter generation: egui keeps a scroll
-    /// area's measured size under it, so a narrowed list would otherwise keep
-    /// the height — and now the width — it had while filtered.
+    /// The table's id.
+    ///
+    /// Carries the filter generation, because egui keeps a scroll area's
+    /// measured size under it and a narrowed list would otherwise keep the
+    /// height — and the width — it had while filtered.
+    ///
+    /// And the mode, because a table's measured columns are kept *by position*:
+    /// picking fights for a comparison puts two columns in front of the rest,
+    /// so every column after them would be drawn at the width of the one two
+    /// places to its left until it had been measured again. Each mode measures
+    /// its own.
     fn table_id(&self) -> Id {
-        Id::new(("combats panel table", self.filter_generation))
+        Id::new((
+            "combats panel table",
+            self.filter_generation,
+            self.mode == PanelMode::Comparing,
+        ))
     }
 
     fn show_contents(&mut self, view: CombatsListView<'_>, ui: &mut Ui) -> Option<ListAction> {
+        // Whether a comparison is being put together is the *window's* state,
+        // not the list's, so it is read every frame rather than copied when the
+        // button was pressed. Copied, the two drifted apart the moment the list
+        // was folded away and out again: the window was still comparing and the
+        // list had gone back to browsing.
+        self.mode = match (view.comparing, self.mode) {
+            (true, _) => PanelMode::Comparing,
+            (false, PanelMode::Comparing) => PanelMode::Browse,
+            (false, mode) => mode,
+        };
+        let mut action = None;
         ui.horizontal(|ui| {
             ui.heading("Combats");
         });
@@ -190,8 +390,13 @@ impl CombatsPanel {
 
         ui.horizontal(|ui| {
             ui.label("Search:");
+            // What is left of the row, not everything egui would give it: a
+            // field asking for the maximum reports itself that wide, and the
+            // panel sizes itself to what it holds — so the box alone made the
+            // panel wider than its table and would not let it be dragged in.
+            let room = ui.available_width();
             TextEdit::singleline(&mut self.search)
-                .desired_width(f32::MAX)
+                .desired_width(room)
                 .show(ui);
         });
 
@@ -205,47 +410,58 @@ impl CombatsPanel {
                 solo: combat.solo,
             })
             .collect();
-        ui.horizontal_wrapped(|ui| {
-            let before = (self.filter.clone(), self.range.clone());
-            self.filter.show("combats panel", &entries, ui);
-            if (self.filter.is_active() || self.range.is_active())
-                && ui.button("Clear filter").clicked()
-            {
-                self.filter.clear();
-                self.range.clear();
-            }
-            if (self.filter.clone(), self.range.clone()) != before {
-                self.filter_generation = self.filter_generation.wrapping_add(1);
-            }
-        });
-        // Its own row: the two fields and their presets do not fit beside the
-        // pickers, and wrapped in with them the row reads as one long filter
-        // rather than as "what it was" and "when it was".
-        ui.horizontal_wrapped(|ui| {
-            let before = self.range.clone();
-            self.range.show(
-                "combats panel",
-                view.combats
-                    .first()
-                    .map(|combat| combat.start)
-                    .zip(view.combats.last().map(|combat| combat.start)),
-                ui,
-            );
-            if self.range != before {
-                self.filter_generation = self.filter_generation.wrapping_add(1);
-            }
-        });
-
+        // The pickers and the window of time sit in a scroll area of their own.
+        // A picker is drawn at the width it was given whether or not the row
+        // has the room, and what it overflows by would otherwise push the panel
+        // wider — the panel is exactly as wide as its table, and a filter is no
+        // reason to widen it. Narrow it far enough and these scroll instead.
+        ScrollArea::horizontal()
+            .id_salt("combats filters")
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    let before = (self.filter.clone(), self.range.clone());
+                    self.filter.show("combats panel", &entries, ui);
+                    if (self.filter.is_active() || self.range.is_active())
+                        && ui.button("Clear filter").clicked()
+                    {
+                        self.filter.clear();
+                        self.range.clear();
+                    }
+                    if (self.filter.clone(), self.range.clone()) != before {
+                        self.filter_generation = self.filter_generation.wrapping_add(1);
+                    }
+                });
+                // Its own row: the two fields and their presets do not fit
+                // beside the pickers, and wrapped in with them the row reads as
+                // one long filter rather than as "what it was" and "when it
+                // was".
+                ui.horizontal_wrapped(|ui| {
+                    let before = self.range.clone();
+                    self.range.show(
+                        "combats panel",
+                        view.combats
+                            .first()
+                            .map(|combat| combat.start)
+                            .zip(view.combats.last().map(|combat| combat.start)),
+                        ui,
+                    );
+                    if self.range != before {
+                        self.filter_generation = self.filter_generation.wrapping_add(1);
+                    }
+                });
+            });
         let visible = self.visible(&view);
-        // A tick on a fight the filters have since hidden would delete
+        // A tick on a fight the filters have since hidden would act on
         // something nobody can see; the ticks are what is on screen.
-        if let Some(ticked) = self.to_delete.as_mut() {
-            let shown: FxHashSet<NaiveDateTime> =
-                visible.iter().map(|&i| view.combats[i].start).collect();
-            ticked.retain(|start| shown.contains(start));
+        let shown: FxHashSet<NaiveDateTime> =
+            visible.iter().map(|&i| view.combats[i].start).collect();
+        match self.mode {
+            PanelMode::Browse => (),
+            PanelMode::Clearing => self.to_delete.retain(|start| shown.contains(start)),
+            PanelMode::Comparing => self.to_compare.retain(|start| shown.contains(start)),
         }
 
-        let mut action = None;
         // Claimed before the table, so the strip sits at the bottom of the
         // panel whatever the table does — and sized by what is in it rather
         // than by a guess at its height, which is what left it half off the
@@ -253,17 +469,95 @@ impl CombatsPanel {
         Panel::bottom("combats footer")
             .frame(footer_frame(ui))
             .show_inside(ui, |ui| {
-                action = self.show_footer(&view, &visible, ui);
+                if let Some(footer_action) = self.show_footer(&view, &visible, ui) {
+                    action = Some(footer_action);
+                }
             });
+        let comparing = self.mode == PanelMode::Comparing;
+        // Whether anything was ticked or unticked this pass, whichever way it
+        // was done — a row, or the two buttons in the strip below. The
+        // comparison on screen follows all of them.
+        let mut ticks_changed = false;
+        // Whether the run from the ladder was unticked, which is a question
+        // rather than a tick: it is what the whole comparison is of.
+        let mut leave_run = false;
+        // What stands in front of a fight's own columns: the tick box. A
+        // folded-out player has to skip it, or their DPS lands under the wrong
+        // heading.
+        let leading_cells = 1;
         let mut clicked_heading = None;
         let mut formatter = NumberFormatter::new();
         // Whatever the strip at the bottom left.
         let table_height = ui.available_height().at_least(ROW_HEIGHT);
+        // Nothing in the table wraps. A row is one row tall, and — more to the
+        // point — a cell that wraps asks for less width than its text needs, so
+        // the panel sizing itself to its table would never grow to fit a long
+        // map name: the name would fold instead, and the panel would settle
+        // around the fold.
+        ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
         Table::new(ui)
             .id(self.table_id())
+            // Tighter than the tables of figures: this one is columns of short
+            // words, where the default gap is a third of a column again.
+            .cell_spacing(CELL_SPACING)
             .max_scroll_height(table_height)
             .header(HEADER_HEIGHT)
             .body(ROW_HEIGHT, |t| {
+                // The run fetched from the ladder leads the list, whatever
+                // the headings are ordering the rest by: it is not one of the
+                // reader's fights, it is what they are being compared against.
+                // Its whole row is drawn in the theme's own "something is going
+                // on" colour, which is what says so without a column for it.
+                if let Some(run) = view.pinned_run.filter(|_| comparing) {
+                    let mut kept = true;
+                    let run_slot = view.comparison.iter().find(|slot| slot.start == run.start);
+                    let run_player_shown = run_slot
+                        .map(|slot| slot.player.as_str())
+                        .or_else(|| run.players.first().map(|player| player.handle.as_str()))
+                        .unwrap_or("—");
+                    let mut run_player = None;
+                    let row = t.selectable_row(true, |r| {
+                        r.cell(|ui| {
+                            ui.visuals_mut().override_text_color = Some(theme::palette().busy);
+                            if ui
+                                .checkbox(&mut kept, "")
+                                .hover("Untick to leave the run and go back to your own log.")
+                                .clicked()
+                            {
+                                leave_run = true;
+                            }
+                        });
+                        show_combat_cells(
+                            r,
+                            run,
+                            "",
+                            dps_shown(run, Some(run_player_shown)),
+                            None,
+                            Some(theme::palette().busy),
+                            &mut formatter,
+                        );
+                        // The same two columns the rows below it carry, so the
+                        // run does not read as a row with its end missing.
+                        // Whose figures are being read for it — a run from the
+                        // ladder is a team run as often as not, and which of
+                        // its five the comparison is about is the question —
+                        // and no number: the numbers are the reader's own
+                        // picks, and the run is in the comparison whether they
+                        // pick anything or not.
+                        r.cell(|ui| {
+                            ui.visuals_mut().override_text_color = Some(theme::palette().busy);
+                            show_player_picker(ui, run, run_player_shown, &mut run_player);
+                        });
+                        r.cell(|_| {});
+                    });
+                    row.on_hover_text(&run.identifier);
+                    if let Some(handle) = run_player {
+                        action = Some(ListAction::ComparePlayer {
+                            start: run.start,
+                            handle,
+                        });
+                    }
+                }
                 for index in visible.iter().copied() {
                     let combat = &view.combats[index];
                     let note = view.notes.get(&CombatNotes::key_at(combat.start));
@@ -272,15 +566,29 @@ impl CombatsPanel {
                     // While the log is being cleared the highlight is the tick,
                     // not the fight on screen: what is about to be deleted is
                     // the thing worth seeing at a glance.
-                    let ticked = self
-                        .to_delete
-                        .as_ref()
-                        .map(|ticked| ticked.contains(&combat.start));
+                    let ticked = self.is_ticked(combat.start);
                     let mut tick = ticked.unwrap_or(false);
                     let highlighted = match ticked {
                         Some(ticked) => ticked,
                         None => view.shown == Some(combat.start),
                     };
+                    // Which of the ticked fights this is, and whose figures the
+                    // comparison is reading for it. The number is the panel's
+                    // own, so ticking one fight numbers it before there is a
+                    // second to compare it against; the player comes from the
+                    // comparison once there is one, and from the fight's best
+                    // until then.
+                    let number = self.compare_number(combat.start);
+                    let slot = view
+                        .comparison
+                        .iter()
+                        .find(|slot| slot.start == combat.start);
+                    let player_shown = slot
+                        .map(|slot| slot.player.as_str())
+                        .or_else(|| combat.players.first().map(|p| p.handle.as_str()))
+                        .unwrap_or("—");
+                    let mut player = None;
+                    let mut player_cell = Rect::NOTHING;
                     let row = t.selectable_row(highlighted, |r| {
                         // Kept whether or not there is anything to tick, so
                         // turning "Clear Log File" on makes the boxes appear
@@ -293,30 +601,98 @@ impl CombatsPanel {
                             r,
                             combat,
                             note,
-                            dps_shown(combat, view.my_handle),
+                            // While a comparison is being put together the
+                            // figure is the one it is reading — the player
+                            // picked beside it — rather than the reader's own.
+                            match comparing {
+                                true => dps_shown(combat, Some(player_shown)),
+                                false => dps_shown(combat, view.my_handle),
+                            },
                             Some(&mut fold),
+                            None,
                             &mut formatter,
                         );
+                        if comparing {
+                            // At the end of the row, after the fight's own
+                            // columns: what a fight *is* reads the same whether
+                            // or not a comparison is being put together, and
+                            // these two are about the comparison rather than
+                            // about the fight.
+                            //
+                            // Whose figures the comparison reads for this
+                            // fight. A team run holds five people's, and which
+                            // of them a comparison is about is the whole
+                            // question it answers.
+                            player_cell = r
+                                .cell(|ui| {
+                                    ui.set_min_width(PLAYER_PICKER_WIDTH);
+                                    if combat.players.len() < 2 {
+                                        ui.label(player_shown);
+                                        return;
+                                    }
+                                    ComboBox::new(("combats player", combat.start), "")
+                                        .selected_text(player_shown)
+                                        .width(PLAYER_PICKER_WIDTH)
+                                        .show_ui(ui, |ui| {
+                                            for candidate in combat.players.iter() {
+                                                if ui
+                                                    .selectable_label(
+                                                        candidate.handle == player_shown,
+                                                        &candidate.handle,
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    player = Some(candidate.handle.clone());
+                                                }
+                                            }
+                                        });
+                                })
+                                .rect;
+                            // Which of the ticked fights this is, in the colour
+                            // the table's columns and the chart's lines carry.
+                            // Nothing sorts by it — the order is the order they
+                            // were ticked in — so it keeps no room for a sort
+                            // mark, only for the number itself.
+                            r.cell(|ui| {
+                                ui.set_min_width(text_width(ui, "999") + BADGE_PADDING * 2.0);
+                                match number {
+                                    Some(number) => show_number_badge(ui, number),
+                                    None => {
+                                        ui.label("");
+                                    }
+                                }
+                            });
+                        }
                     });
                     // The whole row ticks it, not the box alone — the row is
                     // what lights up under the pointer, so it is what a click
                     // lands on. With nothing to tick, a double click opens the
                     // fight instead.
+                    // A click that landed in the player picker is about the
+                    // player, not about ticking the row it stands in.
+                    let clicked_the_picker = row
+                        .interact_pointer_pos()
+                        .is_some_and(|pos| player_cell.contains(pos));
                     if ticked.is_some() {
-                        if row.clicked() {
+                        if row.clicked() && !clicked_the_picker {
                             tick = !tick;
                         }
                     } else if row.double_clicked() {
                         action = Some(ListAction::Open(index));
                     }
-                    if Some(tick) != ticked
-                        && let Some(to_delete) = self.to_delete.as_mut()
-                    {
-                        if tick {
-                            to_delete.insert(combat.start);
-                        } else {
-                            to_delete.remove(&combat.start);
-                        }
+                    if Some(tick) != ticked {
+                        self.tick(combat.start, tick);
+                        // A fight leaves the comparison (or rejoins it) there
+                        // and then, rather than waiting for the whole thing to
+                        // be built again: taking a run out and looking is the
+                        // quickest question there is.
+                        ticks_changed = true;
+                    }
+                    if let Some(handle) = player {
+                        action = Some(ListAction::ComparePlayer {
+                            start: combat.start,
+                            handle,
+                        });
                     }
                     row.on_hover_text(&combat.identifier);
                     if fold != unfolded {
@@ -329,7 +705,7 @@ impl CombatsPanel {
                     if fold {
                         for player in combat.players.iter() {
                             t.row(|r| {
-                                show_player_cells(r, player, &mut formatter);
+                                show_player_cells(r, player, leading_cells, &mut formatter);
                             });
                         }
                     }
@@ -339,10 +715,33 @@ impl CombatsPanel {
                 // The tick column's heading stays empty, like the compare
                 // picker's.
                 r.cell(|_| {});
-                clicked_heading = show_header_cells(r, view.my_handle, Some(&self.sort));
+                clicked_heading =
+                    show_header_cells(r, dps_header(view.my_handle, comparing), Some(&self.sort));
+                if comparing {
+                    // In the order the cells below them are drawn: whose
+                    // figures are being read, then which run of the comparison
+                    // this is.
+                    r.cell(|ui| {
+                        ui.label(RichText::new("Player").strong());
+                    });
+                    r.cell(|ui| {
+                        ui.label(RichText::new("#").strong());
+                    });
+                }
             });
         if let Some(column) = clicked_heading {
             self.sort.clicked(column);
+        }
+        // Reported after the table has drawn: the rows borrow the ticks while
+        // they do.
+        if leave_run {
+            self.confirm_leave_run = true;
+        }
+        if let Some(confirmed) = self.show_leave_run_confirmation(ui) {
+            action = Some(confirmed);
+        }
+        if ticks_changed && comparing {
+            action = Some(ListAction::Compare(indices_of(&view, &self.to_compare)));
         }
 
         action
@@ -356,66 +755,140 @@ impl CombatsPanel {
         visible: &[usize],
         ui: &mut Ui,
     ) -> Option<ListAction> {
-        let mut action = None;
         let counts = ListCounts {
             total: view.combats.len(),
             shown: visible.len(),
-            selected: self.to_delete.as_ref().map(FxHashSet::len),
+            selected: self.ticks(),
         };
-        let select = show_list_footer(ui, counts, None, |ui| {
-            // A toggle rather than a button that opens a window: the fights are
-            // already listed here, so ticking them is done in the list itself
-            // instead of in a second copy of it.
-            if ui
-                .steady_toggle(self.to_delete.is_some(), "Clear Log File")
-                .hover(
-                    "Tick the fights to delete from the log. Everything left unticked \
-                     stays in it.",
-                )
-                .clicked()
-            {
-                self.to_delete = match self.to_delete {
-                    Some(_) => None,
-                    // Everything but the newest, which is what clearing a log
-                    // is nearly always for.
-                    None => Some(all_but_newest(view, visible)),
-                };
+        let mut action = None;
+        // Past a certain size a comparison gives something up; the list says
+        // so where the ticks are, since that is where it can still be undone.
+        let hint = match self.mode {
+            PanelMode::Comparing => crate::app::compare::selection_hint(self.to_compare.len()),
+            _ => None,
+        };
+        let select = show_list_footer(ui, counts, hint, |ui| match self.mode {
+            // Nothing to press: the comparison is whatever is ticked, and it
+            // follows the ticks as they are made. A button would only ask the
+            // reader to confirm what they have already said.
+            PanelMode::Comparing => {
+                let enough = if view.pinned_run.is_some() { 1 } else { 2 };
+                if self.to_compare.len() < enough {
+                    ui.label(
+                        RichText::new(match view.pinned_run.is_some() {
+                            true => "Tick a fight of your own to compare the run against.",
+                            false => "Tick two fights to compare them against each other.",
+                        })
+                        .weak(),
+                    );
+                }
             }
-
-            let ticks = self.to_delete.as_ref().map(FxHashSet::len).unwrap_or(0);
-            if ticks > 0 {
-                ui.scope(|ui| {
-                    theme::accent_rim(ui);
-                    if ui
-                        .button(format!("Delete {ticks} ticked 🗑"))
-                        .hover("Rewrite the log without them. This cannot be undone.")
-                        .clicked()
-                    {
-                        // A single fight goes straight away — it is one row,
-                        // ticked deliberately, and asking about it is noise.
-                        // Anything more is worth a question, because the log is
-                        // rewritten and there is no way back.
-                        if ticks > 1 {
-                            self.confirm_delete = true;
-                        } else {
-                            let ticked = self.to_delete.take().unwrap_or_default();
-                            action = Some(ListAction::Keep(keep_list(view, &ticked)));
+            // Clearing the log, or offering to.
+            PanelMode::Browse | PanelMode::Clearing => {
+                // A toggle rather than a button that opens a window: the fights
+                // are already listed here, so ticking them is done in the list
+                // itself instead of in a second copy of it.
+                if ui
+                    .steady_toggle(self.mode == PanelMode::Clearing, "Clear Log File")
+                    .hover(
+                        "Tick the fights to delete from the log. Everything left unticked \
+                         stays in it.",
+                    )
+                    .clicked()
+                {
+                    self.mode = match self.mode {
+                        PanelMode::Clearing => PanelMode::Browse,
+                        _ => {
+                            // Everything but the newest to begin with, which is
+                            // what clearing a log is nearly always for — but
+                            // only the first time: what was ticked before is
+                            // remembered while the panel stays open.
+                            if self.to_delete.is_empty() {
+                                self.to_delete = all_but_newest(view, visible);
+                            }
+                            PanelMode::Clearing
                         }
-                    }
-                });
+                    };
+                }
+
+                let ticks = self.to_delete.len();
+                if self.mode == PanelMode::Clearing && ticks > 0 {
+                    ui.scope(|ui| {
+                        theme::accent_rim(ui);
+                        if ui
+                            .button(format!("Delete {ticks} ticked 🗑"))
+                            .hover("Rewrite the log without them. This cannot be undone.")
+                            .clicked()
+                        {
+                            // A single fight goes straight away — it is one
+                            // row, ticked deliberately, and asking about it is
+                            // noise. Anything more is worth a question, because
+                            // the log is rewritten and there is no way back.
+                            if ticks > 1 {
+                                self.confirm_delete = true;
+                            } else {
+                                let ticked = std::mem::take(&mut self.to_delete);
+                                action = Some(ListAction::Keep(keep_list(view, &ticked)));
+                            }
+                        }
+                    });
+                }
             }
         });
         if let Some(confirmed) = self.show_delete_confirmation(view, ui) {
             action = Some(confirmed);
         }
-        if let (Some(select), Some(ticked)) = (select, self.to_delete.as_mut()) {
-            match select {
-                SelectAll::All => {
-                    *ticked = visible.iter().map(|&i| view.combats[i].start).collect()
+        if let Some(select) = select {
+            let shown = visible.iter().map(|&i| view.combats[i].start);
+            match (select, self.mode) {
+                (SelectAll::All, _) => {
+                    for start in shown {
+                        self.tick(start, true);
+                    }
                 }
-                SelectAll::None => ticked.clear(),
+                (SelectAll::None, PanelMode::Clearing) => self.to_delete.clear(),
+                (SelectAll::None, PanelMode::Comparing) => self.to_compare.clear(),
+                (SelectAll::None, PanelMode::Browse) => (),
+            }
+            // Ticking or unticking the lot is the same change as ticking a row,
+            // and the comparison on screen has to follow it just the same.
+            if self.mode == PanelMode::Comparing {
+                action = Some(ListAction::Compare(indices_of(view, &self.to_compare)));
             }
         }
+        action
+    }
+
+    /// Asks whether the reader means to give up the run they opened from the
+    /// ladder, and reports it once they say so.
+    fn show_leave_run_confirmation(&mut self, ui: &mut Ui) -> Option<ListAction> {
+        if !self.confirm_leave_run {
+            return None;
+        }
+        let mut action = None;
+        Window::new("Leave the ladder run")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                ui.label("Stop comparing against the run from the ladder?");
+                ui.label(
+                    RichText::new("Your own log comes back, and this comparison goes.").weak(),
+                );
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.scope(|ui| {
+                        theme::accent_rim(ui);
+                        if ui.button("Leave the run").clicked() {
+                            self.confirm_leave_run = false;
+                            action = Some(ListAction::LeaveLadderRun);
+                        }
+                    });
+                    if ui.button("Cancel").clicked() {
+                        self.confirm_leave_run = false;
+                    }
+                });
+            });
         action
     }
 
@@ -433,7 +906,7 @@ impl CombatsPanel {
         if !self.confirm_delete {
             return None;
         }
-        let ticked = self.to_delete.clone().unwrap_or_default();
+        let ticked = self.to_delete.clone();
         // The ticks can go while the question is up — a refresh dropping a
         // fight, the reader clearing them. Nothing left to delete, nothing to
         // ask about.
@@ -449,7 +922,7 @@ impl CombatsPanel {
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ui.ctx(), |ui| {
                 ui.label(format!(
-                    "Delete {} of the log's {} combats?",
+                    "Delete {}/{} combats?",
                     ticked.len(),
                     view.combats.len()
                 ));
@@ -465,7 +938,7 @@ impl CombatsPanel {
                     ui.scope(|ui| {
                         theme::accent_rim(ui);
                         if ui.button(format!("Delete {} 🗑", ticked.len())).clicked() {
-                            self.to_delete = None;
+                            self.to_delete.clear();
                             self.confirm_delete = false;
                             action = Some(ListAction::Keep(keep_list(view, &ticked)));
                         }
@@ -605,7 +1078,7 @@ impl ListCounts {
             false => format!("{} of {} combats", self.shown, self.total),
         };
         match self.selected {
-            Some(selected) => format!("{selected} / {} selected — {of_the_log}", self.total),
+            Some(selected) => format!("{selected}/{} selected", self.total),
             None => of_the_log,
         }
     }
@@ -620,6 +1093,20 @@ fn all_but_newest(view: &CombatsListView<'_>, visible: &[usize]) -> FxHashSet<Na
         .iter()
         .map(|&i| view.combats[i].start)
         .filter(|&start| Some(start) != newest)
+        .collect()
+}
+
+/// Where the ticked fights sit in the log, in the order they were ticked —
+/// which is the order the comparison numbers and colours them in, and the
+/// order it puts its columns in.
+fn indices_of(view: &CombatsListView<'_>, ticked: &[NaiveDateTime]) -> Vec<usize> {
+    ticked
+        .iter()
+        .filter_map(|start| {
+            view.combats
+                .iter()
+                .position(|combat| combat.start == *start)
+        })
         .collect()
 }
 
@@ -648,13 +1135,17 @@ pub fn dps_shown<'a>(combat: &'a CombatSummary, my_handle: Option<&str>) -> Opti
     Some((player.handle.as_str(), player.dps))
 }
 
-/// What the DPS column is headed, which depends on whose it is.
-pub fn dps_header(my_handle: Option<&str>) -> &'static str {
-    match my_handle {
-        Some(_) => "My DPS",
-        // Said plainly rather than left as "DPS": a column that quietly means
-        // somebody else's figure is worse than one that says so.
-        None => "Top DPS",
+/// What the DPS column is headed.
+///
+/// Plain "DPS" wherever the figure is the one it should be — the reader's own,
+/// or the player picked beside it in a comparison. "Top DPS" only where the
+/// program does not know whose log it is reading and is showing the best of
+/// each fight instead: a column that quietly means somebody else's figure is
+/// worse than one that says so.
+pub fn dps_header(my_handle: Option<&str>, comparing: bool) -> &'static str {
+    match (comparing, my_handle) {
+        (true, _) | (false, Some(_)) => "DPS",
+        (false, None) => "Top DPS",
     }
 }
 
@@ -687,9 +1178,9 @@ impl CombatColumn {
         CombatColumn::Note,
     ];
 
-    /// The heading. The DPS column says whose figures it holds, so it is the one
-    /// that needs telling.
-    fn heading(self, my_handle: Option<&str>) -> &'static str {
+    /// The heading. The DPS column is the one that has to be told what it says:
+    /// whose figures it holds depends on the list it is in.
+    fn heading(self, dps: &'static str) -> &'static str {
         match self {
             CombatColumn::Map => "Map",
             CombatColumn::Content => "Content",
@@ -698,9 +1189,50 @@ impl CombatColumn {
             CombatColumn::Level => "Level",
             CombatColumn::Start => "Start",
             CombatColumn::Time => "Time",
-            CombatColumn::Dps => dps_header(my_handle),
+            CombatColumn::Dps => dps,
             CombatColumn::Note => "Note",
         }
+    }
+
+    /// The widest value the column can ever hold, or `None` for one whose
+    /// contents nobody can put a bound on.
+    ///
+    /// A column of short words — Solo/Team, a level, a length — is drawn to
+    /// that width rather than to whatever the rows on screen happen to need.
+    /// Two reasons: it stops a column of four-letter words taking as much room
+    /// as the map name beside it, and it makes the list in the panel and the
+    /// picker in a comparison the same width down to the point, which they were
+    /// not while each measured its own rows.
+    fn widest(self) -> Option<&'static str> {
+        match self {
+            CombatColumn::Type => Some("Shuttle"),
+            CombatColumn::Size => Some("Team"),
+            CombatColumn::Content => Some("Patrol"),
+            CombatColumn::Level => Some("Advanced"),
+            CombatColumn::Start => Some("19.08 21:14"),
+            // An hour-long fight is rare enough to be allowed to widen its own
+            // column rather than have every list carry the room for one.
+            CombatColumn::Time => Some("59:59"),
+            CombatColumn::Dps => Some("999.9k"),
+            // A map's name and a reader's note are as long as they are.
+            CombatColumn::Map | CombatColumn::Note => None,
+        }
+    }
+
+    /// How wide the column is drawn, where it has a width of its own: enough
+    /// for its widest value, and for its heading with the sort mark beside it.
+    ///
+    /// The mark's room is kept in every column, sorting or not, so that
+    /// clicking a heading cannot shift the columns under it. What is *not* kept
+    /// is the padding the tables of figures put after the mark — a whole space
+    /// character on top of a column holding the word "Solo".
+    fn width(self, ui: &Ui, dps: &'static str) -> Option<f32> {
+        Some(text_width(ui, self.widest()?).max(self.heading_width(ui, dps)))
+    }
+
+    /// What the heading itself needs: its words and the room for the sort mark.
+    fn heading_width(self, ui: &Ui, dps: &'static str) -> f32 {
+        text_width(ui, self.heading(dps)) + sort_marker_width(ui)
     }
 
     fn hover(self) -> Option<&'static str> {
@@ -733,17 +1265,23 @@ impl CombatColumn {
 /// and the delete dialog keep their own order and are not asking to be sorted.
 pub fn show_header_cells(
     r: &mut TableRow,
-    my_handle: Option<&str>,
+    dps: &'static str,
     sort: Option<&SortState<CombatColumn>>,
 ) -> Option<CombatColumn> {
     let mut clicked = None;
     for column in CombatColumn::ALL {
-        let heading = column.heading(my_handle);
+        let heading = column.heading(dps);
         r.cell(|ui| {
+            let sorted = sort.is_some_and(|sort| sort.is_sorted_by(column));
+            let width = column
+                .width(ui, dps)
+                .unwrap_or_else(|| column.heading_width(ui, dps));
+            ui.set_min_width(width);
             let response = match sort {
-                Some(sort) => show_sortable_header_cell(
+                Some(sort) => show_sortable_header_cell_sized(
                     ui,
-                    sort.is_sorted_by(column),
+                    width,
+                    sorted,
                     sort.marker(column),
                     heading,
                     |_| {},
@@ -830,57 +1368,98 @@ fn level_rank(difficulty: Option<Difficulty>) -> u8 {
 /// `fold` is the fold-out state of this row's player list, where the caller
 /// offers one; the arrow is drawn (and toggles it) only for a fight with more
 /// than one player in it, since folding out a solo run says nothing new.
+#[allow(clippy::too_many_arguments)]
 pub fn show_combat_cells(
     r: &mut TableRow,
     combat: &CombatSummary,
     note: &str,
     dps: Option<(&str, f64)>,
     fold: Option<&mut bool>,
+    // A colour for the whole row, where it is not one of the ordinary fights:
+    // the run fetched from the ladder, which came from somewhere else.
+    color: Option<Color32>,
     formatter: &mut NumberFormatter,
 ) {
+    // A column of short words is drawn to the width its own kind of value
+    // needs (see `width`), rather than to whatever the rows on screen happen to
+    // come to — so the same column is the same width in the list and in a
+    // comparison. The map and the note have no such width: they are as long as
+    // they are, and they are what the panel is dragged wider for.
+    let cell = |r: &mut TableRow, column: CombatColumn, text: String| {
+        r.cell(|ui| {
+            ui.visuals_mut().override_text_color = color;
+            if let Some(width) = column.width(ui, "DPS") {
+                ui.set_min_width(width);
+            }
+            ui.label(text);
+        });
+    };
     r.cell(|ui| {
+        ui.visuals_mut().override_text_color = color;
+        if let Some(width) = CombatColumn::Type.width(ui, "DPS") {
+            ui.set_min_width(width);
+        }
         ui.horizontal(|ui| {
             // At the start of the row rather than beside the map name: it folds
             // the whole row out, and that is where a reader looks for it.
-            match fold.filter(|_| combat.players.len() > 1) {
-                Some(fold) => {
-                    let symbol = if *fold { "⏷" } else { "⏵" };
-                    if ui
-                        .add(Button::selectable(false, symbol).min_size(ARROW_SIZE))
-                        .hover("Show what each player did.")
-                        .clicked()
-                    {
-                        *fold = !*fold;
-                    }
-                }
-                // The room is kept either way, so the column stays in line
-                // whether a fight has an arrow or not.
-                None => {
-                    ui.add_space(ARROW_SIZE.x + ui.spacing().item_spacing.x);
-                }
+            // The arrow is drawn either way and only made invisible where
+            // there is nothing to fold out, so a fight with players under it
+            // and one without line up to the point. Room measured out beside it
+            // instead was room of a different size — a button is its glyph plus
+            // its own padding — and the column drew two points wider or
+            // narrower depending on which rows were in it.
+            let can_open = combat.players.len() > 1;
+            let symbol = match fold.as_deref() {
+                Some(true) => "⏷",
+                _ => "⏵",
+            };
+            let arrow = ui.add_visible(
+                can_open,
+                Button::selectable(false, symbol).min_size(ARROW_SIZE),
+            );
+            if can_open
+                && arrow.hover("Show what each player did.").clicked()
+                && let Some(fold) = fold
+            {
+                *fold = !*fold;
             }
             ui.label(combat.environment.as_deref().unwrap_or("—"));
         });
     });
+    cell(
+        r,
+        CombatColumn::Size,
+        if combat.solo { "Solo" } else { "Team" }.to_owned(),
+    );
+    cell(
+        r,
+        CombatColumn::Content,
+        combat.category.as_deref().unwrap_or("—").to_owned(),
+    );
     r.cell(|ui| {
-        ui.label(if combat.solo { "Solo" } else { "Team" });
-    });
-    r.cell(|ui| {
-        ui.label(combat.category.as_deref().unwrap_or("—"));
-    });
-    r.cell(|ui| {
+        ui.visuals_mut().override_text_color = color;
         ui.label(combat.map());
     });
+    cell(
+        r,
+        CombatColumn::Level,
+        combat
+            .difficulty
+            .and_then(|d| d.label())
+            .unwrap_or("—")
+            .to_owned(),
+    );
+    cell(
+        r,
+        CombatColumn::Start,
+        combat.start.format("%d.%m %H:%M").to_string(),
+    );
+    cell(r, CombatColumn::Time, format_duration_hms(combat.duration));
     r.cell(|ui| {
-        ui.label(combat.difficulty.and_then(|d| d.label()).unwrap_or("—"));
-    });
-    r.cell(|ui| {
-        ui.label(combat.start.format("%d.%m %H:%M").to_string());
-    });
-    r.cell(|ui| {
-        ui.label(format_duration_hms(combat.duration));
-    });
-    r.cell(|ui| {
+        ui.visuals_mut().override_text_color = color;
+        if let Some(width) = CombatColumn::Dps.width(ui, "Top DPS") {
+            ui.set_min_width(width);
+        }
         match dps {
             // Whose figure it is is one hover away, which is what tells a
             // fight the reader was in from one they only have the best of.
@@ -895,29 +1474,99 @@ pub fn show_combat_cells(
         }
     });
     r.cell(|ui| {
+        ui.visuals_mut().override_text_color = color;
         ui.label(note);
     });
 }
 
+/// Whose figures a comparison reads for this fight.
+///
+/// A picker where the fight holds more than one player, and the handle itself
+/// where it holds one — a menu of a single entry is a menu that answers nothing.
+fn show_player_picker(
+    ui: &mut Ui,
+    combat: &CombatSummary,
+    shown: &str,
+    picked: &mut Option<String>,
+) {
+    ui.set_min_width(PLAYER_PICKER_WIDTH);
+    if combat.players.len() < 2 {
+        ui.label(shown);
+        return;
+    }
+    ComboBox::new(("combats player", combat.start), "")
+        .selected_text(shown)
+        .width(PLAYER_PICKER_WIDTH)
+        .show_ui(ui, |ui| {
+            for candidate in combat.players.iter() {
+                if ui
+                    .selectable_label(candidate.handle == shown, &candidate.handle)
+                    .clicked()
+                {
+                    *picked = Some(candidate.handle.clone());
+                }
+            }
+        });
+}
+
+/// Which run of a comparison this is, drawn as a badge in that run's own
+/// colour.
+///
+/// Filled rather than written in the colour: the series colours are picked to
+/// tell lines on a chart apart against the window's background, and several of
+/// them disappear into the blue of a row that is picked out. A patch of the
+/// colour with the number over it holds up on any row, and says the same thing.
+fn show_number_badge(ui: &mut Ui, number: usize) {
+    let (fill, on_fill) = theme::badge_colors(theme::series_color(number - 1));
+    let font = TextStyle::Body.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(format!("#{number}"), font, on_fill);
+    let (rect, _) = ui.allocate_exact_size(
+        galley.size() + vec2(BADGE_PADDING * 2.0, 0.0),
+        Sense::hover(),
+    );
+    ui.painter()
+        .rect_filled(rect, ui.visuals().widgets.inactive.corner_radius, fill);
+    let text_at = rect.center() - galley.size() * 0.5;
+    ui.painter().galley(text_at, galley, Color32::PLACEHOLDER);
+}
+
 /// A folded-out player: their handle under the map name, their DPS under the
 /// DPS column, so the figures stay in one column with the combats above them.
-fn show_player_cells(r: &mut TableRow, player: &PlayerSummary, formatter: &mut NumberFormatter) {
-    r.cell(|ui| {
-        ui.horizontal(|ui| {
-            ui.add_space(ARROW_SIZE.x + ui.spacing().item_spacing.x * 2.0);
-            ui.label(RichText::new(&player.handle).weak());
-        });
-    });
-    for _ in 0..CombatColumn::ALL.len() - 3 {
+fn show_player_cells(
+    r: &mut TableRow,
+    player: &PlayerSummary,
+    leading: usize,
+    formatter: &mut NumberFormatter,
+) {
+    for _ in 0..leading {
         r.cell(|_| {});
     }
-    r.cell(|ui| {
-        ui.label(
-            RichText::new(formatter.format_with_automated_suffixes(player.dps))
-                .color(theme::palette().ok),
-        );
-    });
-    r.cell(|_| {});
+    // Under the columns they belong to: the handle where the map's name is —
+    // both are names, and a handle under "Type" made that column as wide as the
+    // longest one in the log — and the figure under the DPS the fight's own row
+    // shows, which is what it is to be read against.
+    for column in CombatColumn::ALL {
+        match column {
+            CombatColumn::Map => {
+                r.cell(|ui| {
+                    ui.label(RichText::new(&player.handle).weak());
+                });
+            }
+            CombatColumn::Dps => {
+                r.cell(|ui| {
+                    ui.label(
+                        RichText::new(formatter.format_with_automated_suffixes(player.dps))
+                            .color(theme::palette().ok),
+                    );
+                });
+            }
+            _ => {
+                r.cell(|_| {});
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -953,8 +1602,11 @@ mod tests {
         let combat = combat("Infected Space", &[("@friend", 140.0), ("@me", 100.0)]);
         assert_eq!(Some(("@me", 100.0)), dps_shown(&combat, Some("@me")));
         assert_eq!(Some(("@friend", 140.0)), dps_shown(&combat, None));
-        assert_eq!("My DPS", dps_header(Some("@me")));
-        assert_eq!("Top DPS", dps_header(None));
+        assert_eq!("DPS", dps_header(Some("@me"), false));
+        assert_eq!("DPS", dps_header(Some("@me"), true));
+        // Only where nobody knows whose figures these are does the heading say
+        // so.
+        assert_eq!("Top DPS", dps_header(None, false));
     }
 
     /// A fight the reader sat out still says how it went: the best figure in
@@ -1057,6 +1709,9 @@ mod tests {
             notes,
             my_handle: None,
             shown: None,
+            comparing: false,
+            comparison: &[],
+            pinned_run: None,
         }
     }
 
@@ -1112,6 +1767,53 @@ mod tests {
         assert_eq!(vec![0, 1, 2], keep_list(&view, &FxHashSet::default()));
     }
 
+    /// Folding the list away and out again must not lose track of what the
+    /// window beside it is doing: the comparison is still on screen, so the
+    /// ticks it is built from are still what the rows are for.
+    #[test]
+    fn the_list_follows_the_window_rather_than_remembering_it() {
+        let notes = CombatNotes::default();
+        let combats = [combat("Infected Space", &[("@me", 100.0)])];
+        let mut panel = CombatsPanel::new(true);
+        let view = |comparing| CombatsListView {
+            combats: &combats,
+            notes: &notes,
+            my_handle: None,
+            shown: None,
+            comparing,
+            comparison: &[],
+            pinned_run: None,
+        };
+
+        let ctx = Context::default();
+        crate::app::theme::apply(&ctx, crate::app::theme::Theme::Dark);
+        fn draw(ctx: &Context, panel: &mut CombatsPanel, view: CombatsListView<'_>) {
+            let mut view = Some(view);
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                if let Some(view) = view.take() {
+                    panel.show(view, &mut 600.0, ui);
+                }
+            });
+        }
+
+        draw(&ctx, &mut panel, view(true));
+        assert_eq!(PanelMode::Comparing, panel.mode);
+
+        // Folded away and back out while the window keeps comparing.
+        panel.toggle();
+        draw(&ctx, &mut panel, view(true));
+        panel.toggle();
+        draw(&ctx, &mut panel, view(true));
+        assert_eq!(
+            PanelMode::Comparing,
+            panel.mode,
+            "the window is still comparing, so the list still is"
+        );
+
+        draw(&ctx, &mut panel, view(false));
+        assert_eq!(PanelMode::Browse, panel.mode);
+    }
+
     /// The Played window narrows by when a fight was, alongside the pickers
     /// that narrow by what it was — and against the fight's *start*, which is
     /// the one time in it the log fixes.
@@ -1154,6 +1856,347 @@ mod layout_tests {
     use crate::app::theme;
     use eframe::egui::containers::panel::PanelState;
 
+    /// A column of short words is the same width whatever is in the rows.
+    ///
+    /// Otherwise the list in the panel and the picker in a comparison — two
+    /// tables of the same columns over different fights — line up at nothing,
+    /// and a column of four-letter words takes as much room as the map name
+    /// beside it just because its heading is long.
+    #[test]
+    fn a_column_of_short_words_does_not_follow_its_rows() {
+        let short = measured_widths(&[a_combat("Japori", "Solo", None)], false);
+        let long = measured_widths(
+            &[a_combat(
+                "[TFO] Khitomer Vortex: Into the Breach",
+                "Team",
+                Some(Difficulty::Advanced),
+            )],
+            false,
+        );
+        assert!(!short.is_empty(), "the table was drawn");
+
+        // The map's column is what a longer name widens.
+        let map = 4;
+        assert!(long[map] > short[map], "{short:?} vs {long:?}");
+        // Everything of a fixed kind stays put.
+        for (column, width) in short.iter().enumerate() {
+            if column == map {
+                continue;
+            }
+            assert_eq!(
+                *width, long[column],
+                "column {column}: {short:?} vs {long:?}"
+            );
+        }
+    }
+
+    /// The same column is the same width whichever the list is drawn for.
+    ///
+    /// Picking fights for a comparison puts two columns in front of the rest.
+    /// A table's measured columns are kept by *position*, so every column after
+    /// them was being drawn at the width of the one two places to its left —
+    /// which is why Size and Time did not line up between the two views of what
+    /// is otherwise the same table, drawn by the same code.
+    #[test]
+    fn a_column_is_the_same_width_in_both_views() {
+        let combats = [a_combat(
+            "Infected: The Conduit",
+            "Team",
+            Some(Difficulty::Elite),
+        )];
+        let browsing = measured_widths(&combats, false);
+        let comparing = measured_widths(&combats, true);
+
+        // The two the comparison adds stand at the end; everything before them
+        // is the fight's own columns, and they have to match one for one.
+        assert_eq!(browsing.len() + 2, comparing.len());
+        assert_eq!(
+            browsing[..],
+            comparing[..browsing.len()],
+            "{browsing:?} against {comparing:?}"
+        );
+    }
+
+    /// The columns of a list drawn on its own, so one measurement cannot pick
+    /// up the widths another left behind: egui keeps a table's measured columns
+    /// under its id, and both lists use the same one.
+    fn measured_widths(combats: &[CombatSummary], comparing: bool) -> Vec<f32> {
+        measured_widths_with(combats, comparing, &[])
+    }
+
+    fn measured_widths_with(
+        combats: &[CombatSummary],
+        comparing: bool,
+        comparison: &[ComparisonSlot],
+    ) -> Vec<f32> {
+        let ctx = Context::default();
+        crate::app::fonts::install(&ctx);
+        theme::apply(&ctx, theme::Theme::Dark);
+        let notes = CombatNotes::default();
+        let mut panel = CombatsPanel::new(true);
+        let mut widths = Vec::new();
+        // Three passes: the fonts arrive, the columns are measured, the table
+        // is drawn with what was measured.
+        for _ in 0..3 {
+            let mut view = Some(CombatsListView {
+                combats,
+                notes: &notes,
+                my_handle: None,
+                shown: None,
+                comparing,
+                comparison,
+                pinned_run: None,
+            });
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                if let Some(view) = view.take() {
+                    panel.show(view, &mut 900.0, ui);
+                }
+                widths = crate::custom_widgets::table::table_column_widths(ui, panel.table_id());
+            });
+        }
+        widths
+    }
+
+    /// What the columns come to, printed rather than asserted: the numbers are
+    /// what a decision about their widths is made from.
+    #[test]
+    #[ignore = "prints the column widths rather than asserting anything"]
+    fn print_mixed_list_widths() {
+        // A list shaped like a real one: solo fights with nobody to fold out,
+        // team fights with an arrow, and one the program could not name.
+        let mut solo = a_combat("Azure Nebula Rescue", "Solo", Some(Difficulty::Advanced));
+        solo.environment = Some("Space".to_owned());
+        solo.players = vec![PlayerSummary {
+            handle: "@ramanwaleczny".to_owned(),
+            dps: 139_000.0,
+        }];
+        let mut team = a_combat("Gateway To Grethor", "Team", Some(Difficulty::Advanced));
+        team.environment = Some("Space".to_owned());
+        team.start = NaiveDateTime::default() + chrono::Duration::minutes(10);
+        team.players = vec![
+            PlayerSummary {
+                handle: "@mattman147".to_owned(),
+                dps: 8_390.0,
+            },
+            PlayerSummary {
+                handle: "@ramanwaleczny".to_owned(),
+                dps: 7_000.0,
+            },
+        ];
+        let mut unknown = a_combat("Combat", "Team", None);
+        unknown.environment = None;
+        unknown.category = None;
+        unknown.start = NaiveDateTime::default() + chrono::Duration::minutes(20);
+        unknown.players = vec![
+            PlayerSummary {
+                handle: "@ramanwaleczny".to_owned(),
+                dps: 94_900.0,
+            },
+            PlayerSummary {
+                handle: "@somebody".to_owned(),
+                dps: 1_000.0,
+            },
+        ];
+        let combats = [solo, team, unknown];
+
+        let notes = CombatNotes::default();
+        let ctx = Context::default();
+        crate::app::fonts::install(&ctx);
+        theme::apply(&ctx, theme::Theme::Dark);
+        let mut panel = CombatsPanel::new(true);
+        let mut width = 0.0;
+        for (frame, comparing) in [false, false, false, true, true, true]
+            .into_iter()
+            .enumerate()
+        {
+            let mut view = Some(CombatsListView {
+                combats: &combats,
+                notes: &notes,
+                my_handle: Some("@ramanwaleczny"),
+                shown: Some(combats[0].start),
+                comparing,
+                comparison: &[],
+                pinned_run: None,
+            });
+            let mut widths = Vec::new();
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                if let Some(view) = view.take() {
+                    panel.show(view, &mut width, ui);
+                }
+                widths = crate::custom_widgets::table::table_column_widths(ui, panel.table_id());
+            });
+            println!("frame {frame} comparing {comparing}: {widths:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "prints the column widths rather than asserting anything"]
+    fn print_column_widths() {
+        let mut realistic = a_combat("Infected: The Conduit", "Team", Some(Difficulty::Elite));
+        realistic.environment = Some("Space".to_owned());
+        realistic.players = vec![
+            PlayerSummary {
+                handle: "@ramanwaleczny".to_owned(),
+                dps: 121_700.0,
+            },
+            PlayerSummary {
+                handle: "@Ettenurb".to_owned(),
+                dps: 88_400.0,
+            },
+        ];
+        let realistic = [realistic];
+        println!("real browse  {:?}", measured_widths(&realistic, false));
+        println!("real compare {:?}", measured_widths(&realistic, true));
+        let slots = [ComparisonSlot {
+            start: realistic[0].start,
+            player: "@ramanwaleczny".to_owned(),
+        }];
+        println!(
+            "real in-comp {:?}",
+            measured_widths_with(&realistic, true, &slots)
+        );
+        let japori = [a_combat("Japori", "Team", None)];
+        println!("browse  {:?}", measured_widths(&japori, false));
+        println!("compare {:?}", measured_widths(&japori, true));
+        let longest = crate::analyzer::curated_map_names()
+            .into_iter()
+            .max_by_key(String::len)
+            .unwrap_or_default();
+        println!("longest map name: {longest:?}");
+        println!(
+            "longest {:?}",
+            measured_widths(&[a_combat(&longest, "Team", None)], false)
+        );
+    }
+
+    /// With nothing the reader has set, the panel opens at exactly the width
+    /// its table came to — and once they have dragged it, that is what it opens
+    /// at instead.
+    #[test]
+    fn the_panel_opens_at_the_width_of_its_table() {
+        let combats = [a_combat(
+            "Infected: The Conduit",
+            "Team",
+            Some(Difficulty::Elite),
+        )];
+        let table: f32 = measured_widths(&combats, false).iter().sum();
+
+        // A first run: nothing the reader has set, so the panel is its table.
+        let mut width = 0.0;
+        let opened = drawn_width(&combats, &mut width);
+        assert!(
+            opened > table,
+            "the panel opened at {opened}, its table came to {table}"
+        );
+        assert!(
+            width <= 0.0,
+            "following its table is not a width the reader set: {width}"
+        );
+
+        // The next run, with a width of their own: that is what it opens at.
+        let mut width = 400.0;
+        let opened = drawn_width(&combats, &mut width);
+        assert!(
+            (opened - 400.0).abs() < 2.0,
+            "the panel opened at {opened} rather than at the 400 it was left at"
+        );
+    }
+
+    /// A width the reader set survives the list being opened before the log has
+    /// been read.
+    ///
+    /// The table is a heading and nothing else for the first seconds of a large
+    /// log. Opening the panel then used to hand that width back as if the
+    /// reader had chosen it — and it was written to the settings on the way
+    /// out, so the panel came up narrow from then on.
+    #[test]
+    fn a_width_of_my_own_survives_a_log_that_has_not_been_read_yet() {
+        let ctx = Context::default();
+        crate::app::fonts::install(&ctx);
+        theme::apply(&ctx, theme::Theme::Dark);
+        let notes = CombatNotes::default();
+        let mut panel = CombatsPanel::new(true);
+        let mut width = 700.0;
+
+        let draw = |combats: &[CombatSummary], panel: &mut CombatsPanel, width: &mut f32| {
+            let mut drawn = 0.0;
+            for _ in 0..3 {
+                let mut view = Some(CombatsListView {
+                    combats,
+                    notes: &notes,
+                    my_handle: None,
+                    shown: None,
+                    comparing: false,
+                    comparison: &[],
+                    pinned_run: None,
+                });
+                let _ = ctx.run_ui(RawInput::default(), |ui| {
+                    if let Some(view) = view.take() {
+                        panel.show(view, width, ui);
+                    }
+                    drawn = PanelState::load(ui.ctx(), Id::new(PANEL_ID))
+                        .map(|state| state.rect.width())
+                        .unwrap_or_default();
+                });
+            }
+            drawn
+        };
+
+        // Opened while the log is still being read: no fights, so no table to
+        // speak of.
+        let drawn = draw(&[], &mut panel, &mut width);
+        assert!(
+            (width - 700.0).abs() < 1.0,
+            "the width they set is still theirs: {width}"
+        );
+        assert!(
+            (drawn - 700.0).abs() < 2.0,
+            "and the panel is drawn at it: {drawn}"
+        );
+
+        // The fights arrive.
+        let combats = [a_combat(
+            "Infected: The Conduit",
+            "Team",
+            Some(Difficulty::Elite),
+        )];
+        let drawn = draw(&combats, &mut panel, &mut width);
+        assert!((width - 700.0).abs() < 1.0, "still theirs: {width}");
+        assert!((drawn - 700.0).abs() < 2.0, "still drawn at it: {drawn}");
+    }
+
+    /// How wide the panel comes out, from a context of its own — a fresh run of
+    /// the program, in other words.
+    fn drawn_width(combats: &[CombatSummary], width: &mut f32) -> f32 {
+        let ctx = Context::default();
+        crate::app::fonts::install(&ctx);
+        theme::apply(&ctx, theme::Theme::Dark);
+        let notes = CombatNotes::default();
+        let mut panel = CombatsPanel::new(true);
+        let mut drawn = 0.0;
+        // The fonts arrive, the columns are measured, the panel settles.
+        for _ in 0..4 {
+            let mut view = Some(CombatsListView {
+                combats,
+                notes: &notes,
+                my_handle: None,
+                shown: None,
+                comparing: false,
+                comparison: &[],
+                pinned_run: None,
+            });
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                if let Some(view) = view.take() {
+                    panel.show(view, width, ui);
+                }
+                drawn = PanelState::load(ui.ctx(), Id::new(PANEL_ID))
+                    .map(|state| state.rect.width())
+                    .unwrap_or_default();
+            });
+        }
+        drawn
+    }
+
     /// The strip at the bottom of the panel has to reach the bottom of the
     /// panel, bar its rim.
     ///
@@ -1161,22 +2204,45 @@ mod layout_tests {
     /// margin — so a margin along the bottom left a band of empty panel under
     /// the strip, and everything in the strip read as sitting above the middle
     /// of the footer. Measured rather than eyeballed, because that is twice now.
+    /// A fight with everything filled in, for the layout tests.
+    fn a_combat(map: &str, size: &str, difficulty: Option<Difficulty>) -> CombatSummary {
+        CombatSummary {
+            name: map.to_owned(),
+            identifier: format!("{map} | 2026-08-19 21:14:03 - 21:18:15"),
+            base_name: map.to_owned(),
+            category: Some("Patrol".to_owned()),
+            environment: Some("Shuttle".to_owned()),
+            difficulty,
+            solo: size == "Solo",
+            start: NaiveDateTime::default(),
+            duration: chrono::Duration::seconds(3700),
+            players: vec![PlayerSummary {
+                handle: "@ramanwaleczny".to_owned(),
+                dps: 121_700.0,
+            }],
+        }
+    }
+
     #[test]
     fn the_footer_reaches_the_bottom_of_the_panel() {
         let ctx = Context::default();
         theme::apply(&ctx, theme::Theme::Dark);
         let notes = CombatNotes::default();
         let combats = vec![CombatSummary {
-            name: "[Solo] Japori".to_owned(),
-            identifier: "[Solo] Japori | 2026-08-19 21:14:03 - 21:18:15".to_owned(),
-            base_name: "Japori".to_owned(),
-            category: None,
-            environment: None,
-            difficulty: None,
-            solo: true,
+            name: "[Space] [Team] [TFO] Infected: The Conduit [Elite]".to_owned(),
+            identifier: "[Space] [Team] [TFO] Infected: The Conduit [Elite] | 2026-08-19 21:14:03 - 21:18:15"
+                .to_owned(),
+            base_name: "[TFO] Infected: The Conduit".to_owned(),
+            category: Some("Patrol".to_owned()),
+            environment: Some("Shuttle".to_owned()),
+            difficulty: Some(Difficulty::Advanced),
+            solo: false,
             start: NaiveDateTime::default(),
-            duration: chrono::Duration::seconds(60),
-            players: Vec::new(),
+            duration: chrono::Duration::seconds(3700),
+            players: vec![PlayerSummary {
+                handle: "@ramanwaleczny".to_owned(),
+                dps: 121700.0,
+            }],
         }];
         let mut panel = CombatsPanel::new(true);
         let mut width = 600.0;
@@ -1184,7 +2250,10 @@ mod layout_tests {
         // Twice with the tick boxes out and twice without: the strip changes
         // height as buttons come and go, and it has to sit right either way.
         for frame in 0..4 {
-            panel.to_delete = (2..4).contains(&frame).then(FxHashSet::default);
+            panel.mode = match (2..4).contains(&frame) {
+                true => PanelMode::Clearing,
+                false => PanelMode::Browse,
+            };
             let _ = ctx.run_ui(RawInput::default(), |ui| {
                 panel.show(
                     CombatsListView {
@@ -1192,6 +2261,9 @@ mod layout_tests {
                         notes: &notes,
                         my_handle: None,
                         shown: None,
+                        comparing: false,
+                        comparison: &[],
+                        pinned_run: None,
                     },
                     &mut width,
                     ui,

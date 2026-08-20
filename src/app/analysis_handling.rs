@@ -87,7 +87,7 @@ enum Instruction {
     RefreshCombatsList(u32),
     AutoRefresh,
     GetCombat(usize, u32),
-    GetCombats(Vec<usize>, u32),
+    GetCombats(Vec<usize>, u32, CombatsPurpose),
     KeepCombats(Vec<usize>),
     SaveCombat(usize, PathBuf),
     EnableAutoRefresh(bool, u32),
@@ -98,12 +98,30 @@ enum Instruction {
     SetSettings(Arc<AnalysisSettings>),
 }
 
+/// What a batch of combats was asked for, so the answer can be told from
+/// another batch's.
+///
+/// Two things ask for combats now, and both can be in flight at once: a
+/// comparison follows the ticks in the list as they are made, and opening a run
+/// from the ladder captures the reader's own fights before the analyzer moves
+/// off their log. Untagged, whichever answer arrived first was taken for
+/// whichever question was outstanding — so a comparison was built from the
+/// wrong fights, or a run opened against them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CombatsPurpose {
+    /// The fights a comparison is to be built from.
+    Compare,
+    /// The reader's own fights, captured before a run from the ladder takes
+    /// the analyzer's place.
+    CaptureOwn,
+}
+
 #[derive(Clone)]
 pub enum AnalysisInfo {
     Combat(Arc<Combat>),
-    // Several combats fetched together for the compare view, each with its
-    // index in the combats list so the caller can tell them apart.
-    Combats(Vec<(usize, Arc<Combat>)>),
+    // Several combats fetched together, each with its index in the combats
+    // list so the caller can tell them apart, and what they were asked for.
+    Combats(Vec<(usize, Arc<Combat>)>, CombatsPurpose),
     Refreshed {
         latest_combat: Arc<Combat>,
         /// Every combat in the log, oldest first — one entry each, carrying
@@ -187,11 +205,12 @@ impl AnalysisHandler {
             .unwrap();
     }
 
-    /// Fetch several combats at once (for the compare view). They come back as a
-    /// single `AnalysisInfo::Combats` on this handler.
-    pub fn get_combats(&self, combat_indices: Vec<usize>) {
+    /// Fetch several combats at once. They come back as a single
+    /// `AnalysisInfo::Combats` on this handler, carrying `purpose` so an answer
+    /// cannot be taken for another question's.
+    pub fn get_combats(&self, combat_indices: Vec<usize>, purpose: CombatsPurpose) {
         self.tx
-            .send(Instruction::GetCombats(combat_indices, self.id))
+            .send(Instruction::GetCombats(combat_indices, self.id, purpose))
             .unwrap();
     }
 
@@ -344,8 +363,8 @@ impl AnalysisContext {
                 Instruction::GetCombat(combat_index, handler) => {
                     self.get_combat(combat_index, handler);
                 }
-                Instruction::GetCombats(combat_indices, handler) => {
-                    self.get_combats(combat_indices, handler);
+                Instruction::GetCombats(combat_indices, handler, purpose) => {
+                    self.get_combats(combat_indices, handler, purpose);
                 }
                 Instruction::KeepCombats(keep) => self.keep_combats(keep),
                 Instruction::SaveCombat(combat_index, file) => self.save_combat(combat_index, file),
@@ -424,6 +443,14 @@ impl AnalysisContext {
             ctx.state = AutoRefreshState::Idle;
             ctx.last_refresh = SystemTime::now();
         }
+        // Done, and said so here rather than left to the bottom of the run
+        // loop. A refresh that came from the interval passing rather than from
+        // an instruction goes straight back to waiting, and the busy mark it
+        // put up stayed up — a permanent hourglass over a program that was
+        // doing nothing. It went unseen while the log was only watched with
+        // "Auto Refresh" on; the combats list follows the log at all times now,
+        // so that path is the ordinary one.
+        Self::set_is_busy(&self.is_busy, false);
     }
 
     /// Runs a consolidation pass and re-parses the log. When
@@ -439,6 +466,7 @@ impl AnalysisContext {
         if let Some(info) = self.try_refresh(false) {
             self.send_info(Self::into_list_only(info), handler);
         }
+        Self::set_is_busy(&self.is_busy, false);
     }
 
     fn try_refresh(&mut self, skip_when_unchanged: bool) -> Option<AnalysisInfo> {
@@ -545,22 +573,29 @@ impl AnalysisContext {
         self.send_info(AnalysisInfo::Combat(combat.into()), handler);
     }
 
-    fn get_combats(&self, combat_indices: Vec<usize>, handler: u32) {
-        let analyzer = match &self.analyzer {
-            Some(a) => a,
-            None => return,
-        };
+    fn get_combats(&self, combat_indices: Vec<usize>, handler: u32, purpose: CombatsPurpose) {
+        let combats: Vec<(usize, Arc<Combat>)> = self
+            .analyzer
+            .as_ref()
+            .map(|analyzer| {
+                combat_indices
+                    .into_iter()
+                    .filter_map(|i| analyzer.result().get(i).map(|c| (i, Arc::new(c.clone()))))
+                    .collect()
+            })
+            .unwrap_or_default();
 
-        let combats: Vec<(usize, Arc<Combat>)> = combat_indices
-            .into_iter()
-            .filter_map(|i| analyzer.result().get(i).map(|c| (i, Arc::new(c.clone()))))
-            .collect();
-
-        if combats.is_empty() {
+        // A capture is answered even when there is nothing to capture. It is
+        // what a run fetched from the ladder waits on before it is put on
+        // screen, and a log with no fights of the reader's own in it — a fresh
+        // install, a log that has just been cleared — left that run waiting
+        // for an answer that was never going to come, so the magnifier did
+        // nothing at all.
+        if combats.is_empty() && purpose != CombatsPurpose::CaptureOwn {
             return;
         }
 
-        self.send_info(AnalysisInfo::Combats(combats), handler);
+        self.send_info(AnalysisInfo::Combats(combats, purpose), handler);
     }
 
     /// Rewrites the log so it keeps only the combats at `keep` (their byte
@@ -811,7 +846,7 @@ mod tests {
                     }
                     AnalysisInfo::RefreshError => panic!("startup refresh errored"),
                     AnalysisInfo::Combat(_)
-                    | AnalysisInfo::Combats(_)
+                    | AnalysisInfo::Combats(..)
                     | AnalysisInfo::CombatsListRefreshed { .. } => {}
                 }
             }
@@ -1129,6 +1164,58 @@ mod tests {
         let infos: Vec<_> = main_rx.try_iter().collect();
         assert_eq!(1, infos.len(), "one message, not one of each kind");
         assert!(matches!(infos[0], AnalysisInfo::Refreshed { .. }));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The busy mark comes down when the work is done — including for a
+    /// refresh the interval asked for rather than the reader.
+    ///
+    /// That one goes straight back to waiting for the next instruction, so
+    /// anything left to the bottom of the run loop never happens: the hourglass
+    /// stayed up over a program sitting idle, for as long as nothing else was
+    /// asked of it.
+    #[test]
+    fn the_busy_mark_comes_down_after_every_refresh() {
+        let dir = std::env::temp_dir().join(format!("cla-busy-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        std::fs::write(
+            &log,
+            "26:07:23:20:00:00.0::Kestrel,P[1@2 Kestrel@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n",
+        )
+        .unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (tx, _rx) = unbounded();
+        let is_busy = Arc::new(AtomicBool::new(false));
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            HandlerContext {
+                tx,
+                auto_refresh: false,
+                list_refresh: true,
+                id: 0,
+                viewport: ViewportId::ROOT,
+            },
+            instruction_tx,
+            settings,
+            Context::default(),
+            is_busy.clone(),
+            1.0,
+        );
+
+        context.refresh(false);
+        assert!(!is_busy.load(Ordering::Relaxed), "after a manual refresh");
+        context.refresh(true);
+        assert!(!is_busy.load(Ordering::Relaxed), "after an automatic one");
+        context.refresh_combats_list(0);
+        assert!(!is_busy.load(Ordering::Relaxed), "after a list refresh");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
