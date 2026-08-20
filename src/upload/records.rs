@@ -135,14 +135,20 @@ pub enum Records {
 
 impl Records {
     /// Returns the run the reader asked to look at, once it is on disk.
+    /// `already_open` are the runs the main window already holds, so the
+    /// magnifier on one of them is drawn as what it is: nothing left to do.
     pub fn show(
         &mut self,
         ui: &mut Ui,
         frame: &Frame,
         url: &str,
         position: &mut Option<[f32; 2]>,
+        already_open: &[PathBuf],
     ) -> Option<PathBuf> {
-        let mut open_run = None;
+        let mut runs = RunTarget {
+            open_run: None,
+            already_open,
+        };
         let url = match Url::parse(url) {
             Ok(u) => u,
             Err(_) => {
@@ -202,7 +208,7 @@ impl Records {
                             Self::show_loading_ladders(ui);
                         }
                         Self::Loaded(loaded_ladders) => {
-                            loaded_ladders.show(ui, frame, url.clone(), &mut open_run)
+                            loaded_ladders.show(ui, frame, url.clone(), &mut runs)
                         }
                         Self::LoadError(err) => {
                             ui.label(&*err);
@@ -223,7 +229,7 @@ impl Records {
         if !open {
             *self = Self::Collapsed;
         }
-        open_run
+        runs.open_run
     }
 
     fn collapsed(&self) -> bool {
@@ -331,7 +337,7 @@ impl LoadedLadders {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url, open_run: &mut Option<PathBuf>) {
+    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: Url, runs: &mut RunTarget<'_>) {
         let changed = self.show_filters(ui);
         // What the filters left, so a search across several tables does not look
         // like one table with a strange number of first places in it.
@@ -346,9 +352,7 @@ impl LoadedLadders {
         );
         ui.separator();
 
-        let page = self
-            .entries
-            .show(ui, frame, &url, &mut self.filter, open_run);
+        let page = self.entries.show(ui, frame, &url, &mut self.filter, runs);
         // A changed filter starts again at the first page; a changed page keeps
         // the filter, player and all.
         if let Some(page) = changed.then_some(1).or(page) {
@@ -516,7 +520,7 @@ impl Entries {
         frame: &Frame,
         url: &Url,
         filter: &mut LadderFilter,
-        open_run: &mut Option<PathBuf>,
+        runs: &mut RunTarget<'_>,
     ) -> Option<i32> {
         let mut reload = None;
         match self {
@@ -575,7 +579,7 @@ impl Entries {
                     ui.add_space(20.0);
                     ui.checkbox(&mut entries.show_full_data, "Show full data");
                 });
-                entries.show(ui, frame, url, open_run);
+                entries.show(ui, frame, url, runs);
                 if search {
                     reload = Some(1);
                 } else if let Some(change_page) = change_page {
@@ -734,7 +738,7 @@ impl LoadedEntries {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &Url, open_run: &mut Option<PathBuf>) {
+    fn show(&mut self, ui: &mut Ui, frame: &Frame, url: &Url, runs: &mut RunTarget<'_>) {
         if self.entries.is_empty() {
             ui.label("no entries");
             return;
@@ -774,7 +778,7 @@ impl LoadedEntries {
                             r,
                             url,
                             self.combat_log_ids[index],
-                            open_run,
+                            runs,
                         );
                     })
                     .clicked()
@@ -803,8 +807,14 @@ impl LoadedEntries {
                 .hover("open this run in the main window");
             });
 
-        self.download_log_state.show_download(ui, open_run);
+        self.download_log_state.show_download(ui, runs);
     }
+}
+
+/// Where a run being opened is reported to, and which are open already.
+struct RunTarget<'a> {
+    open_run: Option<PathBuf>,
+    already_open: &'a [PathBuf],
 }
 
 enum DownloadLogState {
@@ -830,41 +840,50 @@ impl DownloadLogState {
         row: &mut TableRow,
         url: &Url,
         log_id: i32,
-        open_run: &mut Option<PathBuf>,
+        runs: &mut RunTarget<'_>,
     ) {
-        if row
-            .selectable_cell(false, |ui| {
-                ui.add_enabled_ui(self.is_idle(), |ui| {
-                    ui.label("🔍");
-                });
-            })
-            .hover("open this run in the main window")
-            .clicked()
-        {
-            let path = crate::helpers::paths::ladder_run(log_id);
-            if path.is_file() {
-                // Fetched once already; asking again costs nothing.
-                *open_run = Some(path);
-            } else {
-                if let Some(dir) = path.parent() {
-                    let _ = std::fs::create_dir_all(dir);
-                }
-                let url = url.clone();
-                let fetching = path.clone();
-                *self = DownloadLogState::Opening(
-                    path,
-                    Some(spawn_request(move || {
-                        match Self::do_download_log(url, fetching, log_id) {
-                            Ok(()) => DownloadLogState::Idle,
-                            Err(err) => DownloadLogState::DownloadFailed(format!(
-                                "{}",
-                                err.action_error("Failed to download the combatlog.")
-                            )),
-                        }
-                    })),
-                );
-            }
+        let path = crate::helpers::paths::ladder_run(log_id);
+        // Already in the reader's list, or something else is being fetched:
+        // the button is drawn as what it is rather than left to be pressed for
+        // nothing. Greying the label alone was not enough — the cell under it
+        // still took the click, and pressing a second one threw away the fetch
+        // already running.
+        let open_already = runs.already_open.contains(&path);
+        let ready = self.is_idle() && !open_already;
+        let response = row.selectable_cell(false, |ui| {
+            ui.add_enabled_ui(ready, |ui| {
+                ui.label("🔍");
+            });
+        });
+        let response = match open_already {
+            true => response.hover("this run is already in your list"),
+            false => response.hover("open this run in the main window"),
+        };
+        if !ready || !response.clicked() {
+            return;
         }
+        if path.is_file() {
+            // Fetched once already; asking again costs nothing.
+            runs.open_run = Some(path);
+            return;
+        }
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let url = url.clone();
+        let fetching = path.clone();
+        *self = DownloadLogState::Opening(
+            path,
+            Some(spawn_request(move || {
+                match Self::do_download_log(url, fetching, log_id) {
+                    Ok(()) => DownloadLogState::Idle,
+                    Err(err) => DownloadLogState::DownloadFailed(format!(
+                        "{}",
+                        err.action_error("Failed to download the combatlog.")
+                    )),
+                }
+            })),
+        );
     }
 
     fn show_download_button(&mut self, row: &mut TableRow, frame: &Frame, url: &Url, log_id: i32) {
@@ -886,7 +905,7 @@ impl DownloadLogState {
         }
     }
 
-    fn show_download(&mut self, ui: &Ui, open_run: &mut Option<PathBuf>) {
+    fn show_download(&mut self, ui: &Ui, runs: &mut RunTarget<'_>) {
         match self {
             DownloadLogState::Idle => (),
             DownloadLogState::Opening(path, join_handle) => {
@@ -906,7 +925,7 @@ impl DownloadLogState {
                     let finished = join_handle.take().unwrap().join().unwrap();
                     // Only a fetch that worked has a file to show.
                     if matches!(finished, DownloadLogState::Idle) {
-                        *open_run = Some(path);
+                        runs.open_run = Some(path);
                     }
                     *self = finished;
                     ui.ctx().request_repaint_of(ViewportId::ROOT);

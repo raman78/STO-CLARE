@@ -13,6 +13,11 @@
 //! differs. That is why there is no second list anywhere: the compare view used
 //! to carry a picker of its own, and two lists of the same fights disagreed
 //! about which of them was filtered how.
+//!
+//! A run fetched from the ladder is a fight in this list like any other — it is
+//! simply not one of the reader's, so it leads the list whatever the headings
+//! are ordering the rest by, is drawn in a colour that says so, and carries the
+//! button that takes it back out again.
 
 use std::cmp::Ordering;
 
@@ -69,17 +74,17 @@ const ARROW_SIZE: Vec2 = vec2(14.0, 14.0);
 
 /// What the reader asked the list to do.
 pub enum ListAction {
-    /// Put this fight on screen.
-    Open(usize),
+    /// Put this fight on screen, by when it started — which is what names a
+    /// fight here, whether it came out of the reader's log or off the ladder.
+    Open(NaiveDateTime),
     /// Rewrite the log keeping only these fights, in the order they are in it.
     /// Everything else was ticked for deletion.
     Keep(Vec<usize>),
-    /// The fights the comparison should be of, in the order they are in the
-    /// log. Empty when the last of them has been unticked.
-    Compare(Vec<usize>),
-    /// Give up the run fetched from the ladder and go back to the reader's own
-    /// log.
-    LeaveLadderRun,
+    /// The fights the comparison should be of, in the order they were ticked.
+    /// Fewer than two of them means there is nothing to compare.
+    Compare(Vec<NaiveDateTime>),
+    /// Take this run fetched from the ladder out of the list.
+    DropLadderRun(NaiveDateTime),
     /// Read this fight's figures for another of its players. The fight is named
     /// by when it started: with a run from the ladder on screen, the comparison
     /// is built from a log composed for it, where the same fight sits somewhere
@@ -108,11 +113,10 @@ pub struct CombatsListView<'a> {
     /// of the list each is, its number and colour in that comparison, and whose
     /// figures are being read for it.
     pub comparison: &'a [ComparisonSlot],
-    /// A run fetched from the ladder, when one is on screen. It is in the
-    /// comparison whatever else is ticked, so it leads the list whichever way
-    /// the list is sorted, and one fight of the reader's own is then enough to
-    /// compare it against.
-    pub pinned_run: Option<&'a CombatSummary>,
+    /// Runs fetched from the ladder. Fights like any other — ticked, opened,
+    /// read — but not the reader's own, so they lead the list whichever way it
+    /// is sorted and are drawn in a colour that says where they came from.
+    pub ladder_runs: &'a [CombatSummary],
 }
 
 /// What ticking a row does, if anything.
@@ -159,9 +163,10 @@ pub struct CombatsPanel {
     /// out of however the log happens to be ordered, which is not the order the
     /// reader picked them in.
     to_compare: Vec<NaiveDateTime>,
-    /// Set while the reader is being asked whether they mean to leave the run
-    /// they opened from the ladder.
-    confirm_leave_run: bool,
+    /// Set when a tick changed this pass, whichever way it was done — a row, or
+    /// the two buttons in the strip below. The comparison on screen follows all
+    /// of them.
+    ticks_changed: bool,
     /// Set while the reader is being asked whether they mean it. Deleting
     /// rewrites the log and cannot be taken back, so anything past a single
     /// fight is worth one question first.
@@ -185,7 +190,7 @@ impl CombatsPanel {
             to_delete: Default::default(),
             to_compare: Vec::new(),
             confirm_delete: false,
-            confirm_leave_run: false,
+            ticks_changed: false,
             sort: SortState {
                 column: Some(CombatColumn::Start),
                 natural: true,
@@ -454,8 +459,17 @@ impl CombatsPanel {
         let visible = self.visible(&view);
         // A tick on a fight the filters have since hidden would act on
         // something nobody can see; the ticks are what is on screen.
-        let shown: FxHashSet<NaiveDateTime> =
-            visible.iter().map(|&i| view.combats[i].start).collect();
+        // The runs from the ladder count as on screen: they are rows of this
+        // list, and the filters below do not reach them — they are not fights
+        // out of the log being filtered. Left out of this, a run ticked for a
+        // comparison was unticked again by the next frame, which is the whole
+        // of what "it works oddly" was.
+        let shown: FxHashSet<NaiveDateTime> = view
+            .ladder_runs
+            .iter()
+            .map(|run| run.start)
+            .chain(visible.iter().map(|&i| view.combats[i].start))
+            .collect();
         match self.mode {
             PanelMode::Browse => (),
             PanelMode::Clearing => self.to_delete.retain(|start| shown.contains(start)),
@@ -474,17 +488,6 @@ impl CombatsPanel {
                 }
             });
         let comparing = self.mode == PanelMode::Comparing;
-        // Whether anything was ticked or unticked this pass, whichever way it
-        // was done — a row, or the two buttons in the strip below. The
-        // comparison on screen follows all of them.
-        let mut ticks_changed = false;
-        // Whether the run from the ladder was unticked, which is a question
-        // rather than a tick: it is what the whole comparison is of.
-        let mut leave_run = false;
-        // What stands in front of a fight's own columns: the tick box. A
-        // folded-out player has to skip it, or their DPS lands under the wrong
-        // heading.
-        let leading_cells = 1;
         let mut clicked_heading = None;
         let mut formatter = NumberFormatter::new();
         // Whatever the strip at the bottom left.
@@ -503,211 +506,24 @@ impl CombatsPanel {
             .max_scroll_height(table_height)
             .header(HEADER_HEIGHT)
             .body(ROW_HEIGHT, |t| {
-                // The run fetched from the ladder leads the list, whatever
-                // the headings are ordering the rest by: it is not one of the
-                // reader's fights, it is what they are being compared against.
-                // Its whole row is drawn in the theme's own "something is going
-                // on" colour, which is what says so without a column for it.
-                if let Some(run) = view.pinned_run.filter(|_| comparing) {
-                    let mut kept = true;
-                    let run_slot = view.comparison.iter().find(|slot| slot.start == run.start);
-                    let run_player_shown = run_slot
-                        .map(|slot| slot.player.as_str())
-                        .or_else(|| run.players.first().map(|player| player.handle.as_str()))
-                        .unwrap_or("—");
-                    let mut run_player = None;
-                    let row = t.selectable_row(true, |r| {
-                        r.cell(|ui| {
-                            ui.visuals_mut().override_text_color = Some(theme::palette().busy);
-                            if ui
-                                .checkbox(&mut kept, "")
-                                .hover("Untick to leave the run and go back to your own log.")
-                                .clicked()
-                            {
-                                leave_run = true;
-                            }
-                        });
-                        show_combat_cells(
-                            r,
-                            run,
-                            "",
-                            dps_shown(run, Some(run_player_shown)),
-                            None,
-                            Some(theme::palette().busy),
-                            &mut formatter,
-                        );
-                        // The same two columns the rows below it carry, so the
-                        // run does not read as a row with its end missing.
-                        // Whose figures are being read for it — a run from the
-                        // ladder is a team run as often as not, and which of
-                        // its five the comparison is about is the question —
-                        // and no number: the numbers are the reader's own
-                        // picks, and the run is in the comparison whether they
-                        // pick anything or not.
-                        r.cell(|ui| {
-                            ui.visuals_mut().override_text_color = Some(theme::palette().busy);
-                            show_player_picker(ui, run, run_player_shown, &mut run_player);
-                        });
-                        r.cell(|_| {});
-                    });
-                    row.on_hover_text(&run.identifier);
-                    if let Some(handle) = run_player {
-                        action = Some(ListAction::ComparePlayer {
-                            start: run.start,
-                            handle,
-                        });
+                // The runs fetched from the ladder lead the list, whatever the
+                // headings are ordering the rest by: they are not the reader's
+                // fights. Whole rows in the theme's own "something is going on"
+                // colour, which is what says where they came from without a
+                // column for it.
+                for run in view.ladder_runs {
+                    if let Some(from_row) =
+                        self.show_row(t, &view, run, true, comparing, &mut formatter)
+                    {
+                        action = Some(from_row);
                     }
                 }
                 for index in visible.iter().copied() {
                     let combat = &view.combats[index];
-                    let note = view.notes.get(&CombatNotes::key_at(combat.start));
-                    let unfolded = self.unfolded.contains(&combat.start);
-                    let mut fold = unfolded;
-                    // While the log is being cleared the highlight is the tick,
-                    // not the fight on screen: what is about to be deleted is
-                    // the thing worth seeing at a glance.
-                    let ticked = self.is_ticked(combat.start);
-                    let mut tick = ticked.unwrap_or(false);
-                    let highlighted = match ticked {
-                        Some(ticked) => ticked,
-                        None => view.shown == Some(combat.start),
-                    };
-                    // Which of the ticked fights this is, and whose figures the
-                    // comparison is reading for it. The number is the panel's
-                    // own, so ticking one fight numbers it before there is a
-                    // second to compare it against; the player comes from the
-                    // comparison once there is one, and from the fight's best
-                    // until then.
-                    let number = self.compare_number(combat.start);
-                    let slot = view
-                        .comparison
-                        .iter()
-                        .find(|slot| slot.start == combat.start);
-                    let player_shown = slot
-                        .map(|slot| slot.player.as_str())
-                        .or_else(|| combat.players.first().map(|p| p.handle.as_str()))
-                        .unwrap_or("—");
-                    let mut player = None;
-                    let mut player_cell = Rect::NOTHING;
-                    let row = t.selectable_row(highlighted, |r| {
-                        // Kept whether or not there is anything to tick, so
-                        // turning "Clear Log File" on makes the boxes appear
-                        // rather than shifting every column of the table
-                        // sideways under the reader's pointer.
-                        r.cell(|ui| {
-                            ui.add_visible(ticked.is_some(), Checkbox::without_text(&mut tick));
-                        });
-                        show_combat_cells(
-                            r,
-                            combat,
-                            note,
-                            // While a comparison is being put together the
-                            // figure is the one it is reading — the player
-                            // picked beside it — rather than the reader's own.
-                            match comparing {
-                                true => dps_shown(combat, Some(player_shown)),
-                                false => dps_shown(combat, view.my_handle),
-                            },
-                            Some(&mut fold),
-                            None,
-                            &mut formatter,
-                        );
-                        if comparing {
-                            // At the end of the row, after the fight's own
-                            // columns: what a fight *is* reads the same whether
-                            // or not a comparison is being put together, and
-                            // these two are about the comparison rather than
-                            // about the fight.
-                            //
-                            // Whose figures the comparison reads for this
-                            // fight. A team run holds five people's, and which
-                            // of them a comparison is about is the whole
-                            // question it answers.
-                            player_cell = r
-                                .cell(|ui| {
-                                    ui.set_min_width(PLAYER_PICKER_WIDTH);
-                                    if combat.players.len() < 2 {
-                                        ui.label(player_shown);
-                                        return;
-                                    }
-                                    ComboBox::new(("combats player", combat.start), "")
-                                        .selected_text(player_shown)
-                                        .width(PLAYER_PICKER_WIDTH)
-                                        .show_ui(ui, |ui| {
-                                            for candidate in combat.players.iter() {
-                                                if ui
-                                                    .selectable_label(
-                                                        candidate.handle == player_shown,
-                                                        &candidate.handle,
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    player = Some(candidate.handle.clone());
-                                                }
-                                            }
-                                        });
-                                })
-                                .rect;
-                            // Which of the ticked fights this is, in the colour
-                            // the table's columns and the chart's lines carry.
-                            // Nothing sorts by it — the order is the order they
-                            // were ticked in — so it keeps no room for a sort
-                            // mark, only for the number itself.
-                            r.cell(|ui| {
-                                ui.set_min_width(text_width(ui, "999") + BADGE_PADDING * 2.0);
-                                match number {
-                                    Some(number) => show_number_badge(ui, number),
-                                    None => {
-                                        ui.label("");
-                                    }
-                                }
-                            });
-                        }
-                    });
-                    // The whole row ticks it, not the box alone — the row is
-                    // what lights up under the pointer, so it is what a click
-                    // lands on. With nothing to tick, a double click opens the
-                    // fight instead.
-                    // A click that landed in the player picker is about the
-                    // player, not about ticking the row it stands in.
-                    let clicked_the_picker = row
-                        .interact_pointer_pos()
-                        .is_some_and(|pos| player_cell.contains(pos));
-                    if ticked.is_some() {
-                        if row.clicked() && !clicked_the_picker {
-                            tick = !tick;
-                        }
-                    } else if row.double_clicked() {
-                        action = Some(ListAction::Open(index));
-                    }
-                    if Some(tick) != ticked {
-                        self.tick(combat.start, tick);
-                        // A fight leaves the comparison (or rejoins it) there
-                        // and then, rather than waiting for the whole thing to
-                        // be built again: taking a run out and looking is the
-                        // quickest question there is.
-                        ticks_changed = true;
-                    }
-                    if let Some(handle) = player {
-                        action = Some(ListAction::ComparePlayer {
-                            start: combat.start,
-                            handle,
-                        });
-                    }
-                    row.on_hover_text(&combat.identifier);
-                    if fold != unfolded {
-                        if fold {
-                            self.unfolded.insert(combat.start);
-                        } else {
-                            self.unfolded.remove(&combat.start);
-                        }
-                    }
-                    if fold {
-                        for player in combat.players.iter() {
-                            t.row(|r| {
-                                show_player_cells(r, player, leading_cells, &mut formatter);
-                            });
-                        }
+                    if let Some(from_row) =
+                        self.show_row(t, &view, combat, false, comparing, &mut formatter)
+                    {
+                        action = Some(from_row);
                     }
                 }
             })
@@ -728,22 +544,186 @@ impl CombatsPanel {
                         ui.label(RichText::new("#").strong());
                     });
                 }
+                // The column the runs from the ladder are taken back out of,
+                // which is there only while there are any.
+                if !view.ladder_runs.is_empty() {
+                    r.cell(|_| {});
+                }
             });
         if let Some(column) = clicked_heading {
             self.sort.clicked(column);
         }
         // Reported after the table has drawn: the rows borrow the ticks while
         // they do.
-        if leave_run {
-            self.confirm_leave_run = true;
-        }
-        if let Some(confirmed) = self.show_leave_run_confirmation(ui) {
-            action = Some(confirmed);
-        }
-        if ticks_changed && comparing {
-            action = Some(ListAction::Compare(indices_of(&view, &self.to_compare)));
+        if self.ticks_changed && comparing {
+            self.ticks_changed = false;
+            action = Some(ListAction::Compare(self.to_compare.clone()));
         }
 
+        action
+    }
+
+    /// One fight of the list, wherever it came from.
+    ///
+    /// A run fetched from the ladder is drawn by this too: same columns, same
+    /// ticks, same fold-out — in the theme's "something is going on" colour,
+    /// and with the button that takes it back out of the list where the others
+    /// have nothing.
+    #[allow(clippy::too_many_arguments)]
+    fn show_row(
+        &mut self,
+        t: &mut TableBody,
+        view: &CombatsListView<'_>,
+        combat: &CombatSummary,
+        from_the_ladder: bool,
+        comparing: bool,
+        formatter: &mut NumberFormatter,
+    ) -> Option<ListAction> {
+        let mut action = None;
+        let color = from_the_ladder.then(|| theme::palette().busy);
+        let note = view.notes.get(&CombatNotes::key_at(combat.start));
+        let unfolded = self.unfolded.contains(&combat.start);
+        let mut fold = unfolded;
+        // While the log is being cleared the highlight is the tick, not the
+        // fight on screen: what is about to be deleted is the thing worth
+        // seeing at a glance. A run from the ladder is not in the log and
+        // cannot be deleted from it, so it has nothing to tick then.
+        let ticked = match (self.mode, from_the_ladder) {
+            (PanelMode::Clearing, true) => None,
+            _ => self.is_ticked(combat.start),
+        };
+        let mut tick = ticked.unwrap_or(false);
+        let highlighted = match ticked {
+            Some(ticked) => ticked,
+            None => view.shown == Some(combat.start),
+        };
+        // Which of the ticked fights this is, and whose figures the comparison
+        // is reading for it. The number is the panel's own, so ticking one
+        // fight numbers it before there is a second to compare it against; the
+        // player comes from the comparison once there is one, and from the
+        // fight's best until then.
+        let number = self.compare_number(combat.start);
+        let slot = view
+            .comparison
+            .iter()
+            .find(|slot| slot.start == combat.start);
+        let player_shown = slot
+            .map(|slot| slot.player.as_str())
+            .or_else(|| combat.players.first().map(|player| player.handle.as_str()))
+            .unwrap_or("—");
+        let mut player = None;
+        let mut player_cell = Rect::NOTHING;
+        let mut drop_cell = Rect::NOTHING;
+        let mut drop_run = false;
+
+        let row = t.selectable_row(highlighted, |r| {
+            // Kept whether or not there is anything to tick, so turning "Clear
+            // Log File" on makes the boxes appear rather than shifting every
+            // column of the table sideways under the reader's pointer.
+            r.cell(|ui| {
+                ui.visuals_mut().override_text_color = color;
+                ui.add_visible(ticked.is_some(), Checkbox::without_text(&mut tick));
+            });
+            show_combat_cells(
+                r,
+                combat,
+                note,
+                // While a comparison is being put together the figure is the
+                // one it is reading — the player picked beside it — rather than
+                // the reader's own.
+                match comparing {
+                    true => dps_shown(combat, Some(player_shown)),
+                    false => dps_shown(combat, view.my_handle),
+                },
+                Some(&mut fold),
+                color,
+                formatter,
+            );
+            if comparing {
+                // At the end of the row, after the fight's own columns: what a
+                // fight *is* reads the same whether or not a comparison is
+                // being put together, and these two are about the comparison
+                // rather than about the fight.
+                player_cell = r
+                    .cell(|ui| {
+                        ui.visuals_mut().override_text_color = color;
+                        show_player_picker(ui, combat, player_shown, &mut player);
+                    })
+                    .rect;
+                r.cell(|ui| {
+                    ui.set_min_width(text_width(ui, "999") + BADGE_PADDING * 2.0);
+                    match number {
+                        Some(number) => show_number_badge(ui, number),
+                        None => {
+                            ui.label("");
+                        }
+                    }
+                });
+            }
+            if !view.ladder_runs.is_empty() {
+                drop_cell = r
+                    .cell(|ui| {
+                        if !from_the_ladder {
+                            return;
+                        }
+                        ui.visuals_mut().override_text_color = color;
+                        if ui
+                            .button("✕")
+                            .hover("Take this run out of the list.")
+                            .clicked()
+                        {
+                            drop_run = true;
+                        }
+                    })
+                    .rect;
+            }
+        });
+
+        // A click that landed in one of the buttons is that button's, not the
+        // row's.
+        let clicked_a_button = row
+            .interact_pointer_pos()
+            .is_some_and(|pos| player_cell.contains(pos) || drop_cell.contains(pos));
+        if ticked.is_some() {
+            if row.clicked() && !clicked_a_button {
+                tick = !tick;
+            }
+        } else if row.double_clicked() {
+            action = Some(ListAction::Open(combat.start));
+        }
+        if Some(tick) != ticked {
+            self.tick(combat.start, tick);
+            // A fight leaves the comparison (or rejoins it) there and then,
+            // rather than waiting for the whole thing to be built again: taking
+            // a run out and looking is the quickest question there is.
+            self.ticks_changed = true;
+        }
+        row.on_hover_text(&combat.identifier);
+
+        if fold != unfolded {
+            if fold {
+                self.unfolded.insert(combat.start);
+            } else {
+                self.unfolded.remove(&combat.start);
+            }
+        }
+        if fold {
+            for player in combat.players.iter() {
+                t.row(|r| {
+                    show_player_cells(r, player, 1, formatter);
+                });
+            }
+        }
+
+        if drop_run {
+            action = Some(ListAction::DropLadderRun(combat.start));
+        }
+        if let Some(handle) = player {
+            action = Some(ListAction::ComparePlayer {
+                start: combat.start,
+                handle,
+            });
+        }
         action
     }
 
@@ -772,14 +752,9 @@ impl CombatsPanel {
             // follows the ticks as they are made. A button would only ask the
             // reader to confirm what they have already said.
             PanelMode::Comparing => {
-                let enough = if view.pinned_run.is_some() { 1 } else { 2 };
-                if self.to_compare.len() < enough {
+                if self.to_compare.len() < 2 {
                     ui.label(
-                        RichText::new(match view.pinned_run.is_some() {
-                            true => "Tick a fight of your own to compare the run against.",
-                            false => "Tick two fights to compare them against each other.",
-                        })
-                        .weak(),
+                        RichText::new("Tick two fights to compare them against each other.").weak(),
                     );
                 }
             }
@@ -839,7 +814,13 @@ impl CombatsPanel {
             action = Some(confirmed);
         }
         if let Some(select) = select {
-            let shown = visible.iter().map(|&i| view.combats[i].start);
+            // Everything on screen, which includes the runs standing above the
+            // list: they are rows of it like any other.
+            let shown = view
+                .ladder_runs
+                .iter()
+                .map(|run| run.start)
+                .chain(visible.iter().map(|&i| view.combats[i].start));
             match (select, self.mode) {
                 (SelectAll::All, _) => {
                     for start in shown {
@@ -853,42 +834,9 @@ impl CombatsPanel {
             // Ticking or unticking the lot is the same change as ticking a row,
             // and the comparison on screen has to follow it just the same.
             if self.mode == PanelMode::Comparing {
-                action = Some(ListAction::Compare(indices_of(view, &self.to_compare)));
+                action = Some(ListAction::Compare(self.to_compare.clone()));
             }
         }
-        action
-    }
-
-    /// Asks whether the reader means to give up the run they opened from the
-    /// ladder, and reports it once they say so.
-    fn show_leave_run_confirmation(&mut self, ui: &mut Ui) -> Option<ListAction> {
-        if !self.confirm_leave_run {
-            return None;
-        }
-        let mut action = None;
-        Window::new("Leave the ladder run")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .show(ui.ctx(), |ui| {
-                ui.label("Stop comparing against the run from the ladder?");
-                ui.label(
-                    RichText::new("Your own log comes back, and this comparison goes.").weak(),
-                );
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.scope(|ui| {
-                        theme::accent_rim(ui);
-                        if ui.button("Leave the run").clicked() {
-                            self.confirm_leave_run = false;
-                            action = Some(ListAction::LeaveLadderRun);
-                        }
-                    });
-                    if ui.button("Cancel").clicked() {
-                        self.confirm_leave_run = false;
-                    }
-                });
-            });
         action
     }
 
@@ -1093,20 +1041,6 @@ fn all_but_newest(view: &CombatsListView<'_>, visible: &[usize]) -> FxHashSet<Na
         .iter()
         .map(|&i| view.combats[i].start)
         .filter(|&start| Some(start) != newest)
-        .collect()
-}
-
-/// Where the ticked fights sit in the log, in the order they were ticked —
-/// which is the order the comparison numbers and colours them in, and the
-/// order it puts its columns in.
-fn indices_of(view: &CombatsListView<'_>, ticked: &[NaiveDateTime]) -> Vec<usize> {
-    ticked
-        .iter()
-        .filter_map(|start| {
-            view.combats
-                .iter()
-                .position(|combat| combat.start == *start)
-        })
         .collect()
 }
 
@@ -1711,7 +1645,7 @@ mod tests {
             shown: None,
             comparing: false,
             comparison: &[],
-            pinned_run: None,
+            ladder_runs: &[],
         }
     }
 
@@ -1782,7 +1716,7 @@ mod tests {
             shown: None,
             comparing,
             comparison: &[],
-            pinned_run: None,
+            ladder_runs: &[],
         };
 
         let ctx = Context::default();
@@ -1812,6 +1746,56 @@ mod tests {
 
         draw(&ctx, &mut panel, view(false));
         assert_eq!(PanelMode::Browse, panel.mode);
+    }
+
+    /// A run from the ladder is a row of this list like any other: it can be
+    /// ticked for a comparison, and it stays ticked.
+    ///
+    /// The ticks are pruned to what is on screen, so that nothing can be acted
+    /// on out of sight. The runs are not fights out of the log the filters are
+    /// narrowing, so they were not counted as on screen — and a run ticked for
+    /// a comparison was unticked again by the very next frame.
+    #[test]
+    fn a_run_from_the_ladder_can_be_ticked_like_any_other_fight() {
+        let ctx = Context::default();
+        crate::app::fonts::install(&ctx);
+        theme::apply(&ctx, theme::Theme::Dark);
+        let notes = CombatNotes::default();
+        let mine = [combat("Japori", &[("@me", 100.0)])];
+        let mut run = combat("Infected: The Conduit", &[("@somebody", 140.0)]);
+        run.start = NaiveDateTime::default() + chrono::Duration::hours(3);
+        let runs = [run];
+
+        let mut panel = CombatsPanel::new(true);
+        let mut width = 900.0;
+        // Ticked from here rather than by pointing at the box, which is what
+        // the row does when it is clicked.
+        panel.mode = PanelMode::Comparing;
+        panel.tick(runs[0].start, true);
+        assert_eq!(Some(1), panel.compare_number(runs[0].start));
+
+        for _ in 0..2 {
+            let mut view = Some(CombatsListView {
+                combats: &mine,
+                notes: &notes,
+                my_handle: None,
+                shown: None,
+                comparing: true,
+                comparison: &[],
+                ladder_runs: &runs,
+            });
+            let _ = ctx.run_ui(RawInput::default(), |ui| {
+                if let Some(view) = view.take() {
+                    panel.show(view, &mut width, ui);
+                }
+            });
+        }
+
+        assert_eq!(
+            Some(1),
+            panel.compare_number(runs[0].start),
+            "the run is still ticked, and still the first of them"
+        );
     }
 
     /// The Played window narrows by when a fight was, alongside the pickers
@@ -1945,7 +1929,7 @@ mod layout_tests {
                 shown: None,
                 comparing,
                 comparison,
-                pinned_run: None,
+                ladder_runs: &[],
             });
             let _ = ctx.run_ui(RawInput::default(), |ui| {
                 if let Some(view) = view.take() {
@@ -2016,7 +2000,7 @@ mod layout_tests {
                 shown: Some(combats[0].start),
                 comparing,
                 comparison: &[],
-                pinned_run: None,
+                ladder_runs: &[],
             });
             let mut widths = Vec::new();
             let _ = ctx.run_ui(RawInput::default(), |ui| {
@@ -2128,7 +2112,7 @@ mod layout_tests {
                     shown: None,
                     comparing: false,
                     comparison: &[],
-                    pinned_run: None,
+                    ladder_runs: &[],
                 });
                 let _ = ctx.run_ui(RawInput::default(), |ui| {
                     if let Some(view) = view.take() {
@@ -2183,7 +2167,7 @@ mod layout_tests {
                 shown: None,
                 comparing: false,
                 comparison: &[],
-                pinned_run: None,
+                ladder_runs: &[],
             });
             let _ = ctx.run_ui(RawInput::default(), |ui| {
                 if let Some(view) = view.take() {
@@ -2263,7 +2247,7 @@ mod layout_tests {
                         shown: None,
                         comparing: false,
                         comparison: &[],
-                        pinned_run: None,
+                        ladder_runs: &[],
                     },
                     &mut width,
                     ui,

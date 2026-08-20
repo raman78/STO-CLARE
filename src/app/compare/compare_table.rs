@@ -662,14 +662,6 @@ impl Comparison {
             .weak(),
         );
 
-        // Comparing two different people's numbers looks like a build changed
-        // when nothing did, so say so rather than let it pass unnoticed — in
-        // one short line, with the particulars a hover away.
-        if let Some(warning) = odd_player_warning(&players_in_play(&self.numbers, &self.slots)) {
-            ui.label(RichText::new(warning.line).color(theme::palette().worse))
-                .hover(warning.detail);
-        }
-
         ui.separator();
 
         // Two panes, one draggable boundary: the table and the chart. Which
@@ -2887,71 +2879,6 @@ fn chart_label(slot_i: usize, note: &str) -> String {
     }
 }
 
-/// A warning that not every combat is showing the reference's player: the line
-/// on screen, and what a hover says.
-struct OddPlayerWarning {
-    line: String,
-    detail: String,
-}
-
-/// Whether the comparison is about one player's runs, and what to say when it
-/// is not.
-///
-/// A slot falls back to its own top-DPS player when the reference player was
-/// not in that fight (`follow_the_reference_player`), and then a difference is
-/// one person measured against another rather than one person's build against
-/// itself — which reads exactly like a build that changed. Worth a word, but
-/// only a word: the line names how many and the hover names which, because a
-/// comparison of a whole session would otherwise put a paragraph of handles
-/// above the table.
-fn odd_player_warning(runs: &[(usize, String)]) -> Option<OddPlayerWarning> {
-    let reference = &runs.first()?.1;
-    let odd: Vec<String> = runs
-        .iter()
-        .skip(1)
-        .filter(|(_, name)| name != reference)
-        .map(|(number, name)| format!("#{number} is {name}"))
-        .collect();
-    if odd.is_empty() {
-        return None;
-    }
-    Some(OddPlayerWarning {
-        line: format!(
-            "⚠ {} of {} combats {} not showing {reference}",
-            odd.len(),
-            runs.len(),
-            if odd.len() == 1 { "is" } else { "are" }
-        ),
-        detail: format!(
-            "{}.\nTheir figures are compared against {reference}'s, so a difference here can be \
-             one player against another rather than one player's runs. Where that player took \
-             part, pick them in the list above.",
-            odd.join(", ")
-        ),
-    })
-}
-
-/// The runs a comparison is showing and who each one is about, **reference
-/// first**, each under the number its column carries — what the warning above
-/// the table is worked out from.
-///
-/// Reference first because that is the player every other run is read against,
-/// and it is no longer whichever run happens to be first in the list. Runs
-/// taken out of the comparison are left out: a warning about a run that is not
-/// on screen is a warning about nothing.
-fn players_in_play(numbers: &[usize], slots: &[Slot]) -> Vec<(usize, String)> {
-    numbers
-        .iter()
-        .map(|&slot_i| {
-            let slot = &slots[slot_i];
-            (
-                number_of_slot(slot_i),
-                slot.player.get(&slot.combat.name_manager).to_string(),
-            )
-        })
-        .collect()
-}
-
 fn top_dps_player(combat: &Combat) -> NameHandle {
     players_by_dps(combat)
         .into_iter()
@@ -3479,69 +3406,6 @@ mod tests {
                 glyph as u32
             );
         }
-    }
-
-    /// The runs a warning is worked out from: reference first, each under the
-    /// number its column carries.
-    fn names(names: &[&str]) -> Vec<(usize, String)> {
-        names
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (i + 1, n.to_string()))
-            .collect()
-    }
-
-    /// One player's runs are what the comparison is normally about, and that
-    /// says nothing at all.
-    #[test]
-    fn one_player_throughout_is_not_worth_a_warning() {
-        assert!(odd_player_warning(&names(&["Kestrel", "Kestrel", "Kestrel"])).is_none());
-        assert!(odd_player_warning(&names(&["Kestrel"])).is_none());
-        assert!(odd_player_warning(&[]).is_none());
-    }
-
-    /// The line is a count, not a list: a session's worth of handles above the
-    /// table was a paragraph nobody read.
-    #[test]
-    fn the_warning_counts_on_screen_and_names_on_hover() {
-        let warning = odd_player_warning(&names(&[
-            "Kestrel", "Kestrel", "Somebody", "Kestrel", "Else", "Kestrel",
-        ]))
-        .expect("two of them are showing somebody else");
-
-        assert_eq!("⚠ 2 of 6 combats are not showing Kestrel", warning.line);
-        assert!(warning.line.len() < 60, "{}", warning.line);
-        // Which ones, by the number the columns are labelled with.
-        assert!(warning.detail.starts_with("#3 is Somebody, #5 is Else"));
-    }
-
-    /// The warning is about the run everything is read against, and names the
-    /// odd ones by the number their column carries. Both were "whatever comes
-    /// first in the list of runs", which stopped being the reference when the
-    /// reference became something to pick: it then measured every run against
-    /// another run's player and pointed at numbers those runs do not carry.
-    #[test]
-    fn the_warning_is_measured_against_the_reference() {
-        // #3 is the reference, so it leads; #1 is showing somebody else.
-        let runs = vec![
-            (3usize, "Kestrel".to_string()),
-            (1, "Somebody".to_string()),
-            (2, "Kestrel".to_string()),
-        ];
-        let warning = odd_player_warning(&runs).expect("one of them shows somebody else");
-        assert_eq!("⚠ 1 of 3 combats is not showing Kestrel", warning.line);
-        assert!(
-            warning.detail.starts_with("#1 is Somebody"),
-            "{}",
-            warning.detail
-        );
-    }
-
-    /// One odd combat reads as one, not as "1 combats are".
-    #[test]
-    fn a_single_odd_combat_reads_as_one() {
-        let warning = odd_player_warning(&names(&["Kestrel", "Somebody"])).unwrap();
-        assert_eq!("⚠ 1 of 2 combats is not showing Kestrel", warning.line);
     }
 
     fn averages_of(raw: &[Option<Vec<Option<f64>>>]) -> Vec<Option<AverageCell>> {

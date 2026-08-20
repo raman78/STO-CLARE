@@ -87,7 +87,8 @@ enum Instruction {
     RefreshCombatsList(u32),
     AutoRefresh,
     GetCombat(usize, u32),
-    GetCombats(Vec<usize>, u32, CombatsPurpose),
+    GetCombats(Vec<usize>, u32),
+    ReadOneLog(PathBuf, u32),
     KeepCombats(Vec<usize>),
     SaveCombat(usize, PathBuf),
     EnableAutoRefresh(bool, u32),
@@ -98,30 +99,12 @@ enum Instruction {
     SetSettings(Arc<AnalysisSettings>),
 }
 
-/// What a batch of combats was asked for, so the answer can be told from
-/// another batch's.
-///
-/// Two things ask for combats now, and both can be in flight at once: a
-/// comparison follows the ticks in the list as they are made, and opening a run
-/// from the ladder captures the reader's own fights before the analyzer moves
-/// off their log. Untagged, whichever answer arrived first was taken for
-/// whichever question was outstanding — so a comparison was built from the
-/// wrong fights, or a run opened against them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CombatsPurpose {
-    /// The fights a comparison is to be built from.
-    Compare,
-    /// The reader's own fights, captured before a run from the ladder takes
-    /// the analyzer's place.
-    CaptureOwn,
-}
-
 #[derive(Clone)]
 pub enum AnalysisInfo {
     Combat(Arc<Combat>),
     // Several combats fetched together, each with its index in the combats
     // list so the caller can tell them apart, and what they were asked for.
-    Combats(Vec<(usize, Arc<Combat>)>, CombatsPurpose),
+    Combats(Vec<(usize, Arc<Combat>)>),
     Refreshed {
         latest_combat: Arc<Combat>,
         /// Every combat in the log, oldest first — one entry each, carrying
@@ -136,6 +119,15 @@ pub enum AnalysisInfo {
     CombatsListRefreshed {
         combats: CombatSummaries,
         file_size: Option<u64>,
+    },
+    /// A log read on its own, without the analyzer moving off the one it holds:
+    /// a run fetched from the ladder, which is a fight of somebody else's and
+    /// has no business replacing the reader's log to be looked at.
+    OneLog {
+        path: PathBuf,
+        /// The fight in it, or `None` when it holds none the analyzer would
+        /// keep — a log that could not be read, or one with no damage in it.
+        combat: Option<Arc<Combat>>,
     },
     RefreshError,
 }
@@ -205,12 +197,19 @@ impl AnalysisHandler {
             .unwrap();
     }
 
-    /// Fetch several combats at once. They come back as a single
-    /// `AnalysisInfo::Combats` on this handler, carrying `purpose` so an answer
-    /// cannot be taken for another question's.
-    pub fn get_combats(&self, combat_indices: Vec<usize>, purpose: CombatsPurpose) {
+    /// Fetch several combats at once (the fights a comparison is built from).
+    /// They come back as a single `AnalysisInfo::Combats` on this handler.
+    pub fn get_combats(&self, combat_indices: Vec<usize>) {
         self.tx
-            .send(Instruction::GetCombats(combat_indices, self.id, purpose))
+            .send(Instruction::GetCombats(combat_indices, self.id))
+            .unwrap();
+    }
+
+    /// Reads a log of its own and hands back the fight in it, leaving the log
+    /// the analyzer holds where it is.
+    pub fn read_one_log(&self, path: PathBuf) {
+        self.tx
+            .send(Instruction::ReadOneLog(path, self.id))
             .unwrap();
     }
 
@@ -363,9 +362,10 @@ impl AnalysisContext {
                 Instruction::GetCombat(combat_index, handler) => {
                     self.get_combat(combat_index, handler);
                 }
-                Instruction::GetCombats(combat_indices, handler, purpose) => {
-                    self.get_combats(combat_indices, handler, purpose);
+                Instruction::GetCombats(combat_indices, handler) => {
+                    self.get_combats(combat_indices, handler);
                 }
+                Instruction::ReadOneLog(path, handler) => self.read_one_log(path, handler),
                 Instruction::KeepCombats(keep) => self.keep_combats(keep),
                 Instruction::SaveCombat(combat_index, file) => self.save_combat(combat_index, file),
                 Instruction::EnableAutoRefresh(enable, handler) => {
@@ -573,7 +573,7 @@ impl AnalysisContext {
         self.send_info(AnalysisInfo::Combat(combat.into()), handler);
     }
 
-    fn get_combats(&self, combat_indices: Vec<usize>, handler: u32, purpose: CombatsPurpose) {
+    fn get_combats(&self, combat_indices: Vec<usize>, handler: u32) {
         let combats: Vec<(usize, Arc<Combat>)> = self
             .analyzer
             .as_ref()
@@ -585,17 +585,45 @@ impl AnalysisContext {
             })
             .unwrap_or_default();
 
-        // A capture is answered even when there is nothing to capture. It is
-        // what a run fetched from the ladder waits on before it is put on
-        // screen, and a log with no fights of the reader's own in it — a fresh
-        // install, a log that has just been cleared — left that run waiting
-        // for an answer that was never going to come, so the magnifier did
-        // nothing at all.
-        if combats.is_empty() && purpose != CombatsPurpose::CaptureOwn {
+        if combats.is_empty() {
             return;
         }
 
-        self.send_info(AnalysisInfo::Combats(combats, purpose), handler);
+        self.send_info(AnalysisInfo::Combats(combats), handler);
+    }
+
+    /// Reads a log of its own — a run fetched from the ladder — and hands back
+    /// the fight in it.
+    ///
+    /// On this thread rather than the drawing one: it is a whole file to parse,
+    /// and the window has no business stopping while it happens. A second
+    /// analyzer is built for it and thrown away; the one holding the reader's
+    /// log is not touched, which is the point — the run is a fight to look at,
+    /// not a log to move to.
+    fn read_one_log(&self, path: PathBuf, handler: u32) {
+        Self::set_is_busy(&self.is_busy, true);
+        let settings = AnalysisSettings {
+            combatlog_file: path.display().to_string(),
+            // A run is a single fight in a scratch directory; there is nothing
+            // beside it to merge in.
+            consolidate_combatlog: false,
+            ..self
+                .analyzer
+                .as_ref()
+                .map(|analyzer| analyzer.settings().clone())
+                .unwrap_or_default()
+        };
+        let combat = Analyzer::new(settings).and_then(|mut analyzer| {
+            analyzer.update();
+            // The last of them: a run holds one fight, and a log that somehow
+            // holds several is being looked at for the one it ends on.
+            analyzer.result().last().cloned().map(Arc::new)
+        });
+        if combat.is_none() {
+            log::error!("could not read a fight out of {}", path.display());
+        }
+        self.send_info(AnalysisInfo::OneLog { path, combat }, handler);
+        Self::set_is_busy(&self.is_busy, false);
     }
 
     /// Rewrites the log so it keeps only the combats at `keep` (their byte
@@ -847,6 +875,7 @@ mod tests {
                     AnalysisInfo::RefreshError => panic!("startup refresh errored"),
                     AnalysisInfo::Combat(_)
                     | AnalysisInfo::Combats(..)
+                    | AnalysisInfo::OneLog { .. }
                     | AnalysisInfo::CombatsListRefreshed { .. } => {}
                 }
             }
@@ -1216,6 +1245,86 @@ mod tests {
         assert!(!is_busy.load(Ordering::Relaxed), "after an automatic one");
         context.refresh_combats_list(0);
         assert!(!is_busy.load(Ordering::Relaxed), "after a list refresh");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A log read on its own leaves the one the analyzer holds alone.
+    ///
+    /// That is the whole point of it: a run fetched from the ladder is a fight
+    /// to look at, not a log to move to. Reading it used to mean pointing the
+    /// analyzer at it, which put the reader's own log down — and everything
+    /// that had to be carried across that switch was where this feature's bugs
+    /// lived.
+    #[test]
+    fn reading_one_log_leaves_the_analyzer_where_it_is() {
+        let dir = std::env::temp_dir().join(format!("cla-one-log-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fight = |hh: u32, name: &str| {
+            format!(
+                "26:07:23:{hh:02}:00:00.0::{name},P[1@2 {name}@handle],,*,Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n"
+            )
+        };
+        let mine = dir.join("combatlog.log");
+        std::fs::write(
+            &mine,
+            format!("{}{}", fight(20, "Kestrel"), fight(22, "Kestrel")),
+        )
+        .unwrap();
+        let run = dir.join("run.log");
+        std::fs::write(&run, fight(21, "Somebody")).unwrap();
+
+        let settings = AnalysisSettings {
+            combatlog_file: mine.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (tx, rx) = unbounded();
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            HandlerContext {
+                tx,
+                auto_refresh: false,
+                list_refresh: true,
+                id: 0,
+                viewport: ViewportId::ROOT,
+            },
+            instruction_tx,
+            settings,
+            Context::default(),
+            Arc::new(AtomicBool::new(false)),
+            1.0,
+        );
+        context.refresh(false);
+        let _ = rx.try_iter().count();
+
+        context.read_one_log(run.clone(), 0);
+        let answered: Vec<_> = rx.try_iter().collect();
+        assert_eq!(1, answered.len(), "one answer, about the log it was given");
+        match &answered[0] {
+            AnalysisInfo::OneLog { path, combat } => {
+                assert_eq!(&run, path);
+                let combat = combat.as_ref().expect("the run holds a fight");
+                assert!(
+                    combat.players.len() == 1,
+                    "the fight read is the one in the run"
+                );
+            }
+            _ => panic!("expected the run to come back as OneLog"),
+        }
+
+        // And the analyzer is still holding the reader's log.
+        context.refresh(false);
+        let mine_again = rx
+            .try_iter()
+            .filter_map(|info| match info {
+                AnalysisInfo::Refreshed { combats, .. } => Some(combats),
+                _ => None,
+            })
+            .last()
+            .expect("the reader's own log is still the one being read");
+        assert_eq!(2, mine_again.len(), "both of the reader's fights, still");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

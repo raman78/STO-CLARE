@@ -1,16 +1,18 @@
 use std::{path::PathBuf, sync::Arc};
 
+use chrono::NaiveDateTime;
+
 use eframe::egui::*;
 use rfd::FileDialog;
 
 use crate::{
-    analyzer::{Combat, CombatSummaries, Difficulty, detect_log_owner},
+    analyzer::{Combat, CombatSummaries, CombatSummary, Difficulty, detect_log_owner},
     custom_widgets::toggle::Toggle,
     upload::{Records, Upload},
 };
 
 use self::{
-    analysis_handling::{AnalysisInfo, CombatsPurpose},
+    analysis_handling::AnalysisInfo,
     combat_filter::DifficultyFilter,
     combats_list::{CombatsListView, CombatsPanel, ListAction},
     compare::CompareView,
@@ -60,6 +62,14 @@ fn is_wayland(cc: &eframe::CreationContext) -> bool {
     )
 }
 
+/// A run fetched from the ladder: the fight itself, the file it came out of
+/// (which is what saving it copies), and the row the list draws for it.
+struct LadderRun {
+    path: PathBuf,
+    combat: Arc<Combat>,
+    summary: CombatSummary,
+}
+
 pub struct App {
     settings_window: SettingsWindow,
     /// Every combat in the log, oldest first. One entry per fight, carrying
@@ -89,36 +99,17 @@ pub struct App {
     summary_copy: SummaryCopy,
     upload: Upload,
     records: Records,
-    /// Set while the main window is showing a run fetched from the ladder
-    /// instead of the reader's own log: the log to go back to. The settings are
-    /// left alone throughout — this is a look at somebody else's fight, not a
-    /// change of which log is theirs.
-    ladder_run: Option<String>,
-    /// The fetched run being shown, by its own path. Kept apart from the
-    /// settings on purpose: those still name the reader's log, because looking
-    /// at somebody else's fight does not change which log is theirs — so the
-    /// settings are exactly the wrong place to ask what is on screen.
-    ladder_run_file: Option<PathBuf>,
-    /// What the run turned out to be, read off it when it was read. See
-    /// [`App::ladder_run_label`].
-    ladder_run_name: Option<String>,
-    /// Set while the composed comparison log is being read: its combats have to
-    /// be asked for once it is, which is what actually builds the comparison.
-    build_comparison_when_read: bool,
-    /// Set when a run has just been put on screen and its analysis has not come
-    /// back yet. The map and level to start the comparison pickers at can only
-    /// be read off the run once it has been read, and that arrives later.
-    suggest_filter_from_run: bool,
-    /// A run fetched from the ladder, waiting to be shown. It is held here while
-    /// the reader's own combats are asked for: those carry where each fight sits
-    /// in their log, which is what a comparison has to be cut from, and once the
-    /// analyzer has moved to the run there is no asking for them.
-    pending_ladder_run: Option<PathBuf>,
-    /// The reader's own combats and the list that describes them, as they were
-    /// before the ladder run took over. What the comparison picker offers while
-    /// a run is on screen.
-    own_combats: Vec<(usize, Arc<Combat>)>,
-    own_combat_list: CombatSummaries,
+    /// Runs fetched from the ladder, in the order they were opened.
+    ///
+    /// Fights like any other, held here rather than read into the analyzer:
+    /// they came out of somebody else's log, and looking at one is no reason to
+    /// put the reader's own log down. The list shows them at its top, a
+    /// comparison takes them beside the reader's own fights, and nothing else
+    /// in the program has to know they are special.
+    ladder_runs: Vec<LadderRun>,
+    /// The fights a comparison is waiting to be built from, in the order they
+    /// were ticked, while the ones the analyzer holds are being fetched.
+    pending_compare: Vec<NaiveDateTime>,
     state: AppState,
     // Deferred persistence of the window size: written once resizing settles
     // (see track_window_geometry).
@@ -178,14 +169,8 @@ impl App {
             summary_copy: Default::default(),
             upload: Default::default(),
             records: Default::default(),
-            ladder_run: None,
-            ladder_run_file: None,
-            ladder_run_name: None,
-            suggest_filter_from_run: false,
-            build_comparison_when_read: false,
-            pending_ladder_run: None,
-            own_combats: Default::default(),
-            own_combat_list: Default::default(),
+            ladder_runs: Vec::new(),
+            pending_compare: Vec::new(),
             window_geometry: state.settings.window,
             state,
             window_geometry_dirty: false,
@@ -248,29 +233,15 @@ impl eframe::App for App {
                         ui,
                         frame,
                     );
+                    let open_runs = self.open_run_paths();
                     if let Some(run) = self.records.show(
                         ui,
                         frame,
                         &self.state.settings.upload.oscr_url,
                         &mut self.state.settings.general.ladder_window_position,
+                        &open_runs,
                     ) {
-                        self.show_ladder_run(run);
-                    }
-
-                    // Says whose fight is on screen, and offers the way back.
-                    // Without it the window would look like the reader's own log
-                    // had been replaced, which is exactly what has not happened.
-                    if self.ladder_run.is_some() {
-                        ui.label(
-                            RichText::new("⚑ a run from the ladder").color(theme::palette().busy),
-                        );
-                        if ui
-                            .button("Back to my log")
-                            .hover("Reads your own combat log again.")
-                            .clicked()
-                        {
-                            self.leave_ladder_run();
-                        }
+                        self.open_ladder_run(run);
                     }
                 });
 
@@ -361,14 +332,18 @@ impl eframe::App for App {
                             .set_parent(frame)
                             .save_file()
                     {
-                        self.state
-                            .analysis_handler
-                            .save_combat(self.selected_combat_index.unwrap(), file);
+                        self.save_shown_combat(file);
                     }
 
                     self.upload.show(
                         ui,
-                        self.selected_combat.as_deref(),
+                        // A run fetched from the ladder is not the reader's to
+                        // send anywhere: it is already on the ladder, and it is
+                        // somebody else's fight. The upload offers itself for
+                        // fights of their own only.
+                        self.selected_combat
+                            .as_deref()
+                            .filter(|_| !self.showing_ladder_run()),
                         &self.state.settings.analysis,
                         &self.state.settings.upload.oscr_url,
                     );
@@ -387,22 +362,21 @@ impl eframe::App for App {
                 // and whatever is being read takes what is left — a browser's
                 // sidebar, not a column beside the whole window.
                 //
-                // While a run fetched from the ladder is on screen the analyzer
-                // holds that run rather than the reader's log, so a comparison
-                // is picked from the fights of their own captured before the
-                // switch. The clone is an `Arc` and costs nothing.
-                let ladder = self.ladder_run.is_some();
-                let own = (ladder && self.compare.is_open()).then(|| self.own_combat_list.clone());
-                // The run itself, as the analyzer read it: while one is on
-                // screen it is the only fight in the log the analyzer holds.
-                let pinned_run = ladder.then(|| self.combats.last()).flatten();
-                let pinned = ladder.then(|| self.ladder_run_label());
                 // What the comparison on screen is of, so the list can put its
                 // numbers, its colours and its players on the rows it was built
                 // from. Empty when there is no comparison.
                 let slots = self.compare.slots();
+                // The runs fetched from the ladder lead the list. They are
+                // fights like any other from here on — ticked into a
+                // comparison, opened, read — because the program holds them
+                // beside the log rather than instead of it.
+                let ladder_runs: Vec<CombatSummary> = self
+                    .ladder_runs
+                    .iter()
+                    .map(|run| run.summary.clone())
+                    .collect();
                 let view = CombatsListView {
-                    combats: own.as_deref().unwrap_or(&self.combats),
+                    combats: &self.combats,
                     notes: &self.state.settings.combat_notes,
                     my_handle: effective_handle(
                         self.state.settings.general.my_handle.as_deref(),
@@ -414,19 +388,16 @@ impl eframe::App for App {
                         .map(|combat| combat.active_time.start),
                     comparing: self.compare.is_open(),
                     comparison: &slots,
-                    pinned_run,
+                    ladder_runs: &ladder_runs,
                 };
                 let action = self
                     .combats_panel
                     .show(view, &mut self.combats_panel_width, ui);
                 match action {
-                    Some(ListAction::Open(index)) => {
-                        self.selected_combat_index = Some(index);
-                        self.state.analysis_handler.get_combat(index);
-                    }
-                    // Rewrites the log without the fights that were ticked.
-                    // The list comes back through the ordinary channel, so
-                    // nothing here has to put it right.
+                    Some(ListAction::Open(start)) => self.open_combat(start),
+                    // Rewrites the log without the fights that were ticked. The
+                    // list comes back through the ordinary channel, so nothing
+                    // here has to put it right.
                     Some(ListAction::Keep(keep)) => {
                         log::info!(
                             "clearing the log: keeping {} of {} combats",
@@ -435,27 +406,13 @@ impl eframe::App for App {
                         );
                         self.state.analysis_handler.keep_combats(keep);
                     }
-                    Some(ListAction::Compare(picked)) => {
-                        // The comparison is of exactly what is ticked, and it
-                        // is built again whenever that changes: numbering the
-                        // runs from one each time is what keeps a fight
-                        // unticked and another ticked from walking the numbers
-                        // — and their colours — up and up.
-                        if picked.len() < 2 && !ladder {
-                            self.compare.forget();
-                        } else if ladder {
-                            // With a run from the ladder on screen the
-                            // comparison cannot be built from this log at all —
-                            // the fights live in two different ones, and they
-                            // have to be written into a third first.
-                            self.compare_ladder_run_with(&picked);
-                        } else {
-                            self.state
-                                .analysis_handler
-                                .get_combats(picked, CombatsPurpose::Compare);
-                        }
-                    }
-                    Some(ListAction::LeaveLadderRun) => self.leave_ladder_run(),
+                    // The comparison is of exactly what is ticked, and it is
+                    // built again whenever that changes: numbering the runs
+                    // from one each time is what keeps a fight unticked and
+                    // another ticked from walking the numbers — and their
+                    // colours — up and up.
+                    Some(ListAction::Compare(picked)) => self.compare_fights(picked),
+                    Some(ListAction::DropLadderRun(start)) => self.drop_ladder_run(start),
                     Some(ListAction::ComparePlayer { start, handle }) => {
                         self.compare.set_player(start, &handle)
                     }
@@ -463,7 +420,7 @@ impl eframe::App for App {
                 }
 
                 if self.compare.is_open() {
-                    self.compare.show(&mut self.state, pinned, ui, frame);
+                    self.compare.show(&mut self.state, ui, frame);
                 } else {
                     self.main_tabs.show(
                         &mut self.state.settings,
@@ -506,6 +463,16 @@ impl eframe::App for App {
     }
 }
 
+/// The level a run was fought at, as the list's picker asks for it.
+fn difficulty_filter(run: &CombatSummary) -> DifficultyFilter {
+    match run.difficulty {
+        Some(Difficulty::Normal) => DifficultyFilter::Normal,
+        Some(Difficulty::Advanced) => DifficultyFilter::Advanced,
+        Some(Difficulty::Elite) => DifficultyFilter::Elite,
+        _ => DifficultyFilter::Any,
+    }
+}
+
 /// Whose figures the combats list shows: what the reader named themselves in
 /// the settings, else what the log itself says.
 ///
@@ -519,194 +486,151 @@ fn effective_handle<'a>(configured: Option<&'a str>, detected: Option<&'a str>) 
 }
 
 impl App {
-    /// Asks for the reader's own combats, then shows the run once they are in
-    /// hand.
-    ///
-    /// The order matters and cannot be swapped: a combat carries where it sits
-    /// in the log it came from, and a comparison is cut from exactly that. Once
-    /// the analyzer has moved to the fetched run, the reader's own fights are no
-    /// longer anywhere to be asked for. The answer arrives through the ordinary
-    /// channel, so the move itself happens in `handle_analysis_infos`.
-    fn show_ladder_run(&mut self, run: PathBuf) {
-        if self.ladder_run_file.as_ref() == Some(&run) {
-            log::info!("ladder: {} is already the run on screen", run.display());
-            return;
-        }
-        // Already reading a run: what the analyzer holds is that run, not the
-        // reader's log, so there is nothing here worth capturing — and asking
-        // would replace their fights with the single one on screen. The capture
-        // from the first run is still the right one.
-        if self.ladder_run.is_some() {
-            self.enter_ladder_run(run);
-            return;
-        }
-        self.pending_ladder_run = Some(run);
-        self.state.analysis_handler.get_combats(
-            (0..self.combats.len()).collect(),
-            CombatsPurpose::CaptureOwn,
-        );
+    /// The runs already in the list, so the ladder window can grey out the
+    /// magnifier on one of them.
+    fn open_run_paths(&self) -> Vec<PathBuf> {
+        self.ladder_runs
+            .iter()
+            .map(|run| run.path.clone())
+            .collect()
     }
 
-    /// Moves the analysis onto the run now that the reader's own fights are
-    /// captured.
+    /// Asks for a run fetched from the ladder to be read.
     ///
-    /// The settings are not touched. `set_settings` takes what it is given and
-    /// replaces the analyzer; saving is a separate step that happens when the
-    /// settings dialog is applied. So the reader's own log stays their log, and
-    /// looking at somebody else's fight does not quietly become a change of
-    /// which log the program reads.
-    fn enter_ladder_run(&mut self, run: PathBuf) {
-        let own_log = self.state.settings.analysis.combatlog_file.clone();
-        // Only on the way in from the reader's own log. A second run opened
-        // while the first is on screen would otherwise capture that first run.
-        if self.ladder_run.is_none() {
-            self.own_combat_list = self.combats.clone();
-            log::info!(
-                "ladder: captured {} of my combats ({} with positions)",
-                self.own_combat_list.len(),
-                self.own_combats.len()
-            );
+    /// It is read on the analysis thread and comes back as a fight, which is
+    /// then a row of the list like any other. The reader's own log is not
+    /// touched: looking at somebody else's fight is no reason to put yours
+    /// down, and every kind of trouble this used to have — fights that would
+    /// not load, a player that could not be picked, a run opening as the one
+    /// before it — came of pretending otherwise.
+    fn open_ladder_run(&mut self, run: PathBuf) {
+        if self.ladder_runs.iter().any(|open| open.path == run) {
+            log::info!("ladder: {} is already in the list", run.display());
+            return;
         }
-        log::info!("ladder: showing {}", run.display());
-        // A comparison on screen is of the run being replaced, and of fights
-        // read out of a log the analyzer is about to put down. Whatever it is
-        // showing, it is no longer about what is on screen.
+        log::info!("ladder: reading {}", run.display());
+        self.state.analysis_handler.read_one_log(run);
+    }
+
+    /// Takes a run out of the list again.
+    fn drop_ladder_run(&mut self, start: NaiveDateTime) {
+        self.ladder_runs.retain(|run| run.summary.start != start);
+        // Whatever it was in is a comparison of fights the list no longer
+        // holds.
         self.compare.forget();
-        self.suggest_filter_from_run = true;
-        self.ladder_run.get_or_insert(own_log);
-        let mut analysis = self.state.settings.analysis.clone();
-        analysis.combatlog_file = run.display().to_string();
-        self.ladder_run_file = Some(run);
-        // Merging rotating logs is about the reader's own game folder; a fetched
-        // run is a single fight in a scratch directory and has nothing to merge.
-        analysis.consolidate_combatlog = false;
-        self.state.analysis_handler.set_settings(analysis);
-        // `set_settings` only puts a new analyzer in place; nothing is read
-        // until it is asked to. The settings dialog does both, which is why
-        // doing only the first left the window saying it was showing a ladder
-        // run while still holding the previous log's figures.
-        self.state.analysis_handler.refresh();
     }
 
-    /// Writes the run and the fights picked from the reader's own log into one
-    /// log, and reads that.
+    /// Puts a fight on screen, wherever it came from.
     ///
-    /// Neither the reader's log nor the fetched run is touched — this is a third
-    /// file, made for the question and thrown away with the rest of the scratch
-    /// directory.
-    fn compare_ladder_run_with(&mut self, picked: &[usize]) {
-        let (Some(run), Some(own_log)) = (self.ladder_run_path(), self.ladder_run.clone()) else {
+    /// One of the reader's own is asked of the analyzer, which holds it; a run
+    /// from the ladder is held here and needs no asking.
+    fn open_combat(&mut self, start: NaiveDateTime) {
+        if let Some(run) = self
+            .ladder_runs
+            .iter()
+            .find(|run| run.summary.start == start)
+        {
+            let combat = run.combat.clone();
+            self.main_tabs.update(&self.state.settings, &combat);
+            self.selected_combat = Some(combat);
+            // Nothing in the analyzer's log is what is on screen now, and the
+            // things that ask by that index read this as "not one of yours".
+            self.selected_combat_index = None;
+            return;
+        }
+        let Some(index) = self.combats.iter().position(|c| c.start == start) else {
             return;
         };
-        let Ok(run_data) = std::fs::read(&run) else {
-            return;
-        };
-        let own_log = std::path::Path::new(&own_log);
-        // Every fight handed over at once, so each is placed against all the
-        // others rather than against whichever happened to be first. Placed one
-        // at a time, a fight from between two already composed went on the end,
-        // behind a newer one — where the analyzer reads it as part of that one
-        // and it never reaches the comparison.
-        let fights = std::iter::once(run_data).chain(picked.iter().filter_map(|index| {
-            self.own_combats
+        self.selected_combat_index = Some(index);
+        self.state.analysis_handler.get_combat(index);
+    }
+
+    /// Whether what is on screen came off the ladder rather than out of the
+    /// reader's own log.
+    fn showing_ladder_run(&self) -> bool {
+        self.selected_combat.as_ref().is_some_and(|combat| {
+            self.ladder_runs
                 .iter()
-                .find(|(i, _)| i == index)
-                .and_then(|(_, combat)| combat.read_log_combat_data(own_log))
-        }));
-        let composed = crate::helpers::compose_comparison_log(fights);
-        let path = crate::helpers::paths::comparison_log();
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Err(error) = std::fs::write(&path, &composed) {
-            log::error!("ladder: could not write the comparison log: {error}");
+                .any(|run| run.summary.start == combat.active_time.start)
+        })
+    }
+
+    /// Writes the fight on screen out as a log of its own.
+    ///
+    /// One of the reader's own is cut out of their log by the analyzer, which
+    /// knows where in it the fight sits. A run from the ladder is already a log
+    /// of exactly one fight — the file it was fetched into — so it is copied.
+    fn save_shown_combat(&self, file: PathBuf) {
+        let Some(shown) = self.selected_combat.as_ref() else {
+            return;
+        };
+        if let Some(run) = self
+            .ladder_runs
+            .iter()
+            .find(|run| run.summary.start == shown.active_time.start)
+        {
+            match std::fs::copy(&run.path, &file) {
+                Ok(_) => log::info!("saved the run to {}", file.display()),
+                Err(error) => log::error!("could not save the run: {error}"),
+            }
             return;
         }
-        log::info!(
-            "ladder: composed {} bytes from the run and {} of my fights into {}",
-            composed.len(),
-            picked.len(),
-            path.display()
-        );
-        let mut analysis = self.state.settings.analysis.clone();
-        analysis.combatlog_file = path.display().to_string();
-        analysis.consolidate_combatlog = false;
-        self.state.analysis_handler.set_settings(analysis);
-        self.state.analysis_handler.refresh();
-        // Reading it is only half of it: the comparison is built from the
-        // combats, and those have to be asked for once there are any. Without
-        // this the log was composed and read and nothing appeared, which looked
-        // exactly like a button that does nothing.
-        self.build_comparison_when_read = true;
-    }
-
-    /// What the pinned entry says it is: the fight the run holds, taken when the
-    /// run itself was read.
-    ///
-    /// Not from whatever combat happens to be open. Once the two fights are
-    /// composed into one log, the newest of them is the one that comes up — so
-    /// the pinned entry started naming the reader's own fight instead of the run
-    /// it stands for.
-    fn ladder_run_label(&self) -> String {
-        self.ladder_run_name
-            .clone()
-            .unwrap_or_else(|| "the run from the ladder".to_owned())
-    }
-
-    /// Points the comparison pickers at the same map and level as the run just
-    /// opened. Done when its own analysis arrives, which is the first moment
-    /// there is anything to read them off.
-    fn suggest_compare_filter_from_run(&mut self) {
-        let map = self.combats.first().map(|combat| combat.base_name.clone());
-        let difficulty = match self.combats.first().and_then(|combat| combat.difficulty) {
-            Some(Difficulty::Normal) => DifficultyFilter::Normal,
-            Some(Difficulty::Advanced) => DifficultyFilter::Advanced,
-            Some(Difficulty::Elite) => DifficultyFilter::Elite,
-            _ => DifficultyFilter::Any,
-        };
-        // Suggested only where it leaves something. A run of a map the reader
-        // has never played — which is most of the ladder, most of the time —
-        // would otherwise open the picker on an empty list, and an empty list
-        // reads as a broken window rather than as an answer. Falling back to the
-        // level alone at least keeps their own fights of that difficulty in
-        // view; falling back to nothing shows them all.
-        let own = &self.own_combat_list;
-        let leaves_something = |map: &Option<String>, difficulty: DifficultyFilter| {
-            own.iter().any(|combat| {
-                map.as_ref().is_none_or(|map| &combat.base_name == map)
-                    && difficulty.matches(combat.difficulty)
-            })
-        };
-        let (map, difficulty) = if leaves_something(&map, difficulty) {
-            (map, difficulty)
-        } else if leaves_something(&None, difficulty) {
-            log::info!("ladder: no fight of my own on that map, keeping the level only");
-            (None, difficulty)
-        } else {
-            log::info!("ladder: nothing of my own matches that run, leaving the pickers open");
-            (None, DifficultyFilter::Any)
-        };
-        self.combats_panel.suggest_filter(map, difficulty);
-    }
-
-    /// The run on screen, when one is.
-    fn ladder_run_path(&self) -> Option<PathBuf> {
-        self.ladder_run_file.clone()
-    }
-
-    /// Puts the reader's own log back.
-    fn leave_ladder_run(&mut self) {
-        self.ladder_run_file = None;
-        self.ladder_run_name = None;
-        self.suggest_filter_from_run = false;
-        self.own_combats.clear();
-        self.own_combat_list = Default::default();
-        if self.ladder_run.take().is_some() {
-            self.state
-                .analysis_handler
-                .set_settings(self.state.settings.analysis.clone());
-            self.state.analysis_handler.refresh();
+        if let Some(index) = self.selected_combat_index {
+            self.state.analysis_handler.save_combat(index, file);
         }
+    }
+
+    /// Builds a comparison of the ticked fights, in the order they were ticked.
+    ///
+    /// The runs from the ladder are here already; the reader's own have to be
+    /// asked of the analyzer, and that answer arrives later — so what was
+    /// ticked is remembered until it does, and the two are put in order then.
+    fn compare_fights(&mut self, picked: Vec<NaiveDateTime>) {
+        if picked.len() < 2 {
+            self.pending_compare.clear();
+            self.compare.forget();
+            return;
+        }
+        let mine: Vec<usize> = picked
+            .iter()
+            .filter_map(|start| self.combats.iter().position(|c| c.start == *start))
+            .collect();
+        self.pending_compare = picked;
+        if mine.is_empty() {
+            // Nothing to wait for: every one of them is a run already in hand.
+            self.build_comparison(Vec::new());
+            return;
+        }
+        self.state.analysis_handler.get_combats(mine);
+    }
+
+    /// Puts the fetched fights and the runs from the ladder into one
+    /// comparison, in the order they were ticked.
+    fn build_comparison(&mut self, fetched: Vec<(usize, Arc<Combat>)>) {
+        let combats: Vec<(usize, Arc<Combat>)> = self
+            .pending_compare
+            .iter()
+            .enumerate()
+            .filter_map(|(order, start)| {
+                let combat = self
+                    .ladder_runs
+                    .iter()
+                    .find(|run| run.summary.start == *start)
+                    .map(|run| run.combat.clone())
+                    .or_else(|| {
+                        fetched
+                            .iter()
+                            .find(|(_, combat)| combat.active_time.start == *start)
+                            .map(|(_, combat)| combat.clone())
+                    })?;
+                Some((order, combat))
+            })
+            .collect();
+        if combats.len() < 2 {
+            self.compare.forget();
+            return;
+        }
+        self.compare.set_combats(combats, &self.state.settings);
     }
 
     /// Remembers the main window's size and maximized state so the next launch
@@ -827,18 +751,28 @@ impl App {
                     self.main_tabs.update(&self.state.settings, &combat);
                     self.selected_combat = Some(combat);
                 }
-                // Each answer says what it was asked for, so one cannot be
-                // taken for the other: a comparison follows the ticks in the
-                // list as they are made, and opening a run from the ladder
-                // captures the reader's own fights — both can be in flight.
-                AnalysisInfo::Combats(combats, CombatsPurpose::CaptureOwn) => {
-                    if let Some(run) = self.pending_ladder_run.take() {
-                        self.own_combats = combats;
-                        self.enter_ladder_run(run);
-                    }
-                }
-                AnalysisInfo::Combats(combats, CombatsPurpose::Compare) => {
-                    self.compare.set_combats(combats, &self.state.settings)
+                AnalysisInfo::Combats(combats) => self.build_comparison(combats),
+                // A run fetched from the ladder, read on its own. It joins the
+                // list as a fight like any other; the log the analyzer holds
+                // was never touched.
+                AnalysisInfo::OneLog { path, combat } => {
+                    let Some(combat) = combat else {
+                        continue;
+                    };
+                    let summary = combat.summary();
+                    log::info!("ladder: {} is {}", path.display(), summary.identifier);
+                    // Where a comparison would nearly always be pointed: the
+                    // reader's own runs of the same map and level.
+                    self.combats_panel.suggest_filter(
+                        Some(summary.base_name.clone()),
+                        difficulty_filter(&summary),
+                    );
+                    self.ladder_runs.retain(|run| run.path != path);
+                    self.ladder_runs.push(LadderRun {
+                        path,
+                        combat,
+                        summary,
+                    });
                 }
                 AnalysisInfo::Refreshed {
                     latest_combat,
@@ -853,28 +787,6 @@ impl App {
                         combatlog_file: combatlog_file.clone(),
                         file_size,
                     };
-                    // The run has been read: point the comparison pickers at the
-                    // same map and level, which is what it will nearly always be
-                    // compared against.
-                    // Only for a run just opened, and only once. The composed
-                    // comparison log arrives this way too, and reading the
-                    // filters off that would narrow them again under a reader
-                    // who had just widened them.
-                    if std::mem::take(&mut self.suggest_filter_from_run) {
-                        self.ladder_run_name =
-                            self.selected_combat.as_ref().map(|combat| combat.name());
-                        self.suggest_compare_filter_from_run();
-                    }
-                    if std::mem::take(&mut self.build_comparison_when_read) {
-                        log::info!(
-                            "ladder: comparison log holds {} combats, building",
-                            self.combats.len()
-                        );
-                        self.state.analysis_handler.get_combats(
-                            (0..self.combats.len()).collect(),
-                            CombatsPurpose::Compare,
-                        );
-                    }
                 }
                 AnalysisInfo::CombatsListRefreshed { combats, file_size } => {
                     // Only the combats list is refreshed here — the log growing

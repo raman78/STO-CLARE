@@ -213,29 +213,22 @@ impl CompareView {
     /// list down the side of the window, which is the same list they are
     /// browsed and cleared in. Changing the selection is ticking another row
     /// there, so there is nothing here to go "back" to either.
-    pub fn show(
-        &mut self,
-        state: &mut AppState,
-        // The run fetched from the ladder, when one is on screen: it is in the
-        // comparison whatever else is ticked, so it is named here rather than
-        // being one more row to tick.
-        pinned: Option<String>,
-        ui: &mut Ui,
-        frame: &Frame,
-    ) {
+    pub fn show(&mut self, state: &mut AppState, ui: &mut Ui, frame: &Frame) {
         match &mut self.comparison {
             Some(comparison) => comparison.show(ui, &mut state.settings, frame),
             None => {
                 theme::section(ui, "Compare Combats", |ui| {
-                    if let Some(pinned) = pinned {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("⚑").color(theme::palette().busy));
-                            ui.label(format!("Comparing against {pinned}."));
-                        });
-                    }
                     ui.label(
-                        "Tick the fights to compare in the list beside this one, then press \
-                         Compare selected at the bottom of it.",
+                        "Tick two or more fights in the Combats list — the panel on the left, \
+                         under the ☰ Combats button — and they appear here, side by side.",
+                    );
+                    ui.label(
+                        RichText::new(
+                            "A run fetched from the ladder is one of them: the magnifier in the \
+                             Ladder window puts it at the top of that list, to be ticked like \
+                             any other fight.",
+                        )
+                        .weak(),
                     );
                 });
             }
