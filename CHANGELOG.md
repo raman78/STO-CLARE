@@ -17,8 +17,10 @@
 - the run a comparison is of is named where it is ticked, so the line above the table counting how many runs were showing somebody else is gone — the **Player** column says it, per run
 - the magnifier in the Ladder window is spent once its run is in your list, and no longer throws away a fetch already running when pressed twice
 - a run fetched from the ladder is not offered for upload — it is already on the ladder, and it is somebody else's fight
+- the Upload settings call the program by its name
 
 ### Fixes
+- the Debug settings no longer ask you to start the program again. Logging has taken effect the moment you press Ok since 2.3.0; the line above the switch still said otherwise
 - the magnifier in the Ladder window opens the run on the row you pressed. A fight entered into several of the ladder's tables is shown once, and the button was reading its run from the list before that folding — so it opened a different run than the row named, or one already on screen, in which case nothing happened at all
 - comparing a run from the ladder against several of your own no longer loses some of them. Which ones went missing depended on the order you picked them in
 - the hourglass in the toolbar comes down when the program is done. It could stay up for good after a refresh nothing had asked for

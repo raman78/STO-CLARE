@@ -118,9 +118,12 @@ description of your own.
    tells you what that run was.
 
 There is nothing to save. The description is kept with your settings and stays
-with that combat, and it shows up in the list's **Note** column:
+with that combat:
 
-![A combat with a description of your own](images/combat-note.png)
+![The box above the tabs: which fight is open, and what you called it](images/combat-note.png)
+
+It shows up in the list's **Note** column as well, so a whole evening reads back
+by what you were flying rather than by the clock.
 
 The counter next to the field (`0/50`) tells you how much room is left. Clearing
 the text removes the description again.
@@ -492,7 +495,7 @@ from 25 rows to 9. Turned up, two rows are left — the antiproton beams one bui
 flew and the phaser group the other leaned on. That is the difference between a
 rainbow build and a single-flavour one, without reading a single number.
 
-![Another five runs of one patrol, at a 3% spread: 13 of the 24 rows are left, and the rows missing from some of the runs say so](images/compare-differences.png)
+![Another five runs of one patrol, at a 3% spread: 19 of the 28 rows are left, and the rows missing from some of the runs say so](images/compare-differences.png)
 
 The Total above follows both of them: it counts the rows that are ticked **and**
 on screen. Narrow the table to one damage type and the Total is that type's;
