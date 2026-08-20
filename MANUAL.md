@@ -20,7 +20,7 @@ Two things have to be true before any numbers appear:
 2. STO-CLARE knows where the log file is. That is the one setting you must fill
    in yourself — see [Settings → General](#general).
 
-Then fight something, and press **Refresh Now**.
+Then fight something, and press **Analysis of Newest Fight**.
 
 ---
 
@@ -36,31 +36,75 @@ Everything lives in one window. From top to bottom:
 
 ### The combats list
 
-The wide drop-down at the top holds every combat found in your log, newest
-first. Pick one and every tab below fills in with it.
+Press **☰ Combats** in the top row and a panel opens down the left-hand side
+with every fight in your log, newest first. Double-click a row and every tab
+fills in with that fight.
 
 ![The combats list](images/combats-list.png)
 
-Each entry reads: whether you fought it alone or with others, the map name,
-whether it was space or ground, the difficulty, and the time it started and
-ended — for example
-`[Solo] [TFO] Infected: The Conduit (Space) [Elite] | 11:56:10 - 12:02:27`.
+Each row is one fight, in columns you can sort by — click a heading once to
+order by it, again to turn the order round:
+
+| Column  | What it says                                                            |
+|---------|-------------------------------------------------------------------------|
+| Type    | Space, ground or shuttle.                                               |
+| Size    | Solo or team.                                                           |
+| Content | A TFO, a patrol, and so on.                                             |
+| Map     | Which map it was.                                                       |
+| Level   | Normal, advanced or elite.                                              |
+| Start   | The day and time the fighting began.                                    |
+| Time    | How long it lasted.                                                     |
+| DPS     | Your damage per second in that fight.                                   |
+| Note    | The description you wrote for it, if any.                               |
+
 **Solo** means one player in the log and **Team** more than one, which is the
 same test the OSCR ladder uses, so a run of yours and one read from the ladder
-say the same thing. The map and
-difficulty are worked out from what happened in the fight, so you do not have to
-name anything yourself.
+say the same thing. The map, the level and the kind of content are worked out
+from what happened in the fight, so you do not have to name anything yourself.
 
-Tip: a fight that ran long can end up split across two entries. If the numbers
-look far too low, check the neighbouring entry.
+An arrow at the start of a team fight's row folds it out and shows what each
+player did:
+
+```
+▾ Space  Team  TFO  Infected: The Conduit  Elite  19.08 21:14  04:12  121.7k
+      @ramanwaleczny                                                  121.7k
+      @Ettenurb                                                        88.4k
+```
+
+The panel widens itself to fit the table and can be dragged wider or narrower;
+the width you set is remembered. The list keeps itself current while you play —
+new fights appear as they are logged, without moving what you are reading.
+
+Tip: a fight that ran long can end up split across two rows. If the numbers look
+far too low, check the neighbouring row.
+
+### Whose DPS the list shows
+
+The **DPS** column shows *your* figure for each fight. The program works out
+which player you are by reading the log: your handle is in every fight in it,
+where even a regular team-mate is in a fraction of them.
+
+Where it cannot tell — a log of nothing but duo runs with the same person, or a
+single fight saved on its own — the column shows the best figure of each fight
+instead and is headed **Top DPS**. You can settle it yourself in
+**Settings ▸ General ▸ My handle**.
 
 ### Narrowing the list
 
-The menus under the toolbar — solo or team, type, level and map — cut the list
-down. Each only offers what the others leave reachable, so you cannot pick a
-combination that shows nothing. The solo/team menu appears only when your list
-holds both kinds. A **Clear filter** button appears once any of
-them is set.
+The menus in the panel — solo or team, type, level and map — cut the list down.
+Each only offers what the others leave reachable, so you cannot pick a
+combination that shows nothing. The **Search** box matches the name of a fight
+and the note you wrote for it. **Played** narrows by when the fights were
+fought, with `24 h`, `7 days` and `30 days` filling the window in for you,
+counting back from the newest fight in the list. A **Clear filter** button
+appears once anything is set.
+
+Click into an empty **Played** field and it fills in with the oldest — or, on
+the right-hand side, the newest — fight in the list, ready to edit. Leave one
+side empty for "anything before that" or "anything after that". A date typed
+halfway does nothing until it is complete, so the list does not empty out under
+your hands while you are still typing; while it is incomplete it is shown in
+red.
 
 ### Describing a combat so you can find it again
 
@@ -68,14 +112,13 @@ A list of runs on the same map, all called the same thing and told apart only by
 a timestamp, is hard to read a week later. So every combat can be given a short
 description of your own.
 
-1. Pick the combat in the list.
-2. Click the **Note** field under the tabs — it sits right below the combat's
-   title.
+1. Open the combat.
+2. Click the **Note** field in the box above the tabs.
 3. Type up to 50 characters: "new build", "no buffs", "rainbow boat", whatever
    tells you what that run was.
 
 There is nothing to save. The description is kept with your settings and stays
-with that combat, and it shows up **in the combats list itself**, after a dash:
+with that combat, and it shows up in the list's **Note** column:
 
 ![A combat with a description of your own](images/combat-note.png)
 
@@ -85,17 +128,29 @@ the text removes the description again.
 Tip: this pairs with **Compare Combats** — label two runs before comparing them,
 and you can tell at a glance which column is which build.
 
+### Deleting fights from the log
+
+**Clear Log File** at the bottom of the panel turns the list into a list of tick
+boxes: everything but the newest fight is ticked for you. Untick what you want
+to keep, use **Select all** and **Unselect all** to work in bulk, and press
+**Delete N ticked**. Past a single fight it asks whether you mean it, because
+the log is rewritten and there is no way back.
+
+Only what you can see can be deleted: if a filter hides a ticked fight, its tick
+goes with it.
+
 ### The buttons around the list
 
-| Button                        | What it does                                                                                                                   |
-|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| Refresh Now                   | Re-reads the log and picks up combats fought since you last looked.                                                            |
-| Auto Refresh when log changes | Keeps the list and the numbers current by itself while you play.                                                               |
-| Save Combat                   | Writes the selected combat to a log file of its own, so you can keep or share it.                                              |
-| Clear Log File                | Opens a list of every combat with tick boxes, and deletes only the ones you tick. Everything but the newest is ticked for you. |
-| Copy Combat Summary           | Puts a short text summary on your clipboard, ready to paste into the game chat. It carries the note you wrote for the run.     |
-| Upload                        | Sends the combat to the OSCR ladder — see [Uploading](#uploading-to-the-oscr-ladder).                                          |
-| Overlay                       | Opens the small always-on-top window — see [The overlay](#the-overlay).                                                        |
+| Button                                 | What it does                                                                                                          |
+|----------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| ☰ Combats                              | Opens and closes the list.                                                                                            |
+| Compare Combats                        | Switches the window to the comparison — see [Comparing combats](#comparing-combats).                                  |
+| Analysis of Newest Fight               | Re-reads the log and shows the fight at the end of it.                                                                |
+| Always show analysis of Newest Fight   | Moves to the newest fight by itself as you play. The list stays current either way.                                   |
+| Save Combat                            | Writes the fight on screen to a log file of its own, so you can keep or share it.                                     |
+| Copy Combat Summary                    | Puts a short text summary on your clipboard, ready to paste into the game chat. It carries the note you wrote for it. |
+| Upload                                 | Sends the fight to the OSCR ladder — see [Uploading](#uploading-to-the-oscr-ladder).                                  |
+| Overlay                                | Opens the small always-on-top window — see [The overlay](#the-overlay).                                               |
 
 ### What lands on your clipboard
 
@@ -276,10 +331,19 @@ when in the fight it was actually doing something.
 
 ## Comparing combats
 
-**Compare Combats** in the top row puts runs side by side. First tick the ones
-you want:
+**Compare Combats** in the top row turns the window into a comparison. The
+fights it is of are the ones you tick in the combats list beside it — the same
+list you read and clear fights in, so there is no second list to keep in step
+and nothing to press when you are done.
 
 ![Picking combats to compare](images/compare-pick.png)
+
+Tick a fight and it joins the comparison there and then; untick it and it
+leaves. Each ticked fight gets a number in its own colour — the same number and
+colour its column carries in the table and its line on the chart — and a
+**Player** column saying whose figures are being read for it. A team fight holds
+five people's; the picker beside the row is where you say which of them the
+comparison is about.
 
 There is no limit on how many you tick. Two runs read most clearly side by side,
 but a whole evening's worth is a fair thing to ask for — see
@@ -289,41 +353,11 @@ at once.
 Two things to know before you tick a dozen: past eight runs the chart's line
 colours start over, so two lines can share a colour — the number in the column
 heading is what tells them apart. And a very wide comparison takes a moment to
-build; the picker says so before you press the button, rather than appearing to
-hang.
+build; the list says so beside the count.
 
-### Narrowing the list
-
-Above the list are the same **Show only** menus as in the main window — the kind
-of map, the difficulty, and which map — plus a **Played** window for when the
-runs were fought:
-
-| Field or button       | What it does                                                   |
-|-----------------------|----------------------------------------------------------------|
-| Search                | Matches the name of the run and the note you wrote for it.     |
-| Show only             | The kind of map, the difficulty, and which map.                |
-| Played                | The window the runs were fought in, as `2026-07-23 20:07`.     |
-| 24 h, 7 days, 30 days | Fill the window in for you, counting back from the newest run. |
-| Select all            | Ticks every run the filters have left on screen.               |
-| Clear selection       | Unticks everything.                                            |
-
-Click into an empty **Played** field and it fills in with the oldest — or, on the
-right-hand side, the newest — run in the list, ready to edit. Leave one side
-empty for "anything before that" or "anything after that".
-
-A run you have ticked never disappears from the list, even when the filters no
-longer match it — it is going into the comparison either way, so it stays on
-screen with a warning mark beside it. Untick it, or widen the filters to see it
-back in place.
-
-**Select all** adds to what you have already ticked rather than replacing it, so
-you can pick a few Infected runs, change the filters, and add a few Hive ones.
-
-Tip: a date typed halfway does nothing until it is complete, so the list does not
-empty out under your hands while you are still typing. While it is incomplete it
-is shown in red.
-
-Then press **Compare selected**:
+**Select all** and **Unselect all** at the bottom of the list work in bulk, and
+the same filters as ever narrow what you are choosing from. Only what you can
+see is ticked: if a filter hides a ticked fight, its tick goes with it.
 
 ![The comparison, with differences](images/compare-result.png)
 
@@ -585,7 +619,7 @@ click straight through it at whatever is behind — the game included. Only when
 you move the pointer onto the buttons does it start taking clicks again.
 
 If the overlay opens with nothing but the word "Player" in it, it has not been
-given a combat yet — press **Refresh Now** in the main window and it fills in.
+given a combat yet — press **Analysis of Newest Fight** in the main window and it fills in.
 
 ### Seeing the game through it
 
@@ -688,30 +722,39 @@ across every map at once.
 ### Reading a run from the ladder
 
 Two icons sit at the end of every row: 📥 saves that run as a log file, and 🔍
-opens it in the main window with everything the program can show — all the tabs,
-the charts, the ability breakdown.
+adds it to your combats list.
 
 ![A run from the ladder, opened](images/ladder-run.png)
 
-Your own log is not touched or changed. A mark at the top says whose fight you
-are looking at, and **Back to my log** puts yours back.
+Your own log is not touched, and nothing is replaced: the run appears at the top
+of the list, in a colour that says it came from somewhere else, and stays there
+whichever way you sort. Double-click it to read it like any fight of your own —
+all the tabs, the charts, the ability breakdown. The `✕` at the end of its row
+takes it back out of the list.
+
+You can have several runs open at once — press 🔍 on as many as you like. The
+magnifier on a run already in your list is greyed out and does nothing.
+
+Two things a fetched run does not do: it cannot be uploaded (it is already on the
+ladder, and it is somebody else's fight), and **Save Combat** on it copies the
+file it was fetched into.
 
 ### Comparing it with your own
 
-With a run on screen, press **Compare Combats** as usual. The run is already in
-the comparison — ticked, greyed out, and not for unticking, because it is what
-you opened. Beside it is your own list, narrowed to the same map and level as the
-run, since that is nearly always what you want to compare against. Where you have
-never played that map, it falls back to the same level.
+A run from the ladder is a row of the list, so comparing it is the ordinary way:
+press **Compare Combats**, tick the run, tick one or more fights of your own.
 
 ![Choosing what to compare the run against](images/ladder-compare-pick.png)
 
-Tick one of your own fights — one is enough — and press **Compare selected**.
+Opening a run points the list's filters at the same map and level, since that is
+nearly always what you want to compare against. Widen them whenever you want
+something else.
 
 ![A ladder run beside your own](images/ladder-compare.png)
 
-One thing to expect: the two runs are by different people, so each column has its
-own player picker in the heading. Your column opens on you, theirs on them.
+The two runs are by different people, so use the **Player** column in the list to
+say whose figures each column reads. A team run from the ladder holds five
+players; yours opens on you, theirs on whoever led it.
 
 ---
 
@@ -882,10 +925,10 @@ written into the settings folder under the new name.
 
 | Symptom                                       | Likely cause                                                              | What to do                                                                                                 |
 |-----------------------------------------------|---------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| The combats list is empty                     | Combat logging is off in the game                                         | Type `/Combatlog 1` in the game chat, fight something, press Refresh Now.                                  |
+| The combats list is empty                     | Combat logging is off in the game                                         | Type `/Combatlog 1` in the game chat, fight something, press Analysis of Newest Fight.                                  |
 | Still empty after that                        | The path to the log is wrong                                              | Settings → General: the path must end in `combatlog.log`.                                                  |
 | Only your newest fights show up               | The game split the log into several files                                 | On Linux, leave log merging switched on. On Windows, add `-NoAutoRotateLogs` to the game's launch options. |
-| The overlay shows only the word "Player"      | It has not been handed a combat yet                                       | Press Refresh Now in the main window.                                                                      |
+| The overlay shows only the word "Player"      | It has not been handed a combat yet                                       | Press Analysis of Newest Fight in the main window.                                                                      |
 | The overlay sits behind the game              | X11 session, or your window manager decided otherwise                     | Use a Wayland session, or run the game in windowed mode.                                                   |
 | Numbers look far too low                      | The fight is split across two entries in the list                         | Check the neighbouring entry.                                                                              |
 | A combat is named wrongly                     | One of your own naming rules is matching first                            | Settings → Analysis → Combat Names; a warning mark shows which rule overlaps.                              |
@@ -899,7 +942,7 @@ A: No. It only reads a file the game writes.
 
 **Q: Do I have to keep the program open while I play?**
 A: No. The game writes the log whether or not STO-CLARE is running. Open it
-afterwards and press Refresh Now. Keep it open only if you want the overlay or
+afterwards and press Analysis of Newest Fight. Keep it open only if you want the overlay or
 live numbers.
 
 **Q: Where are my settings kept?**
