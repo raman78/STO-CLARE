@@ -1,4 +1,4 @@
-//! A start-time window for the compare view's combats list.
+//! A start-time window for a combats list.
 //!
 //! The pickers beside it narrow by what a combat *was* — its map, its level,
 //! where it was fought. This one narrows by when it was played, down to the
@@ -80,13 +80,27 @@ impl DateRange {
     /// Draws the two fields and the presets. `bounds` is the oldest and newest
     /// combat in the list: the starting point for a field the user clicks into,
     /// and what the presets count back from.
-    pub fn show(&mut self, bounds: Option<(NaiveDateTime, NaiveDateTime)>, ui: &mut Ui) {
+    ///
+    /// `id` tells one list's window from another's — the panel and the compare
+    /// picker both have one, and two text fields under one id are one field
+    /// that cannot decide which list it belongs to.
+    pub fn show(&mut self, id: &str, bounds: Option<(NaiveDateTime, NaiveDateTime)>, ui: &mut Ui) {
         ui.label("Played:");
-        field(&mut self.from, bounds.map(|(oldest, _)| oldest), "from", ui);
+        field(
+            &mut self.from,
+            bounds.map(|(oldest, _)| oldest),
+            (id, "from"),
+            ui,
+        );
         // A word rather than an arrow: the bundled fonts have no U+2192, which
         // draws as an empty box, and "to" says what the box could not.
         ui.label("to");
-        field(&mut self.to, bounds.map(|(_, newest)| newest), "to", ui);
+        field(
+            &mut self.to,
+            bounds.map(|(_, newest)| newest),
+            (id, "to"),
+            ui,
+        );
 
         if let Some((_, newest)) = bounds {
             for (label, hours) in PRESETS {
@@ -112,10 +126,10 @@ impl DateRange {
 /// Clicking into an empty field fills it with that end of the list, so a window
 /// is edited from a real time rather than typed from nothing — while a field
 /// nobody has touched stays empty, and so bounds nothing.
-fn field(text: &mut String, fill_with: Option<NaiveDateTime>, id: &str, ui: &mut Ui) {
+fn field(text: &mut String, fill_with: Option<NaiveDateTime>, id: (&str, &str), ui: &mut Ui) {
     let invalid = !text.trim().is_empty() && parse(text).is_none();
     let mut edit = TextEdit::singleline(text)
-        .id(Id::new(("compare date range", id)))
+        .id(Id::new(("date range", id)))
         .hint_text(FORMAT)
         .desired_width(115.0);
     if invalid {

@@ -173,6 +173,14 @@ impl CombatFilter {
     /// Draws the three pickers inline. Each menu offers only what the other two
     /// leave reachable, so no combination can empty the list.
     pub fn show(&mut self, id: &str, combats: &[CombatEntry], ui: &mut Ui) {
+        let debug = std::env::var("CLA_PANEL_DEBUG").is_ok();
+        if debug {
+            println!(
+                "        filter start {} max {}",
+                ui.min_rect().width(),
+                ui.max_rect().width()
+            );
+        }
         self.drop_impossible_choices(combats);
         let mut solos = self.options(combats, Dimension::Solo).solos;
         solos.sort_unstable();
@@ -190,7 +198,7 @@ impl CombatFilter {
                     Some(false) => "Team",
                     None => "Any size",
                 })
-                .width(90.0)
+                .width(fitting(ui, 90.0))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.solo, None, "Any size");
                     ui.selectable_value(&mut self.solo, Some(true), "Solo");
@@ -198,9 +206,12 @@ impl CombatFilter {
                 });
         }
 
+        if debug {
+            println!("        after solo {}", ui.min_rect().width());
+        }
         ComboBox::new((id, "environment"), "")
             .selected_text(self.environment.as_deref().unwrap_or("Any type"))
-            .width(90.0)
+            .width(fitting(ui, 90.0))
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut self.environment, None, "Any type");
                 for environment in environments {
@@ -212,6 +223,9 @@ impl CombatFilter {
                 }
             });
 
+        if debug {
+            println!("        after env {}", ui.min_rect().width());
+        }
         ComboBox::new((id, "difficulty"), "")
             .selected_text(match self.difficulty {
                 DifficultyFilter::Any => "Any level",
@@ -221,7 +235,7 @@ impl CombatFilter {
                     .map(|(_, label)| *label)
                     .unwrap_or("Any level"),
             })
-            .width(100.0)
+            .width(fitting(ui, 100.0))
             .show_ui(ui, |ui| {
                 for &(filter, label) in DifficultyFilter::ALL {
                     let reachable = filter == DifficultyFilter::Any
@@ -238,9 +252,12 @@ impl CombatFilter {
                 }
             });
 
+        if debug {
+            println!("        after level {}", ui.min_rect().width());
+        }
         ComboBox::new((id, "map"), "")
             .selected_text(self.map.as_deref().unwrap_or("Any map"))
-            .width(220.0)
+            .width(fitting(ui, 220.0))
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut self.map, None, "Any map");
                 for map in maps {
@@ -248,6 +265,22 @@ impl CombatFilter {
                 }
             });
     }
+}
+
+/// How wide a picker may be drawn here: what it wants, or what is left of the
+/// row it stands in, whichever is less.
+///
+/// A picker wider than the room it has does not wrap onto the next line the way
+/// a label does — it draws past the edge, and everything that sizes itself to
+/// what it holds (the combats panel, which is exactly as wide as its table)
+/// grows to take it. So the pickers give way instead.
+fn fitting(ui: &Ui, wanted: f32) -> f32 {
+    // Never below what a picker needs to be pointed at at all.
+    const NARROWEST: f32 = 60.0;
+    wanted
+        .min(ui.available_width())
+        .min(ui.max_rect().width())
+        .at_least(NARROWEST)
 }
 
 /// What the filter knows about one combat in the list.

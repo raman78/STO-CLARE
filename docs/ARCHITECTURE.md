@@ -50,10 +50,24 @@ receives an `AnalysisInfo`. Combats cross the boundary as `Arc<Combat>`, so
 handing the same fight to the main window, the compare view and the overlay
 costs a refcount.
 
-Several handlers can subscribe (`AnalysisHandler::get_handler`); the overlay
-uses its own so it can auto-refresh while the main window does not. Parsing is
-incremental — `Analyzer::update` resumes where the last call stopped, so a live
-refresh only reads what the log has grown by.
+Several handlers can subscribe (`AnalysisHandler::get_handler`), and each says
+what it wants of a live refresh:
+
+| flag on `HandlerContext` | what arrives on a log change | who sets it |
+|--------------------------|------------------------------|-------------|
+| `auto_refresh`           | `AnalysisInfo::Refreshed` — the list **and** the newest combat, which moves the view onto it | the overlay always; the main window while "Auto Refresh" is on |
+| `list_refresh`           | `AnalysisInfo::CombatsListRefreshed` — the list alone | the main window, always (`App::new`) |
+
+The watcher runs while either is set, which is why the combats list is current
+whatever the setting says: that setting is about the *view* following the log,
+not the list. A handler that wants both gets one message, the whole one.
+
+Parsing is incremental — `Analyzer::update` resumes where the last call stopped,
+so a live refresh only reads what the log has grown by. `Instruction::ReadOneLog`
+is the exception and reads a whole file: it builds a second `Analyzer` for a log
+of its own, returns the fight in it as `AnalysisInfo::OneLog`, and throws the
+analyzer away. The one holding the reader's log is untouched — that is the whole
+point of it (see *Runs from the ladder* below).
 
 ## From a log line to a number
 
@@ -115,7 +129,8 @@ name next to the settings overrides it without a rebuild. See
 
 | area                        | module                   | notes                                                            |
 |-----------------------------|--------------------------|------------------------------------------------------------------|
-| shell, combat picker, menus | `app/mod.rs`             | owns `MainTabs`, `CompareView`, the overlay handle               |
+| shell, toolbar, menus       | `app/mod.rs`             | owns `MainTabs`, `CompareView`, the runs off the ladder, the overlay handle |
+| the list of fights          | `app/combats_list.rs`    | the side panel: one table of combats, and the cells every list of them is drawn from |
 | per-combat tabs             | `app/main_tabs`          | Summary, Damage Dealt/Taken, the three healing tabs              |
 | tables                      | `app/main_tabs/tables`   | one generic `MetricsTable<T>` driven by a static column list     |
 | part of a tree              | `app/damage_subset.rs`   | the figures of a set of rows, for the ticks and the type pickers |
@@ -244,13 +259,12 @@ because formatting is baked into the row strings when a table is built.
 
 The `combat_notes` section (`app/settings/combat_notes.rs`) holds the user's own
 short description per combat, written in the Summary tab and repeated wherever a
-combat is listed: the main window's dropdown, the compare picker (whose search
-box reads it), and all three parts of a comparison — its legend, its chart and
-its column headers (see below). It is keyed by the combat's **start time**,
-which the refresh messages carry alongside the list (`start_times`, aligned with
-`combats`) because those views hold parallel arrays rather than whole combats.
-The start time is the only identifier the log itself fixes — `Combat::identifier` carries whatever the name rules or
-the map detection produced, so a rename would orphan the notes. Changing
+combat is listed: the combats list (whose search box reads it), and the parts of
+a comparison that name a run — its chart and its column headers (see below). It
+is keyed by the combat's **start time**, which `CombatSummary` carries. The start
+time is the only identifier the log itself fixes — `Combat::identifier` carries
+whatever the name rules or the map detection produced, so a rename would orphan
+the notes. Changing
 `combat_separation_time_seconds` re-cuts the log into different combats and does
 orphan them; there is no key that survives that.
 
@@ -343,49 +357,104 @@ on one combat land on whatever rows happen to hold those handles in the next.
 whether the ticks should be dropped on a combat change or translated through the
 names.
 
+### The list of fights — `app/combats_list.rs`
+
+One table of combats, drawn in a side panel and used for everything that picks a
+fight. There is no second list anywhere: the compare view carried a picker of its
+own until 2.5, and two lists of the same fights disagreed about which of them was
+filtered how.
+
+What travels from the analysis thread is `CombatSummary`
+(`analyzer/combat_summary.rs`), one value per fight — name, identifier, map,
+content type, environment, difficulty, solo, start, duration and the players with
+their DPS — sent as `Arc<[CombatSummary]>`. It replaced six `Vec`s indexed
+alongside each other, where one list left behind read the wrong entry for every
+combat after it.
+
+**A fight is named by `start`.** Indices are only ever used to ask the analyzer
+for a combat; anything the list has to match — a tick, a fold-out, the row a
+comparison's slot belongs to — uses the start time, because the list is live (a
+fight with no damage in it is dropped as it grows) and because a run off the
+ladder is not in the analyzer's list at all.
+
+| what | held in | keyed by |
+|------|---------|----------|
+| ticked for deletion | `CombatsPanel::to_delete` (`FxHashSet`) | start |
+| ticked for a comparison | `CombatsPanel::to_compare` (`Vec`, in tick order) | start |
+| folded-out player lists | `CombatsPanel::unfolded` | start |
+| the run each comparison slot is of | `ComparisonSlot::start` | start |
+
+`to_compare` is a `Vec` and not a set because its order *is* the numbering: the
+badge a row carries is its position in it, and the comparison is built in that
+order, so its columns and colours follow the order the reader ticked.
+
+The panel has three modes on one mechanism — browse, `Clearing`, `Comparing` —
+and which one is on is **asked of the window every frame** (`CombatsListView::comparing`)
+rather than remembered: copied at the click, folding the list away left the panel
+browsing while the window was still comparing.
+
+Decisions worth keeping:
+
+| decision | why |
+|----------|-----|
+| ticks are pruned to what is on screen | acting on a fight a filter is hiding is acting out of sight; the count in the strip would lie about it. The runs off the ladder count as on screen — they are rows of this list, and the filters do not reach them |
+| columns of short words have a fixed width (`CombatColumn::widest`) | so the same column is the same width in every list, and a column of four-letter words does not take as much room as the map name beside it |
+| the panel is exactly as wide as its table | `fitting_width` measures the table (`table::table_content_width`) and the panel is pinned to it until the reader drags the edge, after which their width is remembered and only a drag changes it — read back every frame, an empty table (a log still being read) overwrote it |
+| the fold-out arrow is always drawn, invisible where there is nothing to fold | `Ui::add_visible` keeps the geometry identical; room measured out beside it instead was room of a different size, and the column drew two points wider or narrower depending on which rows were in it |
+| a run's number is a badge, not coloured text | several series colours vanish into the blue of a picked row; `theme::badge_colors` fills a patch with the run's colour and picks black or white for the number, taking the fill a shade further where neither reaches 3:1 |
+
 ### Comparing several combats — `app/compare`
 
-`CompareView` (`app/compare/mod.rs`) is a picker plus a table. The picker works
-on the parallel arrays a refresh message carries (`combats`, `difficulties`,
-`base_names`, `environments`, `start_times`), so it never holds a combat; the
-selection is a `Vec<usize>` of indices into them. Pressing **Compare selected**
-sends those indices as `Instruction::GetCombats`, and the answer
-(`AnalysisInfo::Combats`) builds a `Comparison` (`compare_table.rs`).
+`CompareView` (`app/compare/mod.rs`) is the table and nothing else: the fights it
+is of are ticked in the combats list, and every change of those ticks rebuilds
+it. `ListAction::Compare` carries the ticked start times; `App::compare_fights`
+splits them into runs it holds already and fights the analyzer has to be asked
+for (`Instruction::GetCombats`), remembers the order in `App::pending_compare`,
+and `App::build_comparison` puts the two together in that order once the answer
+arrives.
 
-Three filters narrow the picker, and all three also decide what **Select all**
-adds — the button takes exactly the list on screen, adding to the selection
-rather than replacing it, so a selection can be built from one filtered list
-after another.
+Rebuilding rather than dropping a slot is deliberate: numbering from one each
+time is what keeps unticking one fight and ticking another from walking the
+numbers — and the colours with them — up and up.
 
-A **ticked combat is never filtered out** (`CompareView::visible_combats`
-returns it with `matches = false`, and the row carries a `⚠` in
-`Palette::warn`). It is going into the comparison either way, so hiding it —
-narrowing the level to Elite over a selection that holds an Advanced run —
-would leave a combat being compared that cannot be seen or unticked.
+What the list needs back from a comparison is `CompareView::slots()`:
+`ComparisonSlot { start, player }`, one per run. The number and the colour are
+the list's own (see above); only *whose figures are being read* is the
+comparison's to say, and `Comparison::set_player` takes a start time and a
+handle to change it.
 
-| filter      | type           | shared with the main window | notes                        |
-|-------------|----------------|-----------------------------|------------------------------|
-| search box  | `String`       | no                          | matches identifier **and** the user's note |
-| type/level/map | `CombatFilter` | yes (`app/combat_filter.rs`) | each menu offers only what the other two leave reachable |
-| date window | `DateRange`    | no                          | `app/compare/date_range.rs`  |
+### Runs from the ladder — `App::ladder_runs`
 
-`DateRange` is two `%Y-%m-%d %H:%M` fields, either of which may be empty (no
-bound at that end) or half-typed (bounds nothing, drawn in `Palette::worse`
-until it parses). Two decisions are worth keeping:
+The magnifier in the Ladder window (`upload/records.rs`) fetches a run into a
+scratch file and hands the path to `App::open_ladder_run`, which asks for it with
+`Instruction::ReadOneLog`. The answer is kept as a `LadderRun { path, combat,
+summary }` and shown as a row at the top of the list, in `Palette::busy`, with a
+`✕` that drops it. Several can be open at once.
 
-- **The upper bound covers its whole minute.** The fields are typed to the
-  minute; a combat that started at `20:07:45` is inside a window ending at
-  `20:07`, or the run whose time the user typed would be the one dropped.
-- **The presets count back from the newest combat in the list, not from the
-  wall clock.** `chrono` is built here without its `clock` feature, so there is
-  no local `now()` to count from — and the times in a log are the game's, so a
-  log copied from another machine would answer "the last 24 hours" with an
-  empty list.
+Until 2.5 a run *replaced* the analyzer's log for as long as it was on screen.
+Everything that had to be carried across that switch — the reader's own fights,
+captured beforehand; a third log composed from the run and the fights it was
+compared against; a mode to be in and a way out — meant the same fight had three
+different indices depending on which of the three logs was being counted, and
+every bug in the feature was one of those three confused for another. Holding the
+run beside the log removed the class.
+
+| what a run is not | why |
+|-------------------|-----|
+| uploadable | it is already on the ladder, and it is somebody else's fight (`App::showing_ladder_run` gates the Upload button) |
+| cut out of the reader's log when saved | it *is* a log of one fight — `App::save_shown_combat` copies the file it was fetched into |
+| filtered by the list's menus | it is not a fight out of the log those menus narrow; it leads the list whatever the headings sort by |
+
+One thing the ladder window must be told: which runs are already open
+(`Records::show(.., already_open)`), so the magnifier on one of them is drawn
+spent and takes no click. The click used to land even on the greyed label, and a
+second press threw away the fetch already running.
 
 #### What a selected combat costs
 
 Nothing caps the selection (`MAX_COMBATS` is gone). What gives way instead is
-stated in the picker by `selection_hint`, because both limits are gradual:
+stated in the list's footer by `compare::selection_hint`, because both limits
+are gradual:
 
 | past | what happens | why |
 |------|--------------|-----|
@@ -409,12 +478,13 @@ automated coverage to catch a mistake with; the copies stay.
 
 The compare view is drawn straight into the central panel; nothing around it
 scrolls vertically. The table scrolls sideways on its own
-(`ScrollArea::horizontal`), so more columns only ever means more scrolling —
-but the legend is a row per combat, and a row measures 21 points under the
-default style, so an uncapped legend filled a 720-point window at 34 combats
-and left the table and the chart drawn past the bottom edge with no way to
-reach them. `legend_height` caps it at `LEGEND_ROWS` (6) and lets it scroll
-inside itself; below that it still shrinks to what it holds.
+(`ScrollArea::horizontal`), so more columns only ever means more scrolling. Two
+panes share the height — the table and the chart — with one draggable boundary.
+
+There used to be a third: a legend, one row per combat, which at 34 runs filled a
+720-point window and pushed the table and the chart past the bottom edge. It is
+gone; which runs a comparison is of, in what colour, under what number and read
+for which player is said in the combats list, on the rows they were ticked on.
 
 The one thing left uneven is the table's `Name` column, which scrolls away with
 everything else — the averages toggle is the answer to a table too wide to
@@ -492,14 +562,6 @@ headings would lag behind their columns while the table was dragged. The two
 closures also cannot be alive at once: both borrow the table's own state, which
 is the other reason `header` takes no closure.
 
-**A list of rows is drawn like a table's rows.** `table::list_row` stripes every
-other row and picks out the one under the pointer, and it is what the lists of
-runs use — the one a comparison is picked from and the legend inside one. They
-were rows of widgets on a flat background, where a dozen runs of the same map on
-the same evening differ only by the time at the end of the line. The background
-is reserved with `Shape::Noop` before the contents are drawn and filled in
-afterwards, because a row is only as tall as what went into it.
-
 **A scrolling list must not be wider than its pane.** Every vertical
 `ScrollArea` in the program carries `auto_shrink([false, true])` so its bar sits
 at the edge of the pane rather than against the longest line in it. That only
@@ -507,8 +569,13 @@ holds while the content fits: with `direction_enabled[0] == false` and
 `auto_shrink[0] == false`, egui sizes the inner rect as
 `inner.max(content_size.x)` (`scroll_area.rs`), so one over-long line widens the
 whole area and carries the vertical bar off the right-hand edge with it. That is
-what hid the legend's bar — the line explaining the reference run. Any label
-that can outgrow its pane is `Label::truncate()`d.
+what hid the bar of the comparison's own list of runs, back when it had one. Any
+label
+that can outgrow its pane is `Label::truncate()`d — except in the combats list,
+where nothing wraps or truncates (`TextWrapMode::Extend`): a cell that wraps
+asks for less width than its text needs, and the panel sizes itself to its
+table, so a long map name would have folded and the panel settled around the
+fold.
 
 #### Picking what the Total is of
 
@@ -750,10 +817,10 @@ noticed and the chart rebuilt for it.
 |-------------------|------------------------------------------------|-----------------------------|
 | chart series name | `"<slot> — <note>"`, or the slot number alone  | `chart_label`               |
 | column header     | metric name / `#<slot>` / note, on three lines | `header_text` → `LayoutJob` |
-| legend above      | `"<slot>: <identifier> — <note>"`              | `legend_text` → `LayoutJob` |
+| the combats list  | a badge with the run's number, in its colour   | `combats_list::show_number_badge` |
 
-Both the header and the legend are a `LayoutJob` rather than a string because
-their parts differ in colour: the **number and the note** are drawn in the
+The header is a `LayoutJob` rather than a string because its parts differ in
+colour: the **number and the note** are drawn in the
 colour of that combat's line on the chart, while what stands between them is
 not — the metric name belongs to the whole group of columns, and the identifier
 is long enough that a whole row of it in a chart colour reads as a warning.

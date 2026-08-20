@@ -12,28 +12,19 @@
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
+
 use eframe::{Frame, egui::*};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    analyzer::{Combat, DamageGroup, Difficulty},
-    app::{
-        combat_filter::{CombatEntry, CombatFilter, DifficultyFilter},
-        settings::{CombatNotes, Settings},
-        state::AppState,
-        theme,
-    },
+    analyzer::{Combat, DamageGroup},
+    app::{settings::Settings, state::AppState, theme},
 };
 
 mod compare_table;
-mod date_range;
 
-use crate::custom_widgets::table::Table;
-/// The height a row of the picker takes — the tables' own.
-const ROW_HEIGHT: f32 = 25.0;
-use crate::custom_widgets::tooltip::CloseTooltip;
 use compare_table::Comparison;
-use date_range::DateRange;
+pub use compare_table::ComparisonSlot;
 
 /// Past this many combats the chart's line colours start over (the palette
 /// holds eight), so the legend says which line is which but the colours no
@@ -166,17 +157,15 @@ impl Default for CompareSettings {
     }
 }
 
+/// The comparison on screen, and whether the window is in that mode at all.
+///
+/// It used to hold a picker of its own — a second list of the same fights, with
+/// its own search, its own filters and its own ticks. The fights are picked in
+/// the combats list down the side of the window now, so what is left here is
+/// the table itself.
 #[derive(Default)]
 pub struct CompareView {
     open: bool,
-    selected: Vec<usize>,
-    name_filter: String,
-    /// The same environment/level/map pickers the main window uses, so both
-    /// lists are filtered the same way and mean the same by each choice.
-    filter: CombatFilter,
-    /// When the combats were played — the compare view's own filter, since it
-    /// is where a whole session gets picked out at once.
-    range: DateRange,
     comparison: Option<Comparison>,
 }
 
@@ -189,342 +178,69 @@ impl CompareView {
         self.open = !self.open;
     }
 
-    /// Starts the picker on the map and level of the run being compared
-    /// against, because that is what a comparison is nearly always of — the
-    /// same fight fought differently. Nothing is locked: the pickers are the
-    /// ordinary ones and the reader can widen them the moment they want
-    /// something else.
-    ///
-    /// Only ever set once per run, so a reader who has widened the filters does
-    /// not find them narrowed again underneath them.
-    pub fn suggest_filter(&mut self, map: Option<String>, difficulty: DifficultyFilter) {
-        self.filter.map = map;
-        self.filter.difficulty = difficulty;
-        self.filter.environment = None;
-    }
-
     /// Receive the combats fetched for comparison and build the table.
     pub fn set_combats(&mut self, combats: Vec<(usize, Arc<Combat>)>, settings: &Settings) {
         self.comparison = Some(Comparison::new(combats, settings));
     }
 
-    // Drawing context threaded through; a struct of the same fields would
-    // only move the list somewhere else.
-    #[allow(clippy::too_many_arguments)]
-    pub fn show(
-        &mut self,
-        state: &mut AppState,
-        combats: &[String],
-        difficulties: &[Option<Difficulty>],
-        base_names: &[String],
-        environments: &[Option<String>],
-        start_times: &[NaiveDateTime],
-        solos: &[bool],
-        // A fight that is in the comparison whatever the reader picks — the run
-        // fetched from the ladder, which is the reason the picker is open at
-        // all. Ticked, and not for unticking.
-        pinned: Option<String>,
-        ui: &mut Ui,
-        frame: &Frame,
-    ) -> Option<Vec<usize>> {
-        match &mut self.comparison {
-            Some(comparison) => {
-                if ui.button("◀ Change selection").clicked() {
-                    self.comparison = None;
-                    // Going back to the picker is the other moment the list can
-                    // be out of date — a run finished while the table was up.
-                    state.analysis_handler.refresh_combats_list();
-                    ui.separator();
-                    self.show_selection(
-                        state,
-                        combats,
-                        difficulties,
-                        base_names,
-                        environments,
-                        start_times,
-                        solos,
-                        pinned,
-                        ui,
-                    )
-                } else {
-                    ui.separator();
-                    comparison.show(ui, &mut state.settings, frame);
-                    None
-                }
-            }
-            None => self.show_selection(
-                state,
-                combats,
-                difficulties,
-                base_names,
-                environments,
-                start_times,
-                solos,
-                pinned,
-                ui,
-            ),
+    /// Gives up whatever comparison is on screen — the fights it was of are no
+    /// longer the fights the list holds.
+    pub fn forget(&mut self) {
+        self.comparison = None;
+    }
+
+    /// The runs this comparison is of, as the combats list draws them: their
+    /// numbers, their colours, whose figures are being read and whether each is
+    /// still in it.
+    pub fn slots(&self) -> Vec<ComparisonSlot> {
+        self.comparison
+            .as_ref()
+            .map(Comparison::list_slots)
+            .unwrap_or_default()
+    }
+
+    /// Reads a run's figures for another of its players, by when that fight
+    /// started.
+    pub fn set_player(&mut self, start: NaiveDateTime, handle: &str) {
+        if let Some(comparison) = self.comparison.as_mut() {
+            comparison.set_player(start, handle);
         }
     }
 
-    // Drawing context threaded through; a struct of the same fields would
-    // only move the list somewhere else.
-    #[allow(clippy::too_many_arguments)]
-    fn show_selection(
-        &mut self,
-        state: &mut AppState,
-        combats: &[String],
-        difficulties: &[Option<Difficulty>],
-        base_names: &[String],
-        environments: &[Option<String>],
-        start_times: &[NaiveDateTime],
-        solos: &[bool],
-        pinned: Option<String>,
-        ui: &mut Ui,
-    ) -> Option<Vec<usize>> {
-        let mut picked = None;
-        let entries: Vec<CombatEntry> = (0..combats.len())
-            .map(|i| CombatEntry {
-                environment: environments.get(i).and_then(|e| e.as_deref()),
-                difficulty: difficulties.get(i).copied().flatten(),
-                base_name: base_names.get(i).map(String::as_str).unwrap_or(""),
-                solo: solos.get(i).copied().unwrap_or(false),
-            })
-            .collect();
-
-        ui.horizontal_wrapped(|ui| {
-            ui.label("Search:");
-            ui.text_edit_singleline(&mut self.name_filter);
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.label("Show only:");
-            self.filter.show("compare", &entries, ui);
-            self.range.show(
-                start_times
-                    .first()
-                    .copied()
-                    .zip(start_times.last().copied()),
-                ui,
-            );
-            if (self.filter.is_active() || self.range.is_active())
-                && ui.button("Clear filter").clicked()
-            {
-                self.filter.clear();
-                self.range.clear();
-            }
-        });
-
-        let notes: Vec<&str> = (0..combats.len())
-            .map(|i| {
-                start_times
-                    .get(i)
-                    .map(|&start| state.settings.combat_notes.get(&CombatNotes::key_at(start)))
-                    .unwrap_or("")
-            })
-            .collect();
-        let visible = self.visible_combats(combats, &notes, &entries, start_times);
-        // Which run the reader ticked this pass, applied once the table has
-        // finished drawing — the rows borrow the selection while they draw.
-        let mut toggled: Option<(usize, bool)> = None;
-
-        ui.horizontal_wrapped(|ui| {
-            // The pinned run counts: it is in the comparison whatever else is
-            // picked, and a count that left it out read as one short.
-            ui.label(format!(
-                "Selected {}",
-                self.selected.len() + usize::from(pinned.is_some())
-            ));
-            // Adds to the selection rather than replacing it, so a selection
-            // can be built up from one filtered list after another. Only what
-            // the filters actually left in — a ticked combat that is only on
-            // screen because it is ticked is already in the selection anyway.
-            let matching: Vec<usize> = visible
-                .iter()
-                .filter(|(_, matches)| *matches)
-                .map(|(i, _)| *i)
-                .collect();
-            if !matching.is_empty()
-                && ui
-                    .button("Select all")
-                    .hover("Add every combat the filters above leave in the list")
-                    .clicked()
-            {
-                for i in matching {
-                    self.toggle_selected(i, true);
-                }
-            }
-            if !self.selected.is_empty() && ui.button("Clear selection").clicked() {
-                self.selected.clear();
-            }
-            if let Some(hint) = selection_hint(self.selected.len()) {
-                ui.label(RichText::new(hint).weak());
-            }
-        });
-
-        // A line of its own: it is what the picker is for, and in the row above
-        // it sat between the two buttons that only tick and untick.
-        ui.horizontal(|ui| {
-            if let Some(pinned) = &pinned {
-                let mut always = true;
-                ui.add_enabled_ui(false, |ui| {
-                    ui.checkbox(&mut always, pinned).disabled_hover(
-                        "The run you opened from the ladder. It is what the \
-                             comparison is of, so it cannot be taken out of it.",
+    /// The comparison itself, once there is one.
+    ///
+    /// There is no picker here any more: the fights are ticked in the combats
+    /// list down the side of the window, which is the same list they are
+    /// browsed and cleared in. Changing the selection is ticking another row
+    /// there, so there is nothing here to go "back" to either.
+    pub fn show(&mut self, state: &mut AppState, ui: &mut Ui, frame: &Frame) {
+        match &mut self.comparison {
+            Some(comparison) => comparison.show(ui, &mut state.settings, frame),
+            None => {
+                theme::section(ui, "Compare Combats", |ui| {
+                    ui.label(
+                        "Tick two or more fights in the Combats list — the panel on the left, \
+                         under the ☰ Combats button — and they appear here, side by side.",
+                    );
+                    ui.label(
+                        RichText::new(
+                            "A run fetched from the ladder is one of them: the magnifier in the \
+                             Ladder window puts it at the top of that list, to be ticked like \
+                             any other fight.",
+                        )
+                        .weak(),
                     );
                 });
             }
-            // With a run pinned, one of the reader's own fights is enough to
-            // have something to compare it against.
-            let enough = if pinned.is_some() { 1 } else { 2 };
-            // The one button on this screen that does anything: everything
-            // around it only ticks, unticks or narrows the list. It carries the
-            // theme's accent rim so it is not read as one more of them.
-            theme::accent_rim(ui);
-            if ui
-                .add_enabled(
-                    self.selected.len() >= enough,
-                    Button::new("Compare selected 🆚"),
-                )
-                .clicked()
-            {
-                let mut indices = self.selected.clone();
-                indices.sort_unstable();
-                // With a run pinned the comparison cannot be built from this
-                // log at all — the fights live in two different ones, and the
-                // caller has to write them into a third first.
-                if pinned.is_some() {
-                    picked = Some(indices);
-                } else {
-                    state.analysis_handler.get_combats(indices);
-                }
-            }
-        });
-
-        ui.separator();
-
-        // A table rather than a list of lines: the note is a column of its own,
-        // so a row of runs of the same map does not read as one long string of
-        // name-and-note with the note starting wherever the name happened to
-        // end. Striping, the highlight under the pointer and the bar at the
-        // edge of the panel all come with it.
-        Table::new(ui).body(ROW_HEIGHT, |t| {
-            for (i, matches) in visible {
-                let note = notes[i];
-                let mut checked = self.selected.contains(&i);
-                let row = t.selectable_row(checked, |r| {
-                    r.cell(|ui| {
-                        if ui.checkbox(&mut checked, "").clicked() {
-                            toggled = Some((i, checked));
-                        }
-                    });
-                    r.cell(|ui| {
-                        ui.label(&combats[i]);
-                    });
-                    r.cell(|ui| {
-                        ui.label(note);
-                    });
-                    r.cell(|ui| {
-                        if !matches {
-                            ui.colored_label(theme::palette().warn, "⚠").hover(
-                                "Ticked, but it does not match the filters above — it is shown so \
-                                 a combat cannot go into a comparison out of sight. Untick it, or \
-                                 widen the filters to see it in place.",
-                            );
-                        }
-                    });
-                });
-                // The whole row picks the run, not the tick box alone: the row
-                // is what lights up under the pointer, so it is what a click
-                // lands on.
-                if row.clicked() {
-                    toggled = Some((i, !checked));
-                }
-            }
-        });
-        if let Some((i, checked)) = toggled {
-            self.toggle_selected(i, checked);
         }
-        picked
-    }
-
-    /// The combats the list shows, newest first, each with whether it matches
-    /// the filters.
-    ///
-    /// A ticked combat is always shown, matching or not. It is going into the
-    /// comparison either way, and a filter that hid it — switching the level
-    /// from Any to Elite over a selection that holds an Advanced run — would
-    /// leave the user comparing a run they cannot see and cannot untick.
-    ///
-    /// Newest first, like the combats dropdown in the main window: the analyzer
-    /// hands the list over oldest first, so a plain walk buried the runs just
-    /// played under a log's worth of older ones.
-    fn visible_combats(
-        &self,
-        combats: &[String],
-        notes: &[&str],
-        entries: &[CombatEntry],
-        start_times: &[NaiveDateTime],
-    ) -> Vec<(usize, bool)> {
-        (0..combats.len())
-            .rev()
-            .filter_map(|i| {
-                let matches = self.matches_filters(
-                    &combats[i],
-                    notes[i],
-                    entries[i],
-                    start_times.get(i).copied(),
-                );
-                (matches || self.selected.contains(&i)).then_some((i, matches))
-            })
-            .collect()
-    }
-
-    fn toggle_selected(&mut self, index: usize, checked: bool) {
-        if checked {
-            if !self.selected.contains(&index) {
-                self.selected.push(index);
-            }
-        } else {
-            self.selected.retain(|&i| i != index);
-        }
-    }
-
-    /// The search box reads the note as well as the identifier, so a run can be
-    /// found by what the user called it.
-    fn matches_filters(
-        &self,
-        identifier: &str,
-        note: &str,
-        entry: CombatEntry,
-        start: Option<NaiveDateTime>,
-    ) -> bool {
-        let needle = self.name_filter.trim().to_lowercase();
-        if !needle.is_empty()
-            && !identifier.to_lowercase().contains(&needle)
-            && !note.to_lowercase().contains(&needle)
-        {
-            return false;
-        }
-
-        // A combat the list has no start time for is left in: the window is
-        // about picking a session out, not about hiding what it cannot place.
-        if let Some(start) = start
-            && !self.range.matches(start)
-        {
-            return false;
-        }
-
-        self.filter.matches(
-            entry.environment,
-            entry.difficulty,
-            entry.base_name,
-            entry.solo,
-        )
     }
 }
 
 /// What is worth saying about a selection this size, if anything. Nothing caps
 /// the count any more, so the two things that do give way say so themselves.
-fn selection_hint(selected: usize) -> Option<&'static str> {
+///
+/// Said in the combats list's footer, where the fights are ticked.
+pub fn selection_hint(selected: usize) -> Option<&'static str> {
     if selected > MANY_COMBATS {
         Some(
             "— a comparison this wide takes a moment to build, and reads best with the averages \
@@ -540,155 +256,6 @@ fn selection_hint(selected: usize) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn entry() -> CombatEntry<'static> {
-        CombatEntry {
-            environment: Some("Space"),
-            difficulty: Some(Difficulty::Elite),
-            base_name: "Infected Space",
-            solo: false,
-        }
-    }
-
-    fn at(text: &str) -> NaiveDateTime {
-        NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M").unwrap()
-    }
-
-    /// The search box matches the whole displayed identifier, so a date or a
-    /// time narrows the list as well as a name does.
-    #[test]
-    fn the_search_box_matches_the_displayed_identifier() {
-        let mut view = CompareView::default();
-        let identifier = "Infected Space [Elite] | 2026-07-23 20:07:22 - 20:11:37";
-
-        view.name_filter = "infected".to_string();
-        assert!(view.matches_filters(identifier, "", entry(), None));
-
-        view.name_filter = "20:07".to_string();
-        assert!(view.matches_filters(identifier, "", entry(), None));
-
-        view.name_filter = "hive".to_string();
-        assert!(!view.matches_filters(identifier, "", entry(), None));
-    }
-
-    /// A combat can also be found by the note the user wrote for it, which is
-    /// the point of writing one.
-    #[test]
-    fn the_search_box_matches_the_note() {
-        let mut view = CompareView::default();
-        let identifier = "Infected Space [Elite] | 2026-07-23 20:07:22 - 20:11:37";
-
-        view.name_filter = "cheops".to_string();
-        assert!(view.matches_filters(identifier, "Cheops build", entry(), None));
-        assert!(!view.matches_filters(identifier, "FAW build", entry(), None));
-    }
-
-    /// Search and pickers narrow together, not one or the other.
-    #[test]
-    fn the_search_box_and_the_pickers_both_apply() {
-        let mut view = CompareView {
-            name_filter: "infected".to_string(),
-            ..Default::default()
-        };
-        view.filter.environment = Some("Ground".to_string());
-        assert!(!view.matches_filters("Infected Space | t", "", entry(), None));
-    }
-
-    /// The date window narrows alongside the rest, so "this evening's Infected
-    /// runs" is one list rather than a search through a month of them.
-    #[test]
-    fn the_date_window_narrows_with_the_other_filters() {
-        let mut view = CompareView::default();
-        view.range.set("2026-07-23 20:00", "2026-07-23 23:00");
-
-        assert!(view.matches_filters("Infected Space", "", entry(), Some(at("2026-07-23 21:30"))));
-        assert!(!view.matches_filters("Infected Space", "", entry(), Some(at("2026-07-22 21:30"))));
-        // A combat the list could not place is left in rather than hidden.
-        assert!(view.matches_filters("Infected Space", "", entry(), None));
-    }
-
-    /// Nothing caps the selection any more: comparing a whole evening is the
-    /// point of "Select all", and three columns would not hold one.
-    #[test]
-    fn any_number_of_combats_can_be_selected() {
-        let mut view = CompareView::default();
-        for i in 0..12 {
-            view.toggle_selected(i, true);
-        }
-        assert_eq!(12, view.selected.len());
-
-        // Selecting the same combat twice is still one combat.
-        view.toggle_selected(5, true);
-        assert_eq!(12, view.selected.len());
-
-        view.toggle_selected(5, false);
-        assert_eq!(11, view.selected.len());
-        assert!(!view.selected.contains(&5));
-    }
-
-    fn list(names: &[&str]) -> Vec<String> {
-        names.iter().map(|n| n.to_string()).collect()
-    }
-
-    /// A ticked combat stays in the list whatever the filters say. Narrowing
-    /// the level to Elite over a selection holding an Advanced run used to hide
-    /// that run while it was still going into the comparison — invisible, and
-    /// impossible to untick.
-    #[test]
-    fn a_ticked_combat_is_never_hidden_by_a_filter() {
-        let combats = list(&["Infected Elite", "Infected Advanced"]);
-        let notes = ["", ""];
-        let entries = [
-            CombatEntry {
-                environment: Some("Space"),
-                difficulty: Some(Difficulty::Elite),
-                base_name: "Infected Space",
-                solo: false,
-            },
-            CombatEntry {
-                environment: Some("Space"),
-                difficulty: Some(Difficulty::Advanced),
-                base_name: "Infected Space",
-                solo: false,
-            },
-        ];
-        let start_times = [at("2026-07-23 20:00"), at("2026-07-23 21:00")];
-
-        let mut view = CompareView::default();
-        view.filter.difficulty = crate::app::combat_filter::DifficultyFilter::Elite;
-
-        // Unticked, the Advanced run is simply filtered out.
-        let visible = view.visible_combats(&combats, &notes, &entries, &start_times);
-        assert_eq!(vec![(0, true)], visible);
-
-        // Ticked, it stays — and is marked as not matching.
-        view.toggle_selected(1, true);
-        let visible = view.visible_combats(&combats, &notes, &entries, &start_times);
-        assert_eq!(vec![(1, false), (0, true)], visible, "newest first");
-    }
-
-    /// The same for the date window, which is the other way a selected combat
-    /// can fall out of the list.
-    #[test]
-    fn a_ticked_combat_survives_the_date_window_too() {
-        let combats = list(&["old run"]);
-        let notes = [""];
-        let entries = [entry()];
-        let start_times = [at("2026-07-23 20:00")];
-
-        let mut view = CompareView::default();
-        view.range.set("2026-08-01 00:00", "");
-        assert!(
-            view.visible_combats(&combats, &notes, &entries, &start_times)
-                .is_empty()
-        );
-
-        view.toggle_selected(0, true);
-        assert_eq!(
-            vec![(0, false)],
-            view.visible_combats(&combats, &notes, &entries, &start_times)
-        );
-    }
 
     /// The two things a big selection gives up are said out loud, and a small
     /// one is left alone.

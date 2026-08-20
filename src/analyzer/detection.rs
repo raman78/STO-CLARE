@@ -303,6 +303,10 @@ pub struct Detected {
     pub difficulty: Option<Difficulty>,
     /// The map's environment ("Space" / "Ground" / "Shuttle"), when curated.
     pub combat_type: Option<String>,
+    /// What kind of content it is ("TFO", "Patrol"), when curated. Already part
+    /// of the displayed map name as a `[TFO]` prefix; carried on its own as
+    /// well so a list can put it in a column of its own and order by it.
+    pub category: Option<String>,
 }
 
 /// The active rules, parsed once: a user override from the config dir if
@@ -380,6 +384,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
                     map: Some(def.display_name(name)),
                     difficulty: Some(def.difficulty),
                     combat_type: def.combat_type.clone(),
+                    category: def.category.clone(),
                 };
             }
         }
@@ -416,6 +421,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
             map: Some(def.display_name(name)),
             difficulty: Some(global.unwrap_or(Difficulty::Any)),
             combat_type: def.combat_type.clone(),
+            category: def.category.clone(),
         };
     }
 
@@ -461,6 +467,7 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
         map: Some(def.display_name(name)),
         difficulty,
         combat_type: def.combat_type.clone(),
+        category: def.category.clone(),
     }
 }
 

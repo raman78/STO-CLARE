@@ -2,32 +2,19 @@ use eframe::Frame;
 use eframe::egui::*;
 use rfd::FileDialog;
 
-use crate::{
-    app::analysis_handling::AnalysisHandler, custom_widgets::slider_text_edit::SliderTextEdit,
-};
+use crate::custom_widgets::slider_text_edit::SliderTextEdit;
 
 use super::Settings;
 use crate::custom_widgets::tooltip::CloseTooltip;
 
 #[derive(Default)]
-pub struct GeneralTab {
-    clear_log_dialog: ClearLogDialog,
-}
-
-#[derive(Default)]
-pub struct ClearLogDialog {
-    is_open: bool,
-    // Per-combat "delete" flags, indexed like the combats list; rebuilt when the
-    // dialog opens (default: every combat except the newest).
-    to_delete: Vec<bool>,
-}
+pub struct GeneralTab;
 
 impl GeneralTab {
     pub fn show(
         &mut self,
-        analysis_handler: &AnalysisHandler,
         modified_settings: &mut Settings,
-        combats: &[String],
+        detected_owner: Option<&str>,
         ui: &mut Ui,
         frame: &Frame,
     ) {
@@ -51,8 +38,6 @@ impl GeneralTab {
                         new_combatlog_file.display().to_string();
                 }
             }
-
-            self.clear_log_dialog.show(analysis_handler, combats, ui);
         });
         TextEdit::singleline(&mut modified_settings.analysis.combatlog_file)
             .desired_width(f32::MAX)
@@ -118,6 +103,49 @@ impl GeneralTab {
 
         ui.separator();
 
+        // Whose figures the combats list shows. Worked out from the log on
+        // every start, so this is only ever filled in to overrule it.
+        ui.label("My handle");
+        ui.horizontal(|ui| {
+            let mut handle = modified_settings
+                .general
+                .my_handle
+                .clone()
+                .unwrap_or_default();
+            if TextEdit::singleline(&mut handle)
+                .hint_text(detected_owner.unwrap_or("@handle"))
+                .desired_width(200.0)
+                .show(ui)
+                .response
+                .changed()
+            {
+                modified_settings.general.my_handle =
+                    Some(handle).filter(|handle| !handle.trim().is_empty());
+            }
+            if modified_settings.general.my_handle.is_some()
+                && ui
+                    .button("Work it out from the log")
+                    .hover("Go back to reading the handle off the log itself.")
+                    .clicked()
+            {
+                modified_settings.general.my_handle = None;
+            }
+        });
+        ui.label(
+            RichText::new(match detected_owner {
+                Some(handle) => format!(
+                    "Worked out from your log: {handle}. Fill the box in only if that is not you."
+                ),
+                None => "No log read so far says who it belongs to — every player in it fought \
+                         the same number of its combats. Fill in your handle and the combats \
+                         list will show your figures."
+                    .to_owned(),
+            })
+            .weak(),
+        );
+
+        ui.separator();
+
         ui.label("Combat Separation Time in seconds");
         SliderTextEdit::new(
             &mut modified_settings.analysis.combat_separation_time_seconds,
@@ -168,126 +196,5 @@ impl GeneralTab {
              their own Hull and Shield columns next to the total, so you can see how much of each \
              ability went where. When off, the halves only show in the hover tooltip.",
         );
-    }
-
-    pub fn show_clear_log_dialog(
-        &mut self,
-        analysis_handler: &AnalysisHandler,
-        combats: &[String],
-        ui: &mut Ui,
-    ) {
-        self.clear_log_dialog.show(analysis_handler, combats, ui);
-    }
-
-    pub fn initialize(&mut self) {
-        self.clear_log_dialog.initialize();
-    }
-}
-
-impl ClearLogDialog {
-    fn show(&mut self, analysis_handler: &AnalysisHandler, combats: &[String], ui: &mut Ui) {
-        let open_response = ui.button("Clear Log File");
-
-        let mut newly_opened = false;
-        if open_response.clicked() {
-            self.is_open = true;
-            newly_opened = true;
-            self.reset_selection(combats.len());
-            // Rebuild the list from the log on open so it always shows every
-            // combat, without switching the main view off the combat being
-            // viewed.
-            analysis_handler.refresh_combats_list();
-        }
-
-        if !self.is_open {
-            return;
-        }
-
-        // Keep the flags aligned with the combats list if it changed while the
-        // dialog was open (e.g. an auto refresh appended a new combat).
-        if self.to_delete.len() != combats.len() {
-            self.reset_selection(combats.len());
-        }
-
-        let mut window = Window::new("Delete Combats")
-            .collapsible(false)
-            .default_size([460.0, 480.0])
-            .resizable(true);
-        if newly_opened {
-            window = window.current_pos(open_response.rect.min);
-        }
-
-        window.show(ui.ctx(), |ui| {
-            ui.label("Select the combats to delete. Everything left unchecked is kept in the log.");
-            ui.add_space(6.0);
-
-            ui.horizontal(|ui| {
-                if ui.button("Select all").clicked() {
-                    self.to_delete.iter_mut().for_each(|d| *d = true);
-                }
-                if ui.button("Unselect all").clicked() {
-                    self.to_delete.iter_mut().for_each(|d| *d = false);
-                }
-            });
-
-            ui.separator();
-            ScrollArea::vertical()
-                .max_height(320.0)
-                // The bar goes at the edge of the panel rather than against the
-                // longest combat name.
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    // Newest first, matching the combats dropdown.
-                    let newest = combats.len().wrapping_sub(1);
-                    for i in (0..combats.len()).rev() {
-                        if let Some(flag) = self.to_delete.get_mut(i) {
-                            let label = if i == newest {
-                                format!("{}  (newest)", combats[i])
-                            } else {
-                                combats[i].clone()
-                            };
-                            ui.checkbox(flag, label);
-                        }
-                    }
-                });
-            ui.separator();
-
-            let delete_count = self.to_delete.iter().filter(|&&d| d).count();
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(
-                        delete_count > 0,
-                        Button::new(format!("Delete {delete_count} selected")),
-                    )
-                    .clicked()
-                {
-                    let keep: Vec<usize> = self
-                        .to_delete
-                        .iter()
-                        .enumerate()
-                        .filter(|&(_, &delete)| !delete)
-                        .map(|(i, _)| i)
-                        .collect();
-                    analysis_handler.keep_combats(keep);
-                    self.is_open = false;
-                }
-
-                if ui.button("Cancel").clicked() {
-                    self.is_open = false;
-                }
-            });
-        });
-    }
-
-    /// Default selection: delete every combat except the newest.
-    fn reset_selection(&mut self, count: usize) {
-        self.to_delete = vec![true; count];
-        if let Some(newest) = self.to_delete.last_mut() {
-            *newest = false;
-        }
-    }
-
-    fn initialize(&mut self) {
-        self.is_open = false;
     }
 }
