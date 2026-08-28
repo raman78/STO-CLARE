@@ -3,16 +3,16 @@
 # unreleased
 
 ### Other Changes
-- the combats list can be narrowed to the fights nobody died in. The new **Any deaths** menu lists the players in your log with a tick box each — yours at the top — and leaves only the runs every ticked player came through with no deaths. A search box and **Select all** / **Unselect all** keep it manageable in a log full of pug teams
-- that same menu turns round while you are clearing the log, where it finds the fights the ticked players **died** in — so thinning a log down to the runs worth keeping is tick your handle, **Clear Log File**, **Select all**, delete. Ticking several people adds up the other way round there too: browsing gives you the runs they all came through, clearing gives you the runs any of them died in
-- **Clear Log File** no longer ticks every fight but the newest for you. The boxes start empty, so what you tick is what goes — **Select all** is still there for clearing a log out wholesale
+- the combats list can be narrowed to the fights nobody died in. The new **Any deaths** menu lists the players in the log with a tick box each — the log's owner at the top — and leaves only the runs every ticked player came through with no deaths. A search box and **Select all** / **Unselect all** keep it manageable in a log full of pug teams
+- that same menu turns round while the log is being cleared, where it finds the fights the ticked players **died** in — so thinning a log down to the runs worth keeping is one handle ticked, **Clear Log File**, **Select all**, delete. Ticking several people adds up the other way round there too: browsing keeps the runs they all came through, clearing keeps the runs any of them died in
+- **Clear Log File** no longer ticks every fight but the newest. The boxes start empty, so what is ticked is what goes — **Select all** is still there for clearing a log out wholesale
 
 ### Fixes
-- the magnifier in the Ladder window opens the run it sits on, which is what it has always said it does — until now it only added it to the list and left you to find it. The list is brought out to receive it if it was folded away, and the fights of your own it is worth comparing against are already filtered for you
-- a run in the Ladder window is named the way every other fight in the program is named — **[Team] [Space] [TFO] Hive Onslaught [Elite]**. Those rows still spelled it the old way, with "(Space)" sitting in the middle, so the same run changed shape the moment you added it to your list
-- the **Note** column keeps room for a whole note whether or not you have written one, so the first note you write no longer shoves every column beside it sideways. The room is the same the note field under the tabs gives you
-- the menus above the list stay where they are. The size and deaths menus used to disappear when there was nothing for them to offer, which moved every menu beside them; they are greyed out in place now, and say why when you hover them
-- clearing the log says what it is doing. A window reports which of the three steps it is on — reading the fights you are keeping, writing the file again, reading it back — and counts its way through the first of them, with **Cancel** offered while stopping still leaves your log untouched. The list of fights waits, greyed out, until the new one is in: it used to sit there showing fights that had already gone, with nothing saying anything was happening
+- the magnifier in the Ladder window opens the run it sits on, which is what it has always said it does — until now it only added it to the list and left it to be found there. The combats list is brought out to receive it if it was folded away, and is filtered to the fights worth comparing it against
+- a run in the Ladder window is named the way every other fight in the program is named — **[Team] [Space] [TFO] Hive Onslaught [Elite]**. Those rows still spelled it the old way, with "(Space)" sitting in the middle, so the same run changed shape the moment it joined the combats list
+- the **Note** column keeps room for a whole note whether or not one has been written, so the first note written no longer shoves every column beside it sideways. The room is the same the note field under the tabs gives
+- the menus above the list stay where they are. The size and deaths menus used to disappear when there was nothing for them to offer, which moved every menu beside them; they are greyed out in place now, and say why on hover
+- clearing the log says what it is doing. A window reports which of the three steps it is on — reading the fights being kept, writing the file again, reading it back — and counts its way through the first of them, with **Cancel** offered while stopping still leaves the log untouched. The list of fights waits, greyed out, until the new one is in: it used to sit there showing fights that had already gone, with nothing saying anything was happening
 
 ## v2.5.0
 
