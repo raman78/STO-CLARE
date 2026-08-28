@@ -117,8 +117,15 @@ if [ "$WHAT" = all ] || [ "$WHAT" = ladder ]; then
   xdotool windowactivate "$W"; sleep 1
   click 66 38                                      # the combats panel
   dblclick 300 195 6                               # the run, pinned at the top
-  click 825 97                                     # Summary, right of the panel
+  # The panel is folded away before the run is photographed. It used to be
+  # shot beside the list — Summary was clicked at 825,97, "right of the panel" —
+  # but the Note column now reserves room for a whole note, so the panel is
+  # wide enough that nothing useful is left of the window beside it. The list
+  # is what `ladder-compare-pick` shows; this one shows the run.
+  click 66 38                                      # the panel out of the way
+  click 39 97                                      # Summary
   shot ladder-run
+  click 66 38                                      # the panel back, for the ticks
   click 169 38                                     # Compare Combats
   click 300 195                                    # tick the run
   click 300 220; sleep 5                           # and one of my own

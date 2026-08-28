@@ -821,13 +821,13 @@ across every map at once.
 Two icons sit at the end of every row: 📥 saves that run as a log file, and 🔍
 adds it to your combats list.
 
-![A run from the ladder, opened](images/ladder-run.png)
-
 Your own log is not touched, and nothing is replaced: the run appears at the top
 of the list, in a colour that says it came from somewhere else, and stays there
 whichever way you sort. Double-click it to read it like any fight of your own —
 all the tabs, the charts, the ability breakdown. The `✕` at the end of its row
 takes it back out of the list.
+
+![A run from the ladder, open in the main window](images/ladder-run.png)
 
 You can have several runs open at once — press 🔍 on as many as you like. The
 magnifier on a run already in your list is greyed out and does nothing.
