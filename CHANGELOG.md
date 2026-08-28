@@ -8,7 +8,7 @@
 - **Clear Log File** no longer ticks every fight but the newest for you. The boxes start empty, so what you tick is what goes — **Select all** is still there for clearing a log out wholesale
 
 ### Fixes
-- the magnifier in the Ladder window opens the combats list if it was folded away. The run was added either way, but with the list closed nothing on screen said the press had done anything
+- the magnifier in the Ladder window opens the run it sits on, which is what it has always said it does — until now it only added it to the list and left you to find it. The list is brought out to receive it if it was folded away, and the fights of your own it is worth comparing against are already filtered for you
 - a run in the Ladder window is named the way every other fight in the program is named — **[Team] [Space] [TFO] Hive Onslaught [Elite]**. Those rows still spelled it the old way, with "(Space)" sitting in the middle, so the same run changed shape the moment you added it to your list
 - the **Note** column keeps room for a whole note whether or not you have written one, so the first note you write no longer shoves every column beside it sideways. The room is the same the note field under the tabs gives you
 - the menus above the list stay where they are. The size and deaths menus used to disappear when there was nothing for them to offer, which moved every menu beside them; they are greyed out in place now, and say why when you hover them

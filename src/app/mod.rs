@@ -858,12 +858,20 @@ impl App {
                         Some(summary.base_name.clone()),
                         difficulty_filter(&summary),
                     );
+                    let start = summary.start;
                     self.ladder_runs.retain(|run| run.path != path);
                     self.ladder_runs.push(LadderRun {
                         path,
                         combat,
                         summary,
                     });
+                    // And on screen, which is what the magnifier says it does.
+                    // The run was pressed on a row of its own over there; a row
+                    // added to a list and left for the reader to find is an
+                    // extra step the button already promised away. Pressing it
+                    // on several runs leaves the last one showing and the rest
+                    // a double-click away, which is what the list is for.
+                    self.open_combat(start);
                 }
                 AnalysisInfo::Refreshed {
                     latest_combat,

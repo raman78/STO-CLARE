@@ -641,10 +641,16 @@ run beside the log removed the class.
 | cut out of the reader's log when saved | it *is* a log of one fight — `App::save_shown_combat` copies the file it was fetched into |
 | filtered by the list's menus | it is not a fight out of the log those menus narrow; it leads the list whatever the headings sort by |
 
-The magnifier brings the list out (`App::open_ladder_run` → `CombatsPanel::open`)
-at the **press**, not when the fight arrives. Reading the log takes a moment, and
-what the panel opening answers is the press: with the list folded away, adding a
-run to it changed nothing anybody could see.
+What the magnifier does is split between the press and the answer, and the two
+halves are deliberate:
+
+| when | what | why |
+|------|------|-----|
+| at the press (`App::open_ladder_run`) | `CombatsPanel::open` | reading the log takes a moment, and the panel opening is what answers the press. With the list folded away, adding a run to it changed nothing anybody could see |
+| when the fight arrives (`AnalysisInfo::OneLog`) | `suggest_filter`, then `open_combat` | the run goes on screen because that is what the button says it does — it was pressed on a row of its own, and a row added to a list for the reader to find is a step the label already promised away. The filter is pointed at the reader's own runs of the same map and level, which is what a fetched run is nearly always fetched for |
+
+Pressing it on several runs leaves the last one on screen and the rest a
+double-click away in the list.
 
 One thing the ladder window must be told: which runs are already open
 (`Records::show(.., already_open)`), so the magnifier on one of them is drawn

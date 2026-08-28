@@ -819,19 +819,20 @@ across every map at once.
 ### Reading a run from the ladder
 
 Two icons sit at the end of every row: 📥 saves that run as a log file, and 🔍
-adds it to your combats list.
+opens it in the main window.
 
-Your own log is not touched, and nothing is replaced: the run appears at the top
-of the list, in a colour that says it came from somewhere else, and stays there
-whichever way you sort. If the list was folded away, pressing 🔍 brings it out —
-the run has to land somewhere you can see it. Double-click it to read it like any fight of your own —
-all the tabs, the charts, the ability breakdown. The `✕` at the end of its row
-takes it back out of the list.
+The run opens straight away, and your own log is not touched: it also appears at
+the top of the list, in a colour that says it came from somewhere else, and
+stays there whichever way you sort. If the list was folded away, pressing 🔍
+brings it out. Read the run like any fight of your own — all the tabs, the
+charts, the ability breakdown — and double-click its row any time to come back
+to it. The `✕` at the end of that row takes it back out of the list.
 
 ![A run from the ladder, open in the main window](images/ladder-run.png)
 
-You can have several runs open at once — press 🔍 on as many as you like. The
-magnifier on a run already in your list is greyed out and does nothing.
+You can have several runs open at once — press 🔍 on as many as you like. Each
+joins the list; the one you pressed last is the one on screen. The magnifier on
+a run already in your list is greyed out and does nothing.
 
 Two things a fetched run does not do: it cannot be uploaded (it is already on the
 ladder, and it is somebody else's fight), and **Save Combat** on it copies the
