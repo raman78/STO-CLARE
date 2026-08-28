@@ -101,8 +101,9 @@ struct MapDef {
     #[serde(default)]
     category: Option<String>,
     /// Combat environment ("Space" / "Ground" / "Shuttle"), from the STO wiki.
-    /// Curated metadata — the log itself carries no such marker. Shown in
-    /// parentheses on the combat's name (e.g. `[TFO] Into the Hive (Ground)`).
+    /// Curated metadata — the log itself carries no such marker. Put in front
+    /// of the combat's name (e.g. `[Ground] [TFO] Into the Hive`) by
+    /// `analyzer::compose_combat_name`.
     ///
     /// Kept out of `display_name` on purpose: that string is also what the
     /// settings editor matches naming rules against, and appending the

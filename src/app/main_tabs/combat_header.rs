@@ -16,7 +16,7 @@ use crate::{
 /// reader's note on it.
 pub struct CombatHeader {
     /// Name and times as one line, the way [`Combat::identifier`] writes it:
-    /// `[Team] [TFO] Infected: The Conduit (Space) [Elite] | 2026-08-19
+    /// `[Team] [Space] [TFO] Infected: The Conduit [Elite] | 2026-08-19
     /// 21:14:03 - 21:18:15`. One string rather than two so it is set in one
     /// face — the date is as much a part of which fight this is as the name.
     identifier: String,

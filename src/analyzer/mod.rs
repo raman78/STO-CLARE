@@ -365,12 +365,11 @@ impl Combat {
         // The detected difficulty is always appended on top of the base name —
         // it is computed from the log's entities, independent of naming, so the
         // tier shows even when a rule provides the name.
-        let base =
-            prepend_detected_combat_type(self.base_name(), self.detected_combat_type.as_deref());
-        let named = append_detected_difficulty(base, self.detected_difficulty);
-        format!(
-            "{} {named}",
-            if self.is_solo() { "[Solo]" } else { "[Team]" }
+        compose_combat_name(
+            self.base_name(),
+            self.is_solo(),
+            self.detected_combat_type.as_deref(),
+            self.detected_difficulty.and_then(|d| d.label()),
         )
     }
 
@@ -895,11 +894,34 @@ impl Combat {
     }
 }
 
-/// Append the auto-detected difficulty in square brackets (e.g. `[Elite]`),
+/// A fight's name from its parts, in the order the combats list reads its
+/// columns: who fought it, where, what kind of content, which map, at which
+/// level — `[Team] [Space] [TFO] Hive Onslaught [Elite]`.
+///
+/// Public, and the only place that order lives, because the program names
+/// fights it did not analyze as well: a row of the OSCR ladder carries no log
+/// to read, only a map, a level and which tables it was entered into
+/// (`upload::records::ladder_combat_name`). Composed twice, the two drifted —
+/// the ladder's rows kept saying `[TFO] Hive Onslaught (Space) [Elite]` for a
+/// year after the fights in the list started reading the other way round.
+///
+/// `base` carries the content type already (`[TFO] `, from the curated rules),
+/// which is why nothing here adds it.
+pub fn compose_combat_name(
+    base: String,
+    solo: bool,
+    environment: Option<&str>,
+    difficulty: Option<&str>,
+) -> String {
+    let named = append_difficulty(prepend_combat_type(base, environment), difficulty);
+    format!("{} {named}", if solo { "[Solo]" } else { "[Team]" })
+}
+
+/// Append the difficulty in square brackets (e.g. `[Elite]`),
 /// unless the base name already mentions that tier (so a rule that already says
-/// "(Elite)" is not doubled). `Any` / no difficulty leaves the name unchanged.
-fn append_detected_difficulty(base: String, difficulty: Option<Difficulty>) -> String {
-    match difficulty.and_then(|d| d.label()) {
+/// "(Elite)" is not doubled). No difficulty leaves the name unchanged.
+fn append_difficulty(base: String, difficulty: Option<&str>) -> String {
+    match difficulty {
         Some(label) if !base.to_lowercase().contains(&label.to_lowercase()) => {
             format!("{base} [{label}]")
         }
@@ -914,7 +936,7 @@ fn append_detected_difficulty(base: String, difficulty: Option<Difficulty>) -> S
 ///
 /// In front rather than trailing in parentheses, so a name reads in the same
 /// order as the columns of the combats list.
-fn prepend_detected_combat_type(base: String, combat_type: Option<&str>) -> String {
+fn prepend_combat_type(base: String, combat_type: Option<&str>) -> String {
     match combat_type.map(str::trim).filter(|t| !t.is_empty()) {
         Some(label) if !base.to_lowercase().contains(&label.to_lowercase()) => {
             format!("[{label}] {base}")
@@ -1423,21 +1445,18 @@ mod tests {
     #[test]
     fn the_environment_leads_the_name() {
         assert_eq!(
-            prepend_detected_combat_type("[TFO] Into the Hive".to_string(), Some("Ground")),
+            prepend_combat_type("[TFO] Into the Hive".to_string(), Some("Ground")),
             "[Ground] [TFO] Into the Hive"
         );
         // A name that already says it is not doubled.
         assert_eq!(
-            prepend_detected_combat_type("Bug Hunt Ground".to_string(), Some("Ground")),
+            prepend_combat_type("Bug Hunt Ground".to_string(), Some("Ground")),
             "Bug Hunt Ground"
         );
         // No curated environment, or a blank one, leaves the name alone.
+        assert_eq!(prepend_combat_type("Combat".to_string(), None), "Combat");
         assert_eq!(
-            prepend_detected_combat_type("Combat".to_string(), None),
-            "Combat"
-        );
-        assert_eq!(
-            prepend_detected_combat_type("Combat".to_string(), Some("  ")),
+            prepend_combat_type("Combat".to_string(), Some("  ")),
             "Combat"
         );
     }
@@ -1445,11 +1464,11 @@ mod tests {
     #[test]
     fn append_difficulty_adds_bracketed_level() {
         assert_eq!(
-            append_detected_difficulty("Infected Space".to_string(), Some(Difficulty::Elite)),
+            append_difficulty("Infected Space".to_string(), Difficulty::Elite.label()),
             "Infected Space [Elite]"
         );
         assert_eq!(
-            append_detected_difficulty("Khitomer".to_string(), Some(Difficulty::Advanced)),
+            append_difficulty("Khitomer".to_string(), Difficulty::Advanced.label()),
             "Khitomer [Advanced]"
         );
     }
@@ -1458,9 +1477,9 @@ mod tests {
     fn append_difficulty_skips_when_name_already_has_the_tier() {
         // A user rule that already says "(Elite)" must not become "... [Elite]".
         assert_eq!(
-            append_detected_difficulty(
+            append_difficulty(
                 "Infected Conduit (Elite)".to_string(),
-                Some(Difficulty::Elite)
+                Difficulty::Elite.label()
             ),
             "Infected Conduit (Elite)"
         );
@@ -1469,11 +1488,11 @@ mod tests {
     #[test]
     fn append_difficulty_unchanged_for_any_or_none() {
         assert_eq!(
-            append_detected_difficulty("Azure Nebula".to_string(), None),
+            append_difficulty("Azure Nebula".to_string(), None),
             "Azure Nebula"
         );
         assert_eq!(
-            append_detected_difficulty("Azure Nebula".to_string(), Some(Difficulty::Any)),
+            append_difficulty("Azure Nebula".to_string(), Difficulty::Any.label()),
             "Azure Nebula"
         );
     }

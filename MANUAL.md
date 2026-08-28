@@ -798,9 +798,8 @@ time. They are folded into one row.
 
 That row can say more than any of the originals could. A ladder entry carries no
 map and no level of its own; both live on the tables it is in. So the folded row
-is named from the set of them — the map, whether it was fought solo, where it
-was fought and at what level, in one line:
-`[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
+is named from the set of them, in the same shape the program names your own
+fights: `[Solo] [Space] [TFO] Hive Onslaught [Elite]`.
 
 **Rank** is then the run's placing **in its own table**, not its position in the
 answer — which is why three rows in a row can all say 1. They are firsts in three
