@@ -1,5 +1,17 @@
 # Change Log
 
+# unreleased
+
+### Other Changes
+- the combats list can be narrowed to the fights nobody died in. The new **Any deaths** menu lists the players in your log with a tick box each — yours at the top — and leaves only the runs every ticked player came through with no deaths. A search box and **Select all** / **Unselect all** keep it manageable in a log full of pug teams
+- that same menu turns round while you are clearing the log, where it finds the fights the ticked players **died** in — so thinning a log down to the runs worth keeping is tick your handle, **Clear Log File**, **Select all**, delete. Ticking several people adds up the other way round there too: browsing gives you the runs they all came through, clearing gives you the runs any of them died in
+- **Clear Log File** no longer ticks every fight but the newest for you. The boxes start empty, so what you tick is what goes — **Select all** is still there for clearing a log out wholesale
+
+### Fixes
+- the **Note** column keeps room for a whole note whether or not you have written one, so the first note you write no longer shoves every column beside it sideways. The room is the same the note field under the tabs gives you
+- the menus above the list stay where they are. The size and deaths menus used to disappear when there was nothing for them to offer, which moved every menu beside them; they are greyed out in place now, and say why when you hover them
+- clearing the log says what it is doing. A window reports which of the three steps it is on — reading the fights you are keeping, writing the file again, reading it back — and counts its way through the first of them, with **Cancel** offered while stopping still leaves your log untouched. The list of fights waits, greyed out, until the new one is in: it used to sit there showing fights that had already gone, with nothing saying anything was happening
+
 ## v2.5.0
 
 ### Major Changes

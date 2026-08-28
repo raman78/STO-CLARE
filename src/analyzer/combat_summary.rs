@@ -70,6 +70,10 @@ pub struct PlayerSummary {
     /// Damage dealt per second, over this player's own combat time — the very
     /// figure the Summary tab shows for them.
     pub dps: f64,
+    /// How many times they were killed in this fight. The same count
+    /// [`Combat::total_deaths`] adds up over everyone: the kills recorded
+    /// against the damage they took.
+    pub deaths: u32,
 }
 
 impl Combat {
@@ -81,6 +85,7 @@ impl Combat {
             .map(|player| PlayerSummary {
                 handle: handle_of(player.name().get(&self.name_manager)),
                 dps: player.damage_out.dps.all,
+                deaths: player.damage_in.kills.values().copied().sum(),
             })
             .collect();
         // Highest first, which is the order they are read in: the question a
@@ -180,6 +185,7 @@ mod tests {
                 .map(|&(handle, dps)| PlayerSummary {
                     handle: handle.to_owned(),
                     dps,
+                    deaths: 0,
                 })
                 .collect(),
         }

@@ -65,14 +65,9 @@ impl CombatHeader {
             return;
         }
 
-        // Room for the whole note at once. Measured from the font in use rather
-        // than fixed, so it holds at any UI scale; the slack covers letters
-        // wider than a digit, since the face is proportional and no width can
-        // fit every possible fifty characters.
-        let note_width = ui
-            .fonts_mut(|fonts| fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0'))
-            * MAX_NOTE_CHARS as f32
-            * 1.2;
+        // The same room the Note column in the list of fights reserves, so a
+        // note that fits here fits there.
+        let note_width = crate::app::tuning::note_width(ui);
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(

@@ -29,7 +29,7 @@ use crate::{
     analyzer::{CombatSummary, Difficulty, PlayerSummary},
     app::compare::ComparisonSlot,
     app::{
-        combat_filter::{CombatEntry, CombatFilter, DifficultyFilter},
+        combat_filter::{CombatEntry, CombatFilter, DeathsFilter, DifficultyFilter},
         date_range::DateRange,
         settings::CombatNotes,
         theme,
@@ -38,39 +38,16 @@ use crate::{
     helpers::{format_duration_hms, number_formatting::NumberFormatter},
 };
 
-/// The height of one row, the tables' own.
-const ROW_HEIGHT: f32 = 25.0;
-const HEADER_HEIGHT: f32 = 25.0;
-
-/// The narrowest the panel may be dragged. It still holds the map name and the
-/// DPS beside it; below that the table would be a column of ellipses.
-const MIN_WIDTH: f32 = 260.0;
-/// How wide the panel will make *itself* to fit its table. Enough for the
-/// longest map the program knows — "[TFO] Nukara Prime: Transdimensional
-/// Tactics" — beside every other column, including the two a comparison adds
-/// (measured; see `print_column_widths`). Past this it stops widening on its
-/// own, because a list that takes the whole window leaves nothing to read a
-/// fight in.
-const AUTO_WIDTH: f32 = 1200.0;
-
-/// How much room the run's number keeps around itself inside its badge.
-const BADGE_PADDING: f32 = 4.0;
-
 /// The panel's own id, which its remembered width is kept under.
 const PANEL_ID: &str = "combats panel";
 
-/// The gap either side of a column's contents. Narrower than the tables' own
-/// default: a column holding "Solo" carried five points of gap on each side,
-/// which is a third as much again as the word.
-const CELL_SPACING: f32 = 3.0;
-
-/// How wide the picker that says whose figures a run is read for is drawn. Wide
-/// enough for an ordinary handle without the column following the longest one
-/// in the log about.
-const PLAYER_PICKER_WIDTH: f32 = 130.0;
-
-/// The size of the fold-out arrow, matching the one in the damage tables.
-const ARROW_SIZE: Vec2 = vec2(14.0, 14.0);
+/// Everything this file draws to a chosen size — the row height, the panel's
+/// two widths, the room a note is given — is in `app/tuning.rs`, with the
+/// reason it has the value it has.
+use crate::app::tuning::{
+    self, ARROW_SIZE, BADGE_PADDING, CELL_SPACING, HEADER_HEIGHT, PANEL_AUTO_WIDTH,
+    PANEL_MIN_WIDTH, PLAYER_PICKER_WIDTH, ROW_HEIGHT,
+};
 
 /// What the reader asked the list to do.
 pub enum ListAction {
@@ -117,6 +94,15 @@ pub struct CombatsListView<'a> {
     /// read — but not the reader's own, so they lead the list whichever way it
     /// is sorted and are drawn in a colour that says where they came from.
     pub ladder_runs: &'a [CombatSummary],
+    /// The log is being rewritten, so the list is showing fights that are on
+    /// their way out. Nothing in it may be acted on until it comes back.
+    ///
+    /// Not only about the reader clicking something pointless: a fight is
+    /// asked for by its **place in the list**, and the list on screen is the
+    /// one from before the rewrite. Opening or deleting from it while the log
+    /// is being replaced would hand the analyzer positions that mean something
+    /// else by the time it reads them.
+    pub locked: bool,
 }
 
 /// What ticking a row does, if anything.
@@ -320,12 +306,16 @@ impl CombatsPanel {
         // ourselves caps it.
         let range = match (following_the_table, fits) {
             (true, Some(fits)) => fits..=fits,
-            (true, None) => MIN_WIDTH..=AUTO_WIDTH,
-            (false, _) => MIN_WIDTH..=AUTO_WIDTH,
+            (true, None) => PANEL_MIN_WIDTH..=PANEL_AUTO_WIDTH,
+            (false, _) => PANEL_MIN_WIDTH..=PANEL_AUTO_WIDTH,
         };
         let panel = Panel::left(PANEL_ID)
             .resizable(true)
-            .default_size(if *width > 0.0 { *width } else { AUTO_WIDTH })
+            .default_size(if *width > 0.0 {
+                *width
+            } else {
+                PANEL_AUTO_WIDTH
+            })
             .size_range(range)
             // The rim goes round the whole panel, not round the table inside
             // it: the search box, the filters and the strip at the bottom are
@@ -340,13 +330,17 @@ impl CombatsPanel {
         if let Some(panel) = panel
             && dragging
         {
-            *width = panel.response.rect.width().clamp(MIN_WIDTH, AUTO_WIDTH);
+            *width = panel
+                .response
+                .rect
+                .width()
+                .clamp(PANEL_MIN_WIDTH, PANEL_AUTO_WIDTH);
         }
         action
     }
 
     /// The narrowest the panel may be drawn: enough for the whole table, as
-    /// wide as it came to when it was last drawn, up to [`AUTO_WIDTH`]. Before
+    /// wide as it came to when it was last drawn, up to [`PANEL_AUTO_WIDTH`]. Before
     /// the first frame there is nothing to measure and the ordinary minimum
     /// stands.
     fn fitting_width(&self, ui: &Ui) -> Option<f32> {
@@ -354,7 +348,7 @@ impl CombatsPanel {
         // What the table asks for is its columns; the panel around it also has
         // its frame, and the table its own scroll bar.
         let chrome = ui.spacing().scroll.bar_width + ui.spacing().item_spacing.x * 4.0;
-        Some((content + chrome).clamp(MIN_WIDTH, AUTO_WIDTH))
+        Some((content + chrome).clamp(PANEL_MIN_WIDTH, PANEL_AUTO_WIDTH))
     }
 
     /// The table's id.
@@ -387,7 +381,26 @@ impl CombatsPanel {
             (false, PanelMode::Comparing) => PanelMode::Browse,
             (false, mode) => mode,
         };
+        // The deaths menu asks the opposite question while the log is being
+        // cleared. Browsing, the fights worth finding are the ones nobody died
+        // in; clearing, they are the ones to delete — and a run where somebody
+        // died is exactly what gets thrown out. Same ticks, turned round with
+        // the mode, so the list is always showing what the mode acts on.
+        let deaths = match self.mode {
+            PanelMode::Clearing => DeathsFilter::With,
+            _ => DeathsFilter::Without,
+        };
+        if self.filter.deaths != deaths {
+            self.filter.deaths = deaths;
+            self.filter_generation = self.filter_generation.wrapping_add(1);
+        }
         let mut action = None;
+        // Greyed out and inert while the log is being rewritten underneath it.
+        // The rows are still readable — this is a list, and reading it is not
+        // what is dangerous — but nothing in it can be pressed.
+        if view.locked {
+            ui.disable();
+        }
         ui.horizontal(|ui| {
             ui.heading("Combats");
         });
@@ -405,16 +418,7 @@ impl CombatsPanel {
                 .show(ui);
         });
 
-        let entries: Vec<CombatEntry> = view
-            .combats
-            .iter()
-            .map(|combat| CombatEntry {
-                environment: combat.environment.as_deref(),
-                difficulty: combat.difficulty,
-                base_name: combat.base_name.as_str(),
-                solo: combat.solo,
-            })
-            .collect();
+        let entries: Vec<CombatEntry> = view.combats.iter().map(CombatEntry::from).collect();
         // The pickers and the window of time sit in a scroll area of their own.
         // A picker is drawn at the width it was given whether or not the row
         // has the room, and what it overflows by would otherwise push the panel
@@ -771,18 +775,14 @@ impl CombatsPanel {
                     )
                     .clicked()
                 {
+                    // Nothing is ticked for the reader. Deleting is picked out
+                    // fight by fight — and a list that arrives pre-ticked is
+                    // one where unticking what to keep is the work, on a
+                    // button whose next press cannot be taken back. "Select
+                    // all" is right there for the other way round.
                     self.mode = match self.mode {
                         PanelMode::Clearing => PanelMode::Browse,
-                        _ => {
-                            // Everything but the newest to begin with, which is
-                            // what clearing a log is nearly always for — but
-                            // only the first time: what was ticked before is
-                            // remembered while the panel stays open.
-                            if self.to_delete.is_empty() {
-                                self.to_delete = all_but_newest(view, visible);
-                            }
-                            PanelMode::Clearing
-                        }
+                        _ => PanelMode::Clearing,
                     };
                 }
 
@@ -944,12 +944,7 @@ impl CombatsPanel {
         if !self.range.matches(combat.start) {
             return false;
         }
-        self.filter.matches(
-            combat.environment.as_deref(),
-            combat.difficulty,
-            &combat.base_name,
-            combat.solo,
-        )
+        self.filter.matches(&CombatEntry::from(combat))
     }
 }
 
@@ -1030,18 +1025,6 @@ impl ListCounts {
             None => of_the_log,
         }
     }
-}
-
-/// What is ticked the moment the log starts being cleared: every fight on
-/// screen except the newest, which is what clearing a log is nearly always
-/// for — and never a fight the filters are hiding, which nobody could untick.
-fn all_but_newest(view: &CombatsListView<'_>, visible: &[usize]) -> FxHashSet<NaiveDateTime> {
-    let newest = visible.iter().map(|&i| view.combats[i].start).max();
-    visible
-        .iter()
-        .map(|&i| view.combats[i].start)
-        .filter(|&start| Some(start) != newest)
-        .collect()
 }
 
 /// The fights that survive being cleared, by their place in the log: everything
@@ -1148,7 +1131,9 @@ impl CombatColumn {
             // column rather than have every list carry the room for one.
             CombatColumn::Time => Some("59:59"),
             CombatColumn::Dps => Some("999.9k"),
-            // A map's name and a reader's note are as long as they are.
+            // A map's name is as long as it is. The note has a width of its own
+            // (see `width`) rather than a longest value: a note is fifty
+            // characters of anything, and a sample string cannot stand for it.
             CombatColumn::Map | CombatColumn::Note => None,
         }
     }
@@ -1161,7 +1146,15 @@ impl CombatColumn {
     /// is the padding the tables of figures put after the mark — a whole space
     /// character on top of a column holding the word "Solo".
     fn width(self, ui: &Ui, dps: &'static str) -> Option<f32> {
-        Some(text_width(ui, self.widest()?).max(self.heading_width(ui, dps)))
+        let wanted = match self {
+            // Room for a whole note, whether or not there is one to show. Sized
+            // to its rows, the column was a sliver on a log nobody had written
+            // in — and every column beside it moved the first time somebody
+            // did.
+            CombatColumn::Note => tuning::note_width(ui),
+            other => text_width(ui, other.widest()?),
+        };
+        Some(wanted.max(self.heading_width(ui, dps)))
     }
 
     /// What the heading itself needs: its words and the room for the sort mark.
@@ -1409,6 +1402,9 @@ pub fn show_combat_cells(
     });
     r.cell(|ui| {
         ui.visuals_mut().override_text_color = color;
+        if let Some(width) = CombatColumn::Note.width(ui, "DPS") {
+            ui.set_min_width(width);
+        }
         ui.label(note);
     });
 }
@@ -1524,6 +1520,7 @@ mod tests {
                 .map(|&(handle, dps)| PlayerSummary {
                     handle: handle.to_owned(),
                     dps,
+                    deaths: 0,
                 })
                 .collect(),
         }
@@ -1646,37 +1643,12 @@ mod tests {
             comparing: false,
             comparison: &[],
             ladder_runs: &[],
+            locked: false,
         }
     }
 
     fn at(minutes: i64) -> NaiveDateTime {
         NaiveDateTime::default() + chrono::Duration::minutes(minutes)
-    }
-
-    /// Clearing the log starts ticked on everything but the newest fight —
-    /// that is what the button has always meant — and the newest is the newest
-    /// of what is *on screen*, not of the log behind a filter.
-    #[test]
-    fn clearing_the_log_starts_on_everything_but_the_newest() {
-        let notes = CombatNotes::default();
-        let mut combats = [
-            combat("Infected Space", &[]),
-            combat("Hive Space", &[]),
-            combat("Japori", &[]),
-        ];
-        combats[0].start = at(0);
-        combats[1].start = at(60);
-        combats[2].start = at(120);
-        let view = view(&combats, &notes);
-
-        let ticked = all_but_newest(&view, &[0, 1, 2]);
-        assert_eq!(2, ticked.len());
-        assert!(!ticked.contains(&at(120)), "the newest is kept");
-
-        // With the newest filtered out of the list, the newest *shown* is.
-        let ticked = all_but_newest(&view, &[0, 1]);
-        assert!(ticked.contains(&at(0)));
-        assert!(!ticked.contains(&at(60)));
     }
 
     /// What is deleted is what was ticked, and nothing else — the list handed
@@ -1717,6 +1689,7 @@ mod tests {
             comparing,
             comparison: &[],
             ladder_runs: &[],
+            locked: false,
         };
 
         let ctx = Context::default();
@@ -1783,6 +1756,7 @@ mod tests {
                 comparing: true,
                 comparison: &[],
                 ladder_runs: &runs,
+                locked: false,
             });
             let _ = ctx.run_ui(RawInput::default(), |ui| {
                 if let Some(view) = view.take() {
@@ -1905,18 +1879,18 @@ mod layout_tests {
     /// up the widths another left behind: egui keeps a table's measured columns
     /// under its id, and both lists use the same one.
     fn measured_widths(combats: &[CombatSummary], comparing: bool) -> Vec<f32> {
-        measured_widths_with(combats, comparing, &[])
+        measured_widths_with(combats, comparing, &[], &CombatNotes::default())
     }
 
     fn measured_widths_with(
         combats: &[CombatSummary],
         comparing: bool,
         comparison: &[ComparisonSlot],
+        notes: &CombatNotes,
     ) -> Vec<f32> {
         let ctx = Context::default();
         crate::app::fonts::install(&ctx);
         theme::apply(&ctx, theme::Theme::Dark);
-        let notes = CombatNotes::default();
         let mut panel = CombatsPanel::new(true);
         let mut widths = Vec::new();
         // Three passes: the fonts arrive, the columns are measured, the table
@@ -1924,12 +1898,13 @@ mod layout_tests {
         for _ in 0..3 {
             let mut view = Some(CombatsListView {
                 combats,
-                notes: &notes,
+                notes,
                 my_handle: None,
                 shown: None,
                 comparing,
                 comparison,
                 ladder_runs: &[],
+                locked: false,
             });
             let _ = ctx.run_ui(RawInput::default(), |ui| {
                 if let Some(view) = view.take() {
@@ -1939,6 +1914,37 @@ mod layout_tests {
             });
         }
         widths
+    }
+
+    /// The Note column keeps room for a whole note whether or not anybody has
+    /// written one. Sized to its rows it was a sliver on a log with no notes in
+    /// it, and the first note anybody wrote shoved every column beside it
+    /// sideways.
+    #[test]
+    fn the_note_column_holds_its_width_written_in_or_not() {
+        let combats = [a_combat("Japori", "Team", None)];
+        let mut written = CombatNotes::default();
+        written.set(
+            &CombatNotes::key_at(combats[0].start),
+            // A note of the full length, in the shape notes are actually
+            // written in — the room is measured for prose, not for fifty of the
+            // widest letter in the face.
+            "torpedo boat, no buffs, second run of the day",
+        );
+
+        let empty = measured_widths(&combats, false);
+        let filled = measured_widths_with(&combats, false, &[], &written);
+
+        let note_column = |widths: &[f32]| *widths.last().expect("the table was measured");
+        assert!(
+            note_column(&empty) > 0.0,
+            "the column is there before anybody writes anything"
+        );
+        assert_eq!(
+            note_column(&empty),
+            note_column(&filled),
+            "and writing a note does not change its width"
+        );
     }
 
     /// What the columns come to, printed rather than asserted: the numbers are
@@ -1953,6 +1959,7 @@ mod layout_tests {
         solo.players = vec![PlayerSummary {
             handle: "@ramanwaleczny".to_owned(),
             dps: 139_000.0,
+            deaths: 0,
         }];
         let mut team = a_combat("Gateway To Grethor", "Team", Some(Difficulty::Advanced));
         team.environment = Some("Space".to_owned());
@@ -1961,10 +1968,12 @@ mod layout_tests {
             PlayerSummary {
                 handle: "@mattman147".to_owned(),
                 dps: 8_390.0,
+                deaths: 0,
             },
             PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 7_000.0,
+                deaths: 0,
             },
         ];
         let mut unknown = a_combat("Combat", "Team", None);
@@ -1975,10 +1984,12 @@ mod layout_tests {
             PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 94_900.0,
+                deaths: 0,
             },
             PlayerSummary {
                 handle: "@somebody".to_owned(),
                 dps: 1_000.0,
+                deaths: 0,
             },
         ];
         let combats = [solo, team, unknown];
@@ -2001,6 +2012,7 @@ mod layout_tests {
                 comparing,
                 comparison: &[],
                 ladder_runs: &[],
+                locked: false,
             });
             let mut widths = Vec::new();
             let _ = ctx.run_ui(RawInput::default(), |ui| {
@@ -2022,10 +2034,12 @@ mod layout_tests {
             PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 121_700.0,
+                deaths: 0,
             },
             PlayerSummary {
                 handle: "@Ettenurb".to_owned(),
                 dps: 88_400.0,
+                deaths: 0,
             },
         ];
         let realistic = [realistic];
@@ -2037,7 +2051,7 @@ mod layout_tests {
         }];
         println!(
             "real in-comp {:?}",
-            measured_widths_with(&realistic, true, &slots)
+            measured_widths_with(&realistic, true, &slots, &CombatNotes::default())
         );
         let japori = [a_combat("Japori", "Team", None)];
         println!("browse  {:?}", measured_widths(&japori, false));
@@ -2113,6 +2127,7 @@ mod layout_tests {
                     comparing: false,
                     comparison: &[],
                     ladder_runs: &[],
+                    locked: false,
                 });
                 let _ = ctx.run_ui(RawInput::default(), |ui| {
                     if let Some(view) = view.take() {
@@ -2168,6 +2183,7 @@ mod layout_tests {
                 comparing: false,
                 comparison: &[],
                 ladder_runs: &[],
+                locked: false,
             });
             let _ = ctx.run_ui(RawInput::default(), |ui| {
                 if let Some(view) = view.take() {
@@ -2203,6 +2219,7 @@ mod layout_tests {
             players: vec![PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 121_700.0,
+                deaths: 0,
             }],
         }
     }
@@ -2226,6 +2243,7 @@ mod layout_tests {
             players: vec![PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 121700.0,
+                deaths: 0,
             }],
         }];
         let mut panel = CombatsPanel::new(true);
@@ -2248,6 +2266,7 @@ mod layout_tests {
                         comparing: false,
                         comparison: &[],
                         ladder_runs: &[],
+                        locked: false,
                     },
                     &mut width,
                     ui,

@@ -357,6 +357,87 @@ on one combat land on whatever rows happen to hold those handles in the next.
 whether the ticks should be dropped on a combat change or translated through the
 names.
 
+### The numbers that were chosen — `app/tuning.rs`
+
+Sizes, limits and the room the window leaves for things live in one module, with
+the reason each has the value it has. A number that falls out of the code — an
+index, a divisor, a count — stays where it is used; a number settled by
+measuring the program or by taste goes here, so a maintainer has one file to
+open rather than a grep to run.
+
+| what | value | changing it |
+|------|-------|-------------|
+| `ROW_HEIGHT`, `HEADER_HEIGHT` | 25.0 | the combats table's rows |
+| `PANEL_MIN_WIDTH` | 260.0 | how far the panel can be dragged in before the table is a column of ellipses |
+| `PANEL_AUTO_WIDTH` | 1200.0 | how wide it will size *itself* to fit its table before it stops and scrolls |
+| `CELL_SPACING` | 3.0 | the gap either side of a cell in that table |
+| `PLAYER_PICKER_WIDTH` | 130.0 | the "whose figures" picker in a comparison |
+| `BADGE_PADDING`, `ARROW_SIZE` | 4.0, 14×14 | a run's number badge, the fold-out arrow |
+| `DEATHS_MENU_WIDTH` / `_HEIGHT` | 230.0 / 260.0 | the deaths checklist popup |
+| `PICKER_MIN_WIDTH` | 60.0 | the floor `fitting` squeezes a filter picker to |
+| `JOB_WINDOW_WIDTH` | 260.0 | the window that reports clearing the log |
+| `MAX_NOTE_CHARS` | 50 | re-exported, not defined here: it truncates what is **stored**, so it lives with the store that enforces it (`settings::CombatNotes::set`) |
+
+`note_width(ui)` is the one *rule* in there rather than a raw number:
+`glyph_width('0') × MAX_NOTE_CHARS × NOTE_WIDTH_SLACK`, measured from the font in
+use so it holds at any UI scale. Both places that show a note ask for it — the
+field under the tabs where one is written, and `CombatColumn::Note`, which
+**reserves** it whether or not there is a note to show. Sized to its rows the
+column was a sliver on a log nobody had written in, and the first note anybody
+wrote moved every column beside it. Measured cost: 440 points of the panel's
+width at the default scale (see `print_column_widths`), which is why
+`PANEL_AUTO_WIDTH` is close to being reached by a long map name and a
+comparison's two extra columns together.
+
+The slack is a judgement, not a guarantee: the face is proportional, so fifty
+`M`s are wider than the room reserved and would still push the column out. Fifty
+characters of prose fit, which is what a note is.
+
+### Saying what the thread is doing — `app/job.rs`
+
+`is_busy` (an `AtomicBool`) is enough for a refresh: it takes as long as it
+takes and cannot be interrupted, and the toolbar hourglass is the whole of what
+there is to say. Clearing the log is not that. It reads every kept fight out of
+the file, replaces the file and reads the whole thing back, and until that
+finishes **the window is showing a list of fights that no longer exist**.
+
+`JobStatus` is an `Arc` of atomics shared with the drawing thread, read once per
+frame (`AnalysisHandler::job_progress`) rather than sent down the info channel —
+the worker only reaches that channel between instructions, so progress would
+arrive in one burst at the end.
+
+| `Phase` | counted | cancellable | why |
+|---------|---------|-------------|-----|
+| `CopyingKept` | yes, `done`/`total` fights | **yes** | nothing has been written; giving up leaves the log as it was |
+| `RewritingLog` | no | no | `rewrite_file` replaces the file in one step (temp → `sync_data` → `rename`); there is no half way to stop at |
+| `ReadingLogAgain` | no | no | this is what puts the new list on screen; stopping it leaves the window on a log that no longer exists |
+
+`total == 0` is what makes the window draw a spinner instead of a bar it would
+have to make up. The cancel flag is checked by the worker
+(`JobStatus::cancelled`), not by the button: a press outside `CopyingKept` is
+kept but not acted on.
+
+**The status is cleared by the run loop**, beside `set_is_busy(false)`, not by
+`keep_combats`. Both of that function's aborts — a fight that cannot be read out
+of the log, a cancelled deletion — return early, and clearing it where the
+phases are set would leave the window holding a bar for work nobody is doing.
+
+Two things follow from a deletion being in flight:
+
+| what | why |
+|------|-----|
+| the combats list is drawn disabled (`CombatsListView::locked`) | a fight is asked for **by its place in the list**, and the list on screen is the one from before the rewrite. A second delete, or a double-click, would hand the analyzer positions that mean something else by the time it reads them |
+| the window keeps repainting (`request_repaint_after`) | nothing is sent from the thread during a phase, so the progress would otherwise stand still at whatever the last click drew |
+
+The rest of the window is left alone deliberately: reading the fight already on
+screen is safe, so this is a plain `Window`, not a `Modal` with a backdrop.
+
+Covered by tests in `app/analysis_handling.rs` that run a real deletion against
+a synthetic log in a scratch directory: a rewrite that keeps a subset, deleting
+**every** fight (the empty-log case), an index the list no longer holds, and a
+cancel — each asserting the log's bytes and that the context still reads it
+afterwards.
+
 ### The list of fights — `app/combats_list.rs`
 
 One table of combats, drawn in a side panel and used for everything that picks a
@@ -367,9 +448,13 @@ filtered how.
 What travels from the analysis thread is `CombatSummary`
 (`analyzer/combat_summary.rs`), one value per fight — name, identifier, map,
 content type, environment, difficulty, solo, start, duration and the players with
-their DPS — sent as `Arc<[CombatSummary]>`. It replaced six `Vec`s indexed
-alongside each other, where one list left behind read the wrong entry for every
-combat after it.
+their DPS and how often each was killed — sent as `Arc<[CombatSummary]>`. It
+replaced six `Vec`s indexed alongside each other, where one list left behind read
+the wrong entry for every combat after it.
+
+`PlayerSummary::deaths` is the same count `Combat::total_deaths` adds up over
+everyone (`player.damage_in.kills`), kept per player because the list filters by
+it.
 
 **A fight is named by `start`.** Indices are only ever used to ask the analyzer
 for a combat; anything the list has to match — a tick, a fold-out, the row a
@@ -402,6 +487,112 @@ Decisions worth keeping:
 | the panel is exactly as wide as its table | `fitting_width` measures the table (`table::table_content_width`) and the panel is pinned to it until the reader drags the edge, after which their width is remembered and only a drag changes it — read back every frame, an empty table (a log still being read) overwrote it |
 | the fold-out arrow is always drawn, invisible where there is nothing to fold | `Ui::add_visible` keeps the geometry identical; room measured out beside it instead was room of a different size, and the column drew two points wider or narrower depending on which rows were in it |
 | a run's number is a badge, not coloured text | several series colours vanish into the blue of a picked row; `theme::badge_colors` fills a patch with the run's colour and picks black or white for the number, taking the fill a shade further where neither reaches 3:1 |
+
+#### The filter menus — `app/combat_filter.rs`
+
+`CombatFilter` is the row of pickers above the table. It is asked about one
+`CombatEntry` at a time — a borrowed view of a `CombatSummary`, built through
+`From`, so nothing is copied per frame and the two cannot drift apart.
+`CombatsPanel::matches` asks it per combat; `CombatsPanel::show_contents` hands
+it the whole list as `&[CombatEntry]` so each menu can work out what to offer.
+
+| part | what it asks | empty value |
+|------|--------------|-------------|
+| `solo` | one player in the log — the ladder's test, `Combat::is_solo` | `None` |
+| `environment` | the detected map's curated environment (Space, Ground, …) | `None` |
+| `difficulty` | `DifficultyFilter`; its `Unknown` catches a map whose tier did not resolve, which would otherwise be invisible under every setting | `Any` |
+| `map` | `CombatSummary::base_name` — with the `[TFO]` prefix, since that is what naming rules are written against | `None` |
+| `deaths_of` + `deaths` | a fact about the *players* in the fight, not about the fight: which handles, and which of the two questions they are being asked | empty set |
+
+Four of them narrow by what a fight **was**; the deaths menu narrows by how it
+**went**, and is the only one whose answer depends on more than the combat's own
+columns.
+
+Every menu offers only what the others leave reachable — `options(combats,
+dimension)` re-runs the filter with that one dimension cleared — and
+`drop_impossible_choices` gives up a choice the rest have made unreachable. The
+invariant: **no combination reachable through the menus leaves the list empty**,
+with one deliberate exception below.
+
+A picker with nothing to offer is **drawn disabled, not hidden**
+(`Ui::add_enabled_ui`, with a `disabled_hover` saying why): the size picker
+where every fight on screen was fought the same way, the deaths menu where
+nobody answers its question. They used to be left out, and a picker that comes
+and goes moves every picker beside it — the row is read by where things are.
+The cost is that the combo box then sits in a child `Ui` whose id egui chooses,
+so `show_deaths` writes its popup's id into `Ui::data` under
+`deaths_popup_key(id)` for anything outside that needs to find it.
+
+#### The deaths menu
+
+A checklist of handles rather than a picker, because the question is often about
+more than one player — a team's clean runs — and a tick box says "and this one
+too" where a drop-down says "instead of that one".
+
+`deaths_of` is a `BTreeSet<String>` of handles; `deaths` is a `DeathsFilter`
+saying which way they read. A handle answers for a fight when it is **present
+in it** with a death count the direction wants (`DeathsFilter::matches`); how
+several handles add up is the direction's too (`DeathsFilter::matches_all`):
+
+| `DeathsFilter` | keeps | set by |
+|----------------|-------|--------|
+| `Without` (default) | fights **every** ticked handle is in with `deaths == 0` | browsing, and while a comparison is being picked |
+| `With` | fights **any** ticked handle is in with `deaths > 0` | `PanelMode::Clearing` |
+
+The quantifier turns round with the direction, and that is the point of it: the
+two are complements. Ticking a group, `Without` is "the runs that went perfectly
+for all of them" and `With` is "the runs somebody has something to say about",
+so between them they split the fights those players were all in. `matches_all`
+holds both, and special-cases the empty set — `all` over nothing is true and
+`any` over nothing is false, so a menu with no ticks in it would otherwise hide
+the whole log the moment the panel started clearing.
+
+The direction is not a control of its own: `CombatsPanel::show_contents` sets it
+from the mode each frame and bumps `filter_generation` when it changes. Clearing
+the log is a list of fights **to delete**, and the fights worth deleting are the
+ones somebody died in — the same ticks, asked the other way round, so the list
+is always showing what the mode acts on.
+
+Four decisions sit behind the rest of it:
+
+| decision | why |
+|----------|-----|
+| `Without` `and`s the ticks | "no deaths of @me and @friend" is one question about one run they both had a clean pass at. `or` there would answer a question nobody asks |
+| `With` `or`s them | one death by one of them is a run that did not go well, and that is what is being cleared out. It also means this direction **cannot** come back empty: every offered handle has fights behind it, and the union keeps them |
+| a fight the handle was not in does **not** pass, either direction | the menu asks how *their* runs went; a run without them is not an answer. Under `With` it also stops a fight being lined up for deletion because a ticked player was absent from it |
+| the direction follows the mode instead of being a third state | a checkbox for "invert" is a second thing to notice; the box's own label and the line above the list already say which question is being asked — including with nothing ticked (`Any deaths` / `All fights`), which is the moment the change is easiest to miss |
+
+Turning the menu round re-reads who it can offer: `options` collects the handles
+that answer the *current* direction, so a player who never died is not offered
+while clearing, and `drop_impossible_choices` gives up their tick rather than
+leaving it holding an empty list.
+
+Entering `Clearing` ticks **nothing**. It used to seed `to_delete` with every
+fight on screen but the newest; a pre-ticked list makes unticking-to-safety the
+work, on a button whose next press rewrites the log, and turning the deaths menu
+round would have seeded it from a list that no longer means the same thing.
+`Select all` covers the bulk case from the safe end.
+
+`Without` is the one filter here that **may leave the list empty** — the
+exception to the invariant above. `and`ed ticks the reader made deliberately are not
+something to undo behind their back, so a set of handles with no clean run
+between them narrows to nothing and the footer count (`ListCounts::text`) says
+so until one is unticked. `drop_impossible_choices` still drops a handle that
+survives nothing at all under the *other* menus, which is the case the cascade
+exists for (a refresh, a deleted fight) rather than a choice the reader made.
+
+The rows are ordered by how many fights on screen each handle answers for
+(`by_fights_matched`), which floats the log's owner to the top without the
+filter being told whose log it is. The popup is a `ComboBox` with
+`PopupCloseBehavior::CloseOnClickOutside` — a tick is not a choice made and done
+with — under a wrapped `deaths_prompt` line saying what the ticks do, since a
+column of handles does not say it and the box is too narrow to. The label is
+wrapped explicitly because a popup lays its contents out with wrapping off
+(`TextWrapMode::Extend`), which would widen the whole menu to one long line.
+
+The text in the search box lives in `Ui::data`, not in the filter: it narrows
+the *menu*, and a filter that changed as it was typed in would have the table
+re-measured (`filter_generation`) on every keystroke.
 
 ### Comparing several combats — `app/compare`
 
