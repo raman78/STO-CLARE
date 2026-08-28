@@ -113,12 +113,21 @@ if [ "$WHAT" = all ] || [ "$WHAT" = ladder ]; then
   click 95 17; sleep 12                            # open the Ladder window
   L=$(ladder_win)
   shot ladder-window "$L"
+  # One press does the lot now: it fetches the run, brings the combats list out
+  # to receive it and opens it in the main window. So there is no panel to open
+  # and no row to double-click here any more — both were in this script until
+  # the button started doing what its label always said.
   clickw "$L" 990 130 14                           # the magnifier on the first entry
-  xdotool windowactivate "$W"; sleep 1
-  click 66 38                                      # the combats panel
-  dblclick 300 195 6                               # the run, pinned at the top
-  click 825 97                                     # Summary, right of the panel
+  xdotool windowactivate "$W"; sleep 6
+  # The panel is folded away before the run is photographed. It used to be
+  # shot beside the list — Summary was clicked at 825,97, "right of the panel" —
+  # but the Note column now reserves room for a whole note, so the panel is
+  # wide enough that nothing useful is left of the window beside it. The list
+  # is what `ladder-compare-pick` shows; this one shows the run.
+  click 66 38                                      # the panel out of the way
+  click 39 97                                      # Summary
   shot ladder-run
+  click 66 38                                      # the panel back, for the ticks
   click 169 38                                     # Compare Combats
   click 300 195                                    # tick the run
   click 300 220; sleep 5                           # and one of my own

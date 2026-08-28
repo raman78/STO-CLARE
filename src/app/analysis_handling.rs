@@ -20,12 +20,18 @@ use crate::{
     unwrap_or_return,
 };
 
-use super::log_consolidation::Consolidator;
+use super::{
+    job::{JobProgress, JobStatus, Phase},
+    log_consolidation::Consolidator,
+};
 
 pub struct AnalysisHandler {
     tx: Sender<Instruction>,
     rx: Receiver<AnalysisInfo>,
     is_busy: Arc<AtomicBool>,
+    /// What the thread is doing, where that is worth showing and stopping. See
+    /// [`crate::app::job`].
+    job: Arc<JobStatus>,
     id: u32,
     id_counter: Arc<AtomicU32>,
 }
@@ -37,6 +43,7 @@ struct AnalysisContext {
     analyzer: Option<Analyzer>,
     ctx: Context,
     is_busy: Arc<AtomicBool>,
+    job: Arc<JobStatus>,
     auto_refresh_interval: Duration,
     auto_refresh: Option<AutoRefreshContext>,
     // Size of the log at the last refresh we notified about; used to skip
@@ -142,6 +149,7 @@ impl AnalysisHandler {
         let (instruction_tx, instruction_rx) = unbounded();
         let (info_tx, info_rx) = unbounded();
         let is_busy = Arc::new(AtomicBool::new(false));
+        let job = Arc::new(JobStatus::default());
         let handler_ctx = HandlerContext {
             list_refresh: false,
             auto_refresh: enable_auto_refresh,
@@ -157,6 +165,7 @@ impl AnalysisHandler {
             settings,
             ctx,
             is_busy.clone(),
+            job.clone(),
             auto_refresh_interval_seconds,
         );
         std::thread::spawn(move || {
@@ -166,6 +175,7 @@ impl AnalysisHandler {
             tx: instruction_tx,
             rx: info_rx,
             is_busy,
+            job,
             id: 0,
             id_counter: AtomicU32::new(1).into(),
         }
@@ -173,6 +183,23 @@ impl AnalysisHandler {
 
     pub fn is_busy(&self) -> bool {
         self.is_busy.load(Ordering::Relaxed)
+    }
+
+    /// What the thread is working on right now, for the window that says so.
+    pub fn job_progress(&self) -> JobProgress {
+        self.job.progress_snapshot()
+    }
+
+    /// Whether the reader has already asked for the job to stop, so the window
+    /// can say it is stopping rather than offer the button twice.
+    pub fn cancel_requested(&self) -> bool {
+        self.job.cancel_requested()
+    }
+
+    /// Asks for the running job to stop. Whether it can is the worker's call —
+    /// see [`Phase::can_cancel`].
+    pub fn cancel_job(&self) {
+        self.job.request_cancel();
     }
 
     pub fn check_for_info(&self) -> impl Iterator<Item = AnalysisInfo> + '_ {
@@ -265,6 +292,7 @@ impl AnalysisHandler {
             tx: self.tx.clone(),
             rx,
             is_busy: self.is_busy.clone(),
+            job: self.job.clone(),
             id,
             id_counter: self.id_counter.clone(),
         }
@@ -278,6 +306,11 @@ impl Drop for AnalysisHandler {
 }
 
 impl AnalysisContext {
+    // One more than clippy's taste, and the one over is the job status the
+    // window reads. Bundling it with `is_busy` into a status object would touch
+    // every `set_is_busy` in here for a constructor nobody calls but the two
+    // places below.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         instruction_rx: Receiver<Instruction>,
         handler_ctx: HandlerContext,
@@ -285,6 +318,7 @@ impl AnalysisContext {
         settings: AnalysisSettings,
         ctx: Context,
         is_busy: Arc<AtomicBool>,
+        job: Arc<JobStatus>,
         auto_refresh_interval_seconds: f64,
     ) -> Self {
         let mut _self = Self {
@@ -294,6 +328,7 @@ impl AnalysisContext {
             analyzer: None,
             ctx,
             is_busy,
+            job,
             auto_refresh_interval: AutoRefreshContext::interval(auto_refresh_interval_seconds),
             auto_refresh: None,
             last_file_size: None,
@@ -414,6 +449,12 @@ impl AnalysisContext {
             }
 
             Self::set_is_busy(&self.is_busy, false);
+            // Whatever the instruction was doing, it is not doing it any more.
+            // Cleared here rather than where each phase is set so that an
+            // instruction that gave up half way — a combat that could not be
+            // read out of the log, a cancelled deletion — cannot leave the
+            // window holding a progress bar for work nobody is doing.
+            self.job.finish();
         }
     }
 
@@ -631,6 +672,12 @@ impl AnalysisContext {
     /// intact: its persisted offset means the deleted combats are not merged
     /// back in from the still-growing active log, and the active file (which STO
     /// keeps open) is never touched.
+    ///
+    /// Three phases, because they fail and stop differently: reading the kept
+    /// fights out of the log (counted, and the only one the reader may call
+    /// off — nothing has been written yet), writing the file again, and reading
+    /// it back. The window follows [`JobStatus`]; the run loop puts it back to
+    /// idle whichever way this returns, including the two aborts below.
     fn keep_combats(&mut self, mut keep: Vec<usize>) {
         let analyzer = match &self.analyzer {
             Some(a) => a,
@@ -640,8 +687,21 @@ impl AnalysisContext {
 
         keep.sort_unstable();
         keep.dedup();
+        // Held up for the whole of this, not only for the read at the end. The
+        // reading and the rewrite below are the long half on a large log, and
+        // the toolbar said nothing at all while they ran.
+        Self::set_is_busy(&self.is_busy, true);
+        self.job.start(Phase::CopyingKept, keep.len());
         let mut data = Vec::new();
-        for &index in &keep {
+        for (done, &index) in keep.iter().enumerate() {
+            // Asked before each fight rather than once: this is the loop that
+            // takes the time. Nothing has been written yet, so giving up here
+            // leaves the log exactly as it was — which is why this is the only
+            // phase that offers it.
+            if self.job.cancelled() {
+                log::info!("combat deletion cancelled; the log is untouched");
+                return;
+            }
             match analyzer
                 .result()
                 .get(index)
@@ -657,12 +717,17 @@ impl AnalysisContext {
                     return;
                 }
             }
+            self.job.progress(done + 1);
         }
 
+        // Past this line the log is being replaced and there is no going back,
+        // which is what `Phase::can_cancel` says by leaving these two out.
+        self.job.start(Phase::RewritingLog, 0);
         self.analyzer = None;
         if let Err(e) = rewrite_file(settings.combatlog_file(), &data) {
             log::error!("failed to rewrite combat log while deleting combats: {e}");
         }
+        self.job.start(Phase::ReadingLogAgain, 0);
         self.set_analyzer(settings);
         // The rewrite replaces the file (new inode), so the auto-refresh watcher
         // must be re-created or it would keep watching the old, deleted file.
@@ -887,6 +952,211 @@ mod tests {
         }
     }
 
+    /// A scratch directory of this test's own, with nothing else in it: the
+    /// consolidator merges whatever it finds beside the log.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "cla-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A log of `count` fights, an hour apart so the analyzer splits them (the
+    /// separation time is 60s). Two damage lines each, since a fight with no
+    /// damage in it is not one the analyzer keeps.
+    fn write_log(path: &Path, count: usize) {
+        let mut text = String::new();
+        for fight in 0..count {
+            for line in 0..2 {
+                text.push_str(&format!(
+                    "26:07:23:{:02}:{:02}:00.0::Kestrel,P[1@2 Kestrel@handle],,*,\
+                     Target,C[1 Npc_Foo],Phaser Beam,Pn.abc,Phaser,,100,100\n",
+                    fight, line
+                ));
+            }
+        }
+        std::fs::write(path, text).unwrap();
+    }
+
+    /// An analysis context reading `log`, with the consolidator off so the test
+    /// is only about the file it was given.
+    fn context_for(log: &Path) -> AnalysisContext {
+        let settings = AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            consolidate_combatlog: false,
+            ..Default::default()
+        };
+        let (instruction_tx, instruction_rx) = unbounded();
+        let (main_tx, _main_rx) = unbounded();
+        let mut context = AnalysisContext::new(
+            instruction_rx,
+            HandlerContext {
+                tx: main_tx,
+                list_refresh: true,
+                auto_refresh: false,
+                id: 0,
+                viewport: ViewportId::ROOT,
+            },
+            instruction_tx,
+            settings,
+            Context::default(),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(JobStatus::default()),
+            60.0,
+        );
+        context.refresh(false);
+        context
+    }
+
+    fn combats_in(context: &AnalysisContext) -> usize {
+        context
+            .analyzer
+            .as_ref()
+            .map(|analyzer| analyzer.result().len())
+            .unwrap_or(0)
+    }
+
+    /// The whole of clearing the log, on a real file: the fights that were
+    /// ticked go, the ones that were not stay, and the context is left reading
+    /// the *new* file rather than holding anything of the old one.
+    #[test]
+    fn deleting_combats_rewrites_the_log_and_reads_it_back() {
+        let dir = scratch("keep");
+        let log = dir.join("combatlog.log");
+        write_log(&log, 3);
+        let mut context = context_for(&log);
+        assert_eq!(3, combats_in(&context), "the log starts with three fights");
+
+        context.keep_combats(vec![0, 2]);
+
+        assert_eq!(2, combats_in(&context), "the middle fight was deleted");
+        assert!(
+            context.analyzer.is_some(),
+            "the context reads the rewritten log, rather than being left with none"
+        );
+        assert!(
+            !dir.join(".cla-log-rewrite.tmp").exists(),
+            "no half-written log is left behind"
+        );
+        // And it keeps working afterwards: this is the call that would reach a
+        // file that is no longer there.
+        context.refresh(false);
+        assert_eq!(2, combats_in(&context));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Deleting the last fight in the log — the case that leaves nothing to
+    /// read. The file is emptied, the analyzer is rebuilt on it, and asking it
+    /// for the list must come back empty rather than panic on a log with
+    /// nothing in it.
+    #[test]
+    fn deleting_every_combat_leaves_a_readable_empty_log() {
+        let dir = scratch("keep-none");
+        let log = dir.join("combatlog.log");
+        write_log(&log, 2);
+        let mut context = context_for(&log);
+        assert_eq!(2, combats_in(&context));
+
+        context.keep_combats(Vec::new());
+
+        assert_eq!(0, combats_in(&context));
+        assert!(context.analyzer.is_some());
+        assert_eq!(0, std::fs::metadata(&log).unwrap().len(), "log emptied");
+        // Everything the window does after a deletion, against the empty log.
+        context.refresh(false);
+        context.update_auto_refresh();
+        assert_eq!(0, combats_in(&context));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A place in the list that no longer holds a fight — which is what a stale
+    /// list on screen hands over. Nothing is written: keeping "everything that
+    /// is left" would silently delete the fights it could not find.
+    #[test]
+    fn an_index_that_is_not_there_leaves_the_log_alone() {
+        let dir = scratch("keep-stale");
+        let log = dir.join("combatlog.log");
+        write_log(&log, 2);
+        let before = std::fs::read(&log).unwrap();
+        let mut context = context_for(&log);
+
+        context.keep_combats(vec![0, 99]);
+
+        assert_eq!(
+            before,
+            std::fs::read(&log).unwrap(),
+            "the log is untouched, to the byte"
+        );
+        assert_eq!(2, combats_in(&context), "and still readable");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Cancelling while the kept fights are being read: nothing has been
+    /// written at that point, so the log has to come out of it untouched and
+    /// the context has to be left reading it — the analyzer is dropped a few
+    /// lines later, and giving up after that would leave the window with
+    /// nothing to show and a file it no longer holds.
+    #[test]
+    fn a_cancelled_deletion_leaves_the_log_and_the_analyzer_alone() {
+        let dir = scratch("keep-cancel");
+        let log = dir.join("combatlog.log");
+        write_log(&log, 3);
+        let before = std::fs::read(&log).unwrap();
+        let mut context = context_for(&log);
+
+        context.job.request_cancel();
+        context.keep_combats(vec![0]);
+
+        assert_eq!(
+            before,
+            std::fs::read(&log).unwrap(),
+            "a cancelled deletion writes nothing"
+        );
+        assert!(
+            !dir.join(".cla-log-rewrite.tmp").exists(),
+            "and leaves no temporary file"
+        );
+        assert_eq!(3, combats_in(&context), "every fight is still there");
+        context.refresh(false);
+        assert_eq!(3, combats_in(&context), "and the log still reads");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The window is taken down by the run loop, not by the code that put it
+    /// up, so an instruction that gave up half way cannot strand it. Both
+    /// aborts above return early, and both have to leave the status idle.
+    #[test]
+    fn the_run_loop_puts_the_job_status_back_to_idle() {
+        let dir = scratch("keep-idle");
+        let log = dir.join("combatlog.log");
+        write_log(&log, 2);
+        let mut context = context_for(&log);
+        let job = context.job.clone();
+
+        // Cancelled: `keep_combats` returns from inside the counted phase.
+        job.request_cancel();
+        context.keep_combats(vec![0]);
+        assert!(
+            job.progress_snapshot().is_running(),
+            "the phase is still set when the instruction returns"
+        );
+
+        // What the run loop does after every instruction.
+        job.finish();
+        assert!(!job.progress_snapshot().is_running());
+        assert!(!job.cancel_requested(), "the next job starts uncancelled");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The delayed half of automatic refreshing. A change that lands inside the
     /// interval must not refresh at once — it sets a deadline the run loop waits
     /// for on the instruction channel — and one deadline is kept however many
@@ -922,6 +1192,7 @@ mod tests {
             settings,
             Context::default(),
             Arc::new(AtomicBool::new(false)),
+            Arc::new(JobStatus::default()),
             // A whole minute, so the change below is well inside the interval
             // and the deadline cannot pass while the test runs.
             60.0,
@@ -1007,6 +1278,7 @@ mod tests {
             settings,
             Context::default(),
             Arc::new(AtomicBool::new(false)),
+            Arc::new(JobStatus::default()),
             1.0,
         );
         let (overlay_tx, overlay_rx) = unbounded();
@@ -1105,6 +1377,7 @@ mod tests {
             settings,
             Context::default(),
             Arc::new(AtomicBool::new(false)),
+            Arc::new(JobStatus::default()),
             1.0,
         );
 
@@ -1175,6 +1448,7 @@ mod tests {
             settings,
             Context::default(),
             Arc::new(AtomicBool::new(false)),
+            Arc::new(JobStatus::default()),
             1.0,
         );
         context.refresh(false);
@@ -1236,6 +1510,7 @@ mod tests {
             settings,
             Context::default(),
             is_busy.clone(),
+            Arc::new(JobStatus::default()),
             1.0,
         );
 
@@ -1294,6 +1569,7 @@ mod tests {
             settings,
             Context::default(),
             Arc::new(AtomicBool::new(false)),
+            Arc::new(JobStatus::default()),
             1.0,
         );
         context.refresh(false);
@@ -1370,6 +1646,7 @@ mod tests {
             settings,
             Context::default(),
             Arc::new(AtomicBool::new(false)),
+            Arc::new(JobStatus::default()),
             1.0,
         );
         let (overlay_tx, overlay_rx) = unbounded();

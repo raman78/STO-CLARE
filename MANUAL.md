@@ -91,9 +91,12 @@ instead and is headed **Top DPS**. You can settle it yourself in
 
 ### Narrowing the list
 
-The menus in the panel — solo or team, type, level and map — cut the list down.
-Each only offers what the others leave reachable, so you cannot pick a
-combination that shows nothing. The **Search** box matches the name of a fight
+The menus in the panel — solo or team, type, level, map and deaths — cut the
+list down. Each only offers what the others leave reachable, so you cannot pick
+a combination that shows nothing. A menu with nothing left to offer — every
+fight on screen was fought solo, say — is greyed out rather than taken away, so
+the row of menus stays where you last saw it; hover one to read why it is
+greyed. The **Search** box matches the name of a fight
 and the note you wrote for it. **Played** narrows by when the fights were
 fought, with `24 h`, `7 days` and `30 days` filling the window in for you,
 counting back from the newest fight in the list. A **Clear filter** button
@@ -105,6 +108,48 @@ side empty for "anything before that" or "anything after that". A date typed
 halfway does nothing until it is complete, so the list does not empty out under
 your hands while you are still typing; while it is incomplete it is shown in
 red.
+
+#### Fights nobody died in
+
+The last menu, **Any deaths**, asks how a fight went for the people in it rather
+than what the fight was. Open it and you get a list of everyone who came through
+a fight alive, with a tick box each:
+
+```
+[ No Deaths of: @ramanwaleczny ▾ ]
+ ┌────────────────────────────────────┐
+ │ Show fights where every ticked     │
+ │ player has 0 deaths                │
+ │ [ search players            ]      │
+ │  Select all     Unselect all       │
+ │ ────────────────────────────────── │
+ │ ☑ @ramanwaleczny                   │
+ │ ☐ @Ettenurb                        │
+ │ ☐ @mattman147                      │
+ │ ☐ @somebody                        │
+ └────────────────────────────────────┘
+```
+
+Tick your own handle and the list keeps only the runs you came through without
+dying once. Your handle is at the top: the list is ordered by how many fights
+each player survived, and in your own log that is you.
+
+**Tick more than one and it means all of them.** Two handles ticked gives you
+the runs you *both* came through — one clean pass, not either of yours. Tick
+enough people and there may be no such run at all, in which case the list comes
+up empty and the strip at the bottom says so ("0 of 342 combats"); untick one
+and it fills back in. The menu stays open while you tick — click anywhere else
+to close it.
+
+The **search** box narrows the names, not the fights — handy in a log with a
+season of pug teams in it. **Select all** and **Unselect all** act on the names
+the search has left on screen.
+
+A fight the ticked player was not in goes with the ones they died in. The menu
+answers "how did *their* runs go", and a run without them is not one of theirs.
+
+While you are clearing the log the menu asks the opposite question — see
+[Deleting fights from the log](#deleting-fights-from-the-log).
 
 ### Describing a combat so you can find it again
 
@@ -134,13 +179,62 @@ and you can tell at a glance which column is which build.
 ### Deleting fights from the log
 
 **Clear Log File** at the bottom of the panel turns the list into a list of tick
-boxes: everything but the newest fight is ticked for you. Untick what you want
-to keep, use **Select all** and **Unselect all** to work in bulk, and press
-**Delete N ticked**. Past a single fight it asks whether you mean it, because
-the log is rewritten and there is no way back.
+boxes, all of them empty. Tick the fights you want gone — **Select all** and
+**Unselect all** work in bulk — and press **Delete N ticked**. Past a single
+fight it asks whether you mean it, because the log is rewritten and there is no
+way back.
+
+Nothing is ticked for you: what you tick here is what disappears, so the list
+starts at "nothing" rather than asking you to untick your way to safety.
 
 Only what you can see can be deleted: if a filter hides a ticked fight, its tick
 goes with it.
+
+#### While it is working
+
+Rewriting the log takes a moment — on a log of a year's play, more than a
+moment: every fight you are keeping is read out of the file, the file is written
+again, and the whole thing is read back. A small window says which of the three
+it is on, and how far through:
+
+```
+ ┌─ Clearing the log ─────────────┐
+ │ [■■■■■■■■■░░░░░░]  412 of 799  │
+ │ Reading the fights that are    │
+ │ being kept                     │
+ │                                │
+ │  [ Cancel ]                    │
+ └────────────────────────────────┘
+```
+
+**Cancel** is offered while the fights being kept are still being read — nothing
+has been written yet, so stopping there leaves your log exactly as it was. Once
+the file is being written the button greys out and says why: there is no half
+way to stop at.
+
+The list of fights greys out until it is done. That is not only because there is
+nothing useful to click: until the log has been read back, the list on screen is
+the old one, and acting on it would act on the wrong fight. It comes back by
+itself, filled in from the rewritten log.
+
+**The deaths menu turns round while you are clearing.** Browsing, it finds the
+runs a player came through alive; clearing, it finds the runs they *died* in —
+which is what you are usually looking for when you thin a log out. Tick your
+handle, press **Clear Log File**, and the list becomes the fights you died in;
+**Select all**, then **Delete**. The box says which way round it is even before
+you tick anybody — **Any deaths** while you are browsing, **All fights** while
+you are clearing — and the line above the names changes with it.
+
+**Several ticks add up the other way round here.** Browsing, two handles mean
+the runs you *both* came through; clearing, they mean the runs *either* of you
+died in — one death by one of you is a run that did not go well, and those are
+the ones you are clearing out. So the same two ticks answer the two halves of
+the same question: the runs that went perfectly for everyone, and the runs
+somebody has something to say about. This way round the list can never come up
+empty.
+
+Turn **Clear Log File** off again and the menu goes back to finding your clean
+runs, with the same handles ticked.
 
 ### The buttons around the list
 
@@ -160,7 +254,7 @@ goes with it.
 **Copy Combat Summary** builds a single line, ready to paste into the game chat:
 
 ```
-CLA - [TFO] Infected: The Conduit (Space) [Elite] — Cheops build (12:32.200):
+CLA - [Solo] [Space] [TFO] Infected: The Conduit [Elite] — Cheops build (12:32.200):
 [PlayerName: DPS|Dmg] / @you: 225k|169M / @teammate: 174k|130M
 ```
 
@@ -705,7 +799,7 @@ time. They are folded into one row.
 That row can say more than any of the originals could. A ladder entry carries no
 map and no level of its own; both live on the tables it is in. So the folded row
 is named from the set of them, in the same shape the program names your own
-fights: `[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
+fights: `[Solo] [Space] [TFO] Hive Onslaught [Elite]`.
 
 **Rank** is then the run's placing **in its own table**, not its position in the
 answer — which is why three rows in a row can all say 1. They are firsts in three
@@ -725,18 +819,20 @@ across every map at once.
 ### Reading a run from the ladder
 
 Two icons sit at the end of every row: 📥 saves that run as a log file, and 🔍
-adds it to your combats list.
+opens it in the main window.
 
-![A run from the ladder, opened](images/ladder-run.png)
+The run opens straight away, and your own log is not touched: it also appears at
+the top of the list, in a colour that says it came from somewhere else, and
+stays there whichever way you sort. If the list was folded away, pressing 🔍
+brings it out. Read the run like any fight of your own — all the tabs, the
+charts, the ability breakdown — and double-click its row any time to come back
+to it. The `✕` at the end of that row takes it back out of the list.
 
-Your own log is not touched, and nothing is replaced: the run appears at the top
-of the list, in a colour that says it came from somewhere else, and stays there
-whichever way you sort. Double-click it to read it like any fight of your own —
-all the tabs, the charts, the ability breakdown. The `✕` at the end of its row
-takes it back out of the list.
+![A run from the ladder, open in the main window](images/ladder-run.png)
 
-You can have several runs open at once — press 🔍 on as many as you like. The
-magnifier on a run already in your list is greyed out and does nothing.
+You can have several runs open at once — press 🔍 on as many as you like. Each
+joins the list; the one you pressed last is the one on screen. The magnifier on
+a run already in your list is greyed out and does nothing.
 
 Two things a fetched run does not do: it cannot be uploaded (it is already on the
 ladder, and it is somebody else's fight), and **Save Combat** on it copies the
@@ -914,7 +1010,8 @@ written into the settings folder under the new name.
 
 | If you want to…                      | Do this                                                     |
 |--------------------------------------|-------------------------------------------------------------|
-| See only Elite runs of one map       | Use the type, level and map menus under the toolbar.        |
+| See only Elite runs of one map       | Use the type, level and map menus in the combats panel.     |
+| See only the runs you never died in  | Open the deaths menu in that same row and tick your handle. |
 | Find out what is carrying your build | Damage Dealt, open your row, read the Damage % column.      |
 | Compare two runs of the same map     | Compare Combats, tick both, read the green and red numbers. |
 | Watch your DPS while playing         | Open the Overlay; add more columns with ⛭.                  |
@@ -937,6 +1034,7 @@ written into the settings folder under the new name.
 | A combat is named wrongly                     | One of your own naming rules is matching first                            | Settings → Analysis → Combat Names; a warning mark shows which rule overlaps.                              |
 | The upload produced no ladder entries         | That map and difficulty have no ladder for the period, or it is solo-only | Nothing to fix; the run is still uploaded.                                                                 |
 | A player's DPS is lower than the summary says | Rows are ticked off, or the table is narrowed to a damage type            | Tick the player's own row to bring every row back, and pick **Every type** in the `☰ Type` list.           |
+| The list went empty after using the deaths menu | You are browsing, several players are ticked, and no fight has all of them alive | Untick all but one. While you are browsing, the menu keeps the runs *every* ticked player came through — not any of them. |
 
 ## FAQ
 

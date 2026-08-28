@@ -9,7 +9,7 @@ path a log line takes to become a number in a table, and links onward.
 
 | Document                  | Scope                                                                                                                            |
 |---------------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| `ARCHITECTURE.md`         | Modules, threads, data flow, UI conventions. The entry point.                                                                    |
+| `ARCHITECTURE.md`         | Modules, threads, data flow, UI conventions, and where the tuned numbers live. The entry point.                                  |
 | `COMBATLOG_FORMAT.md`     | What the log's numeric fields mean per line kind, the sources for it, the resistance formulas, and what the log cannot tell you. |
 | `HEALING_MODEL.md`        | The three disjoint healing pools, how a record is routed into one, and the two grouping orders.                                  |
 | `DIFFICULTY_DETECTION.md` | How a combat's map and difficulty are derived, and why name rules alone cannot do it.                                            |

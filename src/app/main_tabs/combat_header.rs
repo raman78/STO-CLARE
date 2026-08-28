@@ -16,7 +16,7 @@ use crate::{
 /// reader's note on it.
 pub struct CombatHeader {
     /// Name and times as one line, the way [`Combat::identifier`] writes it:
-    /// `[Team] [TFO] Infected: The Conduit (Space) [Elite] | 2026-08-19
+    /// `[Team] [Space] [TFO] Infected: The Conduit [Elite] | 2026-08-19
     /// 21:14:03 - 21:18:15`. One string rather than two so it is set in one
     /// face — the date is as much a part of which fight this is as the name.
     identifier: String,
@@ -65,14 +65,9 @@ impl CombatHeader {
             return;
         }
 
-        // Room for the whole note at once. Measured from the font in use rather
-        // than fixed, so it holds at any UI scale; the slack covers letters
-        // wider than a digit, since the face is proportional and no width can
-        // fit every possible fifty characters.
-        let note_width = ui
-            .fonts_mut(|fonts| fonts.glyph_width(&TextStyle::Body.resolve(ui.style()), '0'))
-            * MAX_NOTE_CHARS as f32
-            * 1.2;
+        // The same room the Note column in the list of fights reserves, so a
+        // note that fits here fits there.
+        let note_width = crate::app::tuning::note_width(ui);
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(

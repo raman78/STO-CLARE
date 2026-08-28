@@ -33,6 +33,7 @@ mod date_range;
 pub mod desktop_install;
 mod export;
 mod fonts;
+mod job;
 mod log_consolidation;
 pub mod logging;
 mod main_tabs;
@@ -43,6 +44,7 @@ mod state;
 mod status;
 mod summary_copy;
 pub mod theme;
+mod tuning;
 
 // The layer-shell overlay backend lives under `overlay::layer_shell`; re-export
 // the startup helper so main.rs can build the shared wgpu stack (see main.rs).
@@ -223,6 +225,18 @@ impl eframe::App for App {
         if let Some(position) = self.state.overlay.position() {
             self.state.settings.general.overlay_position = Some(position);
         }
+        // What the analysis thread is doing, read once for this frame: the
+        // window below says so, and the list of fights is inert while it runs.
+        let job = self.state.analysis_handler.job_progress();
+        if job.is_running() {
+            // Nothing on this side sends anything while a job runs — the
+            // thread only reaches the info channel between instructions — so
+            // without this the progress would stand still at whatever it read
+            // on the frame the last click drew.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        self.show_job_progress(job, ui.ctx());
         CentralPanel::default().show_inside(ui, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
@@ -389,6 +403,7 @@ impl eframe::App for App {
                     comparing: self.compare.is_open(),
                     comparison: &slots,
                     ladder_runs: &ladder_runs,
+                    locked: job.is_running(),
                 };
                 let action = self
                     .combats_panel
@@ -510,6 +525,82 @@ impl App {
         }
         log::info!("ladder: reading {}", run.display());
         self.state.analysis_handler.read_one_log(run);
+        // The run lands in the list, so the list is brought out to receive it.
+        // Done at the press rather than when the fight arrives: the point is to
+        // answer the press, and reading the log takes a moment during which
+        // nothing else on screen would say the magnifier had done anything.
+        self.combats_panel.open();
+    }
+
+    /// Says what the analysis thread is doing while it clears the log, and
+    /// offers to call it off where that is still safe.
+    ///
+    /// A window rather than a modal: the fight already on screen is worth
+    /// reading while the log is rewritten, and nothing about reading it is
+    /// dangerous. What must not be touched is the list — a fight is asked for
+    /// by its place in it — and that is greyed out on its own
+    /// ([`CombatsListView::locked`]).
+    ///
+    /// It has no close button. There is nothing to close: it goes when the work
+    /// does, and a window the reader could dismiss would leave them looking at
+    /// a list that is still about to change.
+    fn show_job_progress(&self, job: job::JobProgress, ctx: &Context) {
+        if !job.is_running() {
+            return;
+        }
+        let stopping = self.state.analysis_handler.cancel_requested();
+        Window::new("Clearing the log")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.set_min_width(tuning::JOB_WINDOW_WIDTH);
+                match job.fraction() {
+                    // Counted: how far through the fights being kept.
+                    Some(fraction) => {
+                        ui.add(
+                            ProgressBar::new(fraction)
+                                .text(format!("{} of {}", job.done, job.total)),
+                        );
+                    }
+                    // Nothing to count — the file is being written, or read
+                    // back in one go. A bar here would be a made-up number.
+                    None => {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label("Working…");
+                        });
+                    }
+                }
+                ui.label(job.phase.label());
+                ui.add_space(6.0);
+
+                ui.horizontal(|ui| {
+                    // Offered only while nothing has been written yet. Past
+                    // that the log is being replaced and there is no half way
+                    // to stop at, so the button says why rather than
+                    // disappearing and leaving the reader looking for it.
+                    let can_cancel = job.phase.can_cancel() && !stopping;
+                    if ui
+                        .add_enabled(can_cancel, Button::new("Cancel"))
+                        .hover("Stop, and leave the log exactly as it is.")
+                        .disabled_hover(match stopping {
+                            true => "Stopping.",
+                            false => {
+                                "The log is already being written; this cannot be stopped \
+                                      part way."
+                            }
+                        })
+                        .clicked()
+                    {
+                        log::info!("clearing the log: cancel asked for");
+                        self.state.analysis_handler.cancel_job();
+                    }
+                    if stopping {
+                        ui.label(RichText::new("Stopping…").weak());
+                    }
+                });
+            });
     }
 
     /// Takes a run out of the list again.
@@ -767,12 +858,20 @@ impl App {
                         Some(summary.base_name.clone()),
                         difficulty_filter(&summary),
                     );
+                    let start = summary.start;
                     self.ladder_runs.retain(|run| run.path != path);
                     self.ladder_runs.push(LadderRun {
                         path,
                         combat,
                         summary,
                     });
+                    // And on screen, which is what the magnifier says it does.
+                    // The run was pressed on a row of its own over there; a row
+                    // added to a list and left for the reader to find is an
+                    // extra step the button already promised away. Pressing it
+                    // on several runs leaves the last one showing and the rest
+                    // a double-click away, which is what the list is for.
+                    self.open_combat(start);
                 }
                 AnalysisInfo::Refreshed {
                     latest_combat,
