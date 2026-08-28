@@ -59,7 +59,7 @@ struct LadderFacts {
 }
 
 /// A run from the ladder, named the way the program names a combat of its own:
-/// `[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
+/// `[Solo] [Space] [TFO] Hive Onslaught [Elite]`.
 ///
 /// Whether it was solo is the server's own test — a run enters a solo table only
 /// where the log held exactly one player (`combatlog/models/combatlog.py`:
@@ -70,8 +70,15 @@ struct LadderFacts {
 /// whether it was solo on which tables the run was entered into — and spells
 /// some maps differently from us ("Hive: Onslaught" against our "Hive
 /// Onslaught"). So the map is matched against our own curated names, ignoring
-/// punctuation and case, and the rest is appended in the order the program uses.
-/// A map we do not know keeps the ladder's spelling rather than being dropped.
+/// punctuation and case, and the pieces are handed to the analyzer's own
+/// `compose_combat_name`. A map we do not know keeps the ladder's spelling
+/// rather than being dropped.
+///
+/// Composed there rather than here so the two cannot say different things about
+/// the same fight: they did, for as long as it took to notice that a run read
+/// `[TFO] Hive Onslaught (Space) [Elite]` in the ladder window and
+/// `[Space] [TFO] Hive Onslaught [Elite]` the moment it was fetched into the
+/// list.
 fn ladder_combat_name(map: &str, space: bool, level: LadderDifficulty, solo: bool) -> String {
     let ours = crate::analyzer::curated_map_names()
         .into_iter()
@@ -80,14 +87,13 @@ fn ladder_combat_name(map: &str, space: bool, level: LadderDifficulty, solo: boo
             squashed(bare) == squashed(map)
         })
         .unwrap_or_else(|| map.to_owned());
-    let mut name = String::new();
-    name.push_str(if solo { "[Solo] " } else { "[Team] " });
-    name.push_str(&ours);
-    name.push_str(if space { " (Space)" } else { " (Ground)" });
-    if let Some(level) = level.api_value() {
-        name.push_str(&format!(" [{level}]"));
-    }
-    name
+    crate::analyzer::compose_combat_name(
+        ours,
+        solo,
+        // The ladder splits its maps two ways only; there is no shuttle table.
+        Some(if space { "Space" } else { "Ground" }),
+        level.api_value(),
+    )
 }
 
 /// Letters and digits only, folded to lower case: what two spellings of the same
@@ -1721,10 +1727,24 @@ mod tests {
     /// A run from the ladder should read like one of your own combats, so the
     /// two sit side by side in a comparison without looking like they came from
     /// different programs.
+    ///
+    /// Asserted against `Combat::name`'s own composer rather than against a
+    /// string written out here: the two used to be spelled in two places and
+    /// drifted apart, and a literal on both sides of the comparison would not
+    /// have noticed.
     #[test]
     fn a_ladder_run_is_named_the_way_the_program_names_a_combat() {
         assert_eq!(
-            "[Team] [TFO] Hive Onslaught (Space) [Elite]",
+            crate::analyzer::compose_combat_name(
+                "[TFO] Hive Onslaught".to_owned(),
+                false,
+                Some("Space"),
+                Some("Elite")
+            ),
+            ladder_combat_name("Hive: Onslaught", true, LadderDifficulty::Elite, false)
+        );
+        assert_eq!(
+            "[Team] [Space] [TFO] Hive Onslaught [Elite]",
             ladder_combat_name("Hive: Onslaught", true, LadderDifficulty::Elite, false)
         );
     }
@@ -1736,7 +1756,7 @@ mod tests {
     fn a_map_spelled_differently_still_finds_our_name() {
         assert!(
             ladder_combat_name("Hive: Onslaught", true, LadderDifficulty::Any, false)
-                .starts_with("[Team] [TFO] Hive Onslaught")
+                .starts_with("[Team] [Space] [TFO] Hive Onslaught")
         );
     }
 
@@ -1745,7 +1765,7 @@ mod tests {
     #[test]
     fn solo_leads_and_an_unsplit_level_adds_nothing() {
         assert_eq!(
-            "[Solo] [TFO] Bug Hunt (Ground)",
+            "[Solo] [Ground] [TFO] Bug Hunt",
             ladder_combat_name("Bug Hunt", false, LadderDifficulty::Any, true)
         );
     }
@@ -1755,7 +1775,7 @@ mod tests {
     #[test]
     fn an_unknown_map_keeps_the_ladders_spelling() {
         assert_eq!(
-            "[Team] Fictional Map (Space) [Elite]",
+            "[Team] [Space] Fictional Map [Elite]",
             ladder_combat_name("Fictional Map", true, LadderDifficulty::Elite, false)
         );
     }
