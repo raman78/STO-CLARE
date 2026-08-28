@@ -107,12 +107,16 @@ Combat::update() ─▶ Combat::update_detection()
                        └─ detection::detect(&DETECTION_RULES, &view) ─▶ Detected
                               stored on Combat.detected_map / .detected_difficulty
 
-AnalysisHandler::latest_info() ─▶ AnalysisInfo::Refreshed { difficulties, .. }
-   ─▶ App.combat_difficulties ─▶ CompareView difficulty filter
+AnalysisContext::latest_info() ─▶ AnalysisInfo::Refreshed { combats, .. }
+   ─▶ App.combats: Arc<[CombatSummary]> ─▶ the combats list's level menu
+      (CombatSummary::difficulty; see docs/ARCHITECTURE.md, "The filter menus")
 
 Combat::name() ─▶ base = user rules ? join names : detected_map ?? "Combat"
-                  append_detected_combat_type(base, detected_combat_type) ─▶ "... (Ground)"
-                  append_detected_difficulty(base, detected_difficulty) ─▶ "... [Elite]"
+                  prepend_detected_combat_type(base, detected_combat_type)
+                                                              ─▶ "[Ground] ..."
+                  append_detected_difficulty(base, detected_difficulty)
+                                                              ─▶ "... [Elite]"
+                  ─▶ "[Solo] [Ground] [TFO] Bug Hunt [Elite]"
 ```
 
 The Combat Name Rules editor (`app/settings/analysis::CombatNameRules`) lists the
@@ -215,17 +219,20 @@ no tier threshold. Presence is widened; tier resolution is unchanged.
 
 Every catalogued map carries a curated `combat_type` — "Space" (156), "Ground"
 (44) or "Shuttle" (3) — taken from the STO wiki. The log states no such thing, so
-this is metadata, not detection. It rides along in `Detected::combat_type` and is
-appended in parentheses: `[TFO] Into the Hive (Ground) [Advanced]`.
+this is metadata, not detection. It rides along in `Detected::combat_type` and
+goes in front of the name: `[Ground] [TFO] Into the Hive [Advanced]`.
 
 It is **not** folded into `MapDef::display_name`, even though that would be
 shorter. That string is what the settings editor matches user naming rules
 against (`overlapping_maps`), so appending an environment there would stop a rule
 named after the map from being recognized as overlapping it.
 
-`append_detected_combat_type` skips the suffix when the base name already
-mentions the environment, so a user rule called "Bug Hunt Ground" does not become
-"Bug Hunt Ground (Ground)".
+`prepend_detected_combat_type` skips the environment when the base name already
+mentions it, so a user rule called "Bug Hunt Ground" does not become
+"[Ground] Bug Hunt Ground". It goes in front rather than trailing in
+parentheses so that a name reads in the same order as the columns of the
+combats list — where it was fought, who fought it, what kind of content, which
+map, at which level.
 
 ## The rules (`detection_rules.json`)
 

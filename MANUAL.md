@@ -254,7 +254,7 @@ runs, with the same handles ticked.
 **Copy Combat Summary** builds a single line, ready to paste into the game chat:
 
 ```
-CLA - [TFO] Infected: The Conduit (Space) [Elite] — Cheops build (12:32.200):
+CLA - [Solo] [Space] [TFO] Infected: The Conduit [Elite] — Cheops build (12:32.200):
 [PlayerName: DPS|Dmg] / @you: 225k|169M / @teammate: 174k|130M
 ```
 
@@ -798,8 +798,9 @@ time. They are folded into one row.
 
 That row can say more than any of the originals could. A ladder entry carries no
 map and no level of its own; both live on the tables it is in. So the folded row
-is named from the set of them, in the same shape the program names your own
-fights: `[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
+is named from the set of them — the map, whether it was fought solo, where it
+was fought and at what level, in one line:
+`[Solo] [TFO] Hive Onslaught (Space) [Elite]`.
 
 **Rank** is then the run's placing **in its own table**, not its position in the
 answer — which is why three rows in a row can all say 1. They are firsts in three
@@ -1032,7 +1033,7 @@ written into the settings folder under the new name.
 | A combat is named wrongly                     | One of your own naming rules is matching first                            | Settings → Analysis → Combat Names; a warning mark shows which rule overlaps.                              |
 | The upload produced no ladder entries         | That map and difficulty have no ladder for the period, or it is solo-only | Nothing to fix; the run is still uploaded.                                                                 |
 | A player's DPS is lower than the summary says | Rows are ticked off, or the table is narrowed to a damage type            | Tick the player's own row to bring every row back, and pick **Every type** in the `☰ Type` list.           |
-| The list went empty after using the deaths menu | Several players are ticked, and no fight has all of them alive             | Untick all but one. The menu keeps the runs *every* ticked player came through, not any of them.           |
+| The list went empty after using the deaths menu | You are browsing, several players are ticked, and no fight has all of them alive | Untick all but one. While you are browsing, the menu keeps the runs *every* ticked player came through — not any of them. |
 
 ## FAQ
 

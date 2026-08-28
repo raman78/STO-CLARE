@@ -384,10 +384,15 @@ use so it holds at any UI scale. Both places that show a note ask for it — the
 field under the tabs where one is written, and `CombatColumn::Note`, which
 **reserves** it whether or not there is a note to show. Sized to its rows the
 column was a sliver on a log nobody had written in, and the first note anybody
-wrote moved every column beside it. Measured cost: 440 points of the panel's
-width at the default scale (see `print_column_widths`), which is why
-`PANEL_AUTO_WIDTH` is close to being reached by a long map name and a
-comparison's two extra columns together.
+wrote moved every column beside it.
+
+Measured cost: **440 points** of panel width at the default scale
+(`print_column_widths`, the last figure in each row it prints). That is most of
+the headroom `PANEL_AUTO_WIDTH` had: with a run from the ladder in the list —
+which adds the column its `✕` sits in — and a comparison being picked, the
+panel reaches the cap and its table scrolls sideways. Anything that has to be
+photographed beside the panel no longer fits at 1280×720, which is why
+`demo/screenshots.sh` folds the panel away before shooting `ladder-run`.
 
 The slack is a judgement, not a guarantee: the face is proportional, so fifty
 `M`s are wider than the room reserved and would still push the column out. Fifty
@@ -643,9 +648,10 @@ second press threw away the fetch already running.
 
 #### What a selected combat costs
 
-Nothing caps the selection (`MAX_COMBATS` is gone). What gives way instead is
-stated in the list's footer by `compare::selection_hint`, because both limits
-are gradual:
+Nothing caps the selection: there is no maximum, and none of the two limits
+below is enforced. What gives way instead is stated in the list's footer by
+`compare::selection_hint` (`MANY_COMBATS`, `COLORS_RUN_OUT_AT`), because both
+limits are gradual:
 
 | past | what happens | why |
 |------|--------------|-----|
@@ -1007,7 +1013,7 @@ noticed and the chart rebuilt for it.
 | where             | what it shows                                  | built by                    |
 |-------------------|------------------------------------------------|-----------------------------|
 | chart series name | `"<slot> — <note>"`, or the slot number alone  | `chart_label`               |
-| column header     | metric name / `#<slot>` / note, on three lines | `header_text` → `LayoutJob` |
+| column header     | metric name / `#<slot>` / note, on three lines | `header_lines` → `LayoutJob` |
 | the combats list  | a badge with the run's number, in its colour   | `combats_list::show_number_badge` |
 
 The header is a `LayoutJob` rather than a string because its parts differ in
@@ -1027,9 +1033,11 @@ from still gets `None`, and its number and note stay in the ordinary text
 colour.
 
 The note line is only added when some combat in the comparison carries one, and
-the header height follows (`header_height`): the table reserves the height
-before it draws, so `HEADER_LINE_HEIGHT` has to cover a row of the body font —
-which is asserted in a test rather than assumed.
+the header height follows (`header_height`: two lines of the body font, three
+with notes). The table reserves that height before it draws anything, so it is
+measured from the font in use rather than assumed — a line taller than the
+reserve had its bottom half cut off by the row below, which is asserted in a
+test.
 
 ### Why eframe/winit, and not SDL3
 
