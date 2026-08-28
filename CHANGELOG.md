@@ -1,6 +1,6 @@
 # Change Log
 
-# unreleased
+## v2.6.0
 
 ### Other Changes
 - the combats list can be narrowed to the fights nobody died in. The new **Any deaths** menu lists the players in the log with a tick box each — the log's owner at the top — and leaves only the runs every ticked player came through with no deaths. A search box and **Select all** / **Unselect all** keep it manageable in a log full of pug teams
