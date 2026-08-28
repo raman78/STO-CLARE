@@ -641,6 +641,11 @@ run beside the log removed the class.
 | cut out of the reader's log when saved | it *is* a log of one fight — `App::save_shown_combat` copies the file it was fetched into |
 | filtered by the list's menus | it is not a fight out of the log those menus narrow; it leads the list whatever the headings sort by |
 
+The magnifier brings the list out (`App::open_ladder_run` → `CombatsPanel::open`)
+at the **press**, not when the fight arrives. Reading the log takes a moment, and
+what the panel opening answers is the press: with the list folded away, adding a
+run to it changed nothing anybody could see.
+
 One thing the ladder window must be told: which runs are already open
 (`Records::show(.., already_open)`), so the magnifier on one of them is drawn
 spent and takes no click. The click used to land even on the greyed label, and a

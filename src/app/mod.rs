@@ -525,6 +525,11 @@ impl App {
         }
         log::info!("ladder: reading {}", run.display());
         self.state.analysis_handler.read_one_log(run);
+        // The run lands in the list, so the list is brought out to receive it.
+        // Done at the press rather than when the fight arrives: the point is to
+        // answer the press, and reading the log takes a moment during which
+        // nothing else on screen would say the magnifier had done anything.
+        self.combats_panel.open();
     }
 
     /// Says what the analysis thread is doing while it clears the log, and

@@ -823,7 +823,8 @@ adds it to your combats list.
 
 Your own log is not touched, and nothing is replaced: the run appears at the top
 of the list, in a colour that says it came from somewhere else, and stays there
-whichever way you sort. Double-click it to read it like any fight of your own —
+whichever way you sort. If the list was folded away, pressing 🔍 brings it out —
+the run has to land somewhere you can see it. Double-click it to read it like any fight of your own —
 all the tabs, the charts, the ability breakdown. The `✕` at the end of its row
 takes it back out of the list.
 

@@ -189,6 +189,17 @@ impl CombatsPanel {
         self.open
     }
 
+    /// Brings the list out where something has put a fight in it that the
+    /// reader did not go looking for — a run fetched from the ladder. Pressing
+    /// the magnifier over there dropped a row into a panel that was folded
+    /// away, so nothing on screen said the press had done anything.
+    ///
+    /// Nothing is given up by opening, unlike folding away (see [`Self::toggle`]),
+    /// and a list that is already out is left exactly as it is.
+    pub fn open(&mut self) {
+        self.open = true;
+    }
+
     pub fn toggle(&mut self) {
         self.open = !self.open;
         // Folding the list away gives up what was ticked for deletion: the
@@ -1617,6 +1628,28 @@ mod tests {
             Ordering::Less,
             compare(&mine, &empty, CombatColumn::Dps, Some("@me"), &notes)
         );
+    }
+
+    /// A run arriving from the ladder brings the list out, and takes nothing
+    /// away from a list that was already out: what is ticked for deletion is a
+    /// train of thought, and only folding the list away ends it.
+    #[test]
+    fn a_folded_list_is_brought_out_without_disturbing_what_is_ticked() {
+        let mut panel = CombatsPanel::new(false);
+        assert!(!panel.is_open());
+        panel.open();
+        assert!(panel.is_open());
+
+        panel.mode = PanelMode::Clearing;
+        panel.tick(at(0), true);
+        panel.open();
+        assert!(panel.is_open(), "already out, and still out");
+        assert_eq!(1, panel.to_delete.len(), "the ticks are left alone");
+
+        // Folding it away is the thing that gives them up.
+        panel.toggle();
+        assert!(!panel.is_open());
+        assert!(panel.to_delete.is_empty());
     }
 
     #[test]
