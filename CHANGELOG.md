@@ -4,6 +4,7 @@
 
 ### Fixes
 - the lines between a table's columns travel with the table when it is dragged sideways. They used to stay put on the screen while the figures slid past underneath, so the lines ended up running down the middle of the numbers instead of between them. Affects every table in the program
+- with **Averages** on in a comparison, the ability rows add up to the Total again. An ability used in only some of the runs was averaged over those runs alone while the Total was averaged over all of them, so the rows came to more than the figure above them with nothing on screen saying why. Damage, DPS, hits and Damage % now count a run without an ability as nothing for it; the rates — critical, accuracy, resistance, average hit, largest hit — still count only the runs it was used in, because a run where a weapon never fired has no rate to average in. A row missing from some of the runs carries a small **2/3** beside its figure, and hovering it says what the runs without it counted as and what the row itself did in the runs it was in. The averaged chart line is drawn to the same scale, and the spreadsheet gains a column saying how many runs each row was used in
 
 ## v2.6.0
 

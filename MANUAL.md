@@ -664,15 +664,35 @@ together: one column per metric, averaged over every run in the comparison.
 
 ![The same comparison, averaged](images/compare-averages.png)
 
-Every run counts once, and a run that never used an ability is left out of that
-ability's average rather than counted as a zero — two runs with the Kemocite
-proc average those two, not two out of twelve. Hover an averaged value and it
-tells you how many runs went into it, and the best and worst of them.
+Every run counts once — a long fight does not weigh more than a short one. What
+a run that never used an ability counts as depends on the kind of column, and
+the reason is that the two kinds answer different questions.
 
-The chart follows: instead of one line per run it draws the single line those
-runs average out to, over the length of the longest of them. It is a true
-average and not a total — two runs of 90k DPS average to 90k, not 180k — and the
-same goes for the hits charts.
+Damage, DPS, hits and Damage % are **shares of the run**, so a run without the
+ability counts as nothing for it. Fire the Kemocite proc in one run out of
+three and its averaged DPS is a third of what it did in that one run. That is
+what keeps the tree honest: the ability rows still add up to the Total above
+them, exactly as they do in a single run. Counted the other way — averaging the
+one run on its own — the rows came to more than the Total, and there was nothing
+on screen to say why.
+
+Critical %, Accuracy, Resistance, Average Hit and Max One-Hit are **rates**, and
+those average only the runs the ability was actually used in. A run where a
+weapon never fired has no critical rate to average in; reading it as 0% would
+show a collapse that never happened.
+
+A row that is missing from some of the runs carries a small **2/3** beside its
+figure, so a number divided by runs the ability was never used in does not read
+as a weak ability. Hover any averaged value and it tells you how many runs went
+into it, what the runs without it counted as, and the best and worst of them.
+
+The chart follows the same rule: instead of one line per run it draws the single
+line those runs average out to, over the length of the longest of them. Chart an
+ability used in one run out of three and the line is drawn at a third of its
+height, so it can be compared with the Total line above it — the legend says
+"average over 3 combats, flown in 1" so you can tell a rare ability from a weak
+one. It is a true average and not a total — two runs of 90k DPS average to 90k,
+not 180k — and the same goes for the hits charts.
 
 The differences disappear in this mode: an average has nothing to be measured
 against. Press the button again to go back to the columns.
@@ -688,6 +708,7 @@ What lands in the file:
 |-------------------------------------------------------|-----------------------------------------------------------------------|
 | Which runs it is of, with your notes and the player   | The coloured differences — a spreadsheet subtracts two columns itself |
 | One column per metric per run, or one averaged column | The chart                                                             |
+| In averages mode, how many runs each row was used in  |                                                                       |
 | Every ability row, folded away on screen or not       |                                                                       |
 
 The numbers arrive as numbers, so you can sort, total and chart them yourself.

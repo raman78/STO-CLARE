@@ -109,6 +109,46 @@ impl CompareMetric {
         !matches!(self, CompareMetric::Resistance)
     }
 
+    /// Whether a row's figure adds to the row above it, so a level of the tree
+    /// comes to the branch it hangs under.
+    ///
+    /// This is what decides how an average over several combats treats a run a
+    /// row was never flown in. A sum counts that run as nothing and stays
+    /// comparable with the Total — the abilities of a run add up to the run, so
+    /// their averages must add up to the average. A ratio cannot be read that
+    /// way: a combat in which an ability never fired has no critical rate, no
+    /// accuracy and no average hit, and folding a zero in would report a
+    /// collapse that never happened. Those average only the runs that have the
+    /// row. Same for the largest single hit, which is a maximum rather than a
+    /// sum.
+    ///
+    /// Damage % counts as a sum: it is a share of the row above, so the rows of
+    /// a level come to 100% in every single run, and only counting the runs
+    /// without them as nothing keeps their averages at 100% too. The one place
+    /// that reads oddly is a branch that is itself missing from some runs —
+    /// under it the shares come to less than 100%, because averaged over a
+    /// comparison they are shares of the whole of it rather than of that
+    /// branch.
+    ///
+    /// Spelled out arm by arm on purpose: a metric added later has to say which
+    /// of the two it is before it will compile.
+    pub fn adds_up(self) -> bool {
+        match self {
+            CompareMetric::Dps
+            | CompareMetric::TotalDamage
+            | CompareMetric::DamagePercentage
+            | CompareMetric::Hits
+            | CompareMetric::HitsPerSecond
+            | CompareMetric::BaseDps => true,
+            CompareMetric::Resistance
+            | CompareMetric::Critical
+            | CompareMetric::Flanking
+            | CompareMetric::Accuracy
+            | CompareMetric::MaxOneHit
+            | CompareMetric::AverageHit => false,
+        }
+    }
+
     /// Pull this metric out of a damage group; `None` when it does not apply.
     pub fn extract(self, group: &DamageGroup) -> Option<f64> {
         match self {

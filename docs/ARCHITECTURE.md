@@ -960,12 +960,37 @@ and a `Vec<Option<AverageCell>>` — one entry per configured column, averaged
 across the slots. The average is always built (a division per column), so
 `CompareSettings::show_averages` is a redraw and not a rebuild.
 
-The mean is plain: every combat counts once, percentages included, so the column
-states what the columns above it average out to rather than a differently
-weighted figure that no column shows. A row absent from a combat is left out
-instead of counted as zero — an ability flown in two runs out of twelve would
-otherwise read as a collapse. `AverageCell` therefore carries `count`, `min` and
-`max`, and `average_tooltip` says which of the two cases a number is.
+Every combat counts once — never weighted by how long a run was or how much it
+dealt, so the column states what the numbers above it average out to.
+
+What a run the row was never flown in counts as depends on the metric, decided
+by `CompareMetric::adds_up`:
+
+| Kind | Metrics | Divisor | Why |
+|---|---|---|---|
+| adds up | DPS, Total Damage, Damage %, Hits, Hits/s, Base DPS | every run of the comparison | in one run the rows come to the row above them, so their averages have to as well |
+| ratio | Resistance %, Critical %, Flanking %, Accuracy %, Average Hit, Max One-Hit | the runs that have the row | a run in which an ability never fired has no rate to average in, and a zero would report a collapse that never happened |
+
+The divisor for the first kind is `runs_in_play` — the columns whose player has
+a damage tree at all, *not* the column count, since a run the player is absent
+from has no figure on the Total either. It is computed once per rebuild and
+passed down `build_level` unchanged, so every depth divides by the same number;
+recounting per level would make a branch's children sum to something other than
+the branch. `Comparison::refresh_total` counts it off the whole trees rather
+than off the ticked subsets, for the same reason.
+
+This is a correctness property and not a matter of taste. Measured on a
+three-run comparison of one map: with the ratio rule applied to DPS as well, the
+ability rows came to 679'617 against a Total of 661'229 — the whole 18'388 gap
+being one ability flown in a single run, divided by that run alone. The
+regression test is `the_rows_average_out_to_the_row_above_them`.
+
+`AverageCell` carries both counts (`count`, `runs`) plus `over_all_runs`, so a
+diluted figure can say so instead of reading as a bad run: the table draws a weak
+`count/runs` beside any partial row, `average_tooltip` states what the missing
+runs counted as and what the row did in the runs it was in, and the spreadsheet
+export — which has no tooltip to hover — leads the averaged metrics with an
+`In combats` column (`CompareNode::present_in`).
 
 Averaged columns belong to every combat at once, so in that mode the note line
 and the ΔDPS breakdown columns are suppressed (`Comparison::show_table`): both
@@ -974,9 +999,14 @@ are about one combat measured against the reference.
 The chart follows the toggle too (`average_series`): one line instead of one per
 combat. Every combat's hits are pooled onto a single axis — a hit already
 carries its offset from the start of its own combat — and every figure is scaled
-by `1/n`. The charts are linear in the point values (a smoothed sum for the
-per-second lines, a bucketed sum for the bars), so the pooled-and-scaled series
-**is** the mean of the individual lines at every point, not an approximation.
+by `1/runs`, the same divisor the metrics that add up use, so a branch's line and
+the Total's line stay on one scale; charting a row against its own runs while the
+Total was charted against all of them drew two lines that do not compare. The
+charts are linear in the point values (a smoothed sum for the per-second lines, a
+bucketed sum for the bars), so the pooled-and-scaled series **is** the mean of
+the individual lines at every point, not an approximation. `average_label` says
+which runs the line is of ("average over 3 combats, flown in 1"), since a line
+drawn at a third of its height cannot show whether the ability is rare or weak.
 The window is the longest of the pooled combats, so no hit falls outside it; the
 tail is then an average of fewer runs than the head, which is unavoidable when
 runs differ in length.
