@@ -1,5 +1,10 @@
 # Change Log
 
+# unreleased
+
+### Fixes
+- the lines between a table's columns travel with the table when it is dragged sideways. They used to stay put on the screen while the figures slid past underneath, so the lines ended up running down the middle of the numbers instead of between them. Affects every table in the program
+
 ## v2.6.0
 
 ### Other Changes
