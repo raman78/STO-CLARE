@@ -294,18 +294,49 @@ struct MetricCell {
     delta: Option<DeltaCell>,
 }
 
-/// One metric of one row, averaged over the combats that have that row.
+/// One metric of one row, averaged over the combats — every combat counting
+/// once, never weighted by how long a run was or how much it dealt.
 ///
-/// A plain mean of the combats, each counting once — the number a player means
-/// by "my average DPS on this map". Combats the row is absent from are left out
-/// rather than counted as zero, which is why the count is carried and shown:
-/// an ability flown in two runs out of ten averages the two, and says so.
+/// What a run the row was never flown in counts as depends on the metric
+/// ([`CompareMetric::adds_up`]), because the two kinds of column answer two
+/// different questions:
+///
+/// - A metric that adds up (DPS, damage, hits) is divided by **every** run in
+///   the comparison, one the row is missing from counting as nothing. That is
+///   what keeps the tree readable: in a single run the rows come to the row
+///   above them, so their averages have to as well. Averaging an ability flown
+///   once over that one run alone left the rows adding up to more than the
+///   Total — measured on a three-run comparison, 18.4k DPS more than a Total of
+///   661.2k, all of it one ability used in a single run.
+/// - A ratio (critical %, accuracy, resistance, average hit, largest hit) is
+///   averaged over **only the runs that have the row**. A run in which an
+///   ability never fired has no critical rate to average in, and a zero there
+///   would report a collapse that never happened.
+///
+/// Both numbers are carried either way, so the cell can say which of the two it
+/// is instead of leaving a diluted figure to look like a bad run.
 struct AverageCell {
     value: f64,
     text: String,
+    /// How many of the runs have this row at all.
     count: usize,
+    /// How many runs the comparison is of.
+    runs: usize,
+    /// Whether the runs without the row were counted as nothing — true only
+    /// when the metric adds up *and* a run is actually missing it.
+    over_all_runs: bool,
+    /// Lowest and highest of the runs that have the row. The runs without it
+    /// are not a zero to be lowest: they have no figure at all.
     min: f64,
     max: f64,
+}
+
+impl AverageCell {
+    /// Whether this average is of fewer runs than the comparison holds — the
+    /// case the table marks and the tooltip explains.
+    fn is_partial(&self) -> bool {
+        self.count < self.runs
+    }
 }
 
 struct DeltaCell {
@@ -418,7 +449,8 @@ impl Comparison {
 
         // Top row is the player's overall total (root of the damage tree); the
         // ability groups hang under it, expanded by default.
-        let (cells, averages) = build_row(&parents, &self.columns);
+        let runs = runs_in_play(&parents);
+        let (cells, averages) = build_row(&parents, &self.columns, runs);
         let series = build_series(&parents, &hits_managers, &durations);
         let sub_nodes = build_level(
             &parents,
@@ -426,6 +458,7 @@ impl Comparison {
             &hits_managers,
             &durations,
             &self.columns,
+            runs,
             &mut id_source,
         );
         let sort_key = parents
@@ -512,6 +545,12 @@ impl Comparison {
                 .collect()
         };
 
+        // Counted off the whole trees rather than off the subsets: a run is in
+        // the comparison whether or not the rows left in the Total happen to
+        // have been flown in it, and the rows under it are divided by that same
+        // number.
+        let runs = runs_in_play(&self.parents());
+
         let (cells, averages, series) = {
             let parents: Vec<Option<&DamageGroup>> = if subsets.is_empty() {
                 self.parents()
@@ -529,7 +568,7 @@ impl Comparison {
                 .columns_slots()
                 .map(|s| combat_duration_seconds(&s.combat))
                 .collect();
-            let (cells, averages) = build_row(&parents, &self.columns);
+            let (cells, averages) = build_row(&parents, &self.columns, runs);
             let series = build_series(&parents, &hits_managers, &durations);
             (cells, averages, series)
         };
@@ -590,9 +629,10 @@ impl Comparison {
         let notes = &self.notes;
         let numbers = &self.numbers;
         let averages = self.averages;
+        let runs = runs_in_play(&self.parents());
         self.diagrams = find_node(&self.nodes, id).map(|node| {
             if averages {
-                let data = average_series(node).into_iter();
+                let data = average_series(node, runs).into_iter();
                 return DamageDiagrams::from_data(data, filter, time_slice);
             }
             let data = (0..n_slots).filter_map(|slot_i| {
@@ -651,9 +691,13 @@ impl Comparison {
 
         ui.label(
             RichText::new(if settings.compare.show_averages {
-                "Each column holds one metric averaged over the combats above — every combat \
-                 counting once, and only those a row appears in. Hover a value for how many \
-                 combats went into it, and its best and worst."
+                "Each column holds one metric averaged over the combats above, every combat \
+                 counting once. Damage, DPS, hits and Damage % are divided by all of them — a \
+                 combat without a row counts as nothing for it — so the rows still add up to the \
+                 Total; the rates (critical, accuracy, resistance, average and largest hit) \
+                 average only the combats a row was flown in. A row missing from some of them \
+                 carries a small \"2/3\" beside its figure. Hover a value for what went into it, \
+                 and its best and worst."
             } else {
                 "Each column group holds one metric, one column per combat. The small coloured \
                  number beside a value is its difference against the reference, which leads the \
@@ -1319,6 +1363,17 @@ impl Comparison {
             .collect();
 
         let mut columns = Vec::new();
+        // A sheet has no tooltip to hover, and an averaged figure is divided by
+        // every run in the comparison — so a row flown once in five reads low
+        // with nothing beside it to say why. The table marks those rows; here
+        // the count is a column of its own, leading the metrics because it is
+        // what the rest of the line has to be read against.
+        if averages {
+            columns.push(export::Column {
+                header: "In combats".to_string(),
+                decimals: 0,
+            });
+        }
         for column in self.columns.iter() {
             if averages {
                 columns.push(export::Column {
@@ -1462,11 +1517,20 @@ impl Comparison {
                 headers.push(HeaderCell::Cell {
                     metric: column.label(),
                     lines: header_lines(&font, text_color, "Avg", None, None),
+                    // Deliberately without a count of the combats: a run whose
+                    // player is not in it has no figure anywhere in the table
+                    // and is not averaged in either, so a number here would
+                    // contradict the one each cell's own tooltip carries.
                     tooltip: format!(
-                        "{} averaged over the {} combats in this comparison. Click to order the \
+                        "{} averaged over the combats in this comparison, {}. Click to order the \
                          rows by it.",
                         column.label(),
-                        n_slots
+                        if column.adds_up() {
+                            "a combat without a row counting as nothing for it so the rows add up \
+                             to the Total"
+                        } else {
+                            "counting only the combats a row was flown in"
+                        }
                     ),
                     span: 1,
                     sort: Some(SortBy::Average { metric }),
@@ -1806,9 +1870,27 @@ impl CompareNode {
                 if show_averages {
                     match self.averages.get(metric_i).and_then(|a| a.as_ref()) {
                         Some(average) => {
-                            let tooltip = average_tooltip(average, n_slots);
+                            let tooltip = average_tooltip(average);
                             r.cell_with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.label(&average.text).hover(tooltip);
+                                ui.label(&average.text).hover(tooltip.clone());
+                                // A row that is not in every run says so beside
+                                // its figure rather than only in the tooltip:
+                                // for the metrics that add up the figure is
+                                // divided by runs the row was never flown in,
+                                // and nothing else on the line would explain
+                                // why it reads low. To the left of the value,
+                                // so the column of numbers still lines up.
+                                if average.is_partial() {
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{}/{}",
+                                            average.count, average.runs
+                                        ))
+                                        .weak()
+                                        .small(),
+                                    )
+                                    .hover(tooltip);
+                                }
                             });
                         }
                         None => {
@@ -2561,15 +2643,38 @@ fn is_hidden(parent_depth: usize, ticks: &Ticks, node: &CompareNode) -> bool {
 }
 
 /// What an averaged value is made of: how many of the combats had this row at
-/// all, and how far apart the best and the worst of them were. An average of
-/// two runs out of twelve means something quite different from an average of
-/// all twelve, and the number alone cannot say which it is.
-fn average_tooltip(average: &AverageCell, n_slots: usize) -> String {
+/// all, what the runs without it counted as, and how far apart the best and the
+/// worst of them were. An average of two runs out of twelve means something
+/// quite different from an average of all twelve, and the number alone cannot
+/// say which it is — least of all when the row was divided by runs it is not in
+/// and the figure therefore reads low.
+fn average_tooltip(average: &AverageCell) -> String {
     let mut formatter = NumberFormatter::new();
+    let missing = average.runs - average.count;
+    let head = if !average.is_partial() {
+        format!("Average of the {} combats", average.runs)
+    } else if average.over_all_runs {
+        format!(
+            "Divided by all {} combats, and this row is in {} of them: the {missing} without it \
+             count as nothing, so the rows still add up to the Total. Its own average over the \
+             {} it was flown in is {}.",
+            average.runs,
+            average.count,
+            average.count,
+            formatter.format(
+                average.value * average.runs as f64 / average.count as f64,
+                2
+            )
+        )
+    } else {
+        format!(
+            "Average of the {} of {} combats that have this row — the other {missing} have no \
+             figure of this kind to average in",
+            average.count, average.runs
+        )
+    };
     format!(
-        "Average of {} of the {} combats\nlowest {}, highest {}",
-        average.count,
-        n_slots,
+        "{head}\nlowest {}, highest {}",
         formatter.format(average.min, 2),
         formatter.format(average.max, 2)
     )
@@ -2587,6 +2692,12 @@ fn collect_export_rows(
 ) {
     for node in nodes {
         let mut values = Vec::new();
+        // Leads the averaged metrics, matching the column the sheet declares:
+        // how many of the runs this row was flown in at all, which is what says
+        // whether an average was divided by runs that have no figure in it.
+        if averages {
+            values.push(Some(node.present_in() as f64));
+        }
         // One entry per configured column, whether or not this row has a value
         // for it, so every row lines up under the same headers.
         for metric_i in 0..node.averages.len() {
@@ -2617,26 +2728,33 @@ fn collect_export_rows(
 ///
 /// Every combat's hits are pooled onto one time axis — each hit already carries
 /// its offset from the start of its own combat — and every value is divided by
-/// the number of combats that have this row. The charts are linear in the hit
-/// values (a smoothed sum for the per-second lines, a bucketed sum for the
-/// bars), so a pooled series scaled by `1/n` *is* the mean of the individual
-/// lines, at every point, rather than an approximation of it.
+/// `runs`. The charts are linear in the hit values (a smoothed sum for the
+/// per-second lines, a bucketed sum for the bars), so the pooled-and-scaled
+/// series *is* the mean of the combats' own lines at every point, rather than an
+/// approximation of it — a combat with no hits on this row being one line at
+/// zero.
 ///
-/// Combats without the selected ability are left out of `n`, exactly as the
-/// table's averages leave them out: charting a run that never fired the thing
-/// as a zero would drag the line down for a reason that never happened.
+/// The divisor is `runs`, every combat in the comparison, exactly as the table's
+/// averaged column divides the metrics that add up. A combat that never fired
+/// the selected ability contributes no hits and so counts as nothing, which is
+/// what keeps a branch's line and the Total's line on the same scale — the
+/// reader's next move after reading a row is charting it against the whole.
 ///
 /// The window is the longest of the pooled combats, so no hit falls outside it.
 /// The tail is then the average of fewer runs than the head — unavoidable when
 /// runs differ in length, and the alternative (cutting at the shortest) throws
 /// away the end of every longer fight.
-fn average_series(node: &CompareNode) -> Option<PreparedDamageDataSet> {
+fn average_series(node: &CompareNode, runs: usize) -> Option<PreparedDamageDataSet> {
     let present: Vec<&SeriesData> = node.series.iter().flatten().collect();
     let n = present.len();
     if n == 0 {
         return None;
     }
-    let scale = 1.0 / n as f64;
+    // Divided by every run of the comparison, exactly as the averaged column
+    // is: charting a row flown once against its own single run, while the Total
+    // above it is charted against all of them, drew the two to scales that do
+    // not compare. The label says which runs it is of, since the line cannot.
+    let scale = 1.0 / runs.max(n) as f64;
     let points: Vec<PreparedHit> = present
         .iter()
         .flat_map(|series| series.hits.iter())
@@ -2651,7 +2769,7 @@ fn average_series(node: &CompareNode) -> Option<PreparedDamageDataSet> {
         .map(|series| series.combat_duration_s)
         .fold(0.0, f64::max);
     Some(PreparedDamageDataSet::base_new(
-        &average_label(n),
+        &average_label(n, runs.max(n)),
         total,
         points.into_iter(),
         duration,
@@ -2674,14 +2792,19 @@ fn scaled_point(mut point: PreparedHit, scale: f64) -> PreparedHit {
     point
 }
 
-/// What the averaged line is called. It says how many combats went into it,
-/// because that is the one thing the line itself cannot show — and it is not
-/// always every combat in the comparison.
-fn average_label(n: usize) -> String {
-    if n == 1 {
+/// What the averaged line is called. It says what the line was divided by, and
+/// how many of those combats actually had the row, because that is the one thing
+/// the line itself cannot show — a row flown once in five is drawn a fifth of its
+/// height, and without the label that reads as a weak ability rather than a rare
+/// one.
+fn average_label(present: usize, runs: usize) -> String {
+    if present < runs {
+        return format!("average over {runs} combats, flown in {present}");
+    }
+    if runs == 1 {
         "average of 1 combat".to_string()
     } else {
-        format!("average of {n} combats")
+        format!("average of {runs} combats")
     }
 }
 
@@ -2918,12 +3041,16 @@ fn players_by_dps(combat: &Combat) -> Vec<(NameHandle, String)> {
 
 /// Build one level of the aligned tree from the parent damage groups of each
 /// slot (union of child ability names), recursing into sub-groups.
+/// `runs` is the whole comparison's run count and is passed down unchanged, not
+/// recounted per level: an average is divided by the same number at every depth,
+/// which is what makes a level come to the row it hangs under.
 fn build_level(
     parents: &[Option<&DamageGroup>],
     name_managers: &[&NameManager],
     hits_managers: &[&HitsManager],
     durations: &[f64],
     columns: &[CompareMetric],
+    runs: usize,
     id_source: &mut u32,
 ) -> Vec<CompareNode> {
     let n = parents.len();
@@ -2952,7 +3079,7 @@ fn build_level(
             let id = *id_source;
             *id_source += 1;
             let sort_key = per_slot[0].map(|g| g.dps.all).unwrap_or(f64::NEG_INFINITY);
-            let (cells, averages) = build_row(per_slot, columns);
+            let (cells, averages) = build_row(per_slot, columns, runs);
             let series = build_series(per_slot, hits_managers, durations);
             let sub_nodes = build_level(
                 per_slot,
@@ -2960,6 +3087,7 @@ fn build_level(
                 hits_managers,
                 durations,
                 columns,
+                runs,
                 id_source,
             );
             CompareNode {
@@ -3061,10 +3189,12 @@ fn split_dps_difference(r1: f64, m1: f64, r2: f64, m2: f64) -> DpsBreakdown {
 
 /// One row of the table: a cell per slot, and the same row averaged across the
 /// slots. Both come out of one pass over the metrics, since they read the same
-/// numbers.
+/// numbers. `runs` is the comparison's run count, as [`build_averages`] takes
+/// it.
 fn build_row(
     per_slot: &[Option<&DamageGroup>],
     columns: &[CompareMetric],
+    runs: usize,
 ) -> (Vec<Option<SlotCell>>, Vec<Option<AverageCell>>) {
     let mut formatter = NumberFormatter::new();
 
@@ -3110,19 +3240,33 @@ fn build_row(
         })
         .collect();
 
-    let averages = build_averages(&raw, columns, &mut formatter);
+    let averages = build_averages(&raw, columns, &mut formatter, runs);
     (cells, averages)
 }
 
-/// Each column averaged over the combats that have a value for this row.
+/// How many runs an average is over: the columns whose player has a damage tree
+/// at all.
 ///
-/// A plain mean, every combat counting once — including for the percentages,
-/// so what the column shows is the average of the numbers above it rather than
-/// a differently-weighted figure that no column states.
+/// Not the column count. A run in which the player being read never appears has
+/// no figure anywhere in the table — not on the rows and not on the Total — so
+/// counting it would divide every average by a run that is not in any of them.
+fn runs_in_play(parents: &[Option<&DamageGroup>]) -> usize {
+    parents.iter().filter(|parent| parent.is_some()).count()
+}
+
+/// Each column averaged over the combats, every combat counting once.
+///
+/// `runs` is how many combats the whole comparison is of — the same number at
+/// every level of the tree, and not the length of `raw`, which counts columns
+/// rather than runs the player was in. It is what a metric that adds up is
+/// divided by, so a row missing from a run is worth nothing in it and the rows
+/// of a level still come to the row above them. Which metrics those are, and
+/// why a ratio is averaged over its own runs instead, is in [`AverageCell`].
 fn build_averages(
     raw: &[Option<Vec<Option<f64>>>],
     columns: &[CompareMetric],
     formatter: &mut NumberFormatter,
+    runs: usize,
 ) -> Vec<Option<AverageCell>> {
     columns
         .iter()
@@ -3136,11 +3280,19 @@ fn build_averages(
             if count == 0 {
                 return None;
             }
-            let value = values.iter().sum::<f64>() / count as f64;
+            // A row can never be in more runs than the comparison holds; if a
+            // caller ever says otherwise, the plain mean is the honest reading
+            // rather than a division by a number smaller than what went into it.
+            let runs = runs.max(count);
+            let over_all_runs = column.adds_up() && count < runs;
+            let divisor = if over_all_runs { runs } else { count };
+            let value = values.iter().sum::<f64>() / divisor as f64;
             Some(AverageCell {
                 value,
                 text: formatter.format(value, column.precision()),
                 count,
+                runs,
+                over_all_runs,
                 min: values.iter().copied().fold(f64::INFINITY, f64::min),
                 max: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             })
@@ -3408,16 +3560,18 @@ mod tests {
         }
     }
 
-    fn averages_of(raw: &[Option<Vec<Option<f64>>>]) -> Vec<Option<AverageCell>> {
+    /// DPS stands for the metrics that add up, Critical % for the ratios.
+    fn averages_over(raw: &[Option<Vec<Option<f64>>>], runs: usize) -> Vec<Option<AverageCell>> {
         build_averages(
             raw,
             &[CompareMetric::Dps, CompareMetric::Critical],
             &mut NumberFormatter::new(),
+            runs,
         )
     }
 
-    /// Every combat counts once, including for the percentages — the column
-    /// says what the numbers above it average out to.
+    /// Every combat counts once — the column says what the numbers above it
+    /// average out to, not a figure weighted by the length of a run.
     #[test]
     fn an_average_counts_every_combat_once() {
         let raw = vec![
@@ -3425,43 +3579,76 @@ mod tests {
             Some(vec![Some(200.0), Some(44.0)]),
             Some(vec![Some(300.0), Some(48.0)]),
         ];
-        let averages = averages_of(&raw);
+        let averages = averages_over(&raw, 3);
 
         let dps = averages[0].as_ref().unwrap();
         assert_eq!(200.0, dps.value);
         assert_eq!(3, dps.count);
+        assert!(!dps.is_partial());
         assert_eq!(100.0, dps.min);
         assert_eq!(300.0, dps.max);
 
         assert_eq!(44.0, averages[1].as_ref().unwrap().value);
     }
 
-    /// An ability flown in two runs out of five averages those two rather than
-    /// counting the other three as zero, which would read as a nerf that never
-    /// happened. The count is carried so the tooltip can say which it is.
+    /// A metric that adds up is divided by every run: an ability flown in one
+    /// run out of three is worth a third of that run to the comparison, which is
+    /// what makes the rows come to the Total.
     #[test]
-    fn an_absent_row_is_left_out_rather_than_counted_as_zero() {
-        let raw = vec![
-            Some(vec![Some(100.0), Some(40.0)]),
-            None,
+    fn a_sum_counts_a_run_without_the_row_as_nothing() {
+        let raw = vec![Some(vec![Some(300.0), None]), None, None];
+        let dps = averages_over(&raw, 3)[0].as_ref().unwrap().value;
+        assert_eq!(100.0, dps, "300 over the three runs, not over the one");
+    }
+
+    /// The rows of a level average out to the row above them, the way they do
+    /// in each single run. This is the property the whole rule exists for: a
+    /// three-run comparison where one ability was flown once used to show rows
+    /// adding up to more than the Total.
+    #[test]
+    fn the_rows_average_out_to_the_row_above_them() {
+        let total = vec![
+            Some(vec![Some(300.0), None]),
             Some(vec![Some(200.0), None]),
+            Some(vec![Some(100.0), None]),
         ];
-        let averages = averages_of(&raw);
+        // Flown in every run...
+        let beams = vec![
+            Some(vec![Some(200.0), None]),
+            Some(vec![Some(200.0), None]),
+            Some(vec![Some(100.0), None]),
+        ];
+        // ...and this one only in the first.
+        let torpedo = vec![Some(vec![Some(100.0), None]), None, None];
 
-        let dps = averages[0].as_ref().unwrap();
-        assert_eq!(150.0, dps.value, "the two combats that have it, not three");
-        assert_eq!(2, dps.count);
+        let average =
+            |raw: &[Option<Vec<Option<f64>>>]| averages_over(raw, 3)[0].as_ref().unwrap().value;
+        assert_eq!(
+            average(&total),
+            average(&beams) + average(&torpedo),
+            "the two rows have to come to the Total"
+        );
+    }
 
+    /// A ratio is averaged over the runs that have the row. A combat in which
+    /// an ability never fired has no critical rate, and counting it as 0% would
+    /// report a collapse that never happened.
+    #[test]
+    fn a_ratio_leaves_a_run_without_the_row_out() {
+        let raw = vec![Some(vec![None, Some(40.0)]), None, None];
+        let averages = averages_over(&raw, 3);
         let critical = averages[1].as_ref().unwrap();
-        assert_eq!(40.0, critical.value, "a metric can be missing on its own");
+        assert_eq!(40.0, critical.value, "the one run that has it");
         assert_eq!(1, critical.count);
+        assert!(critical.is_partial(), "and it still says so");
+        assert!(!critical.over_all_runs);
     }
 
     /// Nothing to average is an empty cell, not a zero.
     #[test]
     fn a_metric_no_combat_has_leaves_the_cell_empty() {
         let raw = vec![Some(vec![None, Some(40.0)]), None];
-        assert!(averages_of(&raw)[0].is_none());
+        assert!(averages_over(&raw, 2)[0].is_none());
     }
 
     /// The tooltip says how much of the comparison went into the number, which
@@ -3469,14 +3656,29 @@ mod tests {
     #[test]
     fn the_tooltip_says_how_many_combats_the_average_is_of() {
         let raw = vec![
-            Some(vec![Some(100.0), None]),
+            Some(vec![None, Some(20.0)]),
             None,
-            Some(vec![Some(300.0), None]),
+            Some(vec![None, Some(60.0)]),
         ];
-        let tooltip = average_tooltip(averages_of(&raw)[0].as_ref().unwrap(), 3);
-        assert!(tooltip.contains("2 of the 3"), "{tooltip}");
-        assert!(tooltip.contains("100"), "{tooltip}");
-        assert!(tooltip.contains("300"), "{tooltip}");
+        let tooltip = average_tooltip(averages_over(&raw, 3)[1].as_ref().unwrap());
+        assert!(tooltip.contains("2 of 3"), "{tooltip}");
+        assert!(tooltip.contains("20"), "{tooltip}");
+        assert!(tooltip.contains("60"), "{tooltip}");
+    }
+
+    /// A diluted figure reads low for a reason nothing else on the line shows,
+    /// so its tooltip says what it was divided by and what the row itself did in
+    /// the runs it was flown in.
+    #[test]
+    fn the_tooltip_of_a_diluted_average_says_so() {
+        let raw = vec![Some(vec![Some(300.0), None]), None, None];
+        let averages = averages_over(&raw, 3);
+        let average = averages[0].as_ref().unwrap();
+        assert!(average.over_all_runs);
+        let tooltip = average_tooltip(average);
+        assert!(tooltip.contains("all 3 combats"), "{tooltip}");
+        assert!(tooltip.contains("1 of them"), "{tooltip}");
+        assert!(tooltip.contains("300"), "the figure of the run it is in");
     }
 
     fn hit(damage: f64, time_millis: u32) -> Hit {
@@ -3799,6 +4001,8 @@ mod tests {
             value: 80.0,
             text: String::new(),
             count: 2,
+            runs: 2,
+            over_all_runs: false,
             min: 60.0,
             max: 100.0,
         })];
@@ -4210,8 +4414,8 @@ mod tests {
         assert_eq!(2, row.present_in());
     }
 
-    fn charted(node: &CompareNode) -> PreparedDamageDataSet {
-        average_series(node).expect("the row has a series to average")
+    fn charted(node: &CompareNode, runs: usize) -> PreparedDamageDataSet {
+        average_series(node, runs).expect("the row has a series to average")
     }
 
     /// The averaged line is the mean of the combats' lines: their hits pooled
@@ -4234,7 +4438,7 @@ mod tests {
             }),
         ];
 
-        let data = charted(&node);
+        let data = charted(&node, 2);
         assert_eq!(250.0, data.total_value, "the mean of 200 and 300");
         assert_eq!(20.0, data.duration_s, "the window covers the longer run");
         let damage: f64 = data
@@ -4247,11 +4451,13 @@ mod tests {
         assert_eq!(1.5, hits, "three pooled hits over two combats");
     }
 
-    /// A combat that never used the ability is left out of the average rather
-    /// than charted as a flat zero, which would drag the line down for a reason
-    /// that never happened — the same rule the table's averages follow.
+    /// A combat that never used the ability contributes no hits and counts as
+    /// nothing, exactly as it does in the table's averaged column: an ability
+    /// flown once in two runs is charted at half its height, and the line and
+    /// the figure beside it then say the same thing. The label carries what the
+    /// line cannot — that it is a rare ability rather than a weak one.
     #[test]
-    fn a_combat_without_the_ability_is_not_charted_as_zero() {
+    fn a_combat_without_the_ability_counts_as_nothing_in_the_line() {
         let mut node = node("Kemocite", vec![Some(0.0)], Vec::new());
         node.series = vec![
             Some(SeriesData {
@@ -4262,9 +4468,9 @@ mod tests {
             None,
         ];
 
-        let data = charted(&node);
-        assert_eq!(100.0, data.total_value, "one combat, not halved");
-        assert_eq!("average of 1 combat", data.name);
+        let data = charted(&node, 2);
+        assert_eq!(50.0, data.total_value, "100 over the two runs");
+        assert_eq!("average over 2 combats, flown in 1", data.name);
     }
 
     /// Nothing to average is no line at all, not an empty one.
@@ -4272,7 +4478,7 @@ mod tests {
     fn a_row_no_combat_has_is_not_charted() {
         let mut node = node("Nothing", vec![None], Vec::new());
         node.series = vec![None, None];
-        assert!(average_series(&node).is_none());
+        assert!(average_series(&node, 2).is_none());
     }
 
     fn node(name: &str, values: Vec<Option<f64>>, sub_nodes: Vec<CompareNode>) -> CompareNode {
@@ -4297,6 +4503,8 @@ mod tests {
                         value,
                         text: String::new(),
                         count: 1,
+                        runs: 1,
+                        over_all_runs: false,
                         min: value,
                         max: value,
                     })
@@ -4342,18 +4550,26 @@ mod tests {
     }
 
     /// In averages mode the file holds the same one column per metric that the
-    /// table does, not one per combat.
+    /// table does, not one per combat — led by how many combats the row was
+    /// flown in, which is the sheet's stand-in for the marker the table draws
+    /// beside a diluted figure.
     #[test]
     fn the_export_follows_the_averages_toggle() {
-        let nodes = vec![node("Total", vec![Some(100.0), Some(40.0)], Vec::new())];
+        let mut row = node("Total", vec![Some(100.0), Some(40.0)], Vec::new());
+        row.dps = vec![Some(100.0), None, Some(140.0)];
+        let nodes = vec![row];
 
         let mut per_combat = Vec::new();
         collect_export_rows(&nodes, 0, 1, false, &mut per_combat);
-        assert_eq!(2, per_combat[0].values.len());
+        assert_eq!(2, per_combat[0].values.len(), "one column per metric here");
 
         let mut averaged = Vec::new();
         collect_export_rows(&nodes, 0, 1, true, &mut averaged);
-        assert_eq!(vec![Some(100.0), Some(40.0)], averaged[0].values);
+        assert_eq!(
+            vec![Some(2.0), Some(100.0), Some(40.0)],
+            averaged[0].values,
+            "in two of the combats, then the two averaged metrics"
+        );
     }
 
     #[test]

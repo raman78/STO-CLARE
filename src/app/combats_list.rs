@@ -46,7 +46,7 @@ const PANEL_ID: &str = "combats panel";
 /// reason it has the value it has.
 use crate::app::tuning::{
     self, ARROW_SIZE, BADGE_PADDING, CELL_SPACING, HEADER_HEIGHT, PANEL_AUTO_WIDTH,
-    PANEL_MIN_WIDTH, PLAYER_PICKER_WIDTH, ROW_HEIGHT,
+    PANEL_MAX_SHARE, PANEL_MIN_WIDTH, PLAYER_PICKER_WIDTH, ROW_HEIGHT,
 };
 
 /// What the reader asked the list to do.
@@ -265,6 +265,28 @@ impl CombatsPanel {
         }
     }
 
+    /// How many of the ticks are on fights the filters are hiding.
+    ///
+    /// Only a comparison can have any: the other two modes prune their ticks to
+    /// what is on screen. Counted against the rows actually drawn, the runs
+    /// from the ladder among them, because that is what "on screen" means to
+    /// the reader looking for the tick they cannot find.
+    fn ticks_out_of_sight(&self, view: &CombatsListView<'_>, visible: &[usize]) -> usize {
+        if self.mode != PanelMode::Comparing {
+            return 0;
+        }
+        let shown: FxHashSet<NaiveDateTime> = view
+            .ladder_runs
+            .iter()
+            .map(|run| run.start)
+            .chain(visible.iter().map(|&i| view.combats[i].start))
+            .collect();
+        self.to_compare
+            .iter()
+            .filter(|start| !shown.contains(start))
+            .count()
+    }
+
     /// How many fights the mode has ticked.
     fn ticks(&self) -> Option<usize> {
         match self.mode {
@@ -315,10 +337,15 @@ impl CombatsPanel {
         // the reader would be left with, rather than a panel that fits its
         // table. A width of their own is theirs, and only the area we allow
         // ourselves caps it.
+        // How far the reader may pull it: a share of the window rather than a
+        // fixed figure, so a wide screen gives a wide list. Measured on the
+        // area the panel is about to be drawn into, which is the whole of it —
+        // the panel has not claimed its own space yet at this point.
+        let dragged_max = draggable_max(ui);
         let range = match (following_the_table, fits) {
             (true, Some(fits)) => fits..=fits,
-            (true, None) => PANEL_MIN_WIDTH..=PANEL_AUTO_WIDTH,
-            (false, _) => PANEL_MIN_WIDTH..=PANEL_AUTO_WIDTH,
+            (true, None) => PANEL_MIN_WIDTH..=dragged_max,
+            (false, _) => PANEL_MIN_WIDTH..=dragged_max,
         };
         let panel = Panel::left(PANEL_ID)
             .resizable(true)
@@ -345,7 +372,7 @@ impl CombatsPanel {
                 .response
                 .rect
                 .width()
-                .clamp(PANEL_MIN_WIDTH, PANEL_AUTO_WIDTH);
+                .clamp(PANEL_MIN_WIDTH, dragged_max);
         }
         action
     }
@@ -369,10 +396,14 @@ impl CombatsPanel {
     /// height — and the width — it had while filtered.
     ///
     /// And the mode, because a table's measured columns are kept *by position*:
-    /// picking fights for a comparison puts two columns in front of the rest,
-    /// so every column after them would be drawn at the width of the one two
-    /// places to its left until it had been measured again. Each mode measures
-    /// its own.
+    /// picking fights for a comparison adds the Player column and fills the
+    /// number column that browsing leaves empty, so the same position holds
+    /// different content in the two modes and would be drawn at the other's
+    /// width until it had been measured again. Each mode measures its own.
+    ///
+    /// The columns themselves no longer *move* between the modes — the number
+    /// leads the row either way (see `show_row`), which is what stopped the
+    /// fight's own columns sliding sideways when a comparison started.
     fn table_id(&self) -> Id {
         Id::new((
             "combats panel table",
@@ -472,23 +503,38 @@ impl CombatsPanel {
                 });
             });
         let visible = self.visible(&view);
-        // A tick on a fight the filters have since hidden would act on
-        // something nobody can see; the ticks are what is on screen.
-        // The runs from the ladder count as on screen: they are rows of this
-        // list, and the filters below do not reach them — they are not fights
-        // out of the log being filtered. Left out of this, a run ticked for a
+        // The runs from the ladder count as rows of this list wherever the
+        // ticks are pruned below: the filters do not reach them — they are not
+        // fights out of the log being narrowed. Left out, a run ticked for a
         // comparison was unticked again by the next frame, which is the whole
         // of what "it works oddly" was.
-        let shown: FxHashSet<NaiveDateTime> = view
-            .ladder_runs
-            .iter()
-            .map(|run| run.start)
-            .chain(visible.iter().map(|&i| view.combats[i].start))
-            .collect();
+        let from_the_ladder = view.ladder_runs.iter().map(|run| run.start);
         match self.mode {
             PanelMode::Browse => (),
-            PanelMode::Clearing => self.to_delete.retain(|start| shown.contains(start)),
-            PanelMode::Comparing => self.to_compare.retain(|start| shown.contains(start)),
+            // Deleting is pruned to **what is on screen**. The button rewrites
+            // the log and cannot be taken back, so a fight the filters are
+            // hiding must not be among what it takes with it.
+            PanelMode::Clearing => {
+                let shown: FxHashSet<NaiveDateTime> = from_the_ladder
+                    .chain(visible.iter().map(|&i| view.combats[i].start))
+                    .collect();
+                self.to_delete.retain(|start| shown.contains(start));
+            }
+            // Comparing is pruned only to **what the log still holds**. Picking
+            // the runs for a comparison out of a long log is a search: find the
+            // Krenim runs and tick two, then narrow to something else and tick
+            // another. Dropping the earlier ticks as the filters moved made
+            // that impossible — the reader ticked a second fight and the first
+            // one quietly left the comparison — and nothing is at risk here the
+            // way it is when the log is being rewritten: a comparison of runs
+            // that are not on screen is exactly what was asked for. The footer
+            // says how many of them are out of sight.
+            PanelMode::Comparing => {
+                let in_the_list: FxHashSet<NaiveDateTime> = from_the_ladder
+                    .chain(view.combats.iter().map(|combat| combat.start))
+                    .collect();
+                self.to_compare.retain(|start| in_the_list.contains(start));
+            }
         }
 
         // Claimed before the table, so the strip sits at the bottom of the
@@ -543,20 +589,26 @@ impl CombatsPanel {
                 }
             })
             .header_row(|r| {
+                // Which run of the comparison a fight is, ahead of the tick
+                // that made it one — a number is what the reader looks along
+                // the column for, and behind the boxes it was found by reading
+                // the row instead. Headed only while there is a comparison to
+                // number, but the column is there either way; see the row.
+                r.cell(|ui| {
+                    if comparing {
+                        ui.label(RichText::new("#").strong());
+                    }
+                });
                 // The tick column's heading stays empty, like the compare
                 // picker's.
                 r.cell(|_| {});
                 clicked_heading =
                     show_header_cells(r, dps_header(view.my_handle, comparing), Some(&self.sort));
                 if comparing {
-                    // In the order the cells below them are drawn: whose
-                    // figures are being read, then which run of the comparison
-                    // this is.
+                    // Whose figures are being read for it, at the end of the
+                    // fight's own columns.
                     r.cell(|ui| {
                         ui.label(RichText::new("Player").strong());
-                    });
-                    r.cell(|ui| {
-                        ui.label(RichText::new("#").strong());
                     });
                 }
                 // The column the runs from the ladder are taken back out of,
@@ -632,6 +684,17 @@ impl CombatsPanel {
         let mut drop_run = false;
 
         let row = t.selectable_row(highlighted, |r| {
+            // Which run of the comparison this is, at the head of the row. Held
+            // open whether or not one is being put together — and always as
+            // wide as the widest badge it could hold — for the same reason the
+            // ticks beside it are: a column that comes and goes drags every
+            // column after it sideways under the reader's pointer.
+            r.cell(|ui| {
+                ui.set_min_width(text_width(ui, "999") + BADGE_PADDING * 2.0);
+                if let (true, Some(number)) = (comparing, number) {
+                    show_number_badge(ui, number);
+                }
+            });
             // Kept whether or not there is anything to tick, so turning "Clear
             // Log File" on makes the boxes appear rather than shifting every
             // column of the table sideways under the reader's pointer.
@@ -657,23 +720,14 @@ impl CombatsPanel {
             if comparing {
                 // At the end of the row, after the fight's own columns: what a
                 // fight *is* reads the same whether or not a comparison is
-                // being put together, and these two are about the comparison
-                // rather than about the fight.
+                // being put together, and whose figures are read from it is
+                // about the comparison rather than about the fight.
                 player_cell = r
                     .cell(|ui| {
                         ui.visuals_mut().override_text_color = color;
                         show_player_picker(ui, combat, player_shown, &mut player);
                     })
                     .rect;
-                r.cell(|ui| {
-                    ui.set_min_width(text_width(ui, "999") + BADGE_PADDING * 2.0);
-                    match number {
-                        Some(number) => show_number_badge(ui, number),
-                        None => {
-                            ui.label("");
-                        }
-                    }
-                });
             }
             if !view.ladder_runs.is_empty() {
                 drop_cell = r
@@ -725,7 +779,9 @@ impl CombatsPanel {
         if fold {
             for player in combat.players.iter() {
                 t.row(|r| {
-                    show_player_cells(r, player, 1, formatter);
+                    // Past the number and the tick, so a player's figures sit
+                    // under the fight's own columns.
+                    show_player_cells(r, player, 2, formatter);
                 });
             }
         }
@@ -754,6 +810,7 @@ impl CombatsPanel {
             total: view.combats.len(),
             shown: visible.len(),
             selected: self.ticks(),
+            hidden: self.ticks_out_of_sight(view, visible),
         };
         let mut action = None;
         // Past a certain size a comparison gives something up; the list says
@@ -940,14 +997,20 @@ impl CombatsPanel {
         visible
     }
 
-    /// The search box reads the note as well as the name, so a fight can be
-    /// found by whatever the reader called it.
+    /// The search box reads the note and what was fired as well as the name, so
+    /// a fight can be found by whatever the reader called it — or by what they
+    /// flew in it, which is the one thing about a run they remember when they
+    /// have forgotten both.
     fn matches(&self, combat: &CombatSummary, notes: &CombatNotes) -> bool {
         let needle = self.search.trim().to_lowercase();
         if !needle.is_empty() {
             let note = notes.get(&CombatNotes::key_at(combat.start));
             if !combat.identifier.to_lowercase().contains(&needle)
                 && !note.to_lowercase().contains(&needle)
+                && !combat
+                    .abilities
+                    .iter()
+                    .any(|ability| contains_ignore_case(ability, &needle))
             {
                 return false;
             }
@@ -957,6 +1020,38 @@ impl CombatsPanel {
         }
         self.filter.matches(&CombatEntry::from(combat))
     }
+}
+
+/// The widest the reader may drag the combats panel: [`PANEL_MAX_SHARE`] of the
+/// window, never below [`PANEL_MIN_WIDTH`].
+///
+/// Measured on the `Ui` the panel is about to be drawn into, which still holds
+/// the whole of it — the panel claims its own space inside this call.
+///
+/// A width the reader set on a wide screen is **remembered whole**: it is only
+/// written while the edge is being dragged, so opening the same settings on a
+/// smaller window draws the panel clamped to that window and hands the old
+/// width back on the big one. Clamping what is stored would lose it.
+fn draggable_max(ui: &Ui) -> f32 {
+    (ui.available_width() * PANEL_MAX_SHARE).at_least(PANEL_MIN_WIDTH)
+}
+
+/// Whether `haystack` holds `needle`, which must already be lower case,
+/// ignoring case and **allocating nothing**.
+///
+/// The list is searched again for every fight on every frame. A fight carries a
+/// few dozen weapon and ability names, so a `to_lowercase()` per name would
+/// copy every name in the log sixty times a second — on a year's play that is
+/// the whole set, tens of thousands of little allocations per frame, for a
+/// search box that is usually empty.
+fn contains_ignore_case(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    haystack.char_indices().any(|(start, _)| {
+        let mut rest = haystack[start..].chars().flat_map(char::to_lowercase);
+        needle.chars().all(|wanted| rest.next() == Some(wanted))
+    })
 }
 
 /// The strip at the bottom of a list of fights: a little more room above and
@@ -974,6 +1069,13 @@ pub struct ListCounts {
     pub shown: usize,
     /// How many are ticked, where there is anything to tick.
     pub selected: Option<usize>,
+    /// How many of those ticks are on fights the filters are hiding.
+    ///
+    /// A comparison keeps its ticks as the filters move, so that it can be put
+    /// together out of several searches — which means the reader can be looking
+    /// at two ticked rows while the comparison beside them holds three runs.
+    /// This is the number that says why.
+    pub hidden: usize,
 }
 
 /// Which way the two buttons in a footer went.
@@ -1031,9 +1133,14 @@ impl ListCounts {
             true => format!("{} combats", self.total),
             false => format!("{} of {} combats", self.shown, self.total),
         };
-        match self.selected {
-            Some(selected) => format!("{selected}/{} selected", self.total),
-            None => of_the_log,
+        match (self.selected, self.hidden) {
+            (Some(selected), 0) => format!("{selected}/{} selected", self.total),
+            // Said out loud, because it is the one thing the rows cannot show:
+            // a tick that is still counted on a fight no longer on screen.
+            (Some(selected), hidden) => {
+                format!("{selected}/{} selected, {hidden} not on screen", self.total)
+            }
+            (None, _) => of_the_log,
         }
     }
 }
@@ -1514,6 +1621,7 @@ fn show_player_cells(
 mod tests {
     use super::*;
     use crate::analyzer::Difficulty;
+    use std::sync::Arc;
 
     fn combat(map: &str, players: &[(&str, f64)]) -> CombatSummary {
         CombatSummary {
@@ -1526,6 +1634,7 @@ mod tests {
             solo: players.len() == 1,
             start: NaiveDateTime::default(),
             duration: chrono::Duration::seconds(252),
+            abilities: Arc::from([]),
             players: players
                 .iter()
                 .map(|&(handle, dps)| PlayerSummary {
@@ -1667,6 +1776,48 @@ mod tests {
         assert!(!panel.matches(&combat, &notes));
     }
 
+    /// A run is also found by what was fired in it. Which build a fight was is
+    /// what a player remembers about it long after the map and the hour have
+    /// run together — and until now it could only be answered by opening the
+    /// fight and reading its damage tree.
+    #[test]
+    fn the_search_box_reads_what_was_fired() {
+        let mut panel = CombatsPanel::new(true);
+        let mut combat = combat("Infected Space", &[("@me", 100.0)]);
+        combat.abilities = Arc::from([
+            Box::from("Krenim Temporal Beam Array"),
+            Box::from("Photon Torpedo"),
+        ]);
+        let notes = CombatNotes::default();
+
+        panel.search = "krenim".to_owned();
+        assert!(panel.matches(&combat, &notes), "any case, part of a name");
+        panel.search = "Torpedo".to_owned();
+        assert!(panel.matches(&combat, &notes));
+        panel.search = "disruptor".to_owned();
+        assert!(!panel.matches(&combat, &notes), "nothing fired one");
+    }
+
+    /// The search is case-blind without copying anything: it runs over every
+    /// name of every fight on every frame.
+    #[test]
+    fn the_case_blind_search_finds_what_a_lowercased_copy_would() {
+        assert!(contains_ignore_case("Krenim Temporal Beam Array", "krenim"));
+        assert!(contains_ignore_case("Krenim Temporal Beam Array", "beam"));
+        assert!(contains_ignore_case("KRENIM", "krenim"));
+        assert!(!contains_ignore_case("Phaser Array", "krenim"));
+        // A needle longer than what is left cannot match, and must not read
+        // past the end of the name looking.
+        assert!(!contains_ignore_case("Beam", "beam array"));
+        assert!(
+            contains_ignore_case("anything", ""),
+            "an empty search asks nothing"
+        );
+        // Not every alphabet is ASCII, and a player's own group name can be
+        // written in any of them.
+        assert!(contains_ignore_case("Ćwiczenia Bojowe", "ćwiczenia"));
+    }
+
     fn view<'a>(combats: &'a [CombatSummary], notes: &'a CombatNotes) -> CombatsListView<'a> {
         CombatsListView {
             combats,
@@ -1805,6 +1956,124 @@ mod tests {
         );
     }
 
+    /// A comparison keeps the fights already ticked when the filters move on.
+    ///
+    /// Putting one together out of a long log is a search, and the search runs
+    /// more than once: find the runs on one build and tick a couple, then
+    /// narrow to something else and tick another. Pruning the ticks to what was
+    /// on screen turned that into "tick a fight, filter, tick a second, and the
+    /// first is quietly gone" — the reader saw a comparison of one run and no
+    /// reason for it. Clearing the log still prunes: that button rewrites the
+    /// log, so what it takes must be in front of the reader.
+    #[test]
+    fn a_filter_does_not_untick_what_a_comparison_already_holds() {
+        let notes = CombatNotes::default();
+        let mut first = combat("Japori", &[("@me", 100.0)]);
+        first.start = at(0);
+        let mut second = combat("Infected Space", &[("@me", 120.0)]);
+        second.start = at(30);
+        let combats = [first, second];
+
+        for (mode, kept) in [
+            (PanelMode::Comparing, true),
+            // The other mode acts on the log itself, and keeps its old rule.
+            (PanelMode::Clearing, false),
+        ] {
+            let ctx = Context::default();
+            crate::app::fonts::install(&ctx);
+            theme::apply(&ctx, theme::Theme::Dark);
+            let mut panel = CombatsPanel::new(true);
+            panel.mode = mode;
+            panel.tick(combats[0].start, true);
+
+            // Now search for something only the second fight answers, which
+            // takes the first one off screen, and tick that one too.
+            panel.search = "infected".to_owned();
+            let mut width = 900.0;
+            for _ in 0..2 {
+                let mut view = Some(CombatsListView {
+                    combats: &combats,
+                    notes: &notes,
+                    my_handle: None,
+                    shown: None,
+                    comparing: mode == PanelMode::Comparing,
+                    comparison: &[],
+                    ladder_runs: &[],
+                    locked: false,
+                });
+                let _ = ctx.run_ui(RawInput::default(), |ui| {
+                    if let Some(view) = view.take() {
+                        panel.show(view, &mut width, ui);
+                    }
+                });
+            }
+
+            assert_eq!(
+                kept,
+                panel.is_ticked(combats[0].start) == Some(true),
+                "{mode:?}: the fight ticked before the filter"
+            );
+        }
+    }
+
+    /// The footer says how many ticks are on fights the filters are hiding —
+    /// the one thing the rows themselves cannot show, and the answer to "why
+    /// does the comparison hold three runs when I can see two ticks".
+    #[test]
+    fn the_footer_says_how_many_ticks_are_out_of_sight() {
+        let counts = |selected, hidden| {
+            ListCounts {
+                total: 342,
+                shown: 12,
+                selected: Some(selected),
+                hidden,
+            }
+            .text()
+        };
+        assert_eq!("3/342 selected", counts(3, 0));
+        assert_eq!("3/342 selected, 1 not on screen", counts(3, 1));
+    }
+
+    /// The panel may be pulled across three quarters of the window, whatever
+    /// size the window is: a fixed ceiling reads as generous on a laptop and as
+    /// a cage on a wide screen, where the whole point of dragging it out is to
+    /// have the note column and a team's players open beside the fights.
+    ///
+    /// The quarter that is left is not spare room — it is what keeps the tabs
+    /// beside it readable, so the list cannot be dragged over the thing it
+    /// picks between.
+    #[test]
+    fn the_panel_may_be_pulled_across_three_quarters_of_the_window() {
+        let widest = |window: f32| {
+            let ctx = Context::default();
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(window, 900.0))),
+                ..Default::default()
+            };
+            let (mut room, mut most) = (0.0, 0.0);
+            let _ = ctx.run_ui(input, |ui| {
+                room = ui.available_width();
+                most = draggable_max(ui);
+            });
+            (room, most)
+        };
+
+        let (room, most) = widest(2560.0);
+        assert!(
+            (most - room * 0.75).abs() < 0.5,
+            "three quarters of {room}, not {most}"
+        );
+        assert!(
+            most > PANEL_AUTO_WIDTH,
+            "a wide screen reaches past what the panel gives itself: {most}"
+        );
+
+        // On a window narrow enough that three quarters would be unusable, the
+        // minimum wins — a panel below it is a column of ellipses.
+        let (_, most) = widest(300.0);
+        assert_eq!(PANEL_MIN_WIDTH, most);
+    }
+
     /// The Played window narrows by when a fight was, alongside the pickers
     /// that narrow by what it was — and against the fight's *start*, which is
     /// the one time in it the log fixes.
@@ -1846,6 +2115,7 @@ mod layout_tests {
     use super::*;
     use crate::app::theme;
     use eframe::egui::containers::panel::PanelState;
+    use std::sync::Arc;
 
     /// A column of short words is the same width whatever is in the rows.
     ///
@@ -1866,8 +2136,9 @@ mod layout_tests {
         );
         assert!(!short.is_empty(), "the table was drawn");
 
-        // The map's column is what a longer name widens.
-        let map = 4;
+        // The map's column is what a longer name widens. The fight's own
+        // columns start at 2: the comparison number and the tick lead the row.
+        let map = 5;
         assert!(long[map] > short[map], "{short:?} vs {long:?}");
         // Everything of a fixed kind stays put.
         for (column, width) in short.iter().enumerate() {
@@ -1881,13 +2152,17 @@ mod layout_tests {
         }
     }
 
-    /// The same column is the same width whichever the list is drawn for.
+    /// The same column is the same width whichever the list is drawn for, and
+    /// in the same place: starting a comparison must not move the table under
+    /// the reader.
     ///
-    /// Picking fights for a comparison puts two columns in front of the rest.
-    /// A table's measured columns are kept by *position*, so every column after
-    /// them was being drawn at the width of the one two places to its left —
-    /// which is why Size and Time did not line up between the two views of what
-    /// is otherwise the same table, drawn by the same code.
+    /// A table's measured columns are kept by *position*, so a column that
+    /// appears only while comparing drags every column after it sideways —
+    /// which is why Size and Time once did not line up between the two views of
+    /// what is otherwise the same table, drawn by the same code. The number
+    /// column is therefore drawn either way, empty while there is nothing to
+    /// number, and only the Player picker is added — at the end, where nothing
+    /// follows it.
     #[test]
     fn a_column_is_the_same_width_in_both_views() {
         let combats = [a_combat(
@@ -1898,13 +2173,19 @@ mod layout_tests {
         let browsing = measured_widths(&combats, false);
         let comparing = measured_widths(&combats, true);
 
-        // The two the comparison adds stand at the end; everything before them
-        // is the fight's own columns, and they have to match one for one.
-        assert_eq!(browsing.len() + 2, comparing.len());
+        assert_eq!(
+            browsing.len() + 1,
+            comparing.len(),
+            "only the Player column is added"
+        );
         assert_eq!(
             browsing[..],
             comparing[..browsing.len()],
             "{browsing:?} against {comparing:?}"
+        );
+        assert!(
+            browsing[0] > 0.0,
+            "the number column holds its room while browsing: {browsing:?}"
         );
     }
 
@@ -2249,6 +2530,7 @@ mod layout_tests {
             solo: size == "Solo",
             start: NaiveDateTime::default(),
             duration: chrono::Duration::seconds(3700),
+            abilities: Arc::from([]),
             players: vec![PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 121_700.0,
@@ -2273,6 +2555,7 @@ mod layout_tests {
             solo: false,
             start: NaiveDateTime::default(),
             duration: chrono::Duration::seconds(3700),
+            abilities: Arc::from([]),
             players: vec![PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 121700.0,

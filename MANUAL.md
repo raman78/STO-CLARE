@@ -71,9 +71,14 @@ player did:
       @Ettenurb                                                        88.4k
 ```
 
-The panel widens itself to fit the table and can be dragged wider or narrower;
-the width you set is remembered. The list keeps itself current while you play —
-new fights appear as they are logged, without moving what you are reading.
+The panel widens itself to fit the table and can be dragged wider or narrower —
+out to three quarters of the window, so a wide screen can hold the whole of a
+long note and a team's players open beside the fights. The quarter that is left
+keeps the tabs beside it readable. The width you set is remembered, and
+remembered whole: set it wide on a big screen, open the program on a small one,
+and it comes back the next time there is room for it. The list keeps itself
+current while you play — new fights appear as they are logged, without moving
+what you are reading.
 
 Tip: a fight that ran long can end up split across two rows. If the numbers look
 far too low, check the neighbouring row.
@@ -91,16 +96,19 @@ instead and is headed **Top DPS**. You can settle it yourself in
 
 ### Narrowing the list
 
-The menus in the panel — solo or team, type, level, map and deaths — cut the
-list down. Each only offers what the others leave reachable, so you cannot pick
-a combination that shows nothing. A menu with nothing left to offer — every
-fight on screen was fought solo, say — is greyed out rather than taken away, so
-the row of menus stays where you last saw it; hover one to read why it is
-greyed. The **Search** box matches the name of a fight
-and the note you wrote for it. **Played** narrows by when the fights were
-fought, with `24 h`, `7 days` and `30 days` filling the window in for you,
-counting back from the newest fight in the list. A **Clear filter** button
-appears once anything is set.
+The menus in the panel — solo or team, type, level, map, deaths and what dealt
+the damage — cut the list down. Each only offers what the others leave
+reachable, so you cannot pick a combination that shows nothing. A menu with
+nothing left to offer — every fight on screen was fought solo, say — is greyed
+out rather than taken away, so the row of menus stays where you last saw it;
+hover one to read why it is greyed.
+
+The **Search** box matches three things at once: the name of a fight, the note
+you wrote for it, and what was fired in it. Type `krenim` and you get the runs
+where a Krenim weapon dealt damage, whoever in the fight was flying it.
+**Played** narrows by when the fights were fought, with `24 h`, `7 days` and
+`30 days` filling the window in for you, counting back from the newest fight in
+the list. A **Clear filter** button appears once anything is set.
 
 Click into an empty **Played** field and it fills in with the oldest — or, on
 the right-hand side, the newest — fight in the list, ready to edit. Leave one
@@ -151,6 +159,54 @@ answers "how did *their* runs go", and a run without them is not one of theirs.
 While you are clearing the log the menu asks the opposite question — see
 [Deleting fights from the log](#deleting-fights-from-the-log).
 
+#### Finding the runs you flew something in
+
+The **Any damage** menu asks what dealt the damage rather than how the fight
+went. It lists every weapon, ability, pet and proc (a bonus effect that fires on
+its own) that appears in the Damage Dealt tree of the fights on screen — the
+same names you read on that tab — with a tick box each:
+
+```
+[ Dealt by: Krenim Temporal Beam Array ▾ ]
+ ┌──────────────────────────────────────────────────────┐
+ │ Show fights where every ticked weapon or ability     │
+ │ dealt damage                                         │
+ │ [ search weapons and abilities                   ]   │
+ │  Select all     Unselect all                         │
+ │ ──────────────────────────────────────────────────── │
+ │ ☑ Krenim Temporal Beam Array                         │
+ │ ☐ Omni-Directional Pahvan Proton Beam Array          │
+ │ ☐ Photon Torpedo - Spread III                        │
+ │ ☐ Resonance Shock                                    │
+ └──────────────────────────────────────────────────────┘
+```
+
+This is how you find the evening you flew a particular build without having
+written a note about it. What is at the top of the list is what you fly most: it
+is ordered by how many of the fights on screen each one appears in.
+
+**Tick more than one and it means all of them**, exactly like the deaths menu.
+Ticking a beam array and a torpedo gives you the runs that fired both — which is
+usually how a build is remembered. Tick two things you never flew together and
+the list comes up empty and says so at the bottom; untick one and it fills back
+in.
+
+The **search** box narrows the names, not the fights. **Select all** and
+**Unselect all** act on the names the search has left on screen.
+
+The menu offers what the fights left by the *other* menus fired, so it shrinks
+as you narrow elsewhere — pick a ground map and the space weapons leave the
+list. If a choice you make elsewhere leaves a ticked weapon with no fights at
+all, the program gives up one of the two rather than showing you an empty list:
+either the tick goes, or the menu you just used jumps back to "Any". Which of
+them gives way is not worth predicting — what matters is that the list comes
+back.
+
+Two things worth knowing. It counts damage by **anyone** in the fight, so in a
+team run a mate's weapon puts the fight on the list too. And it lists only what
+did the shooting — never who was shot at, so no Borg Spheres among the beam
+arrays.
+
 ### Describing a combat so you can find it again
 
 A list of runs on the same map, all called the same thing and told apart only by
@@ -158,7 +214,8 @@ a timestamp, is hard to read a week later. So every combat can be given a short
 description of your own.
 
 1. Open the combat.
-2. Click the **Note** field in the box above the tabs.
+2. Click the **Note** field, on its own line under the fight's name in the box
+   above the tabs.
 3. Type up to 50 characters: "new build", "no buffs", "rainbow boat", whatever
    tells you what that run was.
 
@@ -167,11 +224,18 @@ with that combat:
 
 ![The box above the tabs: which fight is open, and what you called it](images/combat-note.png)
 
+What you type is added to the line above, after a dash and in the same lettering
+as the name — so the heading over all six tabs reads **[Solo] [Space] [TFO]
+Infected: The Conduit [Elite] | 2026-09-02 14:33:32 - 14:41:10 — Full BA**. It
+follows your typing, so you can see how the run will read while you are still
+naming it.
+
 It shows up in the list's **Note** column as well, so a whole evening reads back
 by what you were flying rather than by the clock.
 
-The counter next to the field (`0/50`) tells you how much room is left. Clearing
-the text removes the description again.
+The counter next to the field (`0/50`) tells you how much room is left.
+**Clear** beside it takes the description off again, and is only there while
+there is something to take off.
 
 Tip: this pairs with **Compare Combats** — label two runs before comparing them,
 and you can tell at a glance which column is which build.
@@ -188,7 +252,8 @@ Nothing is ticked for you: what you tick here is what disappears, so the list
 starts at "nothing" rather than asking you to untick your way to safety.
 
 Only what you can see can be deleted: if a filter hides a ticked fight, its tick
-goes with it.
+goes with it. (Ticking fights for a comparison is the other way round — those
+ticks stay, because nothing is being rewritten.)
 
 #### While it is working
 
@@ -388,7 +453,7 @@ the row it is part of.
 Tip: the tick on the player's row takes every row of theirs out at once, and
 brings them all back. Half-filled means some are out.
 
-The eye next to **Name** takes the unticked rows oftrzeba f the screen, leaving only
+The eye next to **Name** takes the unticked rows off the screen, leaving only
 what the figures are made of. Press it again to bring them back — it only
 hides them; ticking is what decides the numbers.
 
@@ -436,11 +501,12 @@ and nothing to press when you are done.
 ![Picking combats to compare](images/compare-pick.png)
 
 Tick a fight and it joins the comparison there and then; untick it and it
-leaves. Each ticked fight gets a number in its own colour — the same number and
-colour its column carries in the table and its line on the chart — and a
-**Player** column saying whose figures are being read for it. A team fight holds
-five people's; the picker beside the row is where you say which of them the
-comparison is about.
+leaves. Each ticked fight gets a number in its own colour, in the **#** column
+at the very front of the list — the same number and colour its column carries in
+the table and its line on the chart — and a **Player** column at the far end
+saying whose figures are being read for it. A team fight holds five people's;
+the picker beside the row is where you say which of them the comparison is
+about.
 
 There is no limit on how many you tick. Two runs read most clearly side by side,
 but a whole evening's worth is a fair thing to ask for — see
@@ -453,8 +519,16 @@ heading is what tells them apart. And a very wide comparison takes a moment to
 build; the list says so beside the count.
 
 **Select all** and **Unselect all** at the bottom of the list work in bulk, and
-the same filters as ever narrow what you are choosing from. Only what you can
-see is ticked: if a filter hides a ticked fight, its tick goes with it.
+the same filters as ever narrow what you are choosing from.
+
+**A tick survives the filters.** Picking the runs for a comparison out of a long
+log usually takes more than one search — find the runs on one build and tick a
+couple, then narrow to something else and tick another — so a fight that a
+filter takes off the screen stays in the comparison. The count at the bottom
+says how many are out of sight (`3/342 selected, 1 not on screen`), and
+**Unselect all** empties the lot whether it is on screen or not. Deleting works
+the other way round: see [Deleting fights from the
+log](#deleting-fights-from-the-log).
 
 ![The comparison, with differences](images/compare-result.png)
 
@@ -664,15 +738,35 @@ together: one column per metric, averaged over every run in the comparison.
 
 ![The same comparison, averaged](images/compare-averages.png)
 
-Every run counts once, and a run that never used an ability is left out of that
-ability's average rather than counted as a zero — two runs with the Kemocite
-proc average those two, not two out of twelve. Hover an averaged value and it
-tells you how many runs went into it, and the best and worst of them.
+Every run counts once — a long fight does not weigh more than a short one. What
+a run that never used an ability counts as depends on the kind of column, and
+the reason is that the two kinds answer different questions.
 
-The chart follows: instead of one line per run it draws the single line those
-runs average out to, over the length of the longest of them. It is a true
-average and not a total — two runs of 90k DPS average to 90k, not 180k — and the
-same goes for the hits charts.
+Damage, DPS, hits and Damage % are **shares of the run**, so a run without the
+ability counts as nothing for it. Fire the Kemocite proc in one run out of
+three and its averaged DPS is a third of what it did in that one run. That is
+what keeps the tree honest: the ability rows still add up to the Total above
+them, exactly as they do in a single run. Counted the other way — averaging the
+one run on its own — the rows came to more than the Total, and there was nothing
+on screen to say why.
+
+Critical %, Accuracy, Resistance, Average Hit and Max One-Hit are **rates**, and
+those average only the runs the ability was actually used in. A run where a
+weapon never fired has no critical rate to average in; reading it as 0% would
+show a collapse that never happened.
+
+A row that is missing from some of the runs carries a small **2/3** beside its
+figure, so a number divided by runs the ability was never used in does not read
+as a weak ability. Hover any averaged value and it tells you how many runs went
+into it, what the runs without it counted as, and the best and worst of them.
+
+The chart follows the same rule: instead of one line per run it draws the single
+line those runs average out to, over the length of the longest of them. Chart an
+ability used in one run out of three and the line is drawn at a third of its
+height, so it can be compared with the Total line above it — the legend says
+"average over 3 combats, flown in 1" so you can tell a rare ability from a weak
+one. It is a true average and not a total — two runs of 90k DPS average to 90k,
+not 180k — and the same goes for the hits charts.
 
 The differences disappear in this mode: an average has nothing to be measured
 against. Press the button again to go back to the columns.
@@ -688,6 +782,7 @@ What lands in the file:
 |-------------------------------------------------------|-----------------------------------------------------------------------|
 | Which runs it is of, with your notes and the player   | The coloured differences — a spreadsheet subtracts two columns itself |
 | One column per metric per run, or one averaged column | The chart                                                             |
+| In averages mode, how many runs each row was used in  |                                                                       |
 | Every ability row, folded away on screen or not       |                                                                       |
 
 The numbers arrive as numbers, so you can sort, total and chart them yourself.

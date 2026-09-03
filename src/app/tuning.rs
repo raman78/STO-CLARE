@@ -35,6 +35,20 @@ pub const PANEL_MIN_WIDTH: f32 = 260.0;
 /// window leaves nothing to read a fight in.
 pub const PANEL_AUTO_WIDTH: f32 = 1200.0;
 
+/// How much of the window the reader may **drag** the combats panel across.
+///
+/// Widening itself and being widened are two different things: the panel stops
+/// growing on its own at [`PANEL_AUTO_WIDTH`], because nobody asked for a list
+/// that swallows the window, but a reader who wants the whole note column and
+/// every player of a team run open is asking for exactly that and should get
+/// it. Three quarters leaves the tabs beside it readable — enough to see which
+/// fight is open and what its Total says — which is what stops the panel being
+/// dragged over the thing it is for.
+///
+/// A quarter of a narrow window can be less than [`PANEL_MIN_WIDTH`]; the
+/// minimum wins there, since a panel below it is a column of ellipses.
+pub const PANEL_MAX_SHARE: f32 = 0.75;
+
 /// The gap either side of a column's contents in the combats table. Narrower
 /// than the tables' own default: a column holding "Solo" carried five points of
 /// gap on each side, which is a third as much again as the word.
@@ -60,6 +74,12 @@ pub const DEATHS_MENU_WIDTH: f32 = 230.0;
 /// How tall it may grow before it scrolls: a log of a year's play holds more
 /// handles than fit on screen, and a menu taller than the panel is unusable.
 pub const DEATHS_MENU_HEIGHT: f32 = 260.0;
+
+/// How wide the menu of what dealt the damage is drawn. Wider than the deaths
+/// menu because what it lists is longer: a full weapon name off a real build
+/// runs to "Omni-Directional Trilithium-Enhanced Phaser Beam Array", and a name
+/// wrapped over two lines beside a tick box cannot be read down a column.
+pub const DEALT_BY_MENU_WIDTH: f32 = 360.0;
 
 /// The narrowest a filter picker may be squeezed to — what it needs to be
 /// pointed at at all.

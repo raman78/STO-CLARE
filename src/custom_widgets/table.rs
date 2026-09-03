@@ -206,6 +206,8 @@ pub struct HeaderSlot<'a> {
     /// How far the body settled this frame, which is what the header is shifted
     /// by so the two stay level.
     offset_x: f32,
+    /// Where the columns begin on screen — see [`BodyOutput::columns_left`].
+    columns_left: f32,
 }
 
 pub struct TableBody<'a> {
@@ -339,7 +341,7 @@ impl<'a> Table<'a> {
         let mut state = State::load(ui, id);
         // A table with no header row has no groups; see `Table::header`.
         state.ungroup();
-        let (body_rect, _) = show_body(
+        let body = show_body(
             ui,
             id,
             &mut state,
@@ -353,8 +355,8 @@ impl<'a> Table<'a> {
             },
             add_body,
         );
-        finish_table(ui, id, state, body_rect, cell_spacing);
-        body_rect
+        finish_table(ui, id, state, body.rect, body.columns_left, cell_spacing);
+        body.rect
     }
 }
 
@@ -387,7 +389,7 @@ impl<'a> TableWithHeader<'a> {
             shrink_to_content,
         } = table;
 
-        let (body_rect, offset_x) = show_body(
+        let body = show_body(
             ui,
             id,
             &mut state,
@@ -409,8 +411,9 @@ impl<'a> TableWithHeader<'a> {
             header_rect,
             header_height,
             cell_spacing,
-            body_rect,
-            offset_x,
+            body_rect: body.rect,
+            offset_x: body.offset_x,
+            columns_left: body.columns_left,
         }
     }
 }
@@ -427,6 +430,7 @@ impl<'a> HeaderSlot<'a> {
             cell_spacing,
             body_rect,
             offset_x,
+            columns_left,
         } = self;
 
         show_header(
@@ -440,7 +444,7 @@ impl<'a> HeaderSlot<'a> {
         );
 
         let full_rect = header_rect.union(body_rect);
-        finish_table(ui, id, state, full_rect, cell_spacing);
+        finish_table(ui, id, state, full_rect, columns_left, cell_spacing);
         full_rect
     }
 }
@@ -456,15 +460,27 @@ struct Body {
     shrink_to_content: bool,
 }
 
-/// Draws the rows, and reports the rectangle they came to and how far the table
-/// is scrolled sideways.
+/// What a drawn body reports back to whoever has to line something up with it.
+struct BodyOutput {
+    /// The part of the rows that is on screen.
+    rect: Rect,
+    /// How far the table is scrolled sideways.
+    offset_x: f32,
+    /// Where the first column begins on screen. Left of the view — off the
+    /// screen, even — once the table is scrolled sideways, which is exactly what
+    /// makes it the right thing to place the rules between the columns against:
+    /// the view's own left edge stays put while the columns move past it.
+    columns_left: f32,
+}
+
+/// Draws the rows, and reports where they landed.
 fn show_body(
     ui: &mut Ui,
     id: Id,
     state: &mut State,
     body: Body,
     add_body: impl FnOnce(&mut TableBody),
-) -> (Rect, f32) {
+) -> BodyOutput {
     let Body {
         row_height,
         min_scroll_height,
@@ -502,10 +518,13 @@ fn show_body(
             rect
         });
 
-    (
-        scroll_output.inner.intersect(scroll_output.inner_rect),
-        scroll_output.state.offset.x,
-    )
+    BodyOutput {
+        rect: scroll_output.inner.intersect(scroll_output.inner_rect),
+        offset_x: scroll_output.state.offset.x,
+        // Taken before the clip to the view: the columns start where the rows
+        // were actually laid out, which is what they are drawn against.
+        columns_left: scroll_output.inner.left(),
+    }
 }
 
 /// Draws the header row in the space reserved for it, shifted by how far the
@@ -544,8 +563,15 @@ fn show_header(
 }
 
 /// The separators between column groups, and the state the next frame reads.
-fn finish_table(ui: &mut Ui, id: Id, state: State, rect: Rect, cell_spacing: f32) {
-    ColumnState::draw_separators(&state.columns, ui, rect, cell_spacing);
+fn finish_table(
+    ui: &mut Ui,
+    id: Id,
+    state: State,
+    rect: Rect,
+    columns_left: f32,
+    cell_spacing: f32,
+) {
+    ColumnState::draw_separators(&state.columns, ui, rect, columns_left, cell_spacing);
     if state.finish(ui, id) {
         ui.ctx().request_repaint();
     }
@@ -781,12 +807,27 @@ impl ColumnState {
         repaint_required
     }
 
-    fn draw_separators(columns: &[Self], ui: &mut Ui, rect: Rect, cell_spacing: f32) {
+    /// A rule down each boundary between columns, drawn from where the columns
+    /// begin (`columns_left`) rather than from the left edge of `rect`, which is
+    /// the view. The two are the same until the table is scrolled sideways, and
+    /// while it is scrolled the view stays put — rules measured from it stood
+    /// still on screen while the columns slid out from under them.
+    ///
+    /// Clipped to the table for the same reason: a rule now moves off either
+    /// edge of the view, and outside `rect` it would be drawn over whatever the
+    /// table sits next to.
+    fn draw_separators(
+        columns: &[Self],
+        ui: &mut Ui,
+        rect: Rect,
+        columns_left: f32,
+        cell_spacing: f32,
+    ) {
         if columns.is_empty() {
             return;
         }
 
-        let left_top = rect.left_top();
+        let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         let mut left_offset = 0.0;
         for column in columns.iter().take(columns.len() - 1) {
             left_offset += column.last_size + 2.0 * cell_spacing;
@@ -795,10 +836,10 @@ impl ColumnState {
             if column.merged_with_next {
                 continue;
             }
-            let start = (left_top + vec2(left_offset, 0.0)).round_to_pixels(ui.pixels_per_point());
-            let end = (start + vec2(0.0, rect.height())).round_to_pixels(ui.pixels_per_point());
-            ui.painter()
-                .line_segment([start, end], ui.visuals().noninteractive().bg_stroke);
+            let start =
+                pos2(columns_left + left_offset, rect.top()).round_to_pixels(ui.pixels_per_point());
+            let end = pos2(start.x, rect.bottom()).round_to_pixels(ui.pixels_per_point());
+            painter.line_segment([start, end], ui.visuals().noninteractive().bg_stroke);
         }
     }
 }
@@ -986,6 +1027,98 @@ mod tests {
             merged,
             "only the two columns under one heading are joined"
         );
+    }
+
+    /// Every vertical rule the frame drew, by where it stands on screen.
+    fn drawn_rules(shapes: &[epaint::ClippedShape]) -> Vec<f32> {
+        fn walk(shape: &Shape, found: &mut Vec<f32>) {
+            match shape {
+                Shape::LineSegment { points, .. } if points[0].x == points[1].x => {
+                    found.push(points[0].x)
+                }
+                Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, found)),
+                _ => (),
+            }
+        }
+
+        let mut found = Vec::new();
+        for clipped in shapes {
+            walk(&clipped.shape, &mut found);
+        }
+        found
+    }
+
+    /// One frame of a table too wide for the window it is in, reporting where
+    /// the rules between its columns were drawn and under which id its scroll
+    /// area keeps how far it has been dragged.
+    fn draw_wide_table(ctx: &Context) -> (Vec<f32>, Id) {
+        let id = Id::new("scrolled rules");
+        let mut scroll_id = Id::NULL;
+        let output = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(120.0, 200.0))),
+                ..Default::default()
+            },
+            |ui| {
+                scroll_id = ui.make_persistent_id(Id::new(id.with("__table_scroll")));
+                Table::new(ui)
+                    .id(id)
+                    .header(20.0)
+                    .body(20.0, |t| {
+                        t.row(|r| {
+                            for value in ["wwwwwwwwww", "wwwwwwwwww", "wwwwwwwwww"] {
+                                r.cell(|ui| {
+                                    ui.label(value);
+                                });
+                            }
+                        });
+                    })
+                    .header_row(|r| {
+                        for name in ["A", "B", "C"] {
+                            r.cell(|ui| {
+                                ui.label(name);
+                            });
+                        }
+                    });
+            },
+        );
+        (drawn_rules(&output.shapes), scroll_id)
+    }
+
+    /// A rule between two columns belongs to the columns, not to the window: drag
+    /// the table sideways and the rules have to travel with the figures they
+    /// stand between. Measured from the left edge of the view — which does not
+    /// move — they stood still on screen while the table slid underneath them.
+    #[test]
+    fn the_rules_between_columns_travel_with_the_columns() {
+        let ctx = Context::default();
+        // Column widths are settled from the frame before, so this needs a few.
+        let mut before = Vec::new();
+        let mut scroll_id = Id::NULL;
+        for _ in 0..4 {
+            (before, scroll_id) = draw_wide_table(&ctx);
+        }
+        assert!(!before.is_empty(), "the table drew no rules to begin with");
+
+        let dragged = 20.0;
+        let mut scroll = scroll_area::State::load(&ctx, scroll_id).expect("the table scrolls");
+        scroll.offset.x = dragged;
+        scroll.store(&ctx, scroll_id);
+
+        let (after, _) = draw_wide_table(&ctx);
+        assert_eq!(
+            dragged,
+            scroll_area::State::load(&ctx, scroll_id).unwrap().offset.x,
+            "the table did not stay dragged, so this proves nothing"
+        );
+        assert_eq!(before.len(), after.len(), "a rule went missing");
+        for (before, after) in before.iter().zip(after.iter()) {
+            assert!(
+                (before - after - dragged).abs() < 0.5,
+                "a rule at {before} moved to {after}, not to {}",
+                before - dragged
+            );
+        }
     }
 
     /// Whatever mark a heading ends up carrying is one of the marks the room is

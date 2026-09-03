@@ -58,6 +58,13 @@ pub struct CombatSummary {
     pub duration: Duration,
     /// Everyone who fought it, by DPS, highest first.
     pub players: Vec<PlayerSummary>,
+    /// What dealt damage in it — see [`Combat::abilities`]. Carried so the list
+    /// can be searched and narrowed by what was flown, which is otherwise only
+    /// answerable by opening a fight and reading its damage tree.
+    ///
+    /// Shared with the combat rather than copied: it is the same list, and a
+    /// refresh builds a summary for every fight in the log.
+    pub abilities: Arc<[Box<str>]>,
 }
 
 /// One player of a combat, as the list knows them.
@@ -104,6 +111,7 @@ impl Combat {
             start: self.active_time.start,
             duration: time_range_to_duration_or_zero(&self.combat_time),
             players,
+            abilities: self.abilities.clone(),
         }
     }
 }
@@ -180,6 +188,7 @@ mod tests {
             solo: players.len() == 1,
             start: NaiveDateTime::default(),
             duration: Duration::seconds(252),
+            abilities: Arc::from([]),
             players: players
                 .iter()
                 .map(|&(handle, dps)| PlayerSummary {
