@@ -132,6 +132,7 @@ name next to the settings overrides it without a rebuild. See
 | shell, toolbar, menus       | `app/mod.rs`             | owns `MainTabs`, `CompareView`, the runs off the ladder, the overlay handle |
 | the list of fights          | `app/combats_list.rs`    | the side panel: one table of combats, and the cells every list of them is drawn from |
 | per-combat tabs             | `app/main_tabs`          | Summary, Damage Dealt/Taken, the three healing tabs              |
+| which fight is open         | `app/main_tabs/combat_header.rs` | the box above the tabs: its name with the note in it, and the field the note is written in |
 | tables                      | `app/main_tabs/tables`   | one generic `MetricsTable<T>` driven by a static column list     |
 | part of a tree              | `app/damage_subset.rs`   | the figures of a set of rows, for the ticks and the type pickers |
 | charts                      | `app/main_tabs/diagrams` | Gauss-filtered per-second graphs and time-sliced bar charts      |
@@ -258,15 +259,43 @@ and forces a re-read of the log; a `general` change just rebuilds the views,
 because formatting is baked into the row strings when a table is built.
 
 The `combat_notes` section (`app/settings/combat_notes.rs`) holds the user's own
-short description per combat, written in the Summary tab and repeated wherever a
-combat is listed: the combats list (whose search box reads it), and the parts of
-a comparison that name a run — its chart and its column headers (see below). It
-is keyed by the combat's **start time**, which `CombatSummary` carries. The start
-time is the only identifier the log itself fixes — `Combat::identifier` carries
-whatever the name rules or the map detection produced, so a rename would orphan
-the notes. Changing
-`combat_separation_time_seconds` re-cuts the log into different combats and does
-orphan them; there is no key that survives that.
+short description per combat, and it is repeated wherever a combat is named: the
+combats list (whose search box reads it), and the parts of a comparison that name
+a run — its chart and its column headers (see below). It is keyed by the
+combat's **start time**, which `CombatSummary` carries. The start time is the
+only identifier the log itself fixes — `Combat::identifier` carries whatever the
+name rules or the map detection produced, so a rename would orphan the notes.
+Changing `combat_separation_time_seconds` re-cuts the log into different combats
+and does orphan them; there is no key that survives that.
+
+#### The box above the tabs — `app/main_tabs/combat_header.rs`
+
+`CombatHeader` is where a note is written, and it stands above the tabs rather
+than inside one of them because it is true of all six: four of them are a table
+of figures with nothing else on screen saying which fight they are of.
+
+It draws two lines inside one `Frame::group`. The first is `CombatHeader::title`
+— `Combat::identifier` (name, date, the times it ran between) with the note after
+an em dash, in the same heading face, because the note is as much *which fight
+this is* as the map name. It is built from the field being edited rather than
+from the settings, so the heading follows the typing. The second is the field
+itself, with the character counter and a **Clear** button that is only there
+while there is something to clear.
+
+Two things that look incidental and are not:
+
+- `ui.set_min_width(ui.available_width())` inside the frame. egui paints a frame
+  around its content's `min_rect`, so two stacked lines end the box wherever the
+  longer of them ends — a ragged edge that moves with the length of the fight's
+  name, in a window of full-width tables. Held by
+  `the_box_is_as_wide_as_what_it_stands_over`.
+- The write schedule. A keystroke writes the note into the settings **in memory**
+  and the file is written when the field loses focus, so typing does not rewrite
+  the settings file per character. **Clear** writes the file there and then: it
+  is a deliberate act with nothing to leave afterwards. That asymmetry is why the
+  header's tests can call `show` without touching the reader's real settings —
+  one pass over an empty `RawInput` gains no focus, loses none, and clicks
+  nothing.
 
 ### Reading part of a tree — `app/damage_subset`
 
@@ -370,10 +399,12 @@ open rather than a grep to run.
 | `ROW_HEIGHT`, `HEADER_HEIGHT` | 25.0 | the combats table's rows |
 | `PANEL_MIN_WIDTH` | 260.0 | how far the panel can be dragged in before the table is a column of ellipses |
 | `PANEL_AUTO_WIDTH` | 1200.0 | how wide it will size *itself* to fit its table before it stops and scrolls |
+| `PANEL_MAX_SHARE` | 0.75 | how much of the window the reader may **drag** it across — the ceiling the panel does not set for itself |
 | `CELL_SPACING` | 3.0 | the gap either side of a cell in that table |
 | `PLAYER_PICKER_WIDTH` | 130.0 | the "whose figures" picker in a comparison |
 | `BADGE_PADDING`, `ARROW_SIZE` | 4.0, 14×14 | a run's number badge, the fold-out arrow |
 | `DEATHS_MENU_WIDTH` / `_HEIGHT` | 230.0 / 260.0 | the deaths checklist popup |
+| `DEALT_BY_MENU_WIDTH` | 360.0 | the what-dealt-the-damage checklist; wider because a full weapon name is longer than a handle |
 | `PICKER_MIN_WIDTH` | 60.0 | the floor `fitting` squeezes a filter picker to |
 | `JOB_WINDOW_WIDTH` | 260.0 | the window that reports clearing the log |
 | `MAX_NOTE_CHARS` | 50 | re-exported, not defined here: it truncates what is **stored**, so it lives with the store that enforces it (`settings::CombatNotes::set`) |
@@ -452,10 +483,27 @@ filtered how.
 
 What travels from the analysis thread is `CombatSummary`
 (`analyzer/combat_summary.rs`), one value per fight — name, identifier, map,
-content type, environment, difficulty, solo, start, duration and the players with
-their DPS and how often each was killed — sent as `Arc<[CombatSummary]>`. It
-replaced six `Vec`s indexed alongside each other, where one list left behind read
-the wrong entry for every combat after it.
+content type, environment, difficulty, solo, start, duration, the players with
+their DPS and how often each was killed, and what dealt the damage — sent as
+`Arc<[CombatSummary]>`. It replaced six `Vec`s indexed alongside each other,
+where one list left behind read the wrong entry for every combat after it.
+
+`CombatSummary::abilities` is the one field that is not a column of the table:
+it is `Combat::abilities`, shared rather than copied, and is what lets the list
+be searched and narrowed by what was flown. Two things fix where it is worked
+out:
+
+- **In `Combat::update`, not in `summary`.** A refresh — several a minute, with
+  auto-refresh on — builds a summary for every fight in the log, while the tree
+  behind this changes only when the fight itself does. Measured on 26 real
+  fights: 156 µs to walk the trees, and the 91 distinct names came to 2 KB, so
+  the cost is small either way; the point is that it does not grow with the log
+  on every tick.
+- **Branches only, never leaves.** `Player::add_damage` inserts the target at
+  index 0 of every grouping path, so the deepest segment of the tree is who was
+  hit and everything above it is what did the hitting. Taking every row would
+  offer Borg Spheres beside the beam arrays in a menu meant for builds. The
+  regression test is `a_combat_says_what_was_fired_in_it_and_not_what_at`.
 
 `PlayerSummary::deaths` is the same count `Combat::total_deaths` adds up over
 everyone (`player.damage_in.kills`), kept per player because the list filters by
@@ -487,9 +535,10 @@ Decisions worth keeping:
 
 | decision | why |
 |----------|-----|
-| ticks are pruned to what is on screen | acting on a fight a filter is hiding is acting out of sight; the count in the strip would lie about it. The runs off the ladder count as on screen — they are rows of this list, and the filters do not reach them |
+| ticks are pruned **per mode**, not by one rule | `Clearing` prunes `to_delete` to what is on screen: that button rewrites the log irreversibly, so nothing a filter is hiding may go with it. `Comparing` prunes `to_compare` only to what the log still holds, because building a comparison out of a long log takes more than one search — tick two Krenim runs, narrow to something else, tick a third — and pruning by the filters unticked the earlier ones as the reader worked. Nothing is at risk there: a comparison of runs not on screen is exactly what was asked for. `ListCounts::hidden` says how many are out of sight, since the rows cannot. The runs off the ladder count as present under both rules — they are rows of this list, and the filters do not reach them |
 | columns of short words have a fixed width (`CombatColumn::widest`) | so the same column is the same width in every list, and a column of four-letter words does not take as much room as the map name beside it |
 | the panel is exactly as wide as its table | `fitting_width` measures the table (`table::table_content_width`) and the panel is pinned to it until the reader drags the edge, after which their width is remembered and only a drag changes it — read back every frame, an empty table (a log still being read) overwrote it |
+| widening *itself* and being *widened* have different ceilings | `fitting_width` stops at `PANEL_AUTO_WIDTH` (a fixed 1200, the longest map name beside every other column): nobody asked for a list that swallows the window. `draggable_max` — what the reader may pull it to — is `PANEL_MAX_SHARE` of the window instead, so a wide screen gives a wide list and a laptop does not pretend to. A fixed ceiling did both jobs and was a cage on a 2560-wide screen, where the point of dragging it out is to have the note column and a team's players open beside the fights. Measured on a 1900-wide window: the panel is drawn 1421 px across, where the fixed ceiling stopped it at 1200 |
 | the fold-out arrow is always drawn, invisible where there is nothing to fold | `Ui::add_visible` keeps the geometry identical; room measured out beside it instead was room of a different size, and the column drew two points wider or narrower depending on which rows were in it |
 | a run's number is a badge, not coloured text | several series colours vanish into the blue of a picked row; `theme::badge_colors` fills a patch with the run's colour and picks black or white for the number, taking the fill a shade further where neither reaches 3:1 |
 
@@ -508,10 +557,11 @@ it the whole list as `&[CombatEntry]` so each menu can work out what to offer.
 | `difficulty` | `DifficultyFilter`; its `Unknown` catches a map whose tier did not resolve, which would otherwise be invisible under every setting | `Any` |
 | `map` | `CombatSummary::base_name` — with the `[TFO]` prefix, since that is what naming rules are written against | `None` |
 | `deaths_of` + `deaths` | a fact about the *players* in the fight, not about the fight: which handles, and which of the two questions they are being asked | empty set |
+| `dealt_by` | what has to have dealt damage in it, by the name the damage tree gives it (`CombatSummary::abilities`); several are `and`ed, since a build is remembered by a pair of things | empty set |
 
 Four of them narrow by what a fight **was**; the deaths menu narrows by how it
-**went**, and is the only one whose answer depends on more than the combat's own
-columns.
+**went** and `dealt_by` by what was flown in it, and those two are the ones whose
+answer depends on more than the combat's own columns.
 
 Every menu offers only what the others leave reachable — `options(combats,
 dimension)` re-runs the filter with that one dimension cleared — and
@@ -598,6 +648,39 @@ wrapped explicitly because a popup lays its contents out with wrapping off
 The text in the search box lives in `Ui::data`, not in the filter: it narrows
 the *menu*, and a filter that changed as it was typed in would have the table
 re-measured (`filter_generation`) on every keystroke.
+
+#### The menu of what dealt the damage
+
+`show_dealt_by` is the deaths menu's shape applied to `CombatSummary::abilities`
+— a checklist with a search box and the two buttons — for the same two reasons:
+the question is usually about a *pair* of things (the weapons a build is
+remembered by), and a log holds more names than a menu can be read down. The
+rows are ordered by `by_fights_matched` as well, so what the reader flies most
+leads the list. It is a separate function rather than a shared widget: the two
+menus are alike today, but the deaths menu carries a direction that turns its
+quantifier round and this one does not, and folding both into one widget would
+put that difference inside it.
+
+The ticks `and`: `matches` requires **every** ticked name to be among the
+fight's. It therefore shares `Without`'s exception — two things never flown
+together narrow to nothing, and `drop_impossible_choices` only gives up a name
+that nothing on screen fired at all.
+
+It reads what **anyone** in the fight fired, not only the reader: `abilities` is
+collected over every player, so a team-mate's weapon puts a fight on the list.
+Deliberate — the alternative needs the set kept per player and answers a
+different question in a duo log, where the analyzer cannot always say whose log
+it is (`detect_log_owner`).
+
+`DEALT_BY_MENU_WIDTH` is wider than the deaths menu's: a real weapon name runs
+to "Omni-Directional Trilithium-Enhanced Phaser Beam Array", and a name wrapped
+over two lines beside a tick box cannot be read down a column.
+
+The search box in the *panel* (not this menu) reads these names too, through
+`contains_ignore_case` — a case-blind `contains` that allocates nothing, because
+`CombatsPanel::visible` runs over every fight on every frame and a
+`to_lowercase()` per name there would copy the log's whole ability set sixty
+times a second.
 
 ### Comparing several combats — `app/compare`
 

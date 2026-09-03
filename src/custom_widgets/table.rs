@@ -836,8 +836,8 @@ impl ColumnState {
             if column.merged_with_next {
                 continue;
             }
-            let start = pos2(columns_left + left_offset, rect.top())
-                .round_to_pixels(ui.pixels_per_point());
+            let start =
+                pos2(columns_left + left_offset, rect.top()).round_to_pixels(ui.pixels_per_point());
             let end = pos2(start.x, rect.bottom()).round_to_pixels(ui.pixels_per_point());
             painter.line_segment([start, end], ui.visuals().noninteractive().bg_stroke);
         }

@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 
 use crate::{
     analyzer::{CombatSummary, Difficulty, PlayerSummary},
-    app::tuning::{DEATHS_MENU_HEIGHT, DEATHS_MENU_WIDTH, PICKER_MIN_WIDTH},
+    app::tuning::{DEALT_BY_MENU_WIDTH, DEATHS_MENU_HEIGHT, DEATHS_MENU_WIDTH, PICKER_MIN_WIDTH},
     custom_widgets::tooltip::CloseTooltip,
 };
 
@@ -143,6 +143,14 @@ pub struct CombatFilter {
     pub deaths_of: BTreeSet<String>,
     /// Which of the two questions the handles above are being asked.
     pub deaths: DeathsFilter,
+    /// What has to have dealt damage in a fight for it to stay: weapons,
+    /// abilities, procs or pets, by the name the damage tree gives them.
+    ///
+    /// Several of them are `and`ed — each tick narrows, the way every other
+    /// picker in this row does. Ticking a beam array and a torpedo asks for the
+    /// runs that flew both, which is the question a build is remembered by.
+    /// Empty asks nothing.
+    pub dealt_by: BTreeSet<String>,
 }
 
 impl CombatFilter {
@@ -151,6 +159,7 @@ impl CombatFilter {
             || self.map.is_some()
             || self.solo.is_some()
             || !self.deaths_of.is_empty()
+            || !self.dealt_by.is_empty()
             || self.difficulty != DifficultyFilter::Any
     }
 
@@ -177,6 +186,14 @@ impl CombatFilter {
         if !self.deaths.matches_all(combat.players, &self.deaths_of) {
             return false;
         }
+        // Every ticked one, not any: see `dealt_by`.
+        if !self
+            .dealt_by
+            .iter()
+            .all(|wanted| combat.abilities.iter().any(|had| had.as_ref() == wanted))
+        {
+            return false;
+        }
         self.difficulty.matches(combat.difficulty)
     }
 
@@ -191,6 +208,7 @@ impl CombatFilter {
             Dimension::Map => without.map = None,
             Dimension::Solo => without.solo = None,
             Dimension::Deaths => without.deaths_of.clear(),
+            Dimension::DealtBy => without.dealt_by.clear(),
         }
         let matching = combats.iter().filter(|c| without.matches(c));
 
@@ -211,6 +229,11 @@ impl CombatFilter {
                 .filter(|p| self.deaths.wants(p.deaths))
             {
                 options.handles.push(player.handle.clone());
+            }
+            // Once per fight it was fired in, so the menu can put what the
+            // reader flies most at the top the way it does with handles.
+            for ability in combat.abilities {
+                options.dealt_by.push(ability.to_string());
             }
         }
         options.environments.sort_unstable();
@@ -263,6 +286,17 @@ impl CombatFilter {
             let handles = self.options(combats, Dimension::Deaths).handles;
             self.deaths_of
                 .retain(|handle| handles.iter().any(|h| h == handle));
+        }
+        if !self.dealt_by.is_empty() {
+            // Only what nothing on screen fired any more is given up. A tick
+            // that empties the list *together with* another tick is left alone
+            // for the same reason the deaths menu leaves one: the reader asked
+            // for that pair, and dropping half of it behind their back would
+            // answer a question they did not ask. What they see instead is an
+            // empty list, which says plainly that nothing flew both.
+            let fired = self.options(combats, Dimension::DealtBy).dealt_by;
+            self.dealt_by
+                .retain(|ability| fired.iter().any(|f| f == ability));
         }
         if self.difficulty != DifficultyFilter::Any
             && !self
@@ -384,6 +418,103 @@ impl CombatFilter {
         ui.add_enabled_ui(anybody, |ui| {
             self.show_deaths(id, candidates, ui);
         });
+
+        let fired = by_fights_matched(self.options(combats, Dimension::DealtBy).dealt_by);
+        // Greyed out rather than gone when there is nothing to offer — a log
+        // read before this existed, or a list narrowed to fights the analyzer
+        // could find no damage in — so the row keeps its shape.
+        ui.add_enabled_ui(!fired.is_empty(), |ui| {
+            self.show_dealt_by(id, fired, ui);
+        });
+    }
+
+    /// The menu of what dealt the damage: the weapons, abilities, procs and
+    /// pets fired in the fights on screen, to tick.
+    ///
+    /// Built like the deaths menu below rather than as a drop-down, and for the
+    /// same two reasons: the question is usually about more than one of them —
+    /// the pair of weapons a build is remembered by — and a log holds far more
+    /// names than a menu can be read down, so it carries a search box. The two
+    /// menus are deliberately alike; a reader who has used one knows this one.
+    ///
+    /// Not folded into one shared widget with it: that one carries a direction
+    /// which turns its quantifier round, and this one does not, so the shared
+    /// thing would have to hold the difference between them.
+    fn show_dealt_by(&mut self, id: &str, candidates: Vec<String>, ui: &mut Ui) {
+        let search_id = Id::new((id, "dealt by search"));
+
+        ComboBox::new((id, "dealt by"), "")
+            .selected_text(dealt_by_text(&self.dealt_by))
+            // The names are long; the box says how many are ticked rather than
+            // growing to hold them, and hovers to name them.
+            .truncate()
+            .width(fitting(ui, 170.0))
+            .height(DEATHS_MENU_HEIGHT)
+            // A tick is not a choice made and done with: the list stays up
+            // until the reader clicks away from it.
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .show_ui(ui, |ui| {
+                ui.set_min_width(DEALT_BY_MENU_WIDTH);
+                // Wrapped deliberately, as in the deaths menu: a popup lays its
+                // contents out with wrapping off, so a sentence would widen the
+                // whole menu to one long line instead of folding inside it.
+                ui.add(
+                    Label::new(
+                        RichText::new(
+                            "Show fights where every ticked weapon or ability dealt damage",
+                        )
+                        .weak(),
+                    )
+                    .wrap(),
+                );
+
+                // In egui's own memory rather than in the filter: it narrows
+                // the *menu*, not the combats, and a filter that changed as it
+                // was typed in would have the list re-measured on every
+                // keystroke.
+                let mut search: String =
+                    ui.data(|data| data.get_temp(search_id).unwrap_or_default());
+                TextEdit::singleline(&mut search)
+                    .hint_text("search weapons and abilities")
+                    .desired_width(DEALT_BY_MENU_WIDTH)
+                    .show(ui);
+                let needle = search.trim().to_lowercase();
+                ui.data_mut(|data| data.insert_temp(search_id, search));
+
+                let listed: Vec<&String> = candidates
+                    .iter()
+                    .filter(|ability| ability.to_lowercase().contains(&needle))
+                    .collect();
+
+                // Both buttons act on what the search has left on screen, like
+                // every other pair in the program.
+                ui.horizontal(|ui| {
+                    if ui.button("Select all").clicked() {
+                        self.dealt_by
+                            .extend(listed.iter().map(|ability| (*ability).clone()));
+                    }
+                    if ui.button("Unselect all").clicked() {
+                        self.dealt_by.retain(|ability| !listed.contains(&ability));
+                    }
+                });
+                ui.separator();
+
+                // No scroll area of its own: `ComboBox` already puts the whole
+                // popup in one, bounded by the height set above.
+                for ability in listed {
+                    let mut ticked = self.dealt_by.contains(ability);
+                    if ui.checkbox(&mut ticked, ability).changed() {
+                        if ticked {
+                            self.dealt_by.insert(ability.clone());
+                        } else {
+                            self.dealt_by.remove(ability);
+                        }
+                    }
+                }
+            })
+            .response
+            .hover(dealt_by_hover(&self.dealt_by))
+            .disabled_hover("Nothing on screen has any damage recorded in it.");
     }
 
     /// The deaths menu: a list of the players on screen to tick, rather than one
@@ -552,6 +683,35 @@ fn deaths_hover(direction: DeathsFilter, picked: &BTreeSet<String>) -> String {
     }
 }
 
+/// What the box of what-dealt-the-damage says it is doing. One name is shown;
+/// several are counted, because a box that grows to hold a full weapon name
+/// widens the whole panel.
+fn dealt_by_text(picked: &BTreeSet<String>) -> String {
+    match picked.len() {
+        0 => "Any damage".to_owned(),
+        1 => format!(
+            "Dealt by: {}",
+            picked.iter().next().unwrap_or(&String::new())
+        ),
+        count => format!("Dealt by: all {count}"),
+    }
+}
+
+/// What that box says when it is hovered: what it means, and — where the box
+/// itself only counts them — what is ticked.
+fn dealt_by_hover(picked: &BTreeSet<String>) -> String {
+    let what = "Show only the fights every ticked weapon or ability dealt damage in. What is \
+                listed is what the Damage Dealt tree holds, over everyone who fought — the \
+                weapons, abilities, procs and pets, never who they were fired at.";
+    match picked.len() {
+        0 | 1 => what.to_owned(),
+        _ => format!(
+            "{what}\n\n{}",
+            picked.iter().cloned().collect::<Vec<_>>().join(", ")
+        ),
+    }
+}
+
 /// The handles a menu offers, by how many of the fights on screen each answers
 /// for — most first.
 ///
@@ -596,6 +756,8 @@ pub struct CombatEntry<'a> {
     pub base_name: &'a str,
     /// Everyone who fought it, which is what the deaths menu reads.
     pub players: &'a [PlayerSummary],
+    /// What dealt damage in it, whoever fired it — see [`CombatSummary`].
+    pub abilities: &'a [Box<str>],
 }
 
 impl<'a> From<&'a CombatSummary> for CombatEntry<'a> {
@@ -606,6 +768,7 @@ impl<'a> From<&'a CombatSummary> for CombatEntry<'a> {
             difficulty: combat.difficulty,
             base_name: combat.base_name.as_str(),
             players: &combat.players,
+            abilities: &combat.abilities,
         }
     }
 }
@@ -617,6 +780,7 @@ enum Dimension {
     Map,
     Solo,
     Deaths,
+    DealtBy,
 }
 
 #[derive(Default)]
@@ -628,6 +792,8 @@ struct Options {
     /// One entry per fight a handle answers the deaths question in, so the same
     /// handle is in here as many times as it has fights behind it.
     handles: Vec<String>,
+    /// The same, per fight a weapon or ability was fired in.
+    dealt_by: Vec<String>,
 }
 
 #[cfg(test)]
@@ -648,6 +814,7 @@ mod tests {
             base_name,
             solo,
             players: &[],
+            abilities: &[],
         }
     }
 
@@ -698,6 +865,7 @@ mod tests {
                 base_name: "Infected Space",
                 solo: false,
                 players: &[],
+                abilities: &[],
             },
             CombatEntry {
                 environment: Some("Space"),
@@ -705,6 +873,7 @@ mod tests {
                 base_name: "Azure Nebula",
                 solo: false,
                 players: &[],
+                abilities: &[],
             },
             CombatEntry {
                 environment: Some("Ground"),
@@ -712,6 +881,7 @@ mod tests {
                 base_name: "Bug Hunt",
                 solo: false,
                 players: &[],
+                abilities: &[],
             },
             CombatEntry {
                 environment: None,
@@ -719,6 +889,7 @@ mod tests {
                 base_name: "Combat",
                 solo: false,
                 players: &[],
+                abilities: &[],
             },
         ]
     }
@@ -816,6 +987,7 @@ mod tests {
             base_name: "Infected Space",
             solo: false,
             players,
+            abilities: &[],
         }
     }
 
@@ -869,6 +1041,7 @@ mod tests {
                 base_name: "Bug Hunt",
                 solo: false,
                 players: &mine,
+                abilities: &[],
             },
             CombatEntry {
                 environment: Some("Space"),
@@ -876,6 +1049,7 @@ mod tests {
                 base_name: "Infected Space",
                 solo: false,
                 players: &theirs,
+                abilities: &[],
             },
         ];
 
@@ -1148,5 +1322,108 @@ mod tests {
              the box that opened it: {menu:?}"
         );
         assert!(menu.height() > 0.0 && menu.height() <= DEATHS_MENU_HEIGHT + menu.width());
+    }
+
+    /// A fight of these weapons, with everything else the same.
+    fn firing(abilities: &[Box<str>]) -> CombatEntry<'_> {
+        CombatEntry {
+            environment: Some("Space"),
+            difficulty: Some(Difficulty::Elite),
+            base_name: "Infected Space",
+            solo: false,
+            players: &[],
+            abilities,
+        }
+    }
+
+    /// Every ticked weapon has to have been fired, not just one of them: two
+    /// ticks are how a reader asks for the runs that flew a particular pair.
+    #[test]
+    fn every_ticked_weapon_has_to_have_been_fired() {
+        let both: [Box<str>; 2] = [Box::from("Krenim Beam Array"), Box::from("Photon Torpedo")];
+        let one: [Box<str>; 1] = [Box::from("Krenim Beam Array")];
+
+        let mut filter = CombatFilter::default();
+        filter.dealt_by.insert("Krenim Beam Array".to_owned());
+        assert!(filter.matches(&firing(&both)));
+        assert!(filter.matches(&firing(&one)));
+
+        filter.dealt_by.insert("Photon Torpedo".to_owned());
+        assert!(filter.matches(&firing(&both)));
+        assert!(
+            !filter.matches(&firing(&one)),
+            "the run that flew only one of the pair is not one that flew both"
+        );
+    }
+
+    /// Nothing ticked asks nothing — including of a fight the analyzer found no
+    /// damage in at all, which must not vanish from the list because of a menu
+    /// nobody has touched.
+    #[test]
+    fn an_untouched_weapons_menu_hides_nothing() {
+        assert!(CombatFilter::default().matches(&firing(&[])));
+    }
+
+    /// The menu offers what the fights still on screen fired, and a tick the
+    /// other pickers have made unreachable is given up rather than left showing
+    /// nothing.
+    #[test]
+    fn the_weapons_picker_is_part_of_the_cascade() {
+        let space: [Box<str>; 1] = [Box::from("Krenim Beam Array")];
+        let ground: [Box<str>; 1] = [Box::from("Pulsewave Assault")];
+        let entries = vec![
+            CombatEntry {
+                environment: Some("Space"),
+                difficulty: None,
+                base_name: "Infected Space",
+                solo: false,
+                players: &[],
+                abilities: &space,
+            },
+            CombatEntry {
+                environment: Some("Ground"),
+                difficulty: None,
+                base_name: "Bug Hunt",
+                solo: false,
+                players: &[],
+                abilities: &ground,
+            },
+        ];
+
+        let on_the_ground = CombatFilter {
+            environment: Some("Ground".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            vec!["Pulsewave Assault".to_string()],
+            by_fights_matched(on_the_ground.options(&entries, Dimension::DealtBy).dealt_by),
+            "only what the fights left on screen fired"
+        );
+
+        // A weapon ticked in space and then a ground map picked is the same
+        // contradiction the other pickers can be put in, and it is resolved the
+        // same way: one half of it gives way, arbitrarily which, and the list
+        // comes back rather than showing nothing. See
+        // `an_impossible_pair_is_resolved_rather_than_left_empty`.
+        let mut narrowed = CombatFilter {
+            environment: Some("Ground".to_string()),
+            ..Default::default()
+        };
+        narrowed.dealt_by.insert("Krenim Beam Array".to_owned());
+        assert!(
+            !entries.iter().any(|c| narrowed.matches(c)),
+            "the pair really is contradictory to begin with"
+        );
+
+        narrowed.drop_impossible_choices(&entries);
+
+        assert!(
+            entries.iter().any(|c| narrowed.matches(c)),
+            "after resolving it, something matches again"
+        );
+        assert!(
+            narrowed.environment.is_some() || !narrowed.dealt_by.is_empty(),
+            "only the conflicting half is given up, not both"
+        );
     }
 }
