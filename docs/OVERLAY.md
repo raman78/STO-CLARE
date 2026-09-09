@@ -152,7 +152,7 @@ A closed channel (`ChannelEvent::Closed`) is treated as `Stop`.
 |-----------------------------------------|---------------------------------------------------------------------------|--------------------|
 | `overlay/mod.rs` `Overlay`              | app-side controller, back-end selection, UI buttons                       | main tab UI        |
 | `overlay/mod.rs` `OverlayInner`         | polls analyzer, builds `DisplayData`, owns the `LayerOverlay` handle      | `Overlay`          |
-| `overlay/layer_shell.rs` `LayerOverlay` | thread handle: `spawn`/`update`/`set_move`/`stop`; stops thread on `Drop` | `OverlayInner`     |
+| `overlay/layer_shell.rs` `LayerOverlay` | thread handle: `spawn`/`update`/`set_move`/`stop`/`is_alive`; stops thread on `Drop` | `OverlayInner`     |
 | `overlay/layer_shell.rs` `run()`        | thread body: Wayland globals, event loop, redraw loop                     | `spawn`            |
 | `overlay/layer_shell.rs` `State`        | per-surface state: wgpu, egui, geometry, pointer/drag                     | delegated handlers |
 | `custom_widgets/table.rs` `Table`       | shared table widget used by both back ends                                | both render paths  |
@@ -160,7 +160,9 @@ A closed channel (`ChannelEvent::Closed`) is treated as `Stop`.
 The `LayerOverlay` handle lives in `OverlayInner.layer`
 (`Option<LayerOverlay>`). It is created lazily on first visible frame
 (`overlay/mod.rs`) and dropped when the overlay is hidden
-(`toggle_show()`, `overlay/mod.rs`), which stops the thread.
+(`toggle_show()`, `overlay/mod.rs`), which stops the thread. It is also dropped
+and made again when the thread is found to have ended on its own — see
+[When the surface is taken away](#when-the-surface-is-taken-away).
 
 ## Layer thread internals (Wayland)
 
@@ -276,6 +278,71 @@ list left behind is never mistaken for the shut overlay's own height.
 | Overlay stuck at 240×80 or oversized     | auto-size not converging                                            | `render()` size block, `Table::size()`              |
 | One-frame jump when the ⛭ list opens/shuts | I5 violated (geometry committed without a matching buffer)        | `render()` size block — no `layer.commit()` there   |
 | Same, but only now and then                | a stale `configure` overwrote the size being worked towards       | `LayerShellHandler::configure`; log says `published at ... while asking for ...` |
+| Overlay not on screen while its button is on | the surface was closed and the thread ended                     | log says `the compositor closed the layer surface`; `restart_layer_if_gone` |
+| Overlay switches itself off                | a recreated surface never lasted, three times running             | log says `did not last 3 times running` |
+| Overlay stops updating but is still there  | wgpu cannot acquire a frame (timed out, occluded, outdated, lost) | log says `surface unavailable (...)`; `render()` |
+
+## When the surface is taken away
+
+A layer surface is not the client's to keep. `zwlr_layer_surface_v1.closed` says
+the compositor "will no longer show" it — the protocol names a destroyed output
+as the case — and adds that further changes to the surface are ignored and that
+the client should make a new one. A screen that locks or blanks is where this has
+been met on KWin: the overlay goes and its button stays lit, and switching that
+button off and on is what brings it back.
+
+Nothing noticed, because nothing was looking. `LayerShellHandler::closed` ends
+the overlay thread, and every message sent afterwards goes into a channel whose
+receiver is gone — which `LayerOverlay::update` and `set_style` discard, a send
+failure being of no interest to either. The handle stayed in `OverlayInner.layer`
+and the button went on reporting `OverlayInner.show`, which is a different thing
+from a surface being on screen.
+
+`OverlayInner::restart_layer_if_gone` closes that gap. It runs from
+`Overlay::update` ahead of the spawn there, asks the thread itself
+(`LayerOverlay::is_alive`, over `JoinHandle::is_finished`) rather than any state
+the app keeps, and performs the off-and-on: dropping the handle joins the
+finished thread, and the spawn below builds a fresh surface at the position the
+settings hold.
+
+Remaking a surface costs a Wayland connection and a wgpu surface, so one that
+dies as fast as it is made must not be remade at frame rate. `layer_restart`
+decides, from how long ago the last automatic restart was and how many there have
+been in a row without one lasting:
+
+| Since the last restart              | Restarts so far          | Decision           |
+|-------------------------------------|--------------------------|--------------------|
+| none since the overlay was switched on | —                     | recreate now       |
+| under `LAYER_RESTART_GRACE` (2 s)   | under `MAX_LAYER_RESTARTS` | wait, look again |
+| `LAYER_RESTART_GRACE` or more       | under `MAX_LAYER_RESTARTS` | recreate now     |
+| any                                 | `MAX_LAYER_RESTARTS` (3) | give up            |
+
+A surface that lasts the grace period clears the count, so a mishap an hour later
+gets the full allowance again. Giving up switches the overlay off instead of
+leaving the button lying about it, and the button is then the clean retry —
+`toggle_show` clears the count whichever way it is used. `Overlay::update` has to
+stop on the frame that gives up: its `show` check was made before that happened,
+so carrying on would spawn the very surface just given up on and leave it on
+screen under a button that says the overlay is off.
+
+`overlay_shown` is written on exit (see [What is remembered across
+restarts](#what-is-remembered-across-restarts)), so an app closed after a give-up
+opens with the overlay off.
+
+### What this looks like in the log
+
+Logging is opt-in (`settings.debug.enable_log`, the Debug settings), and without
+it none of this leaves a trace.
+
+| Line                                                                        | Means                                                          |
+|-----------------------------------------------------------------------------|----------------------------------------------------------------|
+| `overlay: the compositor closed the layer surface`                          | `closed` arrived; the thread is ending                         |
+| `overlay: the layer surface is gone, recreating it (attempt N of 3)`        | the thread was found gone and a new surface is being made      |
+| `overlay: the layer surface did not last 3 times running; switching the overlay off` | the cap was reached; the overlay is now off           |
+| `overlay: surface unavailable (Timeout), reconfiguring`                     | wgpu could not acquire a frame; said once, not once per attempt |
+| `overlay: surface available again`                                          | frames are being acquired again                                |
+| `layer overlay: <error>`                                                    | the Wayland event loop failed and the thread returned an error |
+| `overlay: could not start the layer-shell thread: <error>`                  | the thread could not be spawned at all                         |
 
 ## Move mode and input passthrough
 
