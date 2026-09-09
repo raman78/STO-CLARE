@@ -1,5 +1,10 @@
 # Change Log
 
+# unreleased
+
+### Fixes
+- on Linux, the overlay comes back by itself after the screen has been locked. It could go while its button was still lit, and nothing but switching that button off and on brought it back — the program now notices the moment the desktop takes the overlay away and puts it back where it was, still following the same fight. If it cannot be kept on screen at all, the button switches itself off rather than going on claiming an overlay that is not there
+
 ## v2.7.0
 
 ### Major Changes
