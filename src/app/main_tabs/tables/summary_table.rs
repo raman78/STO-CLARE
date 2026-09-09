@@ -271,6 +271,10 @@ impl SummaryTable {
         // The table scrolls sideways by itself; the header is drawn last so it
         // stays level with the columns under it.
         Table::new(ui)
+            // One player to a row and one name to a player: the divide marks
+            // where the names end, but the column does not need holding on
+            // screen — this table is five rows deep and is not dragged far.
+            .divided_after(1)
             .header(header_height)
             .body(ROW_HEIGHT, |t| {
                 for (i, player) in self.players.iter().enumerate() {

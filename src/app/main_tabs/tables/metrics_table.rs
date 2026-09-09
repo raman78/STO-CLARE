@@ -23,6 +23,9 @@ use crate::{
 /// size pointing at an arrow nudged the name beside it.
 const ARROW_SIZE: Vec2 = vec2(22.0, 18.0);
 
+/// How far a row is set in from the one it hangs under.
+const INDENT: f32 = 30.0;
+
 #[macro_export]
 macro_rules! col {
     ($name:expr, $sort:expr, $show:expr $(,)?) => {
@@ -118,6 +121,15 @@ pub struct MetricsTable<T: 'static> {
     selection: SelectionTracker,
     /// Which column the rows are ordered by, and which way round.
     sort: SortState<ColumnKey>,
+    /// How much room the deepest, longest-named row of the whole tree would
+    /// need for its indent and its name — see `custom_widgets::table::
+    /// widest_name`, which is where the arrow and the gap after it are left out
+    /// of the figure. The Name column claims it whether or not that row is on
+    /// screen, so opening a branch cannot widen the column under the reader.
+    ///
+    /// Worked out on the first frame the table is drawn, because it takes the
+    /// fonts to measure a name, and kept until the table is rebuilt.
+    widest_name: Option<f32>,
 }
 
 #[derive(Educe)]
@@ -200,6 +212,7 @@ impl<T: 'static> MetricsTable<T> {
             columns,
             split_shield_hull: false,
             sort: Default::default(),
+            widest_name: None,
         }
     }
 
@@ -235,6 +248,7 @@ impl<T: 'static> MetricsTable<T> {
                 .collect(),
             selection: Default::default(),
             sort: Default::default(),
+            widest_name: None,
         };
         // The first column is what a table opens ordered by, as it always has
         // been. The state has to say so too, or the heading it is ordered by
@@ -274,10 +288,29 @@ impl<T: 'static> MetricsTable<T> {
             .iter()
             .filter(|column| shown(column.name))
             .collect();
+        // What the Name column has to hold: the whole tree, not the part of it
+        // that happens to be open, or opening a branch would widen the column
+        // and slide every figure in the table sideways. Measured once — it
+        // takes the fonts, so it cannot be done when the table is built.
+        if self.widest_name.is_none() {
+            self.widest_name = Some(widest_name(
+                ui,
+                &self.players,
+                0.0,
+                INDENT,
+                |part| part.name.as_str(),
+                |part| &part.sub_parts,
+            ));
+        }
+        let widest = self.widest_name.unwrap_or_default();
         // The table scrolls both ways by itself, so its bars stay at the edges
         // of the view; the header is drawn last, level with the columns.
         Table::new(ui)
             .cell_spacing(10.0)
+            // The tick and the name stay on screen however far the figures are
+            // dragged: a screen of numbers with the names gone says nothing
+            // about what any of them is of.
+            .frozen_columns(2)
             .header(header_height)
             .body(ROW_HEIGHT, |t| {
                 for player in self.players.iter_mut() {
@@ -292,6 +325,7 @@ impl<T: 'static> MetricsTable<T> {
                         split,
                         ticks,
                         handle,
+                        widest,
                     );
                 }
             })
@@ -555,6 +589,10 @@ impl<T> MetricsTablePart<T> {
         ticks: &mut RowTicks,
         // Whose rows these are: the ticks are per player.
         player: NameHandle,
+        // What the widest row of the whole tree needs for its indent and its
+        // name, which is what every row claims for the column — see
+        // `MetricsTable::widest_name`.
+        widest_name: f32,
     ) {
         let mut tick_rect = Rect::NOTHING;
         let response = table.selectable_row(selection.is_selected(self.id), |r| {
@@ -565,9 +603,13 @@ impl<T> MetricsTablePart<T> {
                 self.handle,
                 self.sub_parts.iter().map(|part| part.handle),
             );
-            r.cell(|ui| {
+            // The name is a frozen column, so it can be narrowed to fit the
+            // view and the name cut short with it — and a cut name has to say
+            // how much it was short of, or the column could never widen again.
+            r.measured_cell(|ui| {
+                let mut cut = 0.0;
                 ui.horizontal(|ui| {
-                    ui.add_space(indent * 30.0);
+                    ui.add_space(indent * INDENT);
                     let symbol = if self.open { "⏷" } else { "⏵" };
                     let can_open = !self.sub_parts.is_empty();
                     if ui
@@ -580,8 +622,16 @@ impl<T> MetricsTablePart<T> {
                         self.open = !self.open;
                     }
 
-                    ui.label(&self.name);
+                    cut = show_truncated(ui, self.name.as_str());
                 });
+                // What this row came to, and then what the widest row of the
+                // tree would come to. The two differ only in indent and name:
+                // the arrow and the gap after it are the same on every row, so
+                // taking this row's own indent and name off what it measured
+                // leaves exactly what any other row would carry as well.
+                let drawn = ui.min_rect().width() + cut;
+                let arrow = drawn - indent * INDENT - text_width(ui, &self.name);
+                drawn.max(widest_name + arrow)
             });
 
             for (index, column) in columns.iter().enumerate() {
@@ -640,6 +690,7 @@ impl<T> MetricsTablePart<T> {
                     split,
                     ticks,
                     self.handle,
+                    widest_name,
                 );
             }
         }
@@ -683,6 +734,13 @@ pub fn closes_group<T>(columns: &[&ColumnDescriptor<T>], index: usize, split: bo
 /// starts so the All/Hull/Shield triples do not read as one run of numbers.
 /// Used in the header and in every body row, so the rule is continuous.
 pub fn show_group_separator(row: &mut TableRow) {
+    // Not against the frozen strip, where the edge of the strip is already a
+    // rule and a heavier one. A separator cell there came to three lines inside
+    // twenty points — the strip's edge, the cell's own rule, and the boundary
+    // the cell itself is drawn as — for one boundary.
+    if row.opens_after_divide() {
+        return;
+    }
     row.cell(|ui| {
         ui.add(Separator::default().vertical().spacing(0.0));
     });
@@ -1068,6 +1126,92 @@ mod tests {
 
     fn names(parts: &[MetricsTablePart<()>]) -> Vec<&str> {
         parts.iter().map(|part| part.name.as_str()).collect()
+    }
+
+    /// A split group opens with a rule of its own so three same-looking numbers
+    /// from neighbouring metrics do not run together — but not against the
+    /// frozen strip, whose edge is already a rule and a heavier one. The cell
+    /// has to go rather than merely draw nothing: an empty column of its own
+    /// still takes a rule on each side, which is how one boundary came to be
+    /// three lines inside twenty points.
+    #[test]
+    fn no_group_rule_stands_against_the_frozen_strip() {
+        let ctx = Context::default();
+        let id = Id::new("group rules");
+        let mut columns = 0;
+        for _ in 0..3 {
+            let _ = ctx.run_ui(Default::default(), |ui| {
+                Table::new(ui).id(id).frozen_columns(2).body(20.0, |t| {
+                    t.row(|r| {
+                        r.cell(|_| {});
+                        r.cell(|ui| {
+                            ui.label("Name");
+                        });
+                        // Against the strip, so nothing.
+                        show_group_separator(r);
+                        r.cell(|ui| {
+                            ui.label("DPS");
+                        });
+                        // Between two metrics, where it belongs.
+                        show_group_separator(r);
+                        r.cell(|ui| {
+                            ui.label("Hits");
+                        });
+                    });
+                });
+                columns = table_column_widths(ui, id).len();
+            });
+        }
+        assert_eq!(
+            5, columns,
+            "the tick, the name, two metrics and the one rule between them"
+        );
+    }
+
+    /// Draws `table` a few times — column widths are settled from the frame
+    /// before — and reports what its columns came to.
+    fn column_widths(ctx: &Context, table: &mut MetricsTable<()>) -> Vec<f32> {
+        let mut widths = Vec::new();
+        for _ in 0..4 {
+            let _ = ctx.run_ui(Default::default(), |ui| {
+                let mut excluded = Default::default();
+                let (mut hide, mut types) = (false, FxHashSet::default());
+                table.show(
+                    ui,
+                    |_| true,
+                    &mut ticks(&mut excluded, &mut hide, &mut types),
+                    |_| {},
+                );
+                widths = table_column_widths(ui, table_id(ui));
+            });
+        }
+        widths
+    }
+
+    /// The Name column is as wide as the widest row of the whole tree from the
+    /// start, open or not. Sized from the rows on screen it grew the moment a
+    /// branch was opened, and every figure in the table slid sideways under the
+    /// reader who had just clicked something.
+    #[test]
+    fn opening_a_branch_does_not_widen_the_name_column() {
+        let ctx = Context::default();
+        let mut table = MetricsTable::<()>::empty_base(&[]);
+        table.players = vec![row(
+            "Beam",
+            vec![row("Phaser Beam Array Mk XV [Dmg]x4 [CrtD]", vec![])],
+        )];
+
+        let closed = column_widths(&ctx, &mut table);
+        table.players[0].open = true;
+        let open = column_widths(&ctx, &mut table);
+
+        assert_eq!(closed.len(), open.len(), "opening a row added a column");
+        assert!(
+            (closed[1] - open[1]).abs() < 0.5,
+            "the Name column went from {} to {} when the branch was opened",
+            closed[1],
+            open[1]
+        );
     }
 
     /// The name column orders the rows by what they are called, at every level

@@ -215,6 +215,116 @@ Three conventions worth knowing before changing a table or a chart:
   every column right of it. `MetricsTable`, `SummaryTable` and the comparison's
   headers all measure this way.
 
+- **Every table knows where its rows stop naming themselves.** That line is the
+  *divide* (`Divide`), and a table asks for it with the number of columns before
+  it. Two things hang off it, and a table can take the first alone or both:
+
+  | Asked with                    | The rule at the divide | The columns before it |
+  |-------------------------------|------------------------|-----------------------|
+  | `Table::divided_after(n)`     | drawn                  | scroll with the rest  |
+  | `Table::frozen_columns(n)`    | drawn                  | stay on screen        |
+  | neither (the default)         | no divide at all       | —                     |
+
+  `MetricsTable` and the comparison freeze two columns, the tick and the name;
+  the summary divides after one, its player's name, and freezes nothing — it is
+  five rows of one player each and is not dragged far, so holding the name on
+  screen would only cost the figures beside it room in a small window. Every
+  other table in the program asks for neither and is drawn exactly as it was.
+
+- **The tick and the Name stay on screen; everything right of them scrolls.**
+  Frozen columns keep to the left edge of the view however far the table is
+  dragged, the way a spreadsheet freezes the panes left of a split. Before it, a
+  table dragged to its right-hand columns was a screen of figures with nothing
+  saying what any row was of.
+
+  There is one scroll area and one pass over the rows, not a second table pinned
+  beside the first. A frozen cell is laid out where it always was, in the
+  table's own coordinates, and then pushed back to the right by exactly what the
+  body has been scrolled (`Divide::shift`), which lands it at the view's left
+  edge whatever the reader has dragged. The columns that scroll are **clipped**
+  to the right of the strip (`Divide::clip_at`), so they pass under the
+  frozen ones rather than over them: they are drawn first, and painting order
+  inside a layer is call order, so clipping is what puts them behind. It also
+  settles the pointer, because egui narrows a widget's interaction rectangle to
+  the clip rectangle it was added under (`Ui::interact`) — a cell hidden behind
+  the strip stops sensing clicks there, and the tick box and the tree arrow keep
+  theirs.
+
+  Drawing the strip into a layer of its own — the obvious alternative — does not
+  work in egui: only layers created as an `Area` are entered into
+  `Areas::order`, `hit_test` walks nothing else, and `Context::layer_id_at`
+  answers with the layer below. The frozen cells would have been drawn on top
+  and been unclickable, and the wheel would have stopped scrolling the table
+  whenever the pointer was over the names.
+
+  The shift is measured as the distance between the view's left edge and where
+  the rows were actually laid out, not read off `scroll_area::State` — that one
+  already has this frame's wheel added to it, and a frozen column pushed by a
+  distance the rows were not moved by drifts away from them for as long as the
+  wheel turns. The header is shifted by the same number, so the two stay level.
+
+- **The divide is drawn to be seen, and nothing else may draw a boundary
+  there.** Its rule (`FREEZE_RULE_WIDTH`, `FREEZE_RULE_ACCENT`) is twice the
+  width of the rules between ordinary columns and in the theme's accent rather
+  than its faint separator grey. Where the columns before it are frozen it is
+  also the seam the table folds along — what is left of it stays, what is right
+  of it goes under it — and drawn like every other rule it read as one more line
+  in a row of them, with nothing saying why the figures stopped travelling
+  there. The
+  accent is `hyperlink_color`, faded, for the reason `theme::section_frame`
+  gives: it is the one colour all seven themes declare bright enough for their
+  own background, where a fixed grey would suit two of them.
+
+  `show_group_separator` — the narrow cell that opens a split column group so
+  three same-looking numbers from neighbouring metrics do not run together —
+  returns without drawing when `TableRow::opens_after_divide` says it would land
+  against the divide. It has to
+  skip the *cell*, not merely its contents: an empty column still takes a rule
+  on each side from `draw_separators`, which is how one boundary came to be
+  three lines inside twenty points. The question is asked at the same point of
+  the same sequence of cells in the header and in every row, so the two cannot
+  answer differently and put the columns out of step.
+
+- **A tree column is sized by the whole tree, not by what is open.** Measured
+  from the rows on screen, the Name column grew the moment a branch was opened
+  and took every figure in the table sideways with it — under the reader who
+  had just clicked the arrow. `table::widest_name` walks the whole tree once and
+  reports what its deepest, longest-named row needs for its indent and its name;
+  every row then claims that for the column whether or not that row is drawn
+  (`MetricsTable::widest_name`, `Comparison::widest_name`, both worked out on
+  the first frame after a rebuild, because measuring a name takes the fonts).
+
+  What `widest_name` leaves out is the open/close arrow and the gap after it.
+  That is the same on every row, so the row being drawn measures it for real —
+  its own width, less its own indent and name — and nothing has to assume what a
+  button comes to under the current theme. The arrow is the one part of the cell
+  whose width is not ours to predict: `Button::selectable` takes its size from
+  the theme's padding.
+
+- **A frozen strip is held to a share of the view.** A frozen column never
+  leaves the screen, so a long name would permanently crowd out the figures it
+  is read against — which is why only a *frozen* column is held to a share at
+  all; one that scrolls away with the rest is keeping nothing off the screen, so
+  cutting a name short in it would buy nothing. `frozen_widths` holds the strip
+  to `FROZEN_MAX_SHARE` (40%)
+  by taking the excess off the widest column in it, and the cells that can be
+  cut short are drawn with `show_truncated`, which reports what the label was
+  short of so the column can widen again when the room comes back — a width
+  measured off a truncated label is the width it was cut *to*, and a column
+  measured that way could never grow. The whole name is on the tooltip whenever
+  it was cut.
+
+  Two floors: what the column's own **heading** claimed (`ColumnState::floor`,
+  fed by the header row only), because the eye and the type picker sit there and
+  a heading cut off is a table that cannot be worked, and `FROZEN_MIN_WIDTH`.
+  A small window therefore ends up with a strip over its share rather than with
+  a column of nothing.
+
+  Whether to narrow at all is asked of what the columns *claim*, never of what
+  they were drawn at, and only when the table does not fit the view — a table
+  judged by its drawn width could be narrowed until it fitted, found to fit, let
+  out again, and the widths would swing between the two every frame.
+
 - **A chart is dragged sideways, never up and down.** Every chart scales its y
   axis to the data (`auto_bounds`, `include_y`), so moving it vertically only
   slides the lines out of a frame that was already the right size. `Plot` takes
@@ -777,9 +887,12 @@ There used to be a third: a legend, one row per combat, which at 34 runs filled 
 gone; which runs a comparison is of, in what colour, under what number and read
 for which player is said in the combats list, on the rows they were ticked on.
 
-The one thing left uneven is the table's `Name` column, which scrolls away with
-everything else — the averages toggle is the answer to a table too wide to
-read, not a frozen first column.
+The tick and the `Name` column do not scroll away with the rest: this table asks
+for `Table::frozen_columns(2)`, so however far right a reader drags a
+thirty-combat comparison, every row still says what it is of. See "The tick and
+the Name stay on screen" above for how that is drawn. The averages toggle
+remains the other answer to a table too wide to read — it replaces the columns
+rather than pinning any.
 
 **A heading can stand over a group of columns.** `TableRow::spanning_cell` draws
 one cell across several, which is what a comparison's headings use: a run's

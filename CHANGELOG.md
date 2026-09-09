@@ -2,6 +2,9 @@
 
 # unreleased
 
+### Major Changes
+- the Name column stays on screen when a table is dragged sideways. On the damage and healing tabs and in a comparison, the tick box and the name now hold still at the left while the figures slide past them, so a table read at its far right still says what every row is of instead of being a screen of unlabelled numbers. A coloured line marks where the names end and the figures begin — on the summary too, where the table does not need holding still but the boundary is worth seeing — and it replaces the run of three faint lines that used to stand there. The Name column is also sized for the whole tree from the start, so opening a row no longer widens it and shunts every figure in the table sideways. If the window is too narrow for the widest name, the name is shortened rather than allowed to crowd out the figures, and the whole of it is on the tooltip
+
 ### Fixes
 - on Linux, the overlay comes back by itself after the screen has been locked. It could go while its button was still lit, and nothing but switching that button off and on brought it back — the program now notices the moment the desktop takes the overlay away and puts it back where it was, still following the same fight. If it cannot be kept on screen at all, the button switches itself off rather than going on claiming an overlay that is not there
 
