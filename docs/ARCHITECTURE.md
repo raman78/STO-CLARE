@@ -159,6 +159,29 @@ log, `Mycelial Lightning` passes through a Borg `Probe` and
 make is *direct* against *through something*, which every line states; "pet" is
 not a thing the log ever says.
 
+### Who a shot belongs to
+
+Which entity a record is filed under is not simply read off the line. One shot
+is written as up to two lines and the game names the carrier on only one of
+them, so the answer comes from the shot and, for one shape, from the whole
+fight:
+
+| the line | where the answer comes from |
+|---|---|
+| names a carrier | itself |
+| carries the `*` placeholder | itself — the owner fired it |
+| leaves the source pair **blank** | `Combat::who_fired`, from what this fight has seen that event id do |
+
+`Parser::look_ahead_over_shot` pairs a shot's shield line with its damage line
+so the first two cases carry across both halves; `Combat::update_carrier_
+evidence` accumulates the third. Where the fight proves a carrier fired it but
+cannot say which, the record lands in a row of its own named
+`(Damage owner unknown)` (`UNNAMED_CARRIER`).
+
+**`docs/SHOT_MODEL.md` is the whole of it** — field meanings, the pairing rules,
+the decision diagram, what was measured against 100 other players' logs, and
+what is still unresolved. Anything in this section is a summary of that.
+
 ## Map and difficulty
 
 `analyzer::detection` derives `(map, difficulty)` from which curated NPCs

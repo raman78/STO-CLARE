@@ -403,10 +403,30 @@ Read across the columns for one ability:
 Rows can be opened further where an ability has parts underneath it — a console
 that spawns something, a pet, an anomaly.
 
+#### The row called (Damage owner unknown)
+
+You may see a row named **(Damage owner unknown)** among your weapons. It is
+real damage you are credited with, dealt by something of yours that the game
+stopped naming — most often a hangar pet that was destroyed while its shots were
+still in flight. Those shots keep landing for about a second, and the game
+writes them without saying what fired them.
+
+Where the fight gives enough to work it out, the damage goes to the pet that
+fired it and you never see this row. It appears only when more than one of your
+pets could have fired it, and picking one would be a guess. Rather than quietly
+adding it to your own weapon — which would show damage from a gun you might not
+even carry — it is put here and named for what it is.
+
+It is usually small: on a four-minute run, a dozen hits out of several thousand.
+
 ### Damage Taken
 
 The same table, for what was done to you: what hit you, how hard, and how much
 your shields absorbed.
+
+A row can also be named after the effect that hit you rather than after whoever
+sent it — an enemy torpedo still flying after its launcher died is logged with
+nobody credited, so the torpedo's own name is all there is to go on.
 
 ![The Damage Taken tab](images/damage-taken-tab.png)
 

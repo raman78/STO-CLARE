@@ -60,9 +60,10 @@ rather than marked as deliberately empty.
 Of the 3 309 blank source pairs, 2 965 sit on lines whose owner pair is blank as
 well; the remaining 344 have a named owner and are the ones §7.2 examines.
 
-`Entity::parse` (`src/analyzer/parser.rs`) accepts both spellings as
-`Entity::None`, so nothing downstream can tell them apart today. Whether the
-difference carries meaning is an open question — see §6.5.
+`Entity::parse` (`src/analyzer/parser.rs`) resolves both spellings to
+`Entity::None`, so a `Record` carries `source_field_blank` alongside it to keep
+them apart. They do not mean the same thing: `*` says the owner acted directly,
+while blank turns out to mark a carrier the game stopped naming (§4.6).
 
 ### 1.2 Direction is fields 1→5, and it is the only direction there is
 
@@ -359,73 +360,75 @@ near zero and an energy build's are not.
 ### 4.5 The decision, end to end
 
 Every line goes through the same questions. Nothing in this path knows the name
-of a weapon, a pet or an ability — only the shape of the fields.
+of a weapon, a pet or an ability — only the shape of the fields and what the
+fight has already shown.
 
 ```
-                       ┌──────────────────────┐
-   one line of the log │ is field 9 "Shield"? │
-                       └──────────┬───────────┘
-                       no         │        yes
-              ┌───────────────────┘        └────────────────┐
-              ▼                                             ▼
-   ┌──────────────────────┐                  ┌──────────────────────────┐
-   │ owner  = fields 1-2  │                  │ read ahead over the shot │
-   │ source = fields 3-4  │                  │ key: timestamp, owner,   │
-   │ target = fields 5-6  │                  │      target, event name  │
-   │ (taken as written)   │                  └────────────┬─────────────┘
-   └──────────┬───────────┘                               │
-              │                          ┌────────────────┴───────────────┐
-              │                          ▼                                ▼
-              │            ┌─────────────────────────┐      ┌──────────────────────┐
-              │            │ found a damage line of  │      │ none left / none at  │
-              │            │ this shot not yet taken │      │ all                  │
-              │            └────────────┬────────────┘      └──────────┬───────────┘
-              │                         │                              │
-              │              mark it as taken                          │
-              │                         │                              │
-              │        ┌────────────────┴────────────┐                 │
-              │        ▼                             ▼                 ▼
-              │  ┌──────────────┐          ┌──────────────────┐  ┌───────────┐
-              │  │ this shield  │          │ this shield line │  │ source    │
-              │  │ line names   │          │ names nobody:    │  │ stays as  │
-              │  │ a source:    │          │ take the partner's│ │ written   │
-              │  │ keep it      │          │ source (may be   │  │           │
-              │  │              │          │ "nobody" too)    │  │           │
-              │  └──────┬───────┘          └────────┬─────────┘  └─────┬─────┘
-              │         └───────────┬───────────────┘                  │
-              │                     │                                  │
-              └─────────────────────┴──────────────┬───────────────────┘
-                                                   ▼
-                                    ┌──────────────────────────────┐
-                                    │ is the owner pair blank?     │
-                                    └──────┬──────────────┬────────┘
-                                       no  │              │ yes
-                                           ▼              ▼
-                              ┌────────────────┐  ┌────────────────────────┐
-                              │ owner keeps    │  │ the row in Damage Taken│
-                              │ the credit     │  │ is named after the     │
-                              │                │  │ event (nobody is       │
-                              │                │  │ credited with dealing  │
-                              │                │  │ it)                    │
-                              └────────────────┘  └────────────────────────┘
+  a line of the log
+        │
+        ├── is field 9 "Shield"?  ── no ──┐
+        │                                 │
+       yes                                │
+        │                                 │
+        ▼                                 │
+  read ahead over the shot                │
+  (key: timestamp, owner, target,         │
+   event name; §2.1)                      │
+        │                                 │
+        ├── a damage line of this shot,   │
+        │   not yet claimed?              │
+        │        │                        │
+        │       yes ── mark it claimed,   │
+        │              take two things    │
+        │              from it:           │
+        │              · its source, if   │
+        │                this line names  │
+        │                none             │
+        │              · whether its own  │
+        │                source pair was  │
+        │                left blank       │
+        │        │                        │
+        │        no ── nothing to learn   │
+        │                                 │
+        └────────────────┬────────────────┘
+                         ▼
+        what does the source pair say now?
+                         │
+     ┌───────────────────┼────────────────────┐
+     ▼                   ▼                    ▼
+  a name           the "*" placeholder     blank  ",,,"
+     │                   │                      │
+     ▼                   ▼                      ▼
+  that carrier      the owner fired it    ask the fight about
+  fired it          themselves            this event id (§4.6):
+     │                   │                      │
+     │                   │        ┌─────────────┼──────────────┐
+     │                   │        ▼             ▼              ▼
+     │                   │   one carrier   several        the owner also
+     │                   │   ever, never   carriers,      fires this id
+     │                   │   the owner     never owner    here, or nothing
+     │                   │        │             │         seen yet
+     │                   │        ▼             ▼              │
+     │                   │   that carrier  (Damage owner       ▼
+     │                   │                  unknown)      the owner
+     └───────────────────┴────────┴─────────────┴──────────────┘
+                                  ▼
+                   the shot is laid into the tree under
+                   whoever it ended up belonging to
 ```
 
-Reading it as prose: **the owner is always field 1–2 and is never inferred.**
-The only thing ever decided is *what carried the shot out*, and that is decided
-only for shield lines that name nobody, only from the damage line of their own
-shot, and only when such a line is still unclaimed.
+Separately, and about the **owner** rather than the carrier: a line whose owner
+pair is blank (2 991 in the reference log) is credited to nobody, and the row it
+lands in on the target's Damage Taken is named after the event, because that is
+the only thing such a line says about where the damage came from (§6.7).
+
+Reading it as prose: **the owner is never inferred** — field 1–2 is taken as
+written, and the only question ever asked is what carried the shot out. That
+question is asked in two stages: first the shot itself (does its damage line
+name a carrier?), then, only for the blank spelling, the fight (has this event
+id ever been fired directly here?).
 
 Three properties follow, and they are what makes the rule survive new content:
-
-- **No name is ever consulted.** `src/analyzer/parser.rs` contains no weapon,
-  pet or ability name outside its tests. A new pet, a new console or a whole new
-  faction goes through the same three questions.
-- **The event name is a label, not evidence.** It appears in `LineKey` purely to
-  say "these two lines are the same shot"; it never says who fired. Note the key
-  uses the *display* name (field 7), not the internal id (field 8).
-- **Nothing is invented.** Where the shot has no unclaimed damage line, the
-  source field stays exactly as the log wrote it.
-
 ### 4.6 What the internal event id settles, and what it does not
 
 The internal id (field 8, `Pn.…`) does not say who fired a line. What it does
@@ -608,12 +611,11 @@ to see which of three identical hangar pets did the work.
 4. **The pairing key is not unique** at a tenth-second resolution. The rules
    built on it require agreement rather than picking a candidate, so a collision
    costs an attribution rather than producing a wrong one.
-5. **The two spellings of an empty identity are read as one.** `Entity::parse`
-   maps both `,,*,` and `,,,` to `Entity::None`, so lines whose source pair is
-   blank are indistinguishable from a shot the owner really fired. §4.6 shows a
-   measured way out — asking the fight's hull lines about that event id settles
-   83% of them — but it needs a pass over the fight before any record is placed,
-   and nobody has decided whether that is worth a second pass.
+5. **About 13% of blank-source lines arrive before the fight can judge them.**
+   The evidence in §4.6 is what the fight has seen *so far*, so a line landing
+   before its carrier has fired a hull line stays with the owner. Measured: 47
+   of 364. Judging after the whole fight would recover two of them, at the cost
+   of holding records back — see §4.6 for why that trade was refused.
 6. **One hull line carries negative damage** and is counted as a negative
    contribution to a player's total (§7.2). One line in 674 117; left alone
    because no rule that would catch it can be stated without also catching
@@ -806,8 +808,8 @@ player's total. Seven more lines are the same idea from the other direction:
 an enemy's `Plasma Torpedo` with magnitude `-7.62939e-06`, floating-point noise
 around zero.
 
-**The four lines left credited to the player** in the fight that prompted all of
-this — a map on which the player's ship carried no such weapon at all:
+**The four lines that started all of this** — a map on which the player's ship
+carried no such weapon at all, yet the log signs them with nobody:
 
 ```
 26:09:09:22:31:40.3::Raman,P[2123318@4450574 Raman@ramanwaleczny],,,Borg Cube,C[853 Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss],Quad Disruptor Cannons,Pn.S1g0uw1,Disruptor,,9376.27,5661.44
@@ -816,16 +818,16 @@ this — a map on which the player's ship carried no such weapon at all:
 26:09:09:22:31:40.8::Raman,P[2123318@4450574 Raman@ramanwaleczny],,,Borg Cube,C[853 Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss],Quad Disruptor Cannons,Pn.S1g0uw1,Disruptor,,10358.6,6254.57
 ```
 
-All four carry the blank-blank source shape, so nothing in them says a pet
-fired — and nothing says the player's ship did either. The only thing the log
-states is the owner, and with no rule able to say otherwise the damage stays
-where the log puts it rather than being moved on a guess. Every other
-`Quad Disruptor Cannons` line in that fight — 754 of them — resolved to one of
-the two Bird-of-Prey pets.
+All four carry the blank-blank source shape, so nothing *in them* says a pet
+fired — and nothing says the player's ship did either. What settles them is the
+rest of the fight: `Pn.S1g0uw1` has 3 985 hull lines naming a Bird-of-Prey and
+not one carrying the `*` placeholder, so the owner never fired it here (§4.6).
+Both Bird-of-Prey pets used that id, so which of them is beyond the log, and the
+four lines land in **`(Damage owner unknown)`** — 4 hits, 79 614 damage, beside
+the 9 hits of `Disruptor Turret` that reach it the same way.
 
-The player's own row for that weapon is therefore 4 hits and 79 614 damage, with
-a Shield figure of zero: the one shield line that used to sit there was a pet's
-and now pairs with its own hull line.
+The player's own row for that weapon is gone from this fight entirely, which is
+correct: they were not carrying it.
 
 ## Related
 

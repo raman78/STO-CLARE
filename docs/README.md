@@ -11,7 +11,7 @@ path a log line takes to become a number in a table, and links onward.
 |---------------------------|----------------------------------------------------------------------------------------------------------------------------------|
 | `ARCHITECTURE.md`         | Modules, threads, data flow, UI conventions, and where the tuned numbers live. The entry point.                                  |
 | `COMBATLOG_FORMAT.md`     | What the log's numeric fields mean per line kind, the sources for it, the resistance formulas, and what the log cannot tell you. |
-| `SHOT_MODEL.md`           | Who each field of a line names, how one shot is spread over a shield line and a hull line, and where our reading departs from the published references. |
+| `SHOT_MODEL.md`           | Who each field of a line names, how one shot is spread over a shield line and a hull line, how the program decides which entity fired it, and where our reading departs from the published references. |
 | `HEALING_MODEL.md`        | The three disjoint healing pools, how a record is routed into one, and the two grouping orders.                                  |
 | `DIFFICULTY_DETECTION.md` | How a combat's map and difficulty are derived, and why name rules alone cannot do it.                                            |
 | `DETECTION_SAMPLES.md`    | The measurements the difficulty tiers were built from.                                                                           |
