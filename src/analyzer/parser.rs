@@ -64,6 +64,9 @@ pub struct Parser {
     /// Whether the current record's text lives in `current` rather than in the
     /// line parser's buffer.
     current_is_owned: bool,
+    /// The source the current line takes from the rest of its shot, when the
+    /// line names none itself. Held here so it outlives the borrow of the line.
+    inherited_source: Option<(String, String)>,
 }
 
 /// A fully read line together with its byte range, so lines held in the
@@ -73,6 +76,10 @@ struct PeekedLine {
     text: String,
     start: Option<u64>,
     end: Option<u64>,
+    /// Set once this line has been taken as some shield line's partner, so the
+    /// next shield line of the same shot looks past it. A line served out of the
+    /// queue is gone, so only the ones still waiting need marking.
+    claimed: bool,
 }
 
 /// What a shield line and the damage line of the same shot have in common.
@@ -80,6 +87,7 @@ struct PeekedLine {
 /// Deliberately **not** including the source field: the reference notes that a
 /// shot's shield and hull lines may carry different sources (a pet credited on
 /// one of them), and real logs do exactly that.
+#[derive(PartialEq, Eq, Hash, Clone)]
 struct LineKey {
     timestamp: String,
     owner_id: String,
@@ -119,6 +127,7 @@ impl Parser {
             lookahead: VecDeque::new(),
             current: PeekedLine::default(),
             current_is_owned: false,
+            inherited_source: None,
         })
     }
 
@@ -153,13 +162,31 @@ impl Parser {
             }
         };
 
-        // A shield line whose base magnitude is zero is shaped exactly like a
-        // shield heal, so the line alone cannot say which it is. Only the rest
-        // of the shot can: an attack also writes a damage line at the same
-        // timestamp, a heal does not.
-        let shield_line_is_damage = if Self::is_ambiguous_shield_line(self.current_line()) {
-            self.resolve_ambiguous_shield_line()
+        // Two questions the line alone cannot answer, both settled by the rest
+        // of the shot:
+        //
+        // - A shield line whose base magnitude is zero is shaped exactly like a
+        //   shield heal. An attack also writes a damage line at the same
+        //   timestamp; a heal does not.
+        // - A shield line may name nobody as its source while the damage line of
+        //   the same shot names the pet that fired it. Read as it stands, the
+        //   shot's shield half is credited to the owner and its hull half to the
+        //   pet — one shot split between two rows of the tree.
+        let ambiguous = Self::is_ambiguous_shield_line(self.current_line());
+        let shield_line = Self::shield_line_source(self.current_line());
+        let shield_line_is_damage = if ambiguous || shield_line.is_some() {
+            // Every shield line of a shot claims a damage line, not only the
+            // ones that name nobody — that is what keeps the k-th shield line
+            // paired with the k-th damage line when the game writes a group of
+            // shots as all its shield lines and then all its hull lines.
+            let shot = self.look_ahead_over_shot(shield_line.is_some());
+            self.inherited_source = match shield_line {
+                Some(NamesSource::No) => shot.source,
+                _ => None,
+            };
+            ambiguous && shot.has_damage_line
         } else {
+            self.inherited_source = None;
             false
         };
 
@@ -168,8 +195,14 @@ impl Parser {
         } else {
             &self.line_parser.line
         };
-        Self::parse_from_line(line, &mut self.scratch_pad, log_pos, shield_line_is_damage)
-            .ok_or(RecordError::InvalidRecord(line))
+        Self::parse_from_line(
+            line,
+            &mut self.scratch_pad,
+            log_pos,
+            shield_line_is_damage,
+            self.inherited_source.as_ref(),
+        )
+        .ok_or(RecordError::InvalidRecord(line))
     }
 
     fn current_line(&self) -> &str {
@@ -180,19 +213,32 @@ impl Parser {
         }
     }
 
-    /// Reads ahead over the rest of the current timestamp looking for the
-    /// damage line that belongs to the same shot. Returns whether one was
-    /// found, i.e. whether the shield line in hand is an attack rather than a
-    /// heal.
+    /// Reads ahead over the rest of the shot and reports what its damage lines
+    /// say. Two different questions, answered from the same pass:
+    ///
+    /// - **Heal or attack** takes the *first* damage line of the shot. Whether
+    ///   it has already been claimed as somebody's partner does not matter: a
+    ///   heal never has one at all, so one existing anywhere in the shot settles
+    ///   it.
+    /// - **Who fired** takes the *n-th* damage line, where `n` counts the shield
+    ///   lines of this shot already served. The game writes a shot's shield line
+    ///   before its hull line, so a weapon firing several times at one target
+    ///   inside the same tenth of a second lays them down as
+    ///   `shield₁ hull₁ shield₂ hull₂ …` and taking them in order pairs each
+    ///   with its own. Requiring every damage line of the shot to name the same
+    ///   source instead — the first shape of this rule — gave up on the whole
+    ///   burst whenever two pets fired into it.
     ///
     /// Everything read is kept in `lookahead` and served by later calls, so the
-    /// stream is neither rewound nor lost. When the log ends mid-group nothing
-    /// is found and the line is treated as a heal; the remainder arrives on a
-    /// later refresh, by which time this record is already recorded. That is a
-    /// bounded inaccuracy at the very tail of a log that stops growing.
-    fn resolve_ambiguous_shield_line(&mut self) -> bool {
+    /// stream is neither rewound nor lost. When the log ends mid-shot nothing is
+    /// found: the line is taken as a heal and keeps naming nobody, and the
+    /// remainder arrives on a later refresh, by which time this record is
+    /// already in. That is a bounded inaccuracy at the very tail of a log that
+    /// stops growing.
+    fn look_ahead_over_shot(&mut self, want_source: bool) -> ShotLookahead {
+        let mut shot = ShotLookahead::default();
         let Some(key) = LineKey::of(self.current_line()) else {
-            return false;
+            return shot;
         };
 
         // Take a copy: peeking writes through the shared line buffer.
@@ -204,28 +250,47 @@ impl Parser {
             self.current_is_owned = true;
         }
 
-        if self.lookahead.iter().any(|p| key.is_companion(&p.text)) {
-            return true;
+        for peeked in self.lookahead.iter_mut() {
+            if peeked.claimed {
+                continue;
+            }
+            if let Some(fields) = key.companion_fields(&peeked.text) {
+                shot.has_damage_line = true;
+                if !want_source {
+                    return shot;
+                }
+                shot.take_source_of(&fields);
+                peeked.claimed = true;
+                return shot;
+            }
         }
 
         while self.line_parser.advance_line() {
-            let peeked = PeekedLine {
+            let mut peeked = PeekedLine {
                 text: self.line_parser.line.clone(),
                 start: self.line_parser.line_start_in_file,
                 end: self.line_parser.line_end_in_file,
+                claimed: false,
             };
             let same_shot_window = key.is_same_timestamp(&peeked.text);
-            let is_companion = same_shot_window && key.is_companion(&peeked.text);
-            self.lookahead.push_back(peeked);
-            if is_companion {
-                return true;
+            let mut done = false;
+            if same_shot_window && let Some(fields) = key.companion_fields(&peeked.text) {
+                shot.has_damage_line = true;
+                if !want_source {
+                    self.lookahead.push_back(peeked);
+                    return shot;
+                }
+                shot.take_source_of(&fields);
+                peeked.claimed = true;
+                done = true;
             }
-            if !same_shot_window {
+            self.lookahead.push_back(peeked);
+            if done || !same_shot_window {
                 break;
             }
         }
 
-        false
+        shot
     }
 
     /// Whether a raw line is a shield line that could be either damage or a
@@ -252,11 +317,29 @@ impl Parser {
             && fields.value2 == 0.0
     }
 
+    /// Whether a raw line is a shield line, and if so whether it names a source
+    /// of its own. `None` for anything that is not a shield line. Cheap check
+    /// first — this runs on every line of the log.
+    fn shield_line_source(line: &str) -> Option<NamesSource> {
+        if !line.contains(",Shield,") {
+            return None;
+        }
+        let fields = LineFields::of(line)?;
+        (fields.value_type == "Shield").then(|| {
+            if fields.has_no_source() {
+                NamesSource::No
+            } else {
+                NamesSource::Yes
+            }
+        })
+    }
+
     fn parse_from_line<'a>(
         line: &'a str,
         scratch_pad: &mut String,
         log_pos: Option<Range<u64>>,
         shield_line_is_damage: bool,
+        inherited_source: Option<&'a (String, String)>,
     ) -> Option<Record<'a>> {
         let (time, line) = line.split_once("::")?;
 
@@ -267,8 +350,17 @@ impl Parser {
         let source_id_and_unique_name = fields.next()?;
         let source = Entity::parse(source_name, source_id_and_unique_name)?;
 
-        let indirect_source_name = fields.next()?;
-        let indirect_source_id_and_unique_name = fields.next()?;
+        let (indirect_source_name, indirect_source_id_and_unique_name) = match inherited_source {
+            // The shot's damage line named who fired it; this half of the same
+            // shot did not. See `look_ahead_over_shot`.
+            Some((name, id)) => (Cow::Borrowed(name.as_str()), Cow::Borrowed(id.as_str())),
+            None => (fields.next()?, fields.next()?),
+        };
+        if inherited_source.is_some() {
+            // The two fields are still there to be stepped over.
+            fields.next()?;
+            fields.next()?;
+        }
         let indirect_source =
             Entity::parse(indirect_source_name, indirect_source_id_and_unique_name)?;
 
@@ -343,6 +435,8 @@ impl<'a> Record<'a> {
 struct LineFields<'a> {
     timestamp: &'a str,
     owner_id: Cow<'a, str>,
+    source_name: Cow<'a, str>,
+    source_id: Cow<'a, str>,
     target_id: Cow<'a, str>,
     ability: Cow<'a, str>,
     value_type: Cow<'a, str>,
@@ -357,8 +451,8 @@ impl<'a> LineFields<'a> {
         let mut fields = parse_csv_line(rest);
         let _owner_name = fields.next()?;
         let owner_id = fields.next()?;
-        let _source_name = fields.next()?;
-        let _source_id = fields.next()?;
+        let source_name = fields.next()?;
+        let source_id = fields.next()?;
         let _target_name = fields.next()?;
         let target_id = fields.next()?;
         let ability = fields.next()?;
@@ -370,6 +464,8 @@ impl<'a> LineFields<'a> {
         Some(Self {
             timestamp,
             owner_id,
+            source_name,
+            source_id,
             target_id,
             ability,
             value_type,
@@ -377,6 +473,12 @@ impl<'a> LineFields<'a> {
             value1,
             value2,
         })
+    }
+
+    /// Whether the source fields say "nothing carried this out" — the shape a
+    /// line has when the owner acted directly. Both spellings occur.
+    fn has_no_source(&self) -> bool {
+        self.source_name.is_empty() && (self.source_id.is_empty() || self.source_id == "*")
     }
 }
 
@@ -397,22 +499,59 @@ impl LineKey {
             .unwrap_or(false)
     }
 
-    /// Whether `line` is the damage half of the same shot: same instant, owner,
-    /// target and ability, and an actual damage line — a negative `HitPoints`
-    /// line is another heal (abilities that restore hull and shields at once
-    /// write both), not the companion we are looking for.
-    fn is_companion(&self, line: &str) -> bool {
-        let Some(fields) = LineFields::of(line) else {
-            return false;
-        };
-        fields.timestamp == self.timestamp
+    /// The fields of `line` when it is the damage half of the same shot: same
+    /// instant, owner, target and ability, and an actual damage line — a
+    /// negative `HitPoints` line is another heal (abilities that restore hull
+    /// and shields at once write both), not the companion we are looking for.
+    fn companion_fields<'a>(&self, line: &'a str) -> Option<LineFields<'a>> {
+        let fields = LineFields::of(line)?;
+        (fields.timestamp == self.timestamp
             && fields.owner_id == self.owner_id
             && fields.target_id == self.target_id
             && fields.ability == self.ability
             && fields.value_type != "Shield"
-            && !(fields.value_type == "HitPoints" && fields.value1 < 0.0)
+            && !(fields.value_type == "HitPoints" && fields.value1 < 0.0))
+        .then_some(fields)
+    }
+
+}
+
+/// Whether a shield line names a source of its own. A line that does still has
+/// to claim its partner — otherwise a later shield line of the same shot would
+/// take it, and the pairing would slip by one.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum NamesSource {
+    Yes,
+    No,
+}
+
+/// What the rest of a shot says about the shield line at the head of it.
+#[derive(Default)]
+struct ShotLookahead {
+    /// A damage line of the same shot exists, so the shield line is an attack
+    /// rather than a heal.
+    has_damage_line: bool,
+    /// The source named by the damage line this shield line pairs with. `None`
+    /// when that line names nobody, or when the shot has no line left to pair
+    /// with.
+    source: Option<(String, String)>,
+}
+
+impl ShotLookahead {
+    /// Take the partner's source, if it names one. A partner that names nobody
+    /// leaves the shield line naming nobody as well, which is right: the two
+    /// halves then agree that the owner fired it.
+    fn take_source_of(&mut self, fields: &LineFields) {
+        if !fields.has_no_source() {
+            self.source = Some((
+                fields.source_name.to_string(),
+                fields.source_id.to_string(),
+            ));
+        }
     }
 }
+
+
 
 static ID_AND_UNIQUE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?P<type>P|C|S)\[(?P<id>\d+)(@(?P<player_id>\d+))?(\s+(?P<unique_name>[^\]]+))?\]")
@@ -703,6 +842,197 @@ mod tests {
 
     use super::*;
 
+    /// Reads `records` through a real `Parser` and reports, per line, what the
+    /// indirect source came out as.
+    fn indirect_sources_of(dir: &str, records: &str) -> Vec<Option<String>> {
+        let dir = std::env::temp_dir().join(dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        std::fs::write(&log, records).unwrap();
+
+        let mut parser = Parser::new(&log).unwrap();
+        let mut sources = Vec::new();
+        loop {
+            match parser.parse_next() {
+                Ok(record) => sources.push(record.indirect_source.name().map(str::to_string)),
+                Err(RecordError::InvalidRecord(line)) => panic!("{line}"),
+                Err(RecordError::EndReached) => break,
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        sources
+    }
+
+    /// One shot, two lines: the game names the pet that fired it on the hull
+    /// line and nobody on the shield line. Read as it stands, the shot's shield
+    /// half is credited to the owner — which is how a weapon the player does not
+    /// even carry ends up as a row of their own damage.
+    #[test]
+    fn a_shield_line_takes_the_source_its_shot_names() {
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Shield,,-31036.7,-60424.7\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey,C[643 Critter_Kvort],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Disruptor,,2808.47,16654.8\n",
+        );
+
+        assert_eq!(
+            vec![
+                Some("Bird-of-Prey".to_string()),
+                Some("Bird-of-Prey".to_string())
+            ],
+            indirect_sources_of("cla-shield-source-test", records),
+            "both halves of one shot belong to whoever fired it"
+        );
+    }
+
+    /// A shot the owner fired themselves keeps naming nobody — the rule may only
+    /// fill in a source the shot actually states.
+    #[test]
+    fn a_shield_line_of_the_owners_own_shot_is_left_alone() {
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Beam Array,Pn.8rvb8h,Shield,,-8917.7,-10226.5\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Beam Array,Pn.8rvb8h,Phaser,,1956.96,10587.2\n",
+        );
+
+        assert_eq!(
+            vec![None, None],
+            indirect_sources_of("cla-shield-owner-test", records)
+        );
+    }
+
+    /// A weapon firing several times at one target inside the same tenth of a
+    /// second writes `shield₁ hull₁ shield₂ hull₂ …`, and the shot key cannot
+    /// tell those apart. Taken in order, each shield line pairs with its own
+    /// hull line — so two pets firing into the same burst each keep their own
+    /// half, instead of the whole burst being given up as ambiguous.
+    #[test]
+    fn shield_lines_of_a_burst_pair_in_order() {
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Shield,,-100.0,-200.0\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey ALPHA,C[642 Critter_Kvort_A],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Disruptor,,10.0,20.0\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Shield,,-300.0,-400.0\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey BETA,C[643 Critter_Kvort_B],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Disruptor,,30.0,40.0\n",
+        );
+
+        assert_eq!(
+            vec![
+                Some("Bird-of-Prey ALPHA".to_string()),
+                Some("Bird-of-Prey ALPHA".to_string()),
+                Some("Bird-of-Prey BETA".to_string()),
+                Some("Bird-of-Prey BETA".to_string()),
+            ],
+            indirect_sources_of("cla-burst-order-test", records),
+            "each shield line belongs to the shot that follows it, not to the first one"
+        );
+    }
+
+    /// The same burst, written with both shield lines before both hull lines —
+    /// which happens, since half of all shots have another shot's lines between
+    /// their two halves. Here the first shield line's partner is still sitting
+    /// in the look-ahead queue when the second one asks, so it has to be marked
+    /// as taken; otherwise both shield lines pair with the same hull line and
+    /// the second pet's shield damage is credited to the first.
+    #[test]
+    fn a_partner_already_taken_is_not_taken_again() {
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Shield,,-100.0,-200.0\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Shield,,-300.0,-400.0\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey ALPHA,C[642 Critter_Kvort_A],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Disruptor,,10.0,20.0\n",
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey BETA,C[643 Critter_Kvort_B],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.6zx6ys1,Disruptor,,30.0,40.0\n",
+        );
+
+        assert_eq!(
+            vec![
+                Some("Bird-of-Prey ALPHA".to_string()),
+                Some("Bird-of-Prey BETA".to_string()),
+                Some("Bird-of-Prey ALPHA".to_string()),
+                Some("Bird-of-Prey BETA".to_string()),
+            ],
+            indirect_sources_of("cla-partner-taken-test", records),
+            "the second shield line must look past the partner the first one took"
+        );
+    }
+
+    /// The owner and a pet firing the same weapon at the same target in the same
+    /// tenth of a second, written as *all* the shield lines and then all the
+    /// hull lines — the shape a real log uses for a group of shots. The owner's
+    /// own shield line comes last of the three, and its partner is last of the
+    /// three hull lines. A rule that let it take the first unclaimed damage line
+    /// would hand the owner's shot to a pet.
+    ///
+    /// Verified on the reference log: across 897 shots where both sides name
+    /// sources and so can be compared, the k-th shield line and the k-th hull
+    /// line agree every time, with no counterexample.
+    #[test]
+    fn the_owners_own_shot_keeps_its_place_among_a_pets() {
+        let records = concat!(
+            "26:09:02:11:58:39.3::Kestrel,P[1@2 Kestrel@handle],Sphere A,C[267 Space_Borg_Cruiser],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Plasma Array,Pn.4g1l7r,Shield,,-10.0,-20.0\n",
+            "26:09:02:11:58:39.3::Kestrel,P[1@2 Kestrel@handle],Sphere B,C[239 Space_Borg_Cruiser],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Plasma Array,Pn.4g1l7r,Shield,,-30.0,-40.0\n",
+            "26:09:02:11:58:39.3::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Plasma Array,Pn.4g1l7r,Shield,,-50.0,-60.0\n",
+            "26:09:02:11:58:39.3::Kestrel,P[1@2 Kestrel@handle],Sphere A,C[267 Space_Borg_Cruiser],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Plasma Array,Pn.4g1l7r,Plasma,,1.0,2.0\n",
+            "26:09:02:11:58:39.3::Kestrel,P[1@2 Kestrel@handle],Sphere B,C[239 Space_Borg_Cruiser],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Plasma Array,Pn.4g1l7r,Plasma,,3.0,4.0\n",
+            "26:09:02:11:58:39.3::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Plasma Array,Pn.4g1l7r,Plasma,,5.0,6.0\n",
+        );
+
+        assert_eq!(
+            vec![
+                Some("Sphere A".to_string()),
+                Some("Sphere B".to_string()),
+                None,
+                Some("Sphere A".to_string()),
+                Some("Sphere B".to_string()),
+                None,
+            ],
+            indirect_sources_of("cla-owner-among-pets-test", records),
+            "the third shield line is the owner's and must stay the owner's"
+        );
+    }
+
+    /// Where the key gathers damage lines naming *different* sources — a
+    /// chaining effect arriving from several entities in the same tenth of a
+    /// second — they are read as what they are: separate shots, in the order
+    /// written. The shield line pairs with the first, and the rest are shots
+    /// whose own shield line the game did not write.
+    #[test]
+    fn a_shield_line_pairs_with_the_first_of_several_sources() {
+        let records = concat!(
+            "26:09:02:14:59:23.5::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Cascade,Pn.G7ugsj1,Shield,,-963.301,-916.068\n",
+            "26:09:02:14:59:23.5::Kestrel,P[1@2 Kestrel@handle],Probe,C[487 Space_Borg_Frigate],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Cascade,Pn.G7ugsj1,Tetryon,,1427.3,8937.0\n",
+            "26:09:02:14:59:23.5::Kestrel,P[1@2 Kestrel@handle],Sphere,C[489 Space_Borg_Cruiser],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Cascade,Pn.G7ugsj1,Tetryon,,1573.25,8100.0\n",
+        );
+
+        assert_eq!(
+            vec![
+                Some("Probe".to_string()),
+                Some("Probe".to_string()),
+                Some("Sphere".to_string())
+            ],
+            indirect_sources_of("cla-shield-ambiguous-test", records),
+            "the shield line joins the first shot; the second keeps its own source"
+        );
+    }
+
     #[ignore = "manual test"]
     #[test]
     fn read_log() {
@@ -730,7 +1060,8 @@ mod tests {
             "23:01:07:10:12:56.3::Borg Queen Octahedron,C[25 Mission_Space_Borg_Queen_Diamond],Kestrel,P[1@2 Kestrel@handle],,*,Plasma Fire,Pn.Wujkxq,Plasma,Kill,2086.87,5300.66",
             &mut String::new(),
             None,
-            false)
+            false,
+            None)
             .unwrap();
 
         println!("{:?}", record)

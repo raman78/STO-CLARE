@@ -116,6 +116,49 @@ children. The path a record takes into the tree is built by
 `Player::build_grouping_path` from the record plus the user's grouping rules,
 which is where Custom Group Rules and Source Reversal rules take effect.
 
+A path is read **back to front**: its last segment is the level directly under
+the player and its first is the leaf. `Player::add_out_value` inserts the target
+at the front, which is why the deepest row of a damage tree is who was hit.
+
+### What each rule may move
+
+The log says who owned a shot (field 1) and, separately, what it passed through
+on the way out — a pet, a console, an anomaly (field 3, `Record::
+indirect_source`). Where a record has both an indirect source and a target,
+`build_grouping_path` lays them down as `ability` then `indirect source`, so the
+pet ends up over the ability it fired. Source Reversal turns that pair over.
+
+**A custom group is laid directly over the ability segment**, never appended to
+the end of the path. `build_grouping_path` tracks where the ability sits
+(`ability_index`, which reversal moves) and inserts the group one place above
+it. The rule says "these effect names are one weapon", so the effect level is
+all it may fold:
+
+| the record | the path, read back to front |
+|------------|------------------------------|
+| straight from the player | group → ability → target |
+| through a pet | pet → group → ability → target |
+| through a pet, reversed | group → ability → pet → target |
+
+Appended to the end instead — which is the topmost level — the group became the
+*parent of the pet*, and a pet firing a weapon of the same name as the player's
+own was counted inside the player's row for that weapon. Measured on a real
+Infected: The Conduit run with the maintainer's 48 rules: the row named
+"Disruptor Turret" held 510 hits of which 304 were two Bird-of-Prey pets', and
+the same pets kept rows of their own for the shots whose names happened not to
+match the rule — so neither figure was the player's and neither was the pet's.
+Across that fight 15.7% of the outgoing damage sat under a group named after a
+weapon the player had not fired. Held by
+`a_custom_group_does_not_swallow_a_pets_damage` and
+`a_custom_group_sits_over_a_reversed_branch`.
+
+Note that an indirect source is **not** always a pet: the log routes a player's
+own procs through whatever entity carried them, including enemies. In the same
+log, `Mycelial Lightning` passes through a Borg `Probe` and
+`Refracting Tetryon Cascade` through a `Control Sphere`. The split the code can
+make is *direct* against *through something*, which every line states; "pet" is
+not a thing the log ever says.
+
 ## Map and difficulty
 
 `analyzer::detection` derives `(map, difficulty)` from which curated NPCs

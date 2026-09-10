@@ -1015,6 +1015,17 @@ Beam Array, whose Technical Overload fires alongside the beam itself. There is a
 ready-made example for the Dark Matter Quantum Torpedo, again switched on with
 its "on" box.
 
+A grouping rule folds effects together; it never moves damage from one shooter
+to another. If your pet carries the same weapon you do — a Bird-of-Prey with the
+turrets and cannons off your own build — its shots stay under the pet's row, and
+your rule folds them there, under the pet. Your own row holds what you fired.
+Before 2.8 the rule took both, so a row named after your weapon quietly held the
+pet's damage as well, and the same pet was split across two places in the tree.
+
+If you *do* want one effect gathered from everywhere it came from — your own
+guns and everything that carried it — that is what a **Source Reversal** rule is
+for: it puts the effect on top and the pets underneath.
+
 A warning mark next to one of your rules means it overlaps a map that would be
 recognised automatically. Your rule still wins; the mark is only there so you
 know why the name is not what you expected.
