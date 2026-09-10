@@ -535,9 +535,8 @@ impl LineKey {
             && fields.ability == self.ability
             && fields.value_type != "Shield"
             && !(fields.value_type == "HitPoints" && fields.value1 < 0.0))
-        .then_some(fields)
+            .then_some(fields)
     }
-
 }
 
 /// Whether a shield line names a source of its own. A line that does still has
@@ -572,17 +571,13 @@ impl ShotLookahead {
     /// halves then agree that the owner fired it.
     fn take_source_of(&mut self, fields: &LineFields) {
         if fields.has_no_source() {
-            self.partner_source_blank = fields.source_name.is_empty() && fields.source_id.is_empty();
+            self.partner_source_blank =
+                fields.source_name.is_empty() && fields.source_id.is_empty();
             return;
         }
-        self.source = Some((
-            fields.source_name.to_string(),
-            fields.source_id.to_string(),
-        ));
+        self.source = Some((fields.source_name.to_string(), fields.source_id.to_string()));
     }
 }
-
-
 
 static ID_AND_UNIQUE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?P<type>P|C|S)\[(?P<id>\d+)(@(?P<player_id>\d+))?(\s+(?P<unique_name>[^\]]+))?\]")

@@ -597,6 +597,38 @@ idea is not re-derived from scratch, and so that if the row ever grows large
 enough to be a nuisance, the trade is already priced: about half of it
 recoverable, at roughly a 6% error rate.
 
+**Elimination fails for a different reason, and fails harder.** The other
+proposal turns the question around: an unsigned line is thought to come from a
+pet that has just stopped existing, so any carrier that fires this same event id
+again *after* the line must still be alive, and can be struck off. If one
+candidate survives the strike-off, it is the answer.
+
+The trap in measuring this is that the obvious ground truth — "the last shot
+before a gap" — is the rule itself, so it scores 100% and means nothing. The
+honest test uses the *instance* id, which the rule never sees: take hull lines
+that do name a carrier, keep only those where that carrier's `C[id]` never
+appears again in the fight (a real despawn), hide the name, and run elimination
+on names alone. Over the 100 ladder logs, 4 493 such lines:
+
+| look-ahead | answers | accuracy | random pick |
+|---|---:|---:|---:|
+| 1 s | 22.4% | 31.8% | 36.1% |
+| 2 s | 23.4% | 30.0% | 36.1% |
+| 3 s | 23.5% | 29.9% | 36.1% |
+| 5 s | 22.8% | 31.7% | 36.1% |
+
+Elimination is worse than picking a candidate at random, and the direction of
+the error says why: in **2 122 of the 4 493** cases it strikes off the carrier
+that actually died. A pet name is a *type*, not an identity — 459 of the 973
+carrier names in a fight cover more than one instance, and one name can stand
+for a dozen hangar craft. When one Bird-of-Prey despawns its twin keeps firing
+under the same name, so "this name fired again" is not evidence that "this pet
+survived". The premise the rule rests on does not hold in the log.
+
+Not implemented, and not worth revisiting unless the log ever starts naming
+instances on the lines that currently name nobody — at which point elimination
+is unnecessary anyway.
+
 ## 5. Where this departs from the published references
 
 There is no specification from Cryptic. Two sources are treated as prior art,

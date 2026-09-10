@@ -590,7 +590,10 @@ impl Combat {
             // Only the placeholder says "the owner fired this". A blank pair
             // says nothing, and is the very shape being judged.
             None if !record.source_field_blank => {
-                self.carriers_of_event.entry(key).or_default().fired_directly += 1;
+                self.carriers_of_event
+                    .entry(key)
+                    .or_default()
+                    .fired_directly += 1;
             }
             None => (),
         }
@@ -1586,7 +1589,8 @@ mod tests {
                 .cloned()
         };
 
-        let group = child(&player.damage_out, "Quantum Phase Torpedo").expect("the group is on top");
+        let group =
+            child(&player.damage_out, "Quantum Phase Torpedo").expect("the group is on top");
         let ability = child(&group, "Quantum Phase Transfer").expect("the effect is under it");
         assert!(
             child(&ability, "Control Sphere").is_some(),

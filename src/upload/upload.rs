@@ -480,7 +480,9 @@ mod tests {
         assert_eq!(1024, body.read(&mut buf).unwrap(), "it feeds while it may");
 
         cancelled.store(true, Ordering::Relaxed);
-        let err = body.read(&mut buf).expect_err("a raised flag fails the read");
+        let err = body
+            .read(&mut buf)
+            .expect_err("a raised flag fails the read");
         assert!(
             err.to_string().contains("cancelled"),
             "the error says why, so a failed upload can be told from a dropped one: {err}"

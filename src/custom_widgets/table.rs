@@ -839,14 +839,7 @@ fn finish_table(
     divide: Divide,
     view_width: f32,
 ) {
-    ColumnState::draw_separators(
-        &state.columns,
-        ui,
-        rect,
-        columns_left,
-        cell_spacing,
-        divide,
-    );
+    ColumnState::draw_separators(&state.columns, ui, rect, columns_left, cell_spacing, divide);
     // Only a frozen column is held to a share of the view. One that scrolls away
     // with the rest is not keeping anything off the screen, so there would be
     // nothing to buy by cutting a name short in it.
@@ -1308,7 +1301,14 @@ impl State {
         self.size.y = self.size.y.max(rows as f32 * row_height);
     }
 
-    fn finish(mut self, ui: &Ui, id: Id, cell_spacing: f32, frozen: usize, view_width: f32) -> bool {
+    fn finish(
+        mut self,
+        ui: &Ui,
+        id: Id,
+        cell_spacing: f32,
+        frozen: usize,
+        view_width: f32,
+    ) -> bool {
         let size_change = (self.size - self.last_size).abs();
         let mut repaint_required = size_change.x > 0.5 || size_change.y > 0.5;
         self.last_size = self.size;
@@ -1821,7 +1821,10 @@ mod tests {
             .iter()
             .filter(|(_, stroke)| stroke.width >= FREEZE_RULE_WIDTH)
             .count();
-        assert_eq!(1, heavy, "the divide is drawn, once, and heavier than the rest");
+        assert_eq!(
+            1, heavy,
+            "the divide is drawn, once, and heavier than the rest"
+        );
     }
 
     /// A tree of names, standing in for the damage tree a table is drawn from.

@@ -996,7 +996,10 @@ mod tab_tests {
     fn a_plain_tab_is_taken() {
         let mut events = vec![tab(Modifiers::NONE, true), tab(Modifiers::NONE, false)];
         assert!(take_tab_presses(&mut events));
-        assert!(events.is_empty(), "both the press and the release are taken");
+        assert!(
+            events.is_empty(),
+            "both the press and the release are taken"
+        );
     }
 
     /// A modified Tab is not the focus walk and may mean something to the window
