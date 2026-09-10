@@ -2,7 +2,8 @@ use crate::custom_widgets::dialog::escape_closes;
 use rustc_hash::FxHashMap;
 use std::borrow::BorrowMut;
 
-use eframe::egui::*;
+use eframe::{Frame, egui::*};
+use rfd::FileDialog;
 
 use super::Settings;
 use crate::analyzer::settings::*;
@@ -62,6 +63,10 @@ const DIALOG_SCREEN_MARGIN: f32 = 80.0;
 pub struct AnalysisTab {
     list_selected_combat_occurred_names: bool,
     occurred_combat_names_search_term: String,
+    /// What the last Export or Import did, or why it could not. Shown until it
+    /// is dismissed: a file dialog that closes with nothing else happening is
+    /// indistinguishable from one whose work quietly failed.
+    transfer_report: Option<String>,
     selected_section: AnalysisSection,
     indirect_source_reversal_rules: IndirectSourceReversalRules,
     custom_grouping_rules: CustomGroupingRules,
@@ -140,30 +145,64 @@ impl AnalysisTab {
         modified_settings: &mut Settings,
         selected_combat: Option<&Combat>,
         ui: &mut Ui,
+        frame: &Frame,
     ) {
-        if ui
-            .add_enabled(
-                selected_combat.is_some(),
-                Button::new("List Selected Combat Occurred Names"),
-            )
-            .clicked()
-        {
-            self.list_selected_combat_occurred_names = true;
+        // Said here, where the rules are, and said every time the tab is opened
+        // rather than once at start-up: the rules on screen are not the ones in
+        // the file, and editing them without knowing that would be working on
+        // the wrong copy. Nothing is written over that file while this stands.
+        if let Some(problem) = modified_settings.rules_file_problem() {
+            ui.colored_label(
+                theme::palette().warn,
+                format!(
+                    "⚠ Your rules file could not be read, so the rules below are the ones \
+                     from before it was split out, and the file is being left alone.\n{problem}"
+                ),
+            );
+            ui.separator();
         }
+
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(
+                    selected_combat.is_some(),
+                    Button::new("List Selected Combat Occurred Names"),
+                )
+                .clicked()
+            {
+                self.list_selected_combat_occurred_names = true;
+            }
+
+            ui.separator();
+            self.show_transfer_buttons(
+                &mut modified_settings.analysis,
+                None,
+                "all four rule sets",
+                ui,
+                frame,
+            );
+        });
 
         ui.add_space(8.0);
         ui.horizontal_wrapped(|ui| {
             use AnalysisSection::*;
-            for (section, label) in [
-                (CombatNames, "Combat Names"),
-                (SourceReversal, "Source Reversal"),
-                (CustomGrouping, "Custom Grouping"),
-                (DamageExclusion, "Damage Exclusion"),
-            ] {
-                ui.steady_toggle_value(&mut self.selected_section, section, label);
+            for section in [CombatNames, SourceReversal, CustomGrouping, DamageExclusion] {
+                ui.steady_toggle_value(&mut self.selected_section, section, section.label());
             }
         });
         ui.separator();
+
+        ui.horizontal_wrapped(|ui| {
+            let section = self.selected_section;
+            self.show_transfer_buttons(
+                &mut modified_settings.analysis,
+                Some(section),
+                "this section",
+                ui,
+                frame,
+            );
+        });
+        ui.add_space(4.0);
 
         match self.selected_section {
             AnalysisSection::CombatNames => {
@@ -192,6 +231,93 @@ impl AnalysisTab {
         }
 
         self.show_occurred_names_window(selected_combat, ui);
+        self.show_transfer_report(ui);
+    }
+
+    /// Export and Import, for one section or for all four.
+    ///
+    /// `section` of `None` means the whole tab. Both write the same shape of
+    /// file, so a section's file can be imported into the tab and the other way
+    /// round — the reader is spared having to know that there are two kinds.
+    fn show_transfer_buttons(
+        &mut self,
+        settings: &mut AnalysisSettings,
+        section: Option<AnalysisSection>,
+        what: &str,
+        ui: &mut Ui,
+        frame: &Frame,
+    ) {
+        let (sets, sections, file_name) = match section {
+            Some(section) => (
+                section.taken_from(settings),
+                vec![section],
+                section.file_name(),
+            ),
+            None => (
+                settings.rule_sets(),
+                vec![
+                    AnalysisSection::CombatNames,
+                    AnalysisSection::SourceReversal,
+                    AnalysisSection::CustomGrouping,
+                    AnalysisSection::DamageExclusion,
+                ],
+                crate::helpers::paths::RULES_FILE_NAME.to_string(),
+            ),
+        };
+
+        if ui
+            .button("Export…")
+            .hover(format!("Write {what} to a file you can keep or pass on"))
+            .clicked()
+            && let Some(path) = FileDialog::new()
+                .set_title("Export rules")
+                .add_filter("rules", &["json"])
+                .set_file_name(&file_name)
+                .set_parent(frame)
+                .save_file()
+        {
+            self.transfer_report = Some(match sets.write(&path) {
+                Ok(()) => format!("Exported {} to\n{}", sets.summary(), path.display()),
+                Err(e) => format!("Nothing was exported.\n\n{e}"),
+            });
+        }
+
+        if ui
+            .button("Import…")
+            .hover(format!(
+                "Add rules from a file to {what}. Nothing of yours is removed."
+            ))
+            .clicked()
+            && let Some(path) = FileDialog::new()
+                .set_title("Import rules")
+                .add_filter("rules", &["json"])
+                .set_parent(frame)
+                .pick_file()
+        {
+            self.transfer_report = Some(match RuleSets::read(&path) {
+                Ok(incoming) => import_rules(settings, incoming, &sections),
+                Err(e) => format!("Nothing was imported.\n\n{}\n\n{e}", path.display()),
+            });
+        }
+    }
+
+    /// What the last Export or Import did. Said rather than left to be inferred
+    /// from a list that may look unchanged — an import of rules already held
+    /// adds nothing at all, and that is a result, not a failure.
+    fn show_transfer_report(&mut self, ui: &mut Ui) {
+        let Some(report) = self.transfer_report.clone() else {
+            return;
+        };
+        let response = Modal::new(ui.id().with("rule transfer report")).show(ui.ctx(), |ui| {
+            ui.set_width(EDIT_DIALOG_WIDTH.min(ui.ctx().content_rect().width() - 40.0) * 0.6);
+            ui.label(report);
+            ui.separator();
+            let closed = ui.horizontal(|ui| ui.button("Close").clicked()).inner;
+            closed || escape_closes(ui.ctx())
+        });
+        if response.inner || response.backdrop_response.clicked() {
+            self.transfer_report = None;
+        }
     }
 
     fn show_occurred_names_window(&mut self, selected_combat: Option<&Combat>, ui: &mut Ui) {
@@ -1150,6 +1276,123 @@ fn matches_by_aspect<'a>(
 /// How many clashing effects a warning names before it says "and N more".
 const CLASHES_LISTED: usize = 3;
 
+impl AnalysisSection {
+    /// What the section is called where a reader is asked about it.
+    const fn label(self) -> &'static str {
+        match self {
+            Self::CombatNames => "Combat Names",
+            Self::SourceReversal => "Source Reversal",
+            Self::CustomGrouping => "Custom Grouping",
+            Self::DamageExclusion => "Damage Exclusion",
+        }
+    }
+
+    /// The suggested file name for exporting this section on its own.
+    fn file_name(self) -> String {
+        format!("STO-CLARE_{}_Rules.json", self.label().replace(' ', "-"))
+    }
+
+    /// Just this section's rules, as a file of the same shape as the whole one.
+    /// One shape for both, so a file exported from a section can be imported
+    /// into the whole tab and the other way round.
+    fn taken_from(self, settings: &AnalysisSettings) -> RuleSets {
+        let all = settings.rule_sets();
+        let mut one = RuleSets::default();
+        match self {
+            Self::CombatNames => one.combat_name_rules = all.combat_name_rules,
+            Self::SourceReversal => {
+                one.indirect_source_grouping_revers_rules =
+                    all.indirect_source_grouping_revers_rules
+            }
+            Self::CustomGrouping => one.custom_group_rules = all.custom_group_rules,
+            Self::DamageExclusion => {
+                one.damage_out_exclusion_rules = all.damage_out_exclusion_rules
+            }
+        }
+        one
+    }
+}
+
+/// Add `incoming` to what `settings` already holds, and say what happened.
+///
+/// **Added to, not put in place of.** A file of rules is something a player
+/// fetches to have *as well as* their own, and an import that emptied four
+/// lists would be the one action in the program capable of destroying an
+/// evening's work in a click. (Cancel in Settings still undoes it either way —
+/// nothing here is on disk until Ok.)
+///
+/// A rule identical to one already held is skipped rather than duplicated, and
+/// the count of those is reported: silently doubling every rule on a second
+/// import would leave a list nobody can read, and silently dropping them would
+/// leave the reader wondering whether the file was read at all.
+///
+/// `sections` says which of the four to take, so the same routine serves the
+/// per-section buttons and the whole-tab one.
+fn import_rules(
+    settings: &mut AnalysisSettings,
+    incoming: RuleSets,
+    sections: &[AnalysisSection],
+) -> String {
+    fn merge<T: PartialEq>(into: &mut Vec<T>, from: Vec<T>, added: &mut usize, same: &mut usize) {
+        for rule in from {
+            if into.contains(&rule) {
+                *same += 1;
+            } else {
+                into.push(rule);
+                *added += 1;
+            }
+        }
+    }
+
+    let mut lines = Vec::new();
+    for section in sections {
+        let (mut added, mut same) = (0usize, 0usize);
+        match section {
+            AnalysisSection::CombatNames => merge(
+                &mut settings.combat_name_rules,
+                incoming.combat_name_rules.clone(),
+                &mut added,
+                &mut same,
+            ),
+            AnalysisSection::SourceReversal => merge(
+                &mut settings.indirect_source_grouping_revers_rules,
+                incoming.indirect_source_grouping_revers_rules.clone(),
+                &mut added,
+                &mut same,
+            ),
+            AnalysisSection::CustomGrouping => merge(
+                &mut settings.custom_group_rules,
+                incoming.custom_group_rules.clone(),
+                &mut added,
+                &mut same,
+            ),
+            AnalysisSection::DamageExclusion => merge(
+                &mut settings.damage_out_exclusion_rules,
+                incoming.damage_out_exclusion_rules.clone(),
+                &mut added,
+                &mut same,
+            ),
+        }
+        if added == 0 && same == 0 {
+            continue;
+        }
+        let skipped = match same {
+            0 => String::new(),
+            n => format!(", {n} already there and skipped"),
+        };
+        lines.push(format!("{}: {added} added{skipped}", section.label()));
+    }
+
+    if lines.is_empty() {
+        return "That file holds no rules for this section, so nothing was added.".to_string();
+    }
+    format!(
+        "Added to your rules. Nothing is written until you press Ok — Cancel puts \
+         it all back.\n\n{}",
+        lines.join("\n")
+    )
+}
+
 /// Which rules claim an effect that another rule also claims, and who takes it.
 ///
 /// Keyed by rule name rather than by position, because the list is sorted and
@@ -1930,6 +2173,119 @@ mod editor_tests {
             clashing_rules(&groups, &[MatchAspect::DamageOrHealName], &combat).is_empty(),
             "two rules of one name cannot disagree about where a record goes"
         );
+    }
+
+    fn a_named_group(name: &str) -> RulesGroup {
+        RulesGroup {
+            name: name.to_string(),
+            enabled: true,
+            rules: vec![wildcard("Quad*Cannons")],
+        }
+    }
+
+    /// An import adds to what is there. It is not a replacement: a file of
+    /// rules is something a player fetches to have *as well as* their own, and
+    /// an import that emptied four lists would be the one action in the program
+    /// able to destroy an evening's work in a click.
+    #[test]
+    fn an_import_adds_rules_and_removes_none() {
+        let mut settings = AnalysisSettings {
+            custom_group_rules: vec![a_named_group("Mine")],
+            ..Default::default()
+        };
+        let incoming = RuleSets {
+            custom_group_rules: vec![a_named_group("Theirs")],
+            ..Default::default()
+        };
+
+        let report = import_rules(&mut settings, incoming, &[AnalysisSection::CustomGrouping]);
+
+        assert_eq!(
+            vec!["Mine", "Theirs"],
+            settings
+                .custom_group_rules
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(report.contains("Custom Grouping: 1 added"), "{report}");
+    }
+
+    /// A rule identical to one already held is skipped, and the count is said.
+    /// Doubling every rule on a second import leaves a list nobody can read;
+    /// dropping them without a word leaves the reader wondering whether the
+    /// file was read at all.
+    #[test]
+    fn importing_the_same_file_twice_adds_nothing_and_says_so() {
+        let mut settings = AnalysisSettings {
+            custom_group_rules: vec![a_named_group("Shared")],
+            ..Default::default()
+        };
+        let incoming = RuleSets {
+            custom_group_rules: vec![a_named_group("Shared")],
+            ..Default::default()
+        };
+
+        let report = import_rules(&mut settings, incoming, &[AnalysisSection::CustomGrouping]);
+
+        assert_eq!(1, settings.custom_group_rules.len(), "nothing was doubled");
+        assert!(
+            report.contains("0 added") && report.contains("1 already there and skipped"),
+            "{report}"
+        );
+    }
+
+    /// Importing into one section leaves the other three alone, so a file of
+    /// combat names dropped on the Custom Grouping tab does not quietly fill
+    /// a list the reader was not looking at.
+    #[test]
+    fn an_import_touches_only_the_sections_asked_for() {
+        let mut settings = AnalysisSettings::default();
+        let incoming = RuleSets {
+            custom_group_rules: vec![a_named_group("Grouping")],
+            damage_out_exclusion_rules: vec![wildcard("*Torpedo*")],
+            ..Default::default()
+        };
+
+        let report = import_rules(&mut settings, incoming, &[AnalysisSection::CustomGrouping]);
+
+        assert_eq!(1, settings.custom_group_rules.len());
+        assert!(
+            settings.damage_out_exclusion_rules.is_empty(),
+            "a section that was not asked for must not be touched"
+        );
+        assert!(!report.contains("Damage Exclusion"), "{report}");
+    }
+
+    /// A file with nothing for this section is a result, not a silence.
+    #[test]
+    fn an_import_that_brings_nothing_says_that_too() {
+        let mut settings = AnalysisSettings::default();
+        let report = import_rules(
+            &mut settings,
+            RuleSets::default(),
+            &[AnalysisSection::CustomGrouping],
+        );
+        assert!(report.contains("no rules for this section"), "{report}");
+    }
+
+    /// A section exports the same shape of file as the whole tab, so a file
+    /// from either can be imported into either.
+    #[test]
+    fn a_section_exports_only_itself_in_the_shared_shape() {
+        let settings = AnalysisSettings {
+            custom_group_rules: vec![a_named_group("Grouping")],
+            damage_out_exclusion_rules: vec![wildcard("*Torpedo*")],
+            ..Default::default()
+        };
+        let one = AnalysisSection::CustomGrouping.taken_from(&settings);
+
+        assert_eq!(1, one.custom_group_rules.len());
+        assert!(
+            one.damage_out_exclusion_rules.is_empty(),
+            "a section's file holds that section and nothing else"
+        );
+        assert_eq!(RULES_FILE_VERSION, one.version);
     }
 
     /// A rule deleted while its dialog is open leaves an index pointing past the

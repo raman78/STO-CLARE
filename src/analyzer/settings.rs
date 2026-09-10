@@ -11,10 +11,18 @@ use super::parser::*;
 pub struct AnalysisSettings {
     pub combatlog_file: String,
     pub combat_separation_time_seconds: f64,
+    // The four rule sets live in their own file from 2.8 on — see `RuleSets`.
+    // Still *read* from the settings, because that is where every existing
+    // installation has them and that is what makes the move a no-op for the
+    // reader; no longer written there, so the old copy goes on the first save
+    // rather than lingering as a second, diverging source of the same truth.
+    #[serde(default, skip_serializing)]
     pub indirect_source_grouping_revers_rules: Vec<MatchRule>,
+    #[serde(default, skip_serializing)]
     pub custom_group_rules: Vec<RulesGroup>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub damage_out_exclusion_rules: Vec<MatchRule>,
+    #[serde(default, skip_serializing)]
     pub combat_name_rules: Vec<CombatNameRule>,
     // Linux: merge STO's rotating combatlog_<timestamp>.log files into one
     // combatlog.log and read that (no-op elsewhere). See app::log_consolidation.
@@ -73,9 +81,138 @@ pub struct RulesGroup {
     pub enabled: bool,
 }
 
+/// The Analysis tab's four rule sets, as one file.
+///
+/// Kept apart from the settings so that a set of rules is something a player
+/// can copy to another machine or hand to someone else without also handing
+/// over their log path, their window size and their handle. It is also what
+/// Export and Import write and read, so the file in the config directory and
+/// the file a player passes around are the same shape.
+///
+/// `version` is written but not yet acted on: it exists so that a later change
+/// of shape can be recognised rather than guessed at from which fields happen
+/// to parse.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuleSets {
+    pub version: u32,
+    #[serde(default)]
+    pub combat_name_rules: Vec<CombatNameRule>,
+    #[serde(default)]
+    pub indirect_source_grouping_revers_rules: Vec<MatchRule>,
+    #[serde(default)]
+    pub custom_group_rules: Vec<RulesGroup>,
+    #[serde(default)]
+    pub damage_out_exclusion_rules: Vec<MatchRule>,
+}
+
+/// The shape written today. A file carrying a higher number was written by a
+/// newer build and is refused rather than half-read.
+pub const RULES_FILE_VERSION: u32 = 1;
+
+impl Default for RuleSets {
+    fn default() -> Self {
+        Self {
+            version: RULES_FILE_VERSION,
+            combat_name_rules: Default::default(),
+            indirect_source_grouping_revers_rules: Default::default(),
+            custom_group_rules: Default::default(),
+            damage_out_exclusion_rules: Default::default(),
+        }
+    }
+}
+
+/// What went wrong reading a rules file, in the words the dialog shows.
+///
+/// A rules file that cannot be read is never treated as an empty one: that
+/// would silently throw away every rule its owner had written, and look
+/// exactly like a fresh installation. The caller keeps what it had and says so.
+#[derive(Debug)]
+pub enum RulesFileError {
+    Unreadable(std::io::Error),
+    NotRules(serde_json::Error),
+    FromANewerVersion { found: u32, understood: u32 },
+}
+
+impl std::fmt::Display for RulesFileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable(e) => write!(f, "the file could not be read: {e}"),
+            Self::NotRules(e) => write!(
+                f,
+                "this does not look like a rules file — {e}. A rules file is the \
+                 one Export writes; a settings file or a combat log will not do."
+            ),
+            Self::FromANewerVersion { found, understood } => write!(
+                f,
+                "this file was written by a newer version of STO-CLARE (format {found}; \
+                 this build understands {understood}). Update, and it will read."
+            ),
+        }
+    }
+}
+
+impl RuleSets {
+    pub fn path() -> Option<std::path::PathBuf> {
+        Some(crate::helpers::paths::config_dir()?.join(crate::helpers::paths::RULES_FILE_NAME))
+    }
+
+    pub fn read(path: &Path) -> Result<Self, RulesFileError> {
+        let data = std::fs::read_to_string(path).map_err(RulesFileError::Unreadable)?;
+        let sets: Self = serde_json::from_str(&data).map_err(RulesFileError::NotRules)?;
+        if sets.version > RULES_FILE_VERSION {
+            return Err(RulesFileError::FromANewerVersion {
+                found: sets.version,
+                understood: RULES_FILE_VERSION,
+            });
+        }
+        Ok(sets)
+    }
+
+    pub fn write(&self, path: &Path) -> Result<(), RulesFileError> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(RulesFileError::Unreadable)?;
+        }
+        let data = serde_json::to_string_pretty(self).map_err(RulesFileError::NotRules)?;
+        std::fs::write(path, data).map_err(RulesFileError::Unreadable)
+    }
+
+    /// How many rules this holds, per set, for a dialog that has to say what an
+    /// import is about to bring in.
+    pub fn summary(&self) -> String {
+        format!(
+            "{} combat name, {} source reversal, {} custom grouping, {} damage exclusion",
+            self.combat_name_rules.len(),
+            self.indirect_source_grouping_revers_rules.len(),
+            self.custom_group_rules.len(),
+            self.damage_out_exclusion_rules.len(),
+        )
+    }
+}
+
 impl AnalysisSettings {
     pub fn combatlog_file(&self) -> &Path {
         Path::new(&self.combatlog_file)
+    }
+
+    /// The four rule sets, lifted out of the settings.
+    pub fn rule_sets(&self) -> RuleSets {
+        RuleSets {
+            version: RULES_FILE_VERSION,
+            combat_name_rules: self.combat_name_rules.clone(),
+            indirect_source_grouping_revers_rules: self
+                .indirect_source_grouping_revers_rules
+                .clone(),
+            custom_group_rules: self.custom_group_rules.clone(),
+            damage_out_exclusion_rules: self.damage_out_exclusion_rules.clone(),
+        }
+    }
+
+    /// Put a set of rules in place of the ones held now.
+    pub fn set_rule_sets(&mut self, sets: RuleSets) {
+        self.combat_name_rules = sets.combat_name_rules;
+        self.indirect_source_grouping_revers_rules = sets.indirect_source_grouping_revers_rules;
+        self.custom_group_rules = sets.custom_group_rules;
+        self.damage_out_exclusion_rules = sets.damage_out_exclusion_rules;
     }
 }
 

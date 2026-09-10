@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::OnceLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    analyzer::settings::AnalysisSettings,
+    analyzer::settings::{AnalysisSettings, RuleSets},
     app::{
         compare::CompareSettings,
         settings::{ColumnVisibility, CombatNotes},
@@ -39,6 +39,14 @@ pub struct Settings {
     /// log.
     #[serde(default)]
     pub columns: ColumnVisibility,
+    /// Why the rules file could not be read at start-up, when it could not.
+    ///
+    /// Not part of the settings on disk — it describes this run, not a
+    /// preference — but it travels with them because everything that has to act
+    /// on it already holds a `Settings`: the dialog that says so, and `save`,
+    /// which refuses to write over a file it could not read.
+    #[serde(skip)]
+    rules_file_problem: Option<String>,
 }
 
 /// Size and maximized state of the main window, remembered between runs.
@@ -168,14 +176,117 @@ impl Settings {
     }
 
     pub fn load_or_default() -> Self {
-        Self::file_path()
+        let mut settings: Self = Self::file_path()
             .and_then(|f| std::fs::read_to_string(&f).ok())
             .or_else(|| Self::legacy_file_path().and_then(|f| std::fs::read_to_string(&f).ok()))
             .and_then(|d| serde_json::from_str(&d).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        settings.rules_file_problem = settings.load_rules();
+        settings
+    }
+
+    /// Bring the rules in from their own file, or leave in place the ones that
+    /// came out of the settings.
+    ///
+    /// No rules file means one of two things and they are handled the same way:
+    /// this installation predates the split, in which case the rules just read
+    /// out of the settings are the ones to keep and to write out; or this is a
+    /// fresh installation, in which case those are the shipped defaults and
+    /// writing them out gives the player a file to edit. Either way the move
+    /// happens on the first start rather than waiting for the first Ok, so a
+    /// player who never opens Settings is not left with rules in the old place.
+    ///
+    /// A rules file that exists but cannot be read is **not** treated as an
+    /// empty one — that would throw away every rule its owner wrote and look
+    /// exactly like a fresh install. The rules from the settings stay in place,
+    /// the file is left untouched, and the reason is returned for the UI to
+    /// show and for the save path to refuse to overwrite it.
+    /// Done **once per process.** Four separate parts of the app load the
+    /// settings at start-up — the window geometry, the logger, the app state
+    /// and the Settings dialog — and each of them would otherwise re-read the
+    /// file, re-run the move, and, when the file is unreadable, log the same
+    /// error four times over.
+    fn load_rules(&mut self) -> Option<String> {
+        static ONCE: OnceLock<Result<RuleSets, String>> = OnceLock::new();
+
+        let path = RuleSets::path()?;
+        let from_the_settings = self.analysis.rule_sets();
+        let outcome = ONCE.get_or_init(move || {
+            let mut analysis = AnalysisSettings::default();
+            analysis.set_rule_sets(from_the_settings);
+            match Self::load_rules_at(&mut analysis, &path) {
+                Some(problem) => Err(problem),
+                None => Ok(analysis.rule_sets()),
+            }
+        });
+
+        match outcome {
+            Ok(sets) => {
+                self.analysis.set_rule_sets(sets.clone());
+                None
+            }
+            Err(problem) => {
+                // Logged from out here rather than from inside the once-only
+                // block, because the logger is configured *from* the settings
+                // and so is not up yet the first time they are loaded — an
+                // error written in there goes nowhere. Written by the first
+                // caller that finds a logger listening, and only that one.
+                static REPORTED: OnceLock<()> = OnceLock::new();
+                if log::log_enabled!(log::Level::Error) && REPORTED.set(()).is_ok() {
+                    log::error!("{problem}");
+                }
+                Some(problem.clone())
+            }
+        }
+    }
+
+    /// The body of [`Settings::load_rules`], against a path a test can name.
+    fn load_rules_at(analysis: &mut AnalysisSettings, path: &std::path::Path) -> Option<String> {
+        if !path.exists() {
+            if let Err(e) = analysis.rule_sets().write(path) {
+                log::warn!("could not write {}: {e}", path.display());
+            } else {
+                log::info!("rules moved to {}", path.display());
+            }
+            return None;
+        }
+        match RuleSets::read(path) {
+            Ok(sets) => {
+                analysis.set_rule_sets(sets);
+                None
+            }
+            // Not logged here: the caller writes it, because the logger is
+            // configured from the settings and is not up yet the first time
+            // they are loaded.
+            Err(e) => Some(format!("{}\n\n{e}", path.display())),
+        }
+    }
+
+    /// Whether the rules file was unreadable at start-up, and why.
+    ///
+    /// Held so the Settings window can say it, and so `save` will not write
+    /// over a file it could not read: the rules in memory are the ones from
+    /// before the split, and overwriting with those would finish the job the
+    /// unreadable file started.
+    pub fn rules_file_problem(&self) -> Option<&str> {
+        self.rules_file_problem.as_deref()
+    }
+
+    fn save_rules(&self) {
+        if self.rules_file_problem.is_some() {
+            log::warn!("not writing the rules file: it could not be read at start-up");
+            return;
+        }
+        let Some(path) = RuleSets::path() else {
+            return;
+        };
+        if let Err(e) = self.analysis.rule_sets().write(&path) {
+            log::error!("could not write {}: {e}", path.display());
+        }
     }
 
     pub fn save(&self) {
+        self.save_rules();
         let file_path = match Self::file_path() {
             Some(p) => p,
             None => {
@@ -261,6 +372,7 @@ impl Default for UploadSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::settings::{RULES_FILE_VERSION, RulesFileError, RulesGroup};
 
     /// Settings written before there was a file to come back to must keep
     /// loading, with nothing remembered — not with an empty path, which would
@@ -426,6 +538,183 @@ mod tests {
         older.as_object_mut().unwrap().remove("columns");
         let older: Settings = serde_json::from_value(older).unwrap();
         assert_eq!(ColumnVisibility::default(), older.columns);
+    }
+
+    /// A scratch directory, and the rules-file path inside it.
+    fn a_temp_rules_file(name: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(paths::RULES_FILE_NAME);
+        (dir, path)
+    }
+
+    fn settings_with_a_rule(name: &str) -> Settings {
+        let mut settings = Settings::default();
+        settings.analysis.custom_group_rules = vec![RulesGroup {
+            name: name.to_string(),
+            ..Default::default()
+        }];
+        settings
+    }
+
+    /// An installation from before the split has its rules inside the settings.
+    /// The first start writes them out to their own file, so a player who never
+    /// opens Settings is not left with them in the old place.
+    #[test]
+    fn rules_are_moved_out_of_the_settings_on_the_first_start() {
+        let (dir, path) = a_temp_rules_file("cla-rules-migrate");
+        let mut settings = settings_with_a_rule("Quad Cannons");
+
+        assert_eq!(None, Settings::load_rules_at(&mut settings.analysis, &path));
+        assert!(path.exists(), "the rules file was not written");
+
+        let written = RuleSets::read(&path).expect("and it reads back");
+        assert_eq!(
+            vec!["Quad Cannons"],
+            written
+                .custom_group_rules
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(RULES_FILE_VERSION, written.version);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The rules file, once there, is what the program uses — not the copy the
+    /// settings may still be carrying from before the move.
+    #[test]
+    fn the_rules_file_wins_over_the_settings_copy() {
+        let (dir, path) = a_temp_rules_file("cla-rules-file-wins");
+        RuleSets {
+            custom_group_rules: vec![RulesGroup {
+                name: "From the file".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+        .write(&path)
+        .unwrap();
+
+        let mut settings = settings_with_a_rule("From the settings");
+        assert_eq!(None, Settings::load_rules_at(&mut settings.analysis, &path));
+        assert_eq!(
+            vec!["From the file"],
+            settings
+                .analysis
+                .custom_group_rules
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A rules file that cannot be read is never treated as an empty one: that
+    /// would throw away every rule its owner wrote while looking exactly like a
+    /// fresh installation. What was in hand stays, the file is left alone, and
+    /// the reason is reported.
+    #[test]
+    fn an_unreadable_rules_file_does_not_wipe_the_rules() {
+        let (dir, path) = a_temp_rules_file("cla-rules-broken");
+        std::fs::write(&path, "{ this is not json").unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let mut settings = settings_with_a_rule("Quad Cannons");
+        let problem =
+            Settings::load_rules_at(&mut settings.analysis, &path).expect("it says what is wrong");
+
+        assert!(
+            problem.contains("does not look like a rules file"),
+            "{problem}"
+        );
+        assert_eq!(
+            vec!["Quad Cannons"],
+            settings
+                .analysis
+                .custom_group_rules
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            "the rules in hand must survive"
+        );
+        assert_eq!(
+            before,
+            std::fs::read_to_string(&path).unwrap(),
+            "and the file is untouched"
+        );
+
+        // And saving must not finish the job the broken file started.
+        settings.rules_file_problem = Some(problem);
+        settings.save_rules();
+        assert_eq!(before, std::fs::read_to_string(&path).unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file from a newer build is refused rather than half-read, so rules it
+    /// holds in a shape this build does not know are not quietly dropped.
+    #[test]
+    fn a_rules_file_from_a_newer_build_is_refused() {
+        let (dir, path) = a_temp_rules_file("cla-rules-newer");
+        std::fs::write(
+            &path,
+            format!(
+                r#"{{"version": {}, "custom_group_rules": []}}"#,
+                RULES_FILE_VERSION + 1
+            ),
+        )
+        .unwrap();
+
+        match RuleSets::read(&path) {
+            Err(RulesFileError::FromANewerVersion { found, understood }) => {
+                assert_eq!(RULES_FILE_VERSION + 1, found);
+                assert_eq!(RULES_FILE_VERSION, understood);
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The settings file no longer carries the rules, so the old copy goes on
+    /// the first save instead of lingering as a second source of the same
+    /// truth — while a settings file that still has them is still read.
+    #[test]
+    fn the_settings_file_stops_carrying_the_rules_but_still_reads_them() {
+        let settings = settings_with_a_rule("Quad Cannons");
+        let written = serde_json::to_value(&settings).unwrap();
+        assert!(
+            written["analysis"].get("custom_group_rules").is_none(),
+            "the rules must not be written into the settings any more"
+        );
+
+        let older = serde_json::json!({
+            "analysis": {
+                "combatlog_file": "",
+                "combat_separation_time_seconds": 60.0,
+                "indirect_source_grouping_revers_rules": [],
+                "custom_group_rules": [{ "name": "From an old settings file", "rules": [], "enabled": true }],
+                "combat_name_rules": []
+            },
+            "auto_refresh": written["auto_refresh"],
+            "visuals": written["visuals"],
+            "debug": written["debug"],
+        });
+        let older: Settings = serde_json::from_value(older).unwrap();
+        assert_eq!(
+            vec!["From an old settings file"],
+            older
+                .analysis
+                .custom_group_rules
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            "an existing installation's rules still have to be found"
+        );
     }
 
     #[test]

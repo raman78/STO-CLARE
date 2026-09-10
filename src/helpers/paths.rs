@@ -20,6 +20,12 @@ pub const LEGACY_SETTINGS_FILE_NAME: &str = "STO_CombatLogAnalyzer_Settings.json
 
 pub const LOG_FILE_NAME: &str = "STO-CLARE.log";
 
+/// The Analysis tab's four rule sets, kept apart from the settings so the file
+/// can be copied to another machine or handed to someone else on its own.
+/// Written from 2.8 on; before that the rules lived inside the settings file
+/// and are carried over on the first start — see `AnalysisSettings::load_rules`.
+pub const RULES_FILE_NAME: &str = "STO-CLARE_Rules.json";
+
 /// Per-user config directory: `~/.config/STO-CLARE` on Linux,
 /// `%APPDATA%\STO-CLARE` on Windows. Using the OS config dir means settings and
 /// logs survive when the program lives in a read-only location (e.g. `/usr/bin`,

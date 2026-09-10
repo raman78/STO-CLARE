@@ -149,10 +149,12 @@ impl SettingsWindow {
                             ui,
                             frame,
                         ),
-                        SettingsTab::Analysis => {
-                            self.analysis_tab
-                                .show(&mut self.modified_settings, selected_combat, ui)
-                        }
+                        SettingsTab::Analysis => self.analysis_tab.show(
+                            &mut self.modified_settings,
+                            selected_combat,
+                            ui,
+                            frame,
+                        ),
                         SettingsTab::Visuals => {
                             self.visuals_tab.show(&mut self.modified_settings, ui)
                         }

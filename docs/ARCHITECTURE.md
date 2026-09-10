@@ -227,6 +227,43 @@ the selected combat and puts a ⚠ on **both** rows, naming the shared effects a
 which rule takes each. Keyed by rule name, because the list is sorted and
 positions move, and because two rules sharing a name are not a clash at all.
 
+### Where the rules live, and moving them about
+
+The four rule sets are their own file, `STO-CLARE_Rules.json` in the config
+directory (`paths::RULES_FILE_NAME`), holding a `RuleSets`. Apart from the
+settings because a set of rules is something a player copies to another machine
+or hands to someone else, and the settings carry their log path, their window
+size and their handle.
+
+Existing installations keep their rules inside the settings, so the four fields
+of `AnalysisSettings` are `#[serde(default, skip_serializing)]`: still read from
+a settings file that has them, never written back. `Settings::load_rules` then
+does the move on the **first start**, not on the first Ok — a player who never
+opens Settings would otherwise be left with rules in the old place. A missing
+rules file and a fresh installation are the same case and take the same path:
+write out what is in hand, which for a fresh installation is the shipped
+defaults, giving the player a file to edit.
+
+A rules file that exists but cannot be read is never treated as an empty one.
+That would discard every rule its owner wrote while looking exactly like a fresh
+install. Instead the rules from the settings stay in place, the file is left
+untouched, `save` refuses to write over it (`Settings::rules_file_problem`), and
+the Analysis tab says so at the top — every time the tab is opened, not once at
+start-up, because the rules on screen are then not the ones in the file and
+editing them is working on the wrong copy.
+
+`version` is written and checked: a file from a newer build is refused with
+`RulesFileError::FromANewerVersion` rather than half-read.
+
+**Export and Import** write and read that same shape, for one section or for all
+four, so a file exported from a section can be imported into the whole tab and
+the other way round — a reader never has to know there are two kinds. Import
+**adds**; it never replaces. A rule identical to one already held is skipped and
+counted, and the report says both numbers: doubling every rule on a second
+import leaves a list nobody can read, and dropping them without a word leaves
+the reader unsure the file was read at all. Nothing reaches disk until Ok, so
+Cancel undoes an import.
+
 ### Trying a rule against a real fight
 
 A rule is edited in a centred modal opened by the ✏ on its row

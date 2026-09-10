@@ -1075,6 +1075,31 @@ Before version 2.8 the rule listed higher won, which meant moving a row could
 silently change your numbers — and a rule copied from someone else worked or did
 not depending on where you happened to paste it.
 
+#### Keeping and sharing your rules
+
+Your rules live in their own file, **`STO-CLARE_Rules.json`**, next to the
+settings — `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows.
+Copy that one file to another machine and your rules go with it; nothing else of
+yours travels with it. If you are upgrading from an older version, your rules
+are moved there the first time the program starts and nothing is asked of you.
+
+**Export…** writes a file you can keep as a backup or pass to someone else.
+**Import…** reads one back. Each of the four tabs has its own pair, for that
+section alone, and the pair at the top of the Analysis page covers all four at
+once. Both write the same kind of file, so a file exported from one tab can be
+imported at the top and the other way round.
+
+Import **adds** to what you already have — it never clears your rules. A rule
+identical to one you already have is skipped instead of being duplicated, so
+importing the same file twice changes nothing. Afterwards a small window says
+how many rules were added and how many were skipped. Nothing is saved until you
+press **Ok**, so **Cancel** undoes an import you did not mean.
+
+If the program cannot read your rules file, it says so at the top of the
+Analysis page and leaves the file alone rather than writing over it. Your rules
+on screen are then the ones from before, so fix or move the file before editing
+anything.
+
 #### Writing a rule
 
 Every rule works the same way, whichever of the four tabs it is in. Press the
