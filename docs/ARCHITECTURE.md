@@ -159,6 +159,124 @@ log, `Mycelial Lightning` passes through a Borg `Probe` and
 make is *direct* against *through something*, which every line states; "pet" is
 not a thing the log ever says.
 
+### How a condition matches
+
+Every rule set in the Analysis tab is built from the same part: a `MatchRule` is
+an **aspect** (which name to read), a **method** (how to compare) and the text
+to compare against. `MatchAspect` names the five kinds of name a record carries;
+`MatchMethod` is `Equals`, `StartsWith`, `EndsWith`, `Contains` or `Wildcard`.
+A group matches a record when any of its enabled conditions does — the
+conditions are an OR, never an AND.
+
+`Wildcard` is the one method that does not read its text literally.
+`wildcard_matches` treats `*` and `%` as *any run of characters* and `?` as
+*exactly one*, and the pattern has to cover the whole name. Two spellings of the
+same wildcard rather than one because the players who write these rules come
+from two habits — file patterns and SQL — and a rule that silently matched
+nothing would be indistinguishable from a rule that was never applied. There is
+no escape character; a name containing a literal `*` is matched with `Contains`.
+The pattern is anchored so that a pattern with no wildcard in it means `Equals`
+rather than quietly becoming a second `Contains`.
+
+Matching is linear in the length of the name: the matcher remembers the last
+wildcard and how far it had got, so a run that turns out too short is handed one
+more character instead of the pattern being retried from the start.
+
+The methods are enumerated for the picker in exactly one place,
+`MATCH_METHODS` in `app/settings/analysis.rs`, so a variant added to the enum
+cannot go missing from the UI.
+
+### Which rule wins when two of them fit
+
+Custom grouping is the one rule set where two rules can claim the same record
+and only one can have it — a record goes into one group. The winner is the one
+that fits **most precisely**, chosen by `settings::most_specific_match`, not the
+one that happens to be first in the list.
+
+`Specificity` is read in three parts, most significant first: how many
+characters of the name the pattern actually spells out; whether it covers the
+whole name; and whether the method admits nothing else, which only `Equals`
+does. The order of those three is load-bearing. Put coverage first and
+`Wildcard "*"` — which covers every name and spells out nothing — outranks every
+carefully written rule in the list. Leave the third out and
+`Equals "Quad Cannons"` cannot be told from `Contains "Quad Cannons"`, which
+spell out the same characters against that name but were written to mean
+different things.
+
+Two rules fitting equally well are settled by name, alphabetically, so the same
+log read on two machines gives the same answer.
+
+This replaced first-match-wins, and the reason is that order was carrying two
+jobs at once. The list is sorted by name so a rule can be found in it
+(`GroupRulesTable::sort_by_name`), which means order can no longer also decide
+what the program does; and a rule imported from someone else's file has to
+behave the same wherever in the list it lands, or importing is a coin toss.
+Measured before the change on the maintainer's 48 rules against the 419 effect
+names in a 138 MB log: four names were claimed by more than one rule, and every
+one of those four was a clash between two rules **of the same name**, which file
+the record identically either way. The change moved nothing.
+
+Order-dependence is specific to custom grouping. Combat names collect every
+matching rule (`filter`), and source reversal and damage exclusion ask only
+whether any rule matches (`any`), so for those three the order never meant
+anything.
+
+A clash between rules of different names is surfaced rather than settled in
+silence: `clashing_rules` in `app/settings/analysis.rs` checks the rules against
+the selected combat and puts a ⚠ on **both** rows, naming the shared effects and
+which rule takes each. Keyed by rule name, because the list is sorted and
+positions move, and because two rules sharing a name are not a clash at all.
+
+### Trying a rule against a real fight
+
+A rule is edited in a centred modal opened by the ✏ on its row
+(`GroupRulesTable::show_edit_dialog`), and beside its conditions the dialog
+lists the names in the **selected combat** that those conditions currently pick
+out (`show_matches_pane`). The list is gathered *after* the conditions are drawn
+in the same frame, so a character typed into a pattern is already reflected in
+it rather than a keystroke behind.
+
+Every aspect the rule set offers is reported with a count — `12 of 340` — even
+when it matches nothing. A rule that catches nothing otherwise looks exactly
+like one that was never evaluated, and that ambiguity is what sends a player
+back to re-reading the log to find out which it was.
+
+Escape is asked through `custom_widgets::dialog::escape_closes` rather than
+egui's `ModalResponse::should_close`, which consumes the key without regard for
+what holds the keyboard: pressing Escape to leave a half-written rule name would
+otherwise shut the dialog on the way out. See `custom_widgets/dialog.rs` for the
+ordering rule between nested dialogs.
+
+Two things about the dialog's geometry are load-bearing, and both were found by
+the dialog opening empty:
+
+- **The modal is given a size instead of taking one.** An `egui::Modal` is an
+  area sized by what it holds. A table inside one that asks for a fixed height
+  gets it, the modal grows to match, and the next frame there is that much more
+  room to ask for — the dialog grew by one row per frame without end, and on the
+  frame right after it opened the budget collapsed to a few dozen points and the
+  conditions table could not draw a single row. `show_edit_dialog` pins both
+  dimensions (`EDIT_DIALOG_WIDTH`, `EDIT_DIALOG_HEIGHT`, capped to the screen)
+  and the contents then divide a fixed budget. `the_dialog_holds_its_size_
+  instead_of_growing_every_frame` holds it.
+- **Each half is given a top-down layout explicitly.** `Ui::allocate_ui` hands a
+  child the layout its parent is in, and the two halves sit in the left-to-right
+  layout that puts them side by side — so the conditions table was laid out
+  *beside* its own heading, on whatever width the heading left over, and its
+  rows fell outside the half and were clipped. Column headings are drawn outside
+  the table's scroll area and kept appearing, which is what made the dialog look
+  merely empty rather than broken. Held by
+  `a_conditions_row_is_drawn_beside_the_pane`.
+
+`EDIT_DIALOG_WIDTH` is not a round number picked for looks: a settled conditions
+table measures 751 points and the pane takes `MATCHES_PANE_WIDTH`.
+
+A column's width comes from what its cells measure, so a field that has to be
+wide before anything is typed into it claims that width through
+`TableRow::measured_cell` rather than through `TextEdit::desired_width` — a
+`TextEdit` is never wider than the room it is given, so asking the field made a
+new rule's name box 73 points wide and left the claim unmade.
+
 ### Who a shot belongs to
 
 Which entity a record is filed under is not simply read off the line. One shot

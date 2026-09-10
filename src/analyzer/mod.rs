@@ -1019,11 +1019,11 @@ impl Player {
         settings: &AnalysisSettings,
         name_manager: &mut NameManager,
     ) {
-        if let Some(rule) = settings
-            .custom_group_rules
-            .iter()
-            .find(|r| r.matches_record(record))
-        {
+        // The most precisely fitting rule, not the first one in the list: see
+        // `settings::most_specific_match`. Rules are listed alphabetically, and
+        // a list ordered for reading is not one whose order may also decide
+        // which rule a record lands in.
+        if let Some(rule) = most_specific_match(&settings.custom_group_rules, record) {
             path.insert(
                 ability_index + 1,
                 GroupPathSegment::Group(name_manager.insert(rule.name.as_str(), NameFlags::NONE)),
@@ -1458,6 +1458,83 @@ mod tests {
         assert!(
             !rows.iter().any(|(n, _)| *n == "Quad Cannons"),
             "and is not folded into a weapon row of the player's, got {rows:?}"
+        );
+    }
+
+    /// Where two custom groups both claim a shot, the more precisely fitting
+    /// one takes it — wherever it happens to sit in the list.
+    ///
+    /// The list is ordered alphabetically for reading, so its order must not
+    /// also decide what the program does; and a group imported from someone
+    /// else's file has to behave the same whichever end of the list it lands
+    /// at. See `settings::most_specific_match`.
+    #[test]
+    fn the_more_precise_of_two_custom_groups_takes_the_shot() {
+        fn row_holding_the_shot(dir: &str, rules: Vec<RulesGroup>) -> String {
+            let dir = std::env::temp_dir().join(dir);
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let log = dir.join("combatlog.log");
+            std::fs::write(
+                &log,
+                concat!(
+                    "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+                    "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+                    "Phaser Wide Angle Dual Heavy Beam Bank - Overload I,Pn.Lb6vs91,",
+                    "Phaser,,100.0,100.0\n",
+                ),
+            )
+            .unwrap();
+
+            let mut analyzer = Analyzer::new(AnalysisSettings {
+                combatlog_file: log.to_string_lossy().into_owned(),
+                custom_group_rules: rules,
+                ..Default::default()
+            })
+            .unwrap();
+            analyzer.update();
+
+            let combat = analyzer.result().first().expect("one combat");
+            let player = combat.players.values().next().expect("one player");
+            let name = combat
+                .name_manager
+                .name(
+                    player
+                        .damage_out
+                        .sub_groups()
+                        .values()
+                        .next()
+                        .unwrap()
+                        .name(),
+                )
+                .to_string();
+            let _ = std::fs::remove_dir_all(&dir);
+            name
+        }
+
+        let group = |name: &str, expression: &str| RulesGroup {
+            name: name.to_string(),
+            enabled: true,
+            rules: vec![MatchRule {
+                aspect: MatchAspect::DamageOrHealName,
+                expression: expression.to_string(),
+                method: MatchMethod::StartsWith,
+                enabled: true,
+            }],
+        };
+        let general = group("Wide Angle", "Phaser Wide Angle");
+        let narrow = group("Wide Angle Heavy", "Phaser Wide Angle Dual Heavy Beam Bank");
+
+        assert_eq!(
+            "Wide Angle Heavy",
+            row_holding_the_shot("cla-specific-first", vec![narrow.clone(), general.clone()]),
+            "the narrower rule takes the shot when it is listed first"
+        );
+        assert_eq!(
+            "Wide Angle Heavy",
+            row_holding_the_shot("cla-specific-last", vec![general, narrow]),
+            "and still takes it when the broader rule is listed first — with \
+             first-match-wins this row was called \"Wide Angle\""
         );
     }
 

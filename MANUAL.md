@@ -1053,8 +1053,72 @@ A warning mark next to one of your rules means it overlaps a map that would be
 recognised automatically. Your rule still wins; the mark is only there so you
 know why the name is not what you expected.
 
+#### The order of your rules
+
+Rules are listed alphabetically by name, so a rule can be found in a long list.
+The order does not decide anything: **where two rules catch the same effect, the
+more precise one takes it**, wherever either of them sits.
+
+"More precise" means the rule that spells out more of the name. If you have one
+rule for `Phaser Wide Angle` and another for `Phaser Wide Angle Dual Heavy Beam
+Bank`, the second one takes the heavy beam bank's shots — that is what you wrote
+it for. An exact match beats the same words used as a fragment. A wildcard is
+worth the characters it actually spells out, so `*` on its own loses to
+everything.
+
+If two rules fit an effect equally well, a warning mark ⚠ appears on both rows.
+Point at it and it names the effects they share and which rule takes each. That
+is nearly always a sign that one of the two was meant to be narrower. The check
+runs against the combat you have selected, so select one to have it done.
+
+Before version 2.8 the rule listed higher won, which meant moving a row could
+silently change your numbers — and a rule copied from someone else worked or did
+not depending on where you happened to paste it.
+
+#### Writing a rule
+
+Every rule works the same way, whichever of the four tabs it is in. Press the
+✏ on its row and a window opens in the middle of the screen with the rule's name
+at the top and its conditions below. Each condition says **which name to look
+at**, **how to compare** and **what to compare it with**. A rule matches when
+*any* one of its conditions does, so several conditions are alternatives, not
+requirements.
+
+The ways to compare:
+
+| Method      | Matches when the name…                                  |
+|-------------|----------------------------------------------------------|
+| Equals      | is exactly the text you typed                            |
+| Starts with | begins with it                                           |
+| Ends with   | ends with it                                             |
+| Contains    | has it somewhere inside                                  |
+| Wildcard    | fits a pattern — see below                               |
+
+**Wildcard** lets one condition stand for a family of names. `*` and `%` both
+mean "anything at all here", and `?` means "exactly one character", so
+`Quad*Cannons*` catches `Quad Disruptor Cannons` and
+`Quad Phaser Cannons - Rapid Fire III` alike. Whichever of `*` or `%` you are
+used to writing, it does the same thing. The pattern has to cover the whole
+name, so a pattern with no `*` in it behaves like Equals — put a `*` at each end
+if you meant "somewhere inside". Capital letters matter, as they do for every
+other method.
+
+**The list beside your conditions** shows the names from the combat you have
+selected that the rule catches right now, and it updates as you type. That is
+the quickest way to check a rule: widen the pattern until the right names appear
+and no others. Each heading counts what it looked at — "2 of 340" means two of
+the 340 effect names in that fight matched. Click any name to copy it.
+
+If the list stays empty, the rule is catching nothing yet; if a name you did not
+expect is in it, the rule is too wide. Nothing has to be applied and no log has
+to be re-read to find out.
+
+Escape closes the window. Pressed while you are typing in a box, the first
+Escape only leaves the box — your text is safe — and the next one closes the
+window.
+
 **List Selected Combat Occurred Names** shows every name that appeared in the
-combat you are reading, which is the easy way to find the exact wording a rule
+combat you are reading, which is another way to find the exact wording a rule
 needs.
 
 ### Visuals

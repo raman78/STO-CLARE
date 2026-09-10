@@ -4,10 +4,15 @@
 //! deciding for itself, so a reader who has learnt it in one dialog has learnt
 //! it in all of them. The main window is not a dialog and is left alone.
 //!
-//! Wired into: Settings (as Cancel), the rule-editing popups
+//! Wired into: Settings (as Cancel), the rule-editing dialog
+//! (`app::settings::analysis`) and the popups that carry column pickers
 //! (`custom_widgets::popup_button`), Delete combats, Selected Combat Occurred
 //! Names, Damage by type, the Upload result and error windows, and Download log
 //! failed.
+//!
+//! Also used in preference to egui's own `ModalResponse::should_close`, which
+//! consumes Escape without regard for what holds the keyboard — see
+//! `GroupRulesTable::show_edit_dialog`.
 //!
 //! Deliberately **not** wired into the windows that report work in progress —
 //! `Clearing the log` and the two `Download log` states. They have nothing to

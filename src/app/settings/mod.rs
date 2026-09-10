@@ -108,7 +108,11 @@ impl SettingsWindow {
             .collapsible(false)
             .resizable(true)
             .default_size(default_size)
-            .min_size([420.0, 300.0])
+            // Wide enough for the widest thing the window has to hold: a rules
+            // table with the list of live matches beside it. Dragged narrower
+            // than that, the Analysis tab could only be read by scrolling it
+            // sideways.
+            .min_size([680.0, 300.0])
             .max_size(max_size)
             .constrain(true)
             .show(ui.ctx(), |ui| {
