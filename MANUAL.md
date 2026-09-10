@@ -1056,8 +1056,16 @@ know why the name is not what you expected.
 #### The order of your rules
 
 Rules are listed alphabetically by name, so a rule can be found in a long list.
-The order does not decide anything: **where two rules catch the same effect, the
-more precise one takes it**, wherever either of them sits.
+Click the **Group Name** heading to turn that order round, or the **On** heading
+to bring the switched-off rules to the top — handy for finding what is not doing
+anything in a list of fifty. The order does not decide anything: **where two
+rules catch the same effect, the more precise one takes it**, wherever either of
+them sits.
+
+The Group Name column takes whatever width the buttons leave, and gives it back
+when you make the window narrower — the ✏, 🗐, ⚠ and 🗑 on each row stay
+reachable rather than sliding off the edge. Squeeze the window far enough and
+the names are shortened rather than the buttons lost.
 
 "More precise" means the rule that spells out more of the name. If you have one
 rule for `Phaser Wide Angle` and another for `Phaser Wide Angle Dual Heavy Beam

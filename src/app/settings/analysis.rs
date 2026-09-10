@@ -9,7 +9,7 @@ use super::Settings;
 use crate::analyzer::settings::*;
 use crate::analyzer::{Combat, curated_map_identifiers, curated_map_names};
 use crate::app::theme;
-use crate::custom_widgets::table::Table;
+use crate::custom_widgets::table::{SortState, Table, sort_marker_width};
 use crate::custom_widgets::toggle::Toggle;
 use crate::custom_widgets::tooltip::CloseTooltip;
 use crate::unwrap_or_return;
@@ -114,6 +114,7 @@ struct CustomGroupingRules {
     selected_group: Option<usize>,
     selected_rule: Option<usize>,
     editing_group: Option<usize>,
+    order: SortState<RuleColumn>,
 }
 
 #[derive(Default)]
@@ -126,9 +127,24 @@ struct CombatNameRules {
     selected_group: Option<usize>,
     selected_rule: Option<usize>,
     editing_group: Option<usize>,
+    order: SortState<RuleColumn>,
     selected_additional_info_group: Option<usize>,
     selected_additional_info_rule: Option<usize>,
     editing_additional_info_group: Option<usize>,
+    additional_info_order: SortState<RuleColumn>,
+}
+
+/// The columns of a rules table a reader can order the list by.
+///
+/// Only two are worth ordering by, and both answer a question about a long
+/// list: "where is the rule called X" and "which of these are switched off".
+/// The rest hold a button apiece.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RuleColumn {
+    /// Whether the rule is switched on. Off first when the order runs the
+    /// column's own way: a list is scanned for what is *not* doing its job.
+    Enabled,
+    Name,
 }
 
 struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
@@ -138,6 +154,8 @@ struct GroupRulesTable<'a, T: BorrowMut<RulesGroup> + Default + Clone> {
     selected_group: &'a mut Option<usize>,
     /// Which row's ✏ is open, if any. See [`GroupRulesTable::show_edit_dialog`].
     editing: &'a mut Option<usize>,
+    /// Which column the list is ordered by, and which way round.
+    order: &'a mut SortState<RuleColumn>,
     /// Optional per-row warning: returns a tooltip when the row's rule should be
     /// flagged (e.g. it shadows an auto-detected map). Adds a ⚠ cell per row.
     row_warning: Option<RowWarning<'a>>,
@@ -573,6 +591,7 @@ impl CustomGroupingRules {
             "Group Name",
             &mut self.selected_group,
             &mut self.editing_group,
+            &mut self.order,
         )
         .with_row_warning(&row_warning)
         .show(ui, |r, ui| {
@@ -707,6 +726,7 @@ impl CombatNameRules {
                 "Combat Name",
                 &mut self.selected_group,
                 &mut self.editing_group,
+                &mut self.order,
             )
             .with_max_height(rules_height)
             .with_row_warning(&row_warning)
@@ -734,6 +754,7 @@ impl CombatNameRules {
                         "Info",
                         &mut self.selected_additional_info_group,
                         &mut self.editing_additional_info_group,
+                        &mut self.additional_info_order,
                     )
                     .with_max_height(each)
                     .show(ui, |r, ui| {
@@ -845,6 +866,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
         name_header: &'a str,
         selected_group: &'a mut Option<usize>,
         editing: &'a mut Option<usize>,
+        order: &'a mut SortState<RuleColumn>,
     ) -> Self {
         Self {
             group_rules,
@@ -852,6 +874,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
             name_header,
             selected_group,
             editing,
+            order,
             row_warning: None,
             max_height: None,
         }
@@ -888,12 +911,29 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
             return;
         }
 
-        let key = |rule: &T| {
-            let name = &rule.borrow().name;
-            (name.is_empty(), name.to_lowercase())
-        };
+        // A rule with no name yet sorts to the end however the list is ordered:
+        // one just added by ✚ stays where it was put until it is called
+        // something, rather than jumping to whichever end is currently first.
+        let unnamed = |rule: &T| rule.borrow().name.is_empty();
+        let name = |rule: &T| rule.borrow().name.to_lowercase();
+        let enabled = |rule: &T| rule.borrow().enabled;
+        let ordering = *self.order;
         let mut order: Vec<usize> = (0..self.group_rules.len()).collect();
-        order.sort_by_key(|index| key(&self.group_rules[*index]));
+        order.sort_by(|a, b| {
+            let (a, b) = (&self.group_rules[*a], &self.group_rules[*b]);
+            unnamed(a).cmp(&unnamed(b)).then_with(|| {
+                let by = match ordering.column.unwrap_or(RuleColumn::Name) {
+                    // Off first the natural way round: a long list is scanned
+                    // for the rules that are *not* doing anything.
+                    RuleColumn::Enabled => enabled(a).cmp(&enabled(b)),
+                    RuleColumn::Name => name(a).cmp(&name(b)),
+                };
+                let by = if ordering.natural { by } else { by.reverse() };
+                // Names settle every tie, so the order is total and the list
+                // does not shuffle among equals from frame to frame.
+                by.then_with(|| name(a).cmp(&name(b)))
+            })
+        });
         if order.iter().enumerate().all(|(to, from)| to == *from) {
             return;
         }
@@ -921,6 +961,8 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
     fn show(&mut self, ui: &mut Ui, edit: impl FnMut(&mut T, &mut Ui)) {
         self.sort_by_name(ui);
         let row_warning = self.row_warning;
+        let ordering = *self.order;
+        let mut reorder: Option<RuleColumn> = None;
         ui.horizontal(|ui| {
             ui.strong(self.title);
             // The new rule becomes the selection, so it is obvious which of the
@@ -930,11 +972,12 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                 self.group_rules.push(Default::default());
                 *self.selected_group = Some(self.group_rules.len() - 1);
             }
-            ui.label(RichText::new("Listed by name").weak()).hover(
-                "Rules are kept in alphabetical order. Where two of them fit the same \
-                     effect, the more precise one wins — so the order is for finding a rule, \
-                     not for deciding which one applies.",
-            );
+            ui.label(RichText::new("Click a heading to order the list").weak())
+                .hover(
+                    "The order is for finding a rule, never for deciding which one \
+                     applies: where two rules fit the same effect, the more precise \
+                     one wins wherever either of them sits.",
+                );
         });
         // Fills whatever height the window offers, minus whatever the caller
         // reserved for the content below it. The Settings window scrolls as a
@@ -1050,8 +1093,13 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                 }
             })
             .header_row(|r| {
+                // The two columns worth ordering a long list by: where a rule
+                // is, and which of them are switched off. The rest hold a
+                // button apiece and there is nothing to order them by.
                 r.cell(|ui| {
-                    ui.label("On");
+                    if sortable(ui, ordering, RuleColumn::Enabled, "On").clicked() {
+                        reorder = Some(RuleColumn::Enabled);
+                    }
                 });
                 r.cell(|ui| {
                     ui.label("Edit");
@@ -1060,9 +1108,26 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                     ui.label("Clone");
                 });
                 r.cell(|ui| {
-                    ui.label(self.name_header);
+                    if sortable(ui, ordering, RuleColumn::Name, self.name_header).clicked() {
+                        reorder = Some(RuleColumn::Name);
+                    }
+                });
+                // The last two columns had no headings at all, so the reader
+                // was left to work out what the mark and the bin were from the
+                // rows alone.
+                if row_warning.is_some() {
+                    r.cell(|ui| {
+                        ui.label("⚠");
+                    });
+                }
+                r.cell(|ui| {
+                    ui.label("Delete");
                 });
             });
+
+        if let Some(column) = reorder {
+            self.order.clicked(column);
+        }
 
         self.show_edit_dialog(ui, edit);
     }
@@ -1675,6 +1740,31 @@ fn show_matches_pane(
         });
 }
 
+/// A column heading that orders the rows by its column.
+///
+/// Reads as a heading, not as a button — a row of buttons across the top of a
+/// table reads as a toolbar — but it rims under the pointer so a reader finds
+/// out it can be clicked by pointing at it, and it carries the mark saying
+/// which way the order runs. The mark's room is kept whether or not it is
+/// showing, so taking charge of the order does not shift the columns.
+fn sortable(
+    ui: &mut Ui,
+    order: SortState<RuleColumn>,
+    column: RuleColumn,
+    label: &str,
+) -> Response {
+    let response = ui
+        .selectable_label(order.is_sorted_by(column), label)
+        .hover("Click to order the list by this column, again to turn it round");
+    let marker = order.marker(column);
+    if marker.is_empty() {
+        ui.add_space(sort_marker_width(ui));
+    } else {
+        ui.label(marker);
+    }
+    response
+}
+
 fn show_move_up_down<T>(selected: &mut Option<usize>, items: &mut [T], ui: &mut Ui) {
     if ui
         .add_enabled(
@@ -1898,6 +1988,7 @@ mod editor_tests {
                 "Group Name",
                 &mut selected,
                 editing,
+                &mut SortState::default(),
             )
             .show(ui, |group, ui| {
                 RulesTable::new(
@@ -2059,6 +2150,7 @@ mod editor_tests {
                     "Group Name",
                     &mut selected,
                     &mut editing,
+                    &mut SortState::default(),
                 )
                 .show(ui, |group, ui| {
                     RulesTable::new(
@@ -2123,6 +2215,7 @@ mod editor_tests {
                         "Group Name",
                         &mut selected,
                         &mut editing,
+                        &mut SortState::default(),
                     )
                     .show(ui, |_, _| {});
                     widths = table_column_widths(ui, id);
@@ -2178,6 +2271,7 @@ mod editor_tests {
                 "Group Name",
                 selected,
                 editing,
+                &mut SortState::default(),
             )
             .show(ui, |_, _| {});
         });
@@ -2251,6 +2345,7 @@ mod editor_tests {
                     "Group Name",
                     &mut selected,
                     &mut editing,
+                    &mut SortState::default(),
                 )
                 .show(ui, |_, _| {});
             });
@@ -2258,6 +2353,74 @@ mod editor_tests {
         };
 
         assert_eq!(vec!["Torpedoes", "Cannons"], order);
+    }
+
+    /// Clicking a heading orders the list by that column; clicking it again
+    /// turns the order round. Two columns are worth it — where a rule is, and
+    /// which rules are switched off — and the rest hold a button apiece.
+    #[test]
+    fn a_heading_orders_the_list_by_its_column() {
+        fn order(groups: &mut Vec<RulesGroup>, state: &mut SortState<RuleColumn>) -> Vec<String> {
+            let ctx = Context::default();
+            let mut selected = None;
+            let mut editing = None;
+            for _ in 0..3 {
+                let _ = ctx.run_ui(a_screen(), |ui| {
+                    GroupRulesTable::new(
+                        groups,
+                        "Custom Grouping Rules",
+                        "Group Name",
+                        &mut selected,
+                        &mut editing,
+                        state,
+                    )
+                    .show(ui, |_, _| {});
+                });
+            }
+            groups.iter().map(|g| g.name.clone()).collect()
+        }
+
+        let off = |name: &str| RulesGroup {
+            name: name.to_string(),
+            enabled: false,
+            ..Default::default()
+        };
+        let on = |name: &str| RulesGroup {
+            name: name.to_string(),
+            enabled: true,
+            ..Default::default()
+        };
+
+        let mut groups = vec![on("Cannons"), off("Beams"), on("Torpedoes")];
+        let mut state = SortState::default();
+
+        assert_eq!(
+            vec!["Beams", "Cannons", "Torpedoes"],
+            order(&mut groups, &mut state),
+            "by name to begin with"
+        );
+
+        state.clicked(RuleColumn::Name);
+        assert_eq!(
+            vec!["Beams", "Cannons", "Torpedoes"],
+            order(&mut groups, &mut state),
+            "picking the name column keeps that order"
+        );
+
+        state.clicked(RuleColumn::Name);
+        assert_eq!(
+            vec!["Torpedoes", "Cannons", "Beams"],
+            order(&mut groups, &mut state),
+            "clicking it again turns it round"
+        );
+
+        state.clicked(RuleColumn::Enabled);
+        assert_eq!(
+            vec!["Beams", "Cannons", "Torpedoes"],
+            order(&mut groups, &mut state),
+            "ordering by On puts the switched-off rules first — a long list is \
+             scanned for what is not doing its job"
+        );
     }
 
     /// Two rules claiming the same effect are flagged on both rows, saying
@@ -2472,6 +2635,7 @@ mod editor_tests {
                         "Group Name",
                         &mut selected,
                         &mut editing,
+                        &mut SortState::default(),
                     )
                     .show(ui, |_, _| {});
                     widths = table_column_widths(ui, id);
