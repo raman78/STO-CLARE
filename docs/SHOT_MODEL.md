@@ -562,6 +562,41 @@ hull   src=Borg Cube         AntiProton   257.672    468.494
 already name a source. Only masking a known answer and asking the real parser to
 recover it measures anything.
 
+### 4.8 What time cannot tell us
+
+The rule of §4.6 declines wherever several carriers used one event id in a
+fight, and sends those lines to `(Damage owner unknown)`. The obvious way to
+fill that gap is with recency: a pet that fired this weapon at this target a
+moment ago probably fired it again. Measured against ground truth — hull lines
+whose carrier is known, hidden and re-derived — over the 100 ladder logs, and
+**restricted to the case the current rule declines**:
+
+| asked | answers | accuracy | wrong |
+|---|---:|---:|---:|
+| the last carrier of this weapon at this target | 90.5% | 75.4% | 11 558 |
+| …only if exactly one carrier fired in the last 0.5 s | 49.4% | 86.9% | 3 350 |
+| …last 1 s | 53.6% | 91.9% | 2 248 |
+| …last 2 s | 53.4% | 93.6% | 1 758 |
+| …last 5 s | 51.4% | 94.1% | 1 584 |
+
+So recency does carry *some* signal, and the stricter question — "was exactly
+one carrier shooting here recently?" rather than "who shot last?" — is worth
+15 points of accuracy. It is still not enough. At its best it answers half the
+open cases and is wrong about one in sixteen of them, and those wrong answers
+land in pet rows that are currently exact.
+
+The reason is visible in the data: two Bird-of-Prey pets fire into one target
+several times a second, so "who fired last" is close to a coin toss, and even a
+window with a single carrier in it is often an accident of timing. **51 813** of
+the 278 434 carrier-named hull lines in those logs sit on an event id that more
+than one carrier used in the same fight, so this is the common shape, not an
+edge case.
+
+Left unimplemented deliberately. It is recorded here with its numbers so the
+idea is not re-derived from scratch, and so that if the row ever grows large
+enough to be a nuisance, the trade is already priced: about half of it
+recoverable, at roughly a 6% error rate.
+
 ## 5. Where this departs from the published references
 
 There is no specification from Cryptic. Two sources are treated as prior art,
@@ -608,6 +643,9 @@ to see which of three identical hangar pets did the work.
 3. **13 shots split across two timestamps** (§2.4) and are read as two
    unrelated records. The order of the two lines is treated as fixed (§2.3), so
    nothing looks backwards for a partner.
+3a. **Where several carriers share an event id, the line is not attributed at
+   all** — it goes to `(Damage owner unknown)`. Recency was measured as a way to
+   fill this in and rejected at a 6% error rate; see §4.8 for the numbers.
 4. **The pairing key is not unique** at a tenth-second resolution. The rules
    built on it require agreement rather than picking a candidate, so a collision
    costs an attribution rather than producing a wrong one.
