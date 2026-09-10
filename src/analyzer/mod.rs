@@ -1991,60 +1991,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "temporary probe"]
-    fn probe_pn_owner() {
-        use super::parser::{Parser, RecordError};
-        use std::collections::{HashMap, HashSet};
-        let path = std::env::var("PROBE_LOG").unwrap();
-        let mut parser = Parser::new(std::path::Path::new(&path)).unwrap();
-        // per internal id: which carriers were resolved for it, under a player owner
-        let mut by_pn: HashMap<String, (HashSet<String>, u32, u32, String)> = HashMap::new();
-        loop {
-            match parser.parse_next() {
-                Ok(record) => {
-                    if !record.source.is_player() {
-                        continue;
-                    }
-                    let pn = record._raw.split(',').nth(7).unwrap_or("").to_string();
-                    let entry = by_pn.entry(pn).or_insert_with(|| {
-                        (HashSet::new(), 0, 0, record.value_name.to_string())
-                    });
-                    match record.indirect_source.name() {
-                        Some(name) => {
-                            entry.0.insert(name.to_string());
-                            entry.1 += 1;
-                        }
-                        None => entry.2 += 1,
-                    }
-                }
-                Err(RecordError::InvalidRecord(_)) => (),
-                Err(RecordError::EndReached) => break,
-            }
-        }
-        let (mut only_owner, mut only_carrier, mut shared) = (0, 0, 0);
-        let mut shared_rows = Vec::new();
-        for (pn, (carriers, via, direct, name)) in &by_pn {
-            match (carriers.is_empty(), *direct == 0) {
-                (true, _) => only_owner += 1,
-                (false, true) => only_carrier += 1,
-                (false, false) => {
-                    shared += 1;
-                    shared_rows.push((*via + *direct, pn.clone(), name.clone(), direct, via));
-                }
-            }
-        }
-        shared_rows.sort_by_key(|r| std::cmp::Reverse(r.0));
-        println!("distinct internal ids under a player owner: {}", by_pn.len());
-        println!("  only the owner:   {only_owner}");
-        println!("  only carriers:    {only_carrier}");
-        println!("  shared:           {shared}");
-        println!("\nshared ids, busiest first:");
-        for (_, pn, name, direct, via) in shared_rows.iter().take(12) {
-            println!("  {pn:<12} {:<44} owner {direct}, carriers {via}", &name[..name.len().min(43)]);
-        }
-    }
-
-    #[test]
     #[ignore = "manual test"]
     fn analyze_log() {
         let mut analyzer = Analyzer::new(AnalysisSettings {
