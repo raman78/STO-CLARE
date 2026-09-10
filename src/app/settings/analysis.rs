@@ -23,12 +23,11 @@ const ROW_HEIGHT: f32 = 25.0;
 /// Every way a condition can compare its text to a name, in the order they are
 /// offered. One list, so the picker in the rules table and anything else that
 /// has to enumerate them cannot fall out of step with the enum.
-const MATCH_METHODS: [MatchMethod; 5] = [
+const MATCH_METHODS: [MatchMethod; 4] = [
     MatchMethod::Equals,
     MatchMethod::StartsWith,
     MatchMethod::EndsWith,
     MatchMethod::Contains,
-    MatchMethod::Wildcard,
 ];
 
 /// How wide the list of live examples is drawn beside a set of conditions.
@@ -46,6 +45,14 @@ const MATCHES_PANE_WIDTH: f32 = 300.0;
 /// worked by dragging them sideways. A screen too small for it caps the dialog
 /// instead, and then the table does scroll.
 const EDIT_DIALOG_WIDTH: f32 = 1100.0;
+
+/// Which column of a group-rules table holds the name: On, Edit, Clone, name.
+/// The one that takes whatever width is left over.
+const NAME_COLUMN: usize = 3;
+
+/// Which column of a conditions table holds the text to match: On, Clone,
+/// Aspect, Method, text.
+const EXPRESSION_COLUMN: usize = 4;
 
 /// The width a rule's name field starts at, before its own text has widened the
 /// column around it.
@@ -521,25 +528,82 @@ impl CustomGroupingRules {
             .show(ui);
         });
 
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.colored_label(theme::palette().warn, "⚠");
-            ui.label(
-                RichText::new(match selected_combat {
-                    Some(_) => {
-                        "= another rule catches some of the same effects in this combat. \
-                         Point at the mark to see which, and which rule takes them."
-                    }
-                    // Said rather than left blank: a column of no marks looks
-                    // like "nothing clashes", and here it means "not checked".
-                    None => {
-                        "= two rules catching the same effect. Select a combat to have \
-                         the rules checked against it."
-                    }
-                })
-                .weak(),
-            );
-        });
+        // Read after the table, which is where the selection may have just
+        // changed and where the list may have just been re-sorted.
+        let picked = self
+            .selected_group
+            .and_then(|index| modified_settings.custom_group_rules.get(index))
+            .map(|rule| rule.name.clone());
+        show_clash_bar(&clashes, picked.as_deref(), selected_combat, ui);
+    }
+}
+
+/// A standing bar under the table saying which rules share an effect, rather
+/// than only a ⚠ that has to be pointed at.
+///
+/// A tooltip answers a question the reader has already thought to ask. This is
+/// for the one they have not: two rules quietly fitting the same effect is
+/// something to notice while scrolling a list of fifty, and a mark that says
+/// nothing until the pointer rests on it is a mark most readers never read.
+///
+/// It names the selected rule's clash when there is one, so clicking down the
+/// list reads out each rule's own case, and otherwise sums up the tab.
+fn show_clash_bar(
+    clashes: &FxHashMap<String, String>,
+    selected: Option<&str>,
+    selected_combat: Option<&Combat>,
+    ui: &mut Ui,
+) {
+    ui.add_space(4.0);
+    ui.separator();
+
+    let Some(_) = selected_combat else {
+        // Said rather than left blank: a column with no marks in it reads as
+        // "nothing clashes", and here it means "not checked".
+        ui.label(
+            RichText::new(
+                "⚠ marks two rules catching the same effect. Select a combat to have your \
+                 rules checked against it.",
+            )
+            .weak(),
+        );
+        return;
+    };
+
+    if clashes.is_empty() {
+        ui.label(RichText::new("No two rules catch the same effect in this combat.").weak());
+        return;
+    }
+
+    ui.horizontal_wrapped(|ui| {
+        ui.colored_label(theme::palette().warn, "⚠");
+        ui.label(
+            RichText::new(format!(
+                "{} of your rules share an effect with another rule in this combat. \
+                 The more precise one takes each.",
+                clashes.len()
+            ))
+            .weak(),
+        );
+    });
+
+    // The selected rule's own case, spelled out. Clicking down the list then
+    // reads out one rule at a time, which is how a reader works through fifty
+    // of them — and it is the same text the ⚠ carries, so the two cannot say
+    // different things.
+    if let Some(detail) = selected.and_then(|name| clashes.get(name)) {
+        ui.add_space(2.0);
+        ScrollArea::vertical()
+            .id_salt("clash detail")
+            .auto_shrink([false, true])
+            .max_height(ROW_HEIGHT * 4.0)
+            .show(ui, |ui| {
+                ui.label(RichText::new(detail).weak());
+            });
+    } else {
+        ui.label(
+            RichText::new("Pick a marked rule to see which effects, and where they go.").weak(),
+        );
     }
 }
 
@@ -835,6 +899,11 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
         Table::new(ui)
             .min_scroll_height(0.0)
             .max_scroll_height(height)
+            // The name takes whatever the window has left over, so the table
+            // fills it instead of ending in a narrow box beside an expanse of
+            // nothing — and a long name is read without scrolling inside its
+            // own field. Fourth column: On, Edit, Clone, then the name.
+            .stretch_column(NAME_COLUMN)
             .cell_spacing(10.0)
             .header(HEADER_HEIGHT)
             .body(ROW_HEIGHT, |t| {
@@ -874,9 +943,14 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
                         // yet, it got 73 points and every new rule had to be
                         // widened by hand before it could be read.
                         r.measured_cell(|ui| {
+                            // Fills its cell, and the cell fills the window —
+                            // see `Table::stretch_column`. The returned width is
+                            // a floor for the first frame, before the column has
+                            // been measured and before there is any name in it
+                            // to measure: without it a new rule opened as a box
+                            // 73 points wide.
                             TextEdit::singleline(&mut rule.borrow_mut().name)
-                                .clip_text(false)
-                                .desired_width(NAME_COLUMN_WIDTH)
+                                .desired_width(f32::MAX)
                                 .show(ui);
                             NAME_COLUMN_WIDTH
                         });
@@ -1109,6 +1183,9 @@ impl<'a> RulesTable<'a> {
             Table::new(ui)
                 .min_scroll_height(0.0)
                 .max_scroll_height(height)
+                // The pattern is what is typed and read here, so it takes the
+                // width the pickers beside it do not need.
+                .stretch_column(EXPRESSION_COLUMN)
                 .cell_spacing(10.0)
                 .header(HEADER_HEIGHT)
                 .body(ROW_HEIGHT, |t| {
@@ -1157,14 +1234,11 @@ impl<'a> RulesTable<'a> {
                             // in it yet to measure the column from.
                             r.measured_cell(|ui| {
                                 TextEdit::singleline(&mut rule.expression)
-                                    .clip_text(false)
-                                    .desired_width(NAME_COLUMN_WIDTH)
-                                    .hint_text(match rule.method {
-                                        // The one method whose text is not read
-                                        // literally says so where it is typed.
-                                        MatchMethod::Wildcard => "e.g. Quad*Cannons*",
-                                        _ => "",
-                                    })
+                                    .desired_width(f32::MAX)
+                                    // Wildcards work under every method, and
+                                    // there is nothing on the row to say so —
+                                    // an empty field is where a reader looks.
+                                    .hint_text("text, or Quad*Cannons")
                                     .show(ui);
                                 NAME_COLUMN_WIDTH
                             });
@@ -1642,7 +1716,7 @@ mod editor_tests {
         MatchRule {
             aspect: MatchAspect::DamageOrHealName,
             expression: expression.to_string(),
-            method: MatchMethod::Wildcard,
+            method: MatchMethod::StartsWith,
             enabled: true,
         }
     }
@@ -1863,7 +1937,7 @@ mod editor_tests {
         a_frame(&ctx, a_screen(), &mut groups, &mut editing, Some(&combat));
         let text = a_frame(&ctx, a_screen(), &mut groups, &mut editing, Some(&combat));
 
-        for wanted in ["Wildcard", "Quad*Cannons"] {
+        for wanted in ["Starts with", "Quad*Cannons"] {
             assert!(
                 text.iter().any(|t| t == wanted),
                 "the condition's row is missing {wanted:?}; on screen were {text:?}"
@@ -1950,15 +2024,19 @@ mod editor_tests {
         );
     }
 
-    /// The name column opens wide enough to write a name in.
+    /// The name column takes whatever width the window has left over.
     ///
     /// A table column is measured from its contents, so a rule just added by
-    /// the ✚ button — which has no name yet — used to open as a field a few
-    /// characters wide, and every rule had to be widened by hand before it
-    /// could be read. The width is a floor, not a cap: a longer name still
-    /// widens the column past it.
+    /// the ✚ button — which has no name yet — opened as a field a few
+    /// characters wide beside an expanse of empty window, and every rule had to
+    /// be widened by hand before it could be read. Measured before the fix: 73
+    /// points.
+    ///
+    /// A name too long even for the filled column scrolls inside its own field,
+    /// as text in a text field does; the table does not grow past the window,
+    /// which would put the buttons on the row out of reach.
     #[test]
-    fn the_name_column_opens_wide_enough_to_write_in() {
+    fn the_name_column_takes_the_width_the_window_has_over() {
         use crate::custom_widgets::table::{table_column_widths, table_id};
 
         fn name_column(ctx: &Context, groups: &mut Vec<RulesGroup>) -> f32 {
@@ -1979,9 +2057,11 @@ mod editor_tests {
                     widths = table_column_widths(ui, id);
                 });
             }
-            // On, Edit, Clone, Group Name, delete.
-            widths[3]
+            widths[NAME_COLUMN]
         }
+
+        // The screen the test frame is given.
+        const VIEW: f32 = 1600.0;
 
         let fresh = name_column(&Context::default(), &mut vec![RulesGroup::default()]);
         assert!(
@@ -1989,18 +2069,27 @@ mod editor_tests {
             "a rule with no name yet opens {fresh:.0} points wide, under the \
              {NAME_COLUMN_WIDTH:.0} it should start at"
         );
+        assert!(
+            fresh > VIEW * 0.6,
+            "the name column came to {fresh:.0} of a {VIEW:.0}-point view — it is \
+             not taking the width the buttons beside it do not need"
+        );
 
+        // A name far longer than the window does not widen the table: the
+        // field fills its cell and the text scrolls inside it, the way a text
+        // field always behaves. A table wider than the window it sits in would
+        // have to be dragged sideways to reach the buttons on the row.
         let long = name_column(
             &Context::default(),
             &mut vec![RulesGroup {
-                name: "Quad Disruptor Cannons - Rapid Fire III and then some".to_string(),
+                name: "Quad Disruptor Cannons - Rapid Fire III".repeat(6),
                 ..Default::default()
             }],
         );
-        assert!(
-            long > fresh,
-            "a long name should widen the column past the floor, but it came to \
-             {long:.0} against {fresh:.0}"
+        assert_eq!(
+            fresh.round(),
+            long.round(),
+            "a long name must not push the table out past the window"
         );
     }
 
@@ -2286,6 +2375,58 @@ mod editor_tests {
             "a section's file holds that section and nothing else"
         );
         assert_eq!(RULES_FILE_VERSION, one.version);
+    }
+
+    /// The clash bar stands under the table and says what it has to say without
+    /// being pointed at. A tooltip answers a question the reader thought to
+    /// ask; two rules quietly sharing an effect is the case they did not.
+    #[test]
+    fn the_clash_bar_says_its_piece_without_being_pointed_at() {
+        fn bar_text(
+            clashes: &FxHashMap<String, String>,
+            selected: Option<&str>,
+            combat: Option<&Combat>,
+        ) -> Vec<String> {
+            let ctx = Context::default();
+            let mut text = Vec::new();
+            for _ in 0..2 {
+                let output = ctx.run_ui(a_screen(), |ui| {
+                    show_clash_bar(clashes, selected, combat, ui);
+                });
+                text = drawn_text(&output.shapes);
+            }
+            text
+        }
+        let joined = |text: Vec<String>| text.join(" | ");
+
+        let combat = a_combat("cla-rule-editor-clash-bar");
+        let mut clashes = FxHashMap::default();
+        clashes.insert(
+            "Everything Quad".to_string(),
+            "Another rule catches some of the same effects".to_string(),
+        );
+
+        // Nothing to check against is not the same as nothing to report.
+        let unchecked = joined(bar_text(&FxHashMap::default(), None, None));
+        assert!(unchecked.contains("Select a combat"), "{unchecked}");
+
+        let clean = joined(bar_text(&FxHashMap::default(), None, Some(&combat)));
+        assert!(
+            clean.contains("No two rules catch the same effect"),
+            "a clean check has to say so, or it reads as unchecked: {clean}"
+        );
+
+        let flagged = joined(bar_text(&clashes, None, Some(&combat)));
+        assert!(
+            flagged.contains("1 of your rules share an effect"),
+            "the count belongs on the bar, not only on a tooltip: {flagged}"
+        );
+
+        let picked = joined(bar_text(&clashes, Some("Everything Quad"), Some(&combat)));
+        assert!(
+            picked.contains("Another rule catches some of the same effects"),
+            "picking the marked rule should spell out its own case: {picked}"
+        );
     }
 
     /// A rule deleted while its dialog is open leaves an index pointing past the

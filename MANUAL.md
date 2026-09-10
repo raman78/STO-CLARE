@@ -1111,22 +1111,23 @@ requirements.
 
 The ways to compare:
 
-| Method      | Matches when the name…                                  |
+| Method      | Matches when your text…                                 |
 |-------------|----------------------------------------------------------|
-| Equals      | is exactly the text you typed                            |
-| Starts with | begins with it                                           |
-| Ends with   | ends with it                                             |
-| Contains    | has it somewhere inside                                  |
-| Wildcard    | fits a pattern — see below                               |
+| Equals      | is the whole name                                        |
+| Starts with | is at the start of the name                              |
+| Ends with   | is at the end of the name                                |
+| Contains    | is anywhere in the name                                  |
 
-**Wildcard** lets one condition stand for a family of names. `*` and `%` both
-mean "anything at all here", and `?` means "exactly one character", so
-`Quad*Cannons*` catches `Quad Disruptor Cannons` and
-`Quad Phaser Cannons - Rapid Fire III` alike. Whichever of `*` or `%` you are
-used to writing, it does the same thing. The pattern has to cover the whole
-name, so a pattern with no `*` in it behaves like Equals — put a `*` at each end
-if you meant "somewhere inside". Capital letters matter, as they do for every
-other method.
+**Wildcards work in all four.** `*` and `%` both mean "anything at all here",
+and `?` means "exactly one character". So `Starts with` `Quad*Cannons` catches
+`Quad Disruptor Cannons` and `Quad Phaser Cannons - Rapid Fire III` alike.
+Whichever of `*` or `%` you are used to writing, it does the same thing.
+
+The method only says *where* your text has to sit; the wildcards say what may
+stand between its parts. Text with no wildcard in it works exactly as it always
+did, so none of your existing rules change.
+
+Capital letters matter.
 
 **The list beside your conditions** shows the names from the combat you have
 selected that the rule catches right now, and it updates as you type. That is

@@ -163,24 +163,36 @@ not a thing the log ever says.
 
 Every rule set in the Analysis tab is built from the same part: a `MatchRule` is
 an **aspect** (which name to read), a **method** (how to compare) and the text
-to compare against. `MatchAspect` names the five kinds of name a record carries;
-`MatchMethod` is `Equals`, `StartsWith`, `EndsWith`, `Contains` or `Wildcard`.
-A group matches a record when any of its enabled conditions does — the
-conditions are an OR, never an AND.
+to compare against. `MatchAspect` names the five kinds of name a record carries; `MatchMethod` is
+`Equals`, `StartsWith`, `EndsWith` or `Contains`. A group matches a record when
+any of its enabled conditions does — the conditions are an OR, never an AND.
 
-`Wildcard` is the one method that does not read its text literally.
-`wildcard_matches` treats `*` and `%` as *any run of characters* and `?` as
-*exactly one*, and the pattern has to cover the whole name. Two spellings of the
-same wildcard rather than one because the players who write these rules come
-from two habits — file patterns and SQL — and a rule that silently matched
-nothing would be indistinguishable from a rule that was never applied. There is
-no escape character; a name containing a literal `*` is matched with `Contains`.
-The pattern is anchored so that a pattern with no wildcard in it means `Equals`
-rather than quietly becoming a second `Contains`.
+**Wildcards work under every method**, rather than in a method of their own.
+`wildcard_matches_anchored` treats `*` and `%` as *any run of characters* and
+`?` as *exactly one*; the method supplies the two anchors and nothing else
+(`MatchMethod::anchors`): `Equals` holds both ends, `StartsWith` the front,
+`EndsWith` the back, `Contains` neither. So the method says *where* the pattern
+sits and the pattern says what is in it, and the two do not overlap.
 
-Matching is linear in the length of the name: the matcher remembers the last
-wildcard and how far it had got, so a run that turns out too short is handed one
-more character instead of the pattern being retried from the start.
+A fifth `Wildcard` method was written first and removed. It was justified by the
+need to keep matching a literal `*` — a need that does not exist: measured over
+a 138 MB log, no owner, carrier, target or ability name contains `*`, `%` or
+`?`, and none of the 111 conditions in the live settings does either. It cost a
+reader an extra entry in the picker and a mode switch to type a wildcard, and
+bought nothing.
+
+Two spellings of the same run rather than one, because the players who write
+these rules come from two habits — file patterns and SQL — and a rule that
+silently matched nothing would be indistinguishable from one that was never
+applied. There is no escape character, for the same measured reason.
+
+A pattern with no wildcard in it takes a plain-`str` path (`==`, `starts_with`,
+…) and behaves exactly as its method always did. This is asked once per
+condition per record, millions of times over a log, so the matcher allocates
+nothing and walks the two strings in place; the fast path keeps even that off
+every rule written before wildcards existed, which today is all of them.
+`the_plain_path_and_the_matcher_agree_wherever_both_apply` holds the two
+implementations to the same answer.
 
 The methods are enumerated for the picker in exactly one place,
 `MATCH_METHODS` in `app/settings/analysis.rs`, so a variant added to the enum
@@ -226,6 +238,14 @@ silence: `clashing_rules` in `app/settings/analysis.rs` checks the rules against
 the selected combat and puts a ⚠ on **both** rows, naming the shared effects and
 which rule takes each. Keyed by rule name, because the list is sorted and
 positions move, and because two rules sharing a name are not a clash at all.
+
+The same finding also stands in a bar under the table (`show_clash_bar`) rather
+than only on the ⚠. A tooltip answers a question the reader already thought to
+ask; two rules quietly fitting one effect is the case they did not, and a mark
+that says nothing until pointed at is one most readers never read. The bar
+counts them, spells out the selected rule's own case, and — when there is
+nothing to report — says *that*, because a column with no marks in it otherwise
+reads as "checked and clean" when it may mean "no combat selected".
 
 ### Where the rules live, and moving them about
 
@@ -313,6 +333,18 @@ wide before anything is typed into it claims that width through
 `TableRow::measured_cell` rather than through `TextEdit::desired_width` — a
 `TextEdit` is never wider than the room it is given, so asking the field made a
 new rule's name box 73 points wide and left the claim unmade.
+
+That claim is only a floor for the first frame. The name column and the
+pattern column are then handed whatever the view has left over, through
+`Table::stretch_column`: a table sized purely to its contents ends in a narrow
+box beside an expanse of empty window. Stretching only ever adds, is skipped
+when the columns already overflow the view, and is measured against the view
+rather than against what was drawn — judged by its drawn width a table would be
+widened until it filled the view, found to fill it, and would swing between the
+two every frame. `frozen_widths` documents the same trap from the narrowing
+side. A name longer than the filled column scrolls inside its own field rather
+than pushing the table past the window, which would put the row's buttons out
+of reach.
 
 ### Who a shot belongs to
 

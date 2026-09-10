@@ -68,10 +68,6 @@ pub enum MatchMethod {
     StartsWith,
     EndsWith,
     Contains,
-    /// A pattern with wildcards in it — see [`wildcard_matches`]. Added after
-    /// the four above, so a settings file written before it exists never names
-    /// it and reads back unchanged.
-    Wildcard,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -496,14 +492,30 @@ impl MatchAspect {
 }
 
 impl MatchMethod {
-    fn check_match(&self, expression: &str, value: &str) -> bool {
+    /// Which ends of the name this method holds the pattern against.
+    const fn anchors(self) -> (bool, bool) {
         match self {
-            MatchMethod::Equals => value == expression,
-            MatchMethod::StartsWith => value.starts_with(expression),
-            MatchMethod::EndsWith => value.ends_with(expression),
-            MatchMethod::Contains => value.contains(expression),
-            MatchMethod::Wildcard => wildcard_matches(expression, value),
+            MatchMethod::Equals => (true, true),
+            MatchMethod::StartsWith => (true, false),
+            MatchMethod::EndsWith => (false, true),
+            MatchMethod::Contains => (false, false),
         }
+    }
+
+    fn check_match(&self, expression: &str, value: &str) -> bool {
+        // The plain path for a pattern with no wildcards in it — which is every
+        // rule written before they existed, and most written after. Asked once
+        // per condition per record, so the difference is worth keeping.
+        if !has_wildcards(expression) {
+            return match self {
+                MatchMethod::Equals => value == expression,
+                MatchMethod::StartsWith => value.starts_with(expression),
+                MatchMethod::EndsWith => value.ends_with(expression),
+                MatchMethod::Contains => value.contains(expression),
+            };
+        }
+        let (start, end) = self.anchors();
+        wildcard_matches_anchored(expression, value, start, end)
     }
 
     /// How precisely `expression` pins down `value` under this method, or
@@ -512,24 +524,23 @@ impl MatchMethod {
         if !self.check_match(expression, value) {
             return None;
         }
-        let (literal_characters, covers_the_whole_name) = match self {
-            MatchMethod::Equals => (expression.chars().count(), true),
-            MatchMethod::Wildcard => (
-                expression
-                    .chars()
-                    .filter(|c| !matches!(c, '*' | '%' | '?'))
-                    .count(),
-                true,
-            ),
-            MatchMethod::StartsWith | MatchMethod::EndsWith | MatchMethod::Contains => (
-                expression.chars().count(),
-                expression.chars().count() == value.chars().count(),
-            ),
-        };
+        // What the pattern actually spells out. A wildcard spells nothing: `?`
+        // fixes a position without saying what is in it, and a run does not
+        // even do that.
+        let literal_characters = expression
+            .chars()
+            .filter(|c| !matches!(c, '*' | '%' | '?'))
+            .count();
+        let (start, end) = self.anchors();
         Some(Specificity {
             literal_characters,
-            covers_the_whole_name,
-            admits_nothing_else: matches!(self, MatchMethod::Equals),
+            // Held at both ends, or held at one and spelling out the whole name
+            // anyway.
+            covers_the_whole_name: (start && end)
+                || (!has_wildcards(expression)
+                    && expression.chars().count() == value.chars().count()),
+            // Only an exact, literal text admits nothing but the name it names.
+            admits_nothing_else: matches!(self, MatchMethod::Equals) && !has_wildcards(expression),
         })
     }
 
@@ -546,7 +557,6 @@ impl MatchMethod {
             MatchMethod::StartsWith => "Starts with",
             MatchMethod::EndsWith => "Ends with",
             MatchMethod::Contains => "Contains",
-            MatchMethod::Wildcard => "Wildcard",
         }
     }
 
@@ -557,104 +567,106 @@ impl MatchMethod {
             MatchMethod::StartsWith => "the name begins with this text",
             MatchMethod::EndsWith => "the name ends with this text",
             MatchMethod::Contains => "this text appears anywhere in the name",
-            MatchMethod::Wildcard => {
-                "* or % stands for any run of characters, ? for exactly one; \
-                 the pattern has to cover the whole name"
-            }
         }
     }
 }
 
-/// Whether `value` matches `pattern`, where `*` and `%` each stand for any run
-/// of characters (including none) and `?` for exactly one.
+/// Whether `value` matches `pattern`, with the pattern held at one end, both
+/// ends, or neither.
 ///
-/// Both wildcards mean the same thing on purpose: a player who knows file
-/// patterns writes `*Cannons*` and one who knows SQL writes `%Cannons%`, and
-/// neither should have to find out which of the two this program happens to
-/// take. There is no escape character — a name with a literal `*` in it is
-/// matched with `Contains` instead.
+/// `*` and `%` each stand for any run of characters (including none) and `?`
+/// for exactly one. Both spellings of the run mean the same thing on purpose: a
+/// player who knows file patterns writes `*Cannons*` and one who knows SQL
+/// writes `%Cannons%`, and neither should have to find out which of the two
+/// this program happens to take.
 ///
-/// The pattern covers the whole name, so a pattern with no wildcard in it
-/// behaves like `Equals`. Case matters, as it does for every other method.
+/// The anchors are what the four match methods are: `Equals` holds both ends,
+/// `Starts with` the front, `Ends with` the back, `Contains` neither. So the
+/// method says *where* the pattern sits and the pattern itself says what is in
+/// it, and the two do not overlap. A pattern with no wildcard in it behaves
+/// exactly as its method always did.
 ///
-/// Linear in the length of the name: `star` remembers the last wildcard and
-/// what it had consumed, so a run that turns out too short is given one more
-/// character rather than the whole pattern being tried again from the start.
-pub fn wildcard_matches(pattern: &str, value: &str) -> bool {
-    let is_any_run = |c: char| c == '*' || c == '%';
-    let pattern: Vec<char> = pattern.chars().collect();
-    let value: Vec<char> = value.chars().collect();
-    let (mut p, mut v) = (0usize, 0usize);
-    let mut star: Option<(usize, usize)> = None;
+/// There is no escape character. Measured on a 138 MB log: no entity, pet,
+/// target or ability name contains `*`, `%` or `?` — the game does not use
+/// them — so there is nothing to escape and an escape rule would be one more
+/// thing to explain for no case that occurs.
+///
+/// Case matters, as it does everywhere else in the rules.
+///
+/// No allocation, and linear in the length of the name: this is asked once per
+/// condition per record, millions of times over a log, so it walks the two
+/// strings in place. `run` remembers the last `*` and what it had consumed, and
+/// a run that turns out too short is handed one more character rather than the
+/// whole pattern being retried from the start.
+pub fn wildcard_matches_anchored(
+    pattern: &str,
+    value: &str,
+    anchor_start: bool,
+    anchor_end: bool,
+) -> bool {
+    fn is_any_run(c: char) -> bool {
+        c == '*' || c == '%'
+    }
 
-    while v < value.len() {
-        match pattern.get(p) {
-            Some(&c) if is_any_run(c) => {
-                star = Some((p, v));
-                p += 1;
+    let (mut p, mut v) = (pattern, value);
+    // An unanchored front is a leading run: the pattern may start anywhere.
+    let mut run: Option<(&str, &str)> = if anchor_start {
+        None
+    } else {
+        Some((pattern, value))
+    };
+
+    loop {
+        // An unanchored back is a trailing run: once the pattern is spent, what
+        // is left of the name does not matter.
+        if p.is_empty() && !anchor_end {
+            return true;
+        }
+        let Some(vc) = v.chars().next() else {
+            // The name is used up; what is left of the pattern may only be runs.
+            return p.chars().all(is_any_run);
+        };
+
+        match p.chars().next() {
+            Some(c) if is_any_run(c) => {
+                p = &p[c.len_utf8()..];
+                run = Some((p, v));
             }
-            Some('?') => {
-                p += 1;
-                v += 1;
+            Some(c @ '?') => {
+                p = &p[c.len_utf8()..];
+                v = &v[vc.len_utf8()..];
             }
-            Some(&c) if c == value[v] => {
-                p += 1;
-                v += 1;
+            Some(c) if c == vc => {
+                p = &p[c.len_utf8()..];
+                v = &v[vc.len_utf8()..];
             }
-            // Nothing here matches: hand one more character to the last run and
-            // carry on from just after it. With no run behind us there is
-            // nowhere to go back to.
-            _ => match star {
-                Some((star_p, star_v)) => {
-                    p = star_p + 1;
-                    v = star_v + 1;
-                    star = Some((star_p, star_v + 1));
+            // Nothing fits here: give the last run one more character and carry
+            // on from just past it. With no run behind us there is nowhere to
+            // go back to.
+            _ => match run {
+                Some((after_run, from)) => {
+                    let skip = from.chars().next().map(char::len_utf8).unwrap_or(0);
+                    if skip == 0 {
+                        return false;
+                    }
+                    v = &from[skip..];
+                    p = after_run;
+                    run = Some((after_run, v));
                 }
                 None => return false,
             },
         }
     }
-
-    // The name is used up; what is left of the pattern may only be empty runs.
-    pattern[p..].iter().all(|&c| is_any_run(c))
 }
 
-impl Default for AnalysisSettings {
-    fn default() -> Self {
-        Self {
-            combatlog_file: Default::default(),
-            // Matches the OSCR server, which splits uploaded logs on a 60s gap
-            // with that value hard-coded. A longer window here would hand the
-            // ladder a slice containing more than it will actually read.
-            combat_separation_time_seconds: 60.0,
-            indirect_source_grouping_revers_rules: Default::default(),
-            custom_group_rules: Default::default(),
-            damage_out_exclusion_rules: Default::default(),
-            combat_name_rules: Default::default(),
-            consolidate_combatlog: true,
-        }
-    }
-}
-
-impl Default for MatchRule {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            aspect: Default::default(),
-            expression: Default::default(),
-            method: Default::default(),
-        }
-    }
-}
-
-impl Default for RulesGroup {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            rules: Default::default(),
-            enabled: true,
-        }
-    }
+/// Whether `pattern` holds anything the matcher would read as a wildcard.
+///
+/// The four methods take the plain path when it does not, which is every rule
+/// written before wildcards existed and most written after: `starts_with` on a
+/// `&str` beats walking it a character at a time, and this is asked once per
+/// condition per record.
+fn has_wildcards(pattern: &str) -> bool {
+    pattern.contains(['*', '%', '?'])
 }
 
 #[cfg(test)]
@@ -701,11 +713,11 @@ mod specificity_tests {
         let ability = "Terran Task Force Phaser Beam Array";
         assert!(
             fit(MatchMethod::Contains, "Phaser", ability)
-                > fit(MatchMethod::Wildcard, "*", ability)
+                > fit(MatchMethod::Contains, "*", ability)
         );
         assert!(
             fit(MatchMethod::Contains, "Phaser", ability)
-                > fit(MatchMethod::Wildcard, "%", ability)
+                > fit(MatchMethod::Contains, "%", ability)
         );
     }
 
@@ -713,7 +725,7 @@ mod specificity_tests {
     fn a_wildcard_is_worth_its_literal_characters() {
         let ability = "Quad Disruptor Cannons - Rapid Fire III";
         assert!(
-            fit(MatchMethod::Wildcard, "Quad*Cannons*", ability)
+            fit(MatchMethod::Contains, "Quad*Cannons", ability)
                 > fit(MatchMethod::Contains, "Quad", ability),
             "eleven spelled-out characters against four"
         );
@@ -725,8 +737,8 @@ mod specificity_tests {
     #[test]
     fn a_single_character_wildcard_counts_for_nothing() {
         assert_eq!(
-            fit(MatchMethod::Wildcard, "Mk ?II", "Mk XII"),
-            fit(MatchMethod::Wildcard, "Mk *II", "Mk XII"),
+            fit(MatchMethod::Equals, "Mk ?II", "Mk XII"),
+            fit(MatchMethod::Equals, "Mk *II", "Mk XII"),
         );
     }
 
@@ -781,78 +793,189 @@ mod specificity_tests {
 mod wildcard_tests {
     use super::*;
 
+    /// Whether a pattern matches a name under one of the four methods.
+    fn hit(method: MatchMethod, pattern: &str, value: &str) -> bool {
+        method.check_match(pattern, value)
+    }
+
     /// The two spellings of "any run of characters" are the same wildcard, so a
     /// player who reaches for either gets the same answer.
     #[test]
     fn star_and_percent_mean_the_same_thing() {
-        for pattern in ["*Cannons*", "%Cannons%", "*Cannons%", "%Cannons*"] {
+        for pattern in [
+            "Quad*Cannons",
+            "Quad%Cannons",
+            "Quad*Cannons",
+            "Quad%Cannons",
+        ] {
             assert!(
-                wildcard_matches(pattern, "Quad Disruptor Cannons - Rapid Fire III"),
+                hit(
+                    MatchMethod::StartsWith,
+                    pattern,
+                    "Quad Disruptor Cannons - Rapid Fire III"
+                ),
                 "{pattern} should have matched"
             );
         }
     }
 
+    /// The method says where the pattern is held and the pattern says what is
+    /// in it. The two are separate, which is why wildcards did not need a
+    /// method of their own.
+    #[test]
+    fn the_method_only_decides_where_the_pattern_is_held() {
+        let ability = "Quad Disruptor Cannons - Rapid Fire III";
+
+        assert!(hit(MatchMethod::StartsWith, "Quad*Cannons", ability));
+        assert!(hit(MatchMethod::Contains, "Disruptor*Rapid", ability));
+        assert!(hit(MatchMethod::EndsWith, "Rapid*III", ability));
+        assert!(hit(MatchMethod::Equals, "Quad*III", ability));
+
+        // Held at the front, so a pattern that fits further in does not match.
+        assert!(!hit(MatchMethod::StartsWith, "Disruptor*Rapid", ability));
+        // Held at both ends, so it has to reach the end of the name.
+        assert!(!hit(MatchMethod::Equals, "Quad*Rapid", ability));
+    }
+
+    /// Every rule written before wildcards existed has to go on meaning what it
+    /// meant. Measured on the live settings: none of the 111 conditions there
+    /// contains `*`, `%` or `?`, so this covers all of them.
+    #[test]
+    fn a_pattern_without_wildcards_behaves_as_its_method_always_did() {
+        let ability = "Quad Disruptor Cannons";
+
+        assert!(hit(MatchMethod::Equals, ability, ability));
+        assert!(!hit(MatchMethod::Equals, "Quad", ability));
+        assert!(hit(MatchMethod::StartsWith, "Quad", ability));
+        assert!(!hit(MatchMethod::StartsWith, "Cannons", ability));
+        assert!(hit(MatchMethod::EndsWith, "Cannons", ability));
+        assert!(!hit(MatchMethod::EndsWith, "Quad", ability));
+        assert!(hit(MatchMethod::Contains, "Disruptor", ability));
+        assert!(!hit(MatchMethod::Contains, "Phaser", ability));
+    }
+
     #[test]
     fn a_run_matches_nothing_at_all() {
-        assert!(wildcard_matches("*Quad Cannons*", "Quad Cannons"));
-        assert!(wildcard_matches("Quad*", "Quad"));
+        assert!(hit(MatchMethod::Equals, "Quad*Cannons", "QuadCannons"));
+        assert!(hit(MatchMethod::Equals, "Quad*", "Quad"));
     }
 
     #[test]
     fn a_question_mark_stands_for_exactly_one_character() {
-        assert!(wildcard_matches("Mk ?II", "Mk XII"));
-        assert!(!wildcard_matches("Mk ?II", "Mk II"));
-        assert!(!wildcard_matches("Mk ?II", "Mk XIII"));
-    }
-
-    /// Without a wildcard the pattern has to cover the whole name — otherwise
-    /// `Wildcard` would quietly behave like `Contains` and a rule meant to pick
-    /// out one ability would take every ability whose name holds that word.
-    #[test]
-    fn a_pattern_without_wildcards_is_an_exact_match() {
-        assert!(wildcard_matches("Quad Cannons", "Quad Cannons"));
-        assert!(!wildcard_matches("Quad", "Quad Cannons"));
-        assert!(!wildcard_matches("Cannons", "Quad Cannons"));
+        assert!(hit(MatchMethod::Equals, "Mk ?II", "Mk XII"));
+        assert!(!hit(MatchMethod::Equals, "Mk ?II", "Mk II"));
+        assert!(!hit(MatchMethod::Equals, "Mk ?II", "Mk XIII"));
     }
 
     #[test]
     fn a_pattern_that_does_not_fit_is_refused() {
-        assert!(!wildcard_matches("*Phaser*", "Quad Disruptor Cannons"));
-        assert!(!wildcard_matches("Quad*Torpedo", "Quad Disruptor Cannons"));
+        assert!(!hit(
+            MatchMethod::Contains,
+            "Phaser*",
+            "Quad Disruptor Cannons"
+        ));
+        assert!(!hit(
+            MatchMethod::Contains,
+            "Quad*Torpedo",
+            "Quad Disruptor Cannons"
+        ));
     }
 
     /// The run has to be able to give up ground it took too eagerly: the first
     /// `Cannons` here is not the one that lets the rest of the pattern fit.
     #[test]
     fn a_run_gives_back_what_it_took_too_early() {
-        assert!(wildcard_matches(
+        assert!(hit(
+            MatchMethod::Equals,
             "*Cannons*III",
             "Cannons Cannons - Rapid Fire III"
         ));
-        assert!(wildcard_matches("*a*b", "aaab"));
+        assert!(hit(MatchMethod::Equals, "*a*b", "aaab"));
     }
 
     #[test]
-    fn an_empty_pattern_matches_only_an_empty_name() {
-        assert!(wildcard_matches("", ""));
-        assert!(!wildcard_matches("", "Quad Cannons"));
-        assert!(wildcard_matches("*", ""));
+    fn an_empty_pattern_behaves_like_an_empty_text() {
+        assert!(hit(MatchMethod::Equals, "", ""));
+        assert!(!hit(MatchMethod::Equals, "", "Quad Cannons"));
+        assert!(hit(MatchMethod::Equals, "*", ""));
+        assert!(hit(MatchMethod::Contains, "", "Quad Cannons"));
     }
 
-    /// Case is significant, as it is for every other match method.
+    /// Case is significant, as it is for every other kind of pattern.
     #[test]
     fn case_matters_as_it_does_elsewhere() {
-        assert!(!wildcard_matches("*cannons*", "Quad Disruptor Cannons"));
+        assert!(!hit(
+            MatchMethod::Contains,
+            "cannons*",
+            "Quad Disruptor Cannons"
+        ));
     }
 
-    /// Reached through the enum, which is how the analyzer asks.
+    /// Names are not ASCII-only in principle, and the matcher walks a `&str` by
+    /// byte offsets, so a multi-byte character must not split one.
     #[test]
-    fn the_method_routes_to_the_matcher() {
+    fn a_multi_byte_name_is_walked_safely() {
+        assert!(hit(MatchMethod::Contains, "Ω*Ω", "aΩbΩc"));
+        assert!(hit(MatchMethod::Equals, "?Ω?", "aΩb"));
+        assert!(!hit(MatchMethod::Equals, "?Ω?", "aΩbc"));
+    }
+
+    /// The plain path and the matcher are two implementations of the same
+    /// question, and a pattern with no wildcards in it goes down the first.
+    /// They have to agree, or which one a pattern happens to take would change
+    /// the answer — and the only patterns that exist today take the plain one.
+    #[test]
+    fn the_plain_path_and_the_matcher_agree_wherever_both_apply() {
+        let names = [
+            "Quad Disruptor Cannons",
+            "Quad Disruptor Cannons - Rapid Fire III",
+            "Terran Task Force Phaser Beam Array",
+            "",
+            "Quad",
+            "Cannons",
+        ];
+        let patterns = [
+            "Quad",
+            "Cannons",
+            "Quad Disruptor Cannons",
+            "",
+            "Phaser",
+            "q",
+        ];
+
+        for method in [
+            MatchMethod::Equals,
+            MatchMethod::StartsWith,
+            MatchMethod::EndsWith,
+            MatchMethod::Contains,
+        ] {
+            let (start, end) = method.anchors();
+            for pattern in patterns {
+                for name in names {
+                    let plain = match method {
+                        MatchMethod::Equals => name == pattern,
+                        MatchMethod::StartsWith => name.starts_with(pattern),
+                        MatchMethod::EndsWith => name.ends_with(pattern),
+                        MatchMethod::Contains => name.contains(pattern),
+                    };
+                    let matcher = wildcard_matches_anchored(pattern, name, start, end);
+                    assert_eq!(
+                        plain, matcher,
+                        "{method:?} {pattern:?} against {name:?}: the plain path says \
+                         {plain} and the matcher says {matcher}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Reached through a rule, which is how the analyzer asks.
+    #[test]
+    fn a_rule_carries_the_pattern_to_the_matcher() {
         let rule = MatchRule {
             aspect: MatchAspect::DamageOrHealName,
-            expression: "Quad*Cannons*".to_string(),
-            method: MatchMethod::Wildcard,
+            expression: "Quad*Cannons".to_string(),
+            method: MatchMethod::StartsWith,
             enabled: true,
         };
         assert!(rule.matches_damage_or_heal_name("Quad Disruptor Cannons - Rapid Fire III"));
@@ -860,13 +983,52 @@ mod wildcard_tests {
         assert!(!rule.matches_damage_or_heal_name("Terran Task Force Phaser Beam Array"));
     }
 
-    /// A settings file written before this variant existed must still read, and
-    /// must not be turned into a wildcard rule by accident.
+    /// A settings file written before wildcards existed still reads, and its
+    /// methods still mean what they meant.
     #[test]
     fn an_older_settings_file_still_reads_back() {
         let stored = r#"{"aspect":"DamageOrHealName","expression":"Quad","method":"Contains","enabled":true}"#;
         let rule: MatchRule = serde_json::from_str(stored).unwrap();
         assert_eq!(MatchMethod::Contains, rule.method);
+        assert!(rule.matches_damage_or_heal_name("Quad Disruptor Cannons"));
+    }
+}
+
+impl Default for AnalysisSettings {
+    fn default() -> Self {
+        Self {
+            combatlog_file: Default::default(),
+            // Matches the OSCR server, which splits uploaded logs on a 60s gap
+            // with that value hard-coded. A longer window here would hand the
+            // ladder a slice containing more than it will actually read.
+            combat_separation_time_seconds: 60.0,
+            indirect_source_grouping_revers_rules: Default::default(),
+            custom_group_rules: Default::default(),
+            damage_out_exclusion_rules: Default::default(),
+            combat_name_rules: Default::default(),
+            consolidate_combatlog: true,
+        }
+    }
+}
+
+impl Default for MatchRule {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            aspect: Default::default(),
+            expression: Default::default(),
+            method: Default::default(),
+        }
+    }
+}
+
+impl Default for RulesGroup {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+            rules: Default::default(),
+            enabled: true,
+        }
     }
 }
 
