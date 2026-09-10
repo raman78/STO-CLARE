@@ -221,9 +221,11 @@ impl Records {
                             ui.label(&*err);
                         }
                     });
-                    // The window's own close button, and where it was left.
+                    // The window's own close button, Escape, and where it was
+                    // left. Escape is asked after the contents are drawn, so a
+                    // dialog standing over the ladder takes it first.
                     let ctx = viewport_ui.ctx();
-                    if ctx.input(|i| i.viewport().close_requested()) {
+                    if ctx.input(|i| i.viewport().close_requested()) || escape_closes(ctx) {
                         open = false;
                     }
                     if let Some(outer) = ctx.input(|i| i.viewport().outer_rect) {

@@ -36,9 +36,12 @@ Everything lives in one window. From top to bottom:
 
 ### The combats list
 
-Press **☰ Combats** in the top row and a panel opens down the left-hand side
-with every fight in your log, newest first. Double-click a row and every tab
-fills in with that fight.
+Press **☰ Combats** in the top row — or the **Tab** key — and a panel opens down
+the left-hand side with every fight in your log, newest first. Double-click a
+row and every tab fills in with that fight. Tab folds it away again.
+
+Tab does nothing else in the program: it does not walk between the buttons the
+way it does in a form, because nothing here is operated that way.
 
 ![The combats list](images/combats-list.png)
 

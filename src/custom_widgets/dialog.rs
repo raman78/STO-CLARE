@@ -23,7 +23,15 @@ use eframe::egui::{Context, Id, Key, Modifiers};
 /// Whether anything had the keyboard focus when the previous pass ended. Written
 /// every pass a dialog is up, read on the pass Escape arrives — see below for
 /// why it cannot simply be asked of egui at that moment.
+///
+/// Kept **per viewport**: the ladder is a window of its own, and `Context::data`
+/// is shared across all of them, so one key would let typing in the main window
+/// eat the first Escape pressed in the ladder.
 static FOCUS_LAST_PASS: LazyLock<Id> = LazyLock::new(|| Id::new(module_path!()).with("focus"));
+
+fn focus_key(ctx: &Context) -> Id {
+    FOCUS_LAST_PASS.with(ctx.viewport_id())
+}
 
 /// Whether Escape was pressed and no dialog has taken it yet this pass.
 ///
@@ -43,11 +51,10 @@ static FOCUS_LAST_PASS: LazyLock<Id> = LazyLock::new(|| Id::new(module_path!()).
 /// asks, every field looks unfocused and the two acts are indistinguishable.
 /// `TextEdit` does not take the key either.
 pub fn escape_closes(ctx: &Context) -> bool {
-    let had_focus = ctx
-        .data(|d| d.get_temp::<bool>(*FOCUS_LAST_PASS))
-        .unwrap_or(false);
+    let key = focus_key(ctx);
+    let had_focus = ctx.data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
     let focused_now = ctx.memory(|m| m.focused()).is_some();
-    ctx.data_mut(|d| d.insert_temp(*FOCUS_LAST_PASS, focused_now));
+    ctx.data_mut(|d| d.insert_temp(key, focused_now));
 
     if !ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
         return false;
