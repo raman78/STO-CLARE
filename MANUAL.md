@@ -1083,6 +1083,40 @@ Before version 2.8 the rule listed higher won, which meant moving a row could
 silently change your numbers — and a rule copied from someone else worked or did
 not depending on where you happened to paste it.
 
+#### The buttons on a rule's row
+
+Every rule is one row, and the buttons on it are the same in all four tabs:
+
+```
+ On   Edit  Clone   Group Name                          ⚠   Delete
+[✓]   [✏]   [🗐]   [ Quad Cannons              ]        ⚠    [🗑]
+```
+
+| Button | What it does |
+|--------|----------------------------------------------------------------|
+| ✓ On   | Switches the rule off without deleting it. An off rule changes nothing, but it is still there when you want it back. |
+| ✏ Edit | Opens the rule for editing — see [Writing a rule](#writing-a-rule) below. |
+| 🗐 Clone | Makes a copy of the rule, conditions and all. |
+| 🗑 Delete | Removes the rule. |
+| ⚠ | Not a button. It appears when another rule catches some of the same effects — point at it to see which. |
+
+The name itself is a box you can type in directly, without opening anything.
+
+Two of these behave in a way worth knowing, because both exist for the same
+reason — a new row has no name yet, so it cannot be found by name:
+
+**Add ✚** puts the new rule at the end of the list and highlights it. The list
+is otherwise alphabetical, but a rule with no name stays at the end until you
+give it one, so it does not jump somewhere else while you are still typing.
+
+**Clone 🗐** does the same with the copy: it goes to the end and becomes the
+highlighted row, so you can rename it straight away. The rule you copied does
+not move, and neither does anything around it.
+
+Nothing you do here touches your saved rules until you press **Ok**. Deleted a
+rule you meant to keep, or cloned twenty by accident? **Cancel** puts everything
+back as it was.
+
 #### Keeping and sharing your rules
 
 Your rules live in their own file, **`STO-CLARE_Rules.json`**, next to the

@@ -284,6 +284,61 @@ import leaves a list nobody can read, and dropping them without a word leaves
 the reader unsure the file was read at all. Nothing reaches disk until Ok, so
 Cancel undoes an import.
 
+### The rules tables
+
+Both tables in Settings → Analysis are the program's own
+`custom_widgets::table::Table`, not a third-party widget. That was tested:
+`egui_extras::TableBuilder` was tried for exactly this and abandoned, because
+each of the three things it was picked for had to be worked around.
+`Column::remainder` — the feature that makes a column take the leftover width —
+cannot be used here, since egui_extras will not let such a column fall below
+`max_used_widths`, and the contents are a text field that fills the column; the
+column pins its own floor at last frame's width and never gives ground.
+`remainder` and `resizable` are also mutually exclusive there. The trial and its
+reasoning are on the abandoned `try/standard-rules-tables` branch; do not
+re-derive it.
+
+Two behaviours the tables have to keep, both of which took several attempts:
+
+- **The name column carries the difference between what the table wants and the
+  width it has** (`Table::stretch_column`, `stretch_to_fill`). Widening the
+  window hands it the spare width; narrowing it takes the shortfall back out of
+  the same column, down to `NAME_COLUMN_MIN_WIDTH`. The floor is that hard
+  minimum and *not* the longest name in the list: pinned at the longest name the
+  column stops giving ground, and the table pushes the row's buttons off the
+  edge. A name is still readable cut short; a button that is not there cannot be
+  pressed.
+- **Anything that decides a width must be computed, never read back off a drawn
+  row.** A row that does not fit is drawn clipped, so a width measured from it
+  is the width it was *cut to*: a table asked how much room it needs would
+  answer with however little it was given, whoever asked would allow that, and
+  the two would agree on a size that hides the last columns. Two attempts at
+  the shrinking behaviour measured, and both left the fault in place. Nothing
+  here reads a width back from what was drawn, and nothing added later should.
+
+`a_narrower_window_takes_the_width_out_of_the_name_column` holds the first;
+`the_name_column_takes_the_width_the_window_has_over` holds the other end of
+the same behaviour.
+
+**Ordering.** The heading of the On column and the heading of the name column
+order the list; the rest hold one button apiece and there is nothing to order
+them by. `RuleColumn` names the two, `sortable` draws a heading that reads as a
+heading but rims under the pointer and carries the sort mark, and
+`GroupRulesTable::sort_by_name` applies the order. The state is
+`SortState<RuleColumn>` — the same type the damage tables use, so the two cannot
+drift apart.
+
+Two properties the ordering has to keep, and why:
+
+- A rule with no name yet sorts to the end whichever way the order runs. It was
+  just added by ✚ and cannot be found by name, so it has to stay where it was
+  put.
+- Names settle every tie, which makes the order total. Without that, rows that
+  compare equal shuffle between frames.
+
+Sorting is skipped entirely while a field has focus or a dialog is open, or a
+row would slide out from under the cursor halfway through being renamed.
+
 ### Trying a rule against a real fight
 
 A rule is edited in a centred modal opened by the ✏ on its row
