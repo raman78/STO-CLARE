@@ -11,6 +11,7 @@
 
 ### Other Changes
 - **Tab** folds the list of fights in and out. It used to walk the highlight from one button to the next, which is not how anything here is operated; now it is the key for the one thing you do over and over. While you are typing in a field it still belongs to the field
+- **Esc** stops an upload that is under way. The connection is broken part way, so the ladder never sees a whole file and stores nothing. Once the last byte has gone out and the program is only waiting for the answer, there is nothing left to stop — pressing it then just puts the window away
 - **Esc** closes a dialog, the same way its Cancel or Close button does. Works in Settings, the rule-editing boxes, Delete combats, the occurred-names list, Damage by type, the Ladder window, a comparison, and the upload and download result windows. Pressing it while typing in a field leaves the field first and keeps the dialog open, so a half-written rule name is not thrown away by the key you press to get out of it. The windows that report work in progress — clearing the log, fetching a run — do not take it, because there the only thing to stop is the work itself
 
 ### Fixes

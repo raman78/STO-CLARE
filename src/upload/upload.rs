@@ -1,5 +1,13 @@
 use crate::custom_widgets::dialog::escape_closes;
-use std::{io::Write, thread::JoinHandle, time::Duration};
+use std::{
+    io::{Read, Write},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
 
 use eframe::egui::*;
 use reqwest::{
@@ -28,6 +36,31 @@ pub struct Upload {
 
 const UPLOAD_TOOLTIP: &str = "Uploads the current combat to the records (powered by OSCR). Note that the uploaded values may vary compared to the values displayed here, since the calculations may be done differently.";
 
+/// Feeds the upload body to `reqwest` a chunk at a time, and fails the moment
+/// the reader asks it to stop.
+///
+/// This is the only way to actually **stop** an upload: `reqwest`'s blocking
+/// client has no cancellation of its own, and a thread cannot be killed from
+/// outside. Returning an error mid-body breaks the connection, so the server
+/// never sees a complete request and stores nothing.
+///
+/// It can only stop what has not been sent yet. Once the last byte is out and
+/// the request is merely waiting for an answer, the upload has happened; giving
+/// up then only means not reading the reply.
+struct CancellableBody {
+    data: std::io::Cursor<Vec<u8>>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Read for CancellableBody {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.cancelled.load(Ordering::Relaxed) {
+            return Err(std::io::Error::other("upload cancelled"));
+        }
+        self.data.read(buf)
+    }
+}
+
 impl Upload {
     pub fn show(
         &mut self,
@@ -43,21 +76,40 @@ impl Upload {
         });
         match &mut self.state {
             UploadState::Idle => (),
-            UploadState::Uploading(join_handle) => {
+            UploadState::Uploading(join_handle, cancelled) => {
+                let cancelled = cancelled.clone();
                 if join_handle.as_ref().unwrap().is_finished() {
-                    self.state = join_handle.take().unwrap().join().unwrap();
+                    let finished = join_handle.take().unwrap().join().unwrap();
+                    self.state = finished;
                     ui.ctx().request_repaint_of(ViewportId::ROOT);
                 }
 
-                Self::window(ui, true, |ui| {
+                // Escape puts the window away at once rather than making the
+                // reader wait for the request to come back. The upload itself
+                // is already on its way and cannot be recalled — the thread is
+                // simply left to finish and its answer dropped, which is why
+                // the label says so.
+                // Escape stops it. `CancellableBody` fails the next chunk, so
+                // the connection breaks and the server never sees a whole
+                // request — nothing is stored. Once the body is fully sent this
+                // can no longer unsend it; the label says as much.
+                let stop = Self::window(ui, true, |ui| {
                     ui.with_layout(Layout::top_down(Align::Center), |ui| {
                         ui.add_space(20.0);
                         ui.label("uploading...");
                         ui.add_space(40.0);
                         ui.label(WidgetText::from("⏳").color(theme::palette().busy));
                         ui.add_space(20.0);
+                        ui.label(RichText::new("Esc stops it.").weak());
+                        ui.add_space(20.0);
                     });
+                    escape_closes(ui.ctx())
                 });
+                if stop == Some(true) {
+                    log::info!("upload: cancelled by the reader");
+                    cancelled.store(true, Ordering::Relaxed);
+                    self.state = UploadState::Idle;
+                }
             }
             UploadState::UploadComplete {
                 detail,
@@ -206,12 +258,21 @@ impl Upload {
             combat_name,
             combat_data.len()
         );
-        let join_handle = spawn_request(move || Self::upload(ctx, url, combat_data, combat_name));
-        UploadState::Uploading(Some(join_handle))
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let flag = cancelled.clone();
+        let join_handle =
+            spawn_request(move || Self::upload(ctx, url, combat_data, combat_name, flag));
+        UploadState::Uploading(Some(join_handle), cancelled)
     }
 
-    fn upload(ctx: Context, url: Url, combat_data: Vec<u8>, combat_name: String) -> UploadState {
-        let state = match Self::do_upload(url, combat_data, combat_name) {
+    fn upload(
+        ctx: Context,
+        url: Url,
+        combat_data: Vec<u8>,
+        combat_name: String,
+        cancelled: Arc<AtomicBool>,
+    ) -> UploadState {
+        let state = match Self::do_upload(url, combat_data, combat_name, cancelled) {
             Ok(UploadOutcome::Uploaded {
                 detail,
                 combatlog,
@@ -257,6 +318,7 @@ impl Upload {
         url: Url,
         combat_data: Vec<u8>,
         combat_name: String,
+        cancelled: Arc<AtomicBool>,
     ) -> Result<UploadOutcome, RequestError> {
         // Gzipped, which is what the endpoint expects — the server hands the
         // bytes straight to the OSCR parser, which recognises the compression
@@ -276,7 +338,19 @@ impl Upload {
             .build()
             .unwrap();
         let url = url.join(UPLOAD_PATH).unwrap();
-        let form = Form::new().part("file", Part::bytes(data).file_name(combat_name));
+        // Sent through a reader rather than as bytes, so that pressing Escape
+        // can break the connection part way; see `CancellableBody`. The length
+        // is given, so the request still carries a Content-Length and nothing
+        // about the wire format changes for the server.
+        let length = data.len() as u64;
+        let body = CancellableBody {
+            data: std::io::Cursor::new(data),
+            cancelled,
+        };
+        let form = Form::new().part(
+            "file",
+            Part::reader_with_length(body, length).file_name(combat_name),
+        );
         let response = client.post(url).multipart(form).send()?;
         if !response.status().is_success() {
             return Err(RequestError::from(response));
@@ -297,7 +371,7 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
 enum UploadState {
     #[default]
     Idle,
-    Uploading(Option<JoinHandle<Self>>),
+    Uploading(Option<JoinHandle<Self>>, Arc<AtomicBool>),
     UploadComplete {
         /// The server's own word for what happened, shown as it came.
         detail: String,
@@ -390,6 +464,41 @@ mod tests {
     /// The shape the server answers a log it read: the rows, the message, and
     /// the id of what it stored.
     #[test]
+    /// The body stops feeding the moment the flag goes up, which is what breaks
+    /// the connection and stops the server from storing a whole request. Without
+    /// this there is no way to cancel at all: reqwest's blocking client has no
+    /// cancellation and a thread cannot be killed from outside.
+    #[test]
+    fn the_upload_body_gives_up_when_cancelled() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let mut body = CancellableBody {
+            data: std::io::Cursor::new(vec![7u8; 4096]),
+            cancelled: cancelled.clone(),
+        };
+
+        let mut buf = [0u8; 1024];
+        assert_eq!(1024, body.read(&mut buf).unwrap(), "it feeds while it may");
+
+        cancelled.store(true, Ordering::Relaxed);
+        let err = body.read(&mut buf).expect_err("a raised flag fails the read");
+        assert!(
+            err.to_string().contains("cancelled"),
+            "the error says why, so a failed upload can be told from a dropped one: {err}"
+        );
+    }
+
+    /// A body nobody stops reads to the end, so an ordinary upload is unaffected.
+    #[test]
+    fn an_uncancelled_body_reads_to_the_end() {
+        let mut body = CancellableBody {
+            data: std::io::Cursor::new(vec![1u8, 2, 3]),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let mut out = Vec::new();
+        body.read_to_end(&mut out).unwrap();
+        assert_eq!(vec![1u8, 2, 3], out);
+    }
+
     fn a_read_log_comes_back_with_its_ladder_rows() {
         let response: UploadResponseV2 = serde_json::from_str(
             r#"{"results":[{"name":"Infected Space Elite","updated":true,
