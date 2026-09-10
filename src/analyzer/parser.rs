@@ -21,11 +21,20 @@ pub struct Record<'a> {
     pub target: Entity<'a>,
     pub indirect_source: Entity<'a>, // e.g. a pet
     pub value_name: Cow<'a, str>,
+    /// The event's internal id (`Pn.…`). Unlike the display name it is the same
+    /// on a localised client, and it is what carrier evidence is keyed on — see
+    /// `docs/SHOT_MODEL.md` §4.6.
+    pub event_id: Cow<'a, str>,
     pub value_type: Cow<'a, str>,
     pub value_flags: ValueFlags,
     pub value: RecordValue,
     pub _raw: &'a str,
     pub log_pos: Option<Range<u64>>,
+    /// Whether the source pair was written **blank** rather than as the `*`
+    /// placeholder. `Entity::parse` reads both as `Entity::None`, but they do
+    /// not mean the same thing: `*` says "the owner acted directly", while
+    /// blank turns out to mark a carrier the game stopped naming.
+    pub source_field_blank: bool,
 }
 
 #[derive(Debug)]
@@ -350,17 +359,24 @@ impl Parser {
         let source_id_and_unique_name = fields.next()?;
         let source = Entity::parse(source_name, source_id_and_unique_name)?;
 
+        let source_field_blank;
         let (indirect_source_name, indirect_source_id_and_unique_name) = match inherited_source {
             // The shot's damage line named who fired it; this half of the same
             // shot did not. See `look_ahead_over_shot`.
-            Some((name, id)) => (Cow::Borrowed(name.as_str()), Cow::Borrowed(id.as_str())),
-            None => (fields.next()?, fields.next()?),
+            Some((name, id)) => {
+                // The two fields are still there to be stepped over.
+                let written_name = fields.next()?;
+                let written_id = fields.next()?;
+                source_field_blank = written_name.is_empty() && written_id.is_empty();
+                (Cow::Borrowed(name.as_str()), Cow::Borrowed(id.as_str()))
+            }
+            None => {
+                let name = fields.next()?;
+                let id = fields.next()?;
+                source_field_blank = name.is_empty() && id.is_empty();
+                (name, id)
+            }
         };
-        if inherited_source.is_some() {
-            // The two fields are still there to be stepped over.
-            fields.next()?;
-            fields.next()?;
-        }
         let indirect_source =
             Entity::parse(indirect_source_name, indirect_source_id_and_unique_name)?;
 
@@ -369,9 +385,7 @@ impl Parser {
         let target = Entity::parse(target_name, target_id_and_unique_name)?;
 
         let value_name = fields.next()?;
-
-        // don't know what these are (e.g. Pn.Rfd0cd)
-        fields.next()?;
+        let event_id = fields.next()?;
 
         let value_type = fields.next()?;
         let value_flags = fields.next()?;
@@ -394,11 +408,13 @@ impl Parser {
             target,
             indirect_source,
             value_name,
+            event_id,
             value_type,
             value_flags,
             value,
             _raw: line,
             log_pos,
+            source_field_blank,
         };
         Some(record)
     }

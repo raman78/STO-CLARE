@@ -469,9 +469,36 @@ construction — the `*` placeholder is present, so the test fails — and they 
 with the player, which is where an applied effect belongs.
 
 Across a single fight the id is unambiguous in **96%** of cases (100 ladder
-logs: 66.5% owner-only, 29.9% carrier-only, 3.2% both). This is **not
-implemented**; it is recorded because it is measured, reproducible, and needs no
-list of names.
+logs: 66.5% owner-only, 29.9% carrier-only, 3.2% both).
+
+**This is implemented.** `Combat::update_carrier_evidence` accumulates the
+evidence as records arrive — from hull lines only, since a shield line hides its
+carrier — and `Combat::who_fired` answers it for a line whose source pair is
+blank. The answer travels into `Player::build_grouping_path`, which lays the
+record out as a carried shot.
+
+Nothing is deferred and nothing is moved after the fact. Asking the evidence
+*as it stands when the line arrives* costs almost nothing against asking it
+after the whole fight: measured on the reference log, 301 of 364 lines are
+settled in flight against 303 settled with hindsight — a difference of **two
+lines**. That keeps the parser a stream, and keeps an incremental refresh
+identical to a cold read, since the evidence depends only on what came earlier
+in the same fight.
+
+Three outcomes, and the third is the one worth arguing about:
+
+| the fight's hull lines for this id say | the line goes to |
+|---|---|
+| only ever one carrier, never the owner | that carrier |
+| several carriers, never the owner | a row named `(carrier not named in the log)` |
+| the owner fires it too, or nothing seen yet | the owner, as before |
+
+The middle row is a **new row in the damage tree**. Merging those lines into the
+player's own weapon row would put damage under a weapon they may not carry;
+dropping them would lose real damage; picking one of the carriers would be a
+guess wearing an exact figure. Naming the gap is the only option that states
+what is actually known. On the reference fight it holds 13 hits and 206 471
+damage, against the 1 557 hits the two named pets hold.
 
 ### 4.7 Validated against a hundred other players' logs
 
