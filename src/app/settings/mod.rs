@@ -135,13 +135,21 @@ impl SettingsWindow {
                 // are pushed past the bottom edge and the window springs back to
                 // full content height whenever it is dragged smaller.
                 let bottom_bar = ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 4.0;
+                // A tab may want a standing bar of its own under the scroll
+                // area — the Analysis tab's clash bar. Its room is kept here,
+                // with the Ok/Cancel row's, or the scroll area would take it
+                // and the bar would be pushed off the bottom of the window.
+                let tab_footer = match self.selected_tab {
+                    SettingsTab::Analysis => self.analysis_tab.footer_height(ui),
+                    _ => 0.0,
+                };
                 ScrollArea::both()
                     // Only the height is pinned. Pinned width made the contents
                     // as wide as the view, which the vertical bar had just made
                     // narrower — so every tab drew a horizontal bar for the few
                     // points it overflowed by, under contents that fitted.
                     .auto_shrink([true, false])
-                    .max_height((ui.available_height() - bottom_bar).at_least(80.0))
+                    .max_height((ui.available_height() - bottom_bar - tab_footer).at_least(80.0))
                     .show(ui, |ui| match self.selected_tab {
                         SettingsTab::General => self.general_tab.show(
                             &mut self.modified_settings,
@@ -163,6 +171,10 @@ impl SettingsWindow {
                         }
                         SettingsTab::Debug => self.debug_tab.show(&mut self.modified_settings, ui),
                     });
+
+                if self.selected_tab == SettingsTab::Analysis {
+                    self.analysis_tab.show_footer(ui);
+                }
 
                 ui.separator();
 

@@ -54,6 +54,12 @@ const NAME_COLUMN: usize = 3;
 /// Aspect, Method, text.
 const EXPRESSION_COLUMN: usize = 4;
 
+/// How narrow a name or pattern field may be squeezed when the window is
+/// dragged in. Below this it stops giving ground and the table scrolls
+/// sideways instead — a field of two characters is not one anybody can work in,
+/// and by then the window is too small for the tab whatever is done.
+const NAME_COLUMN_MIN_WIDTH: f32 = 90.0;
+
 /// The width a rule's name field starts at, before its own text has widened the
 /// column around it.
 const NAME_COLUMN_WIDTH: f32 = 260.0;
@@ -74,6 +80,11 @@ pub struct AnalysisTab {
     /// is dismissed: a file dialog that closes with nothing else happening is
     /// indistinguishable from one whose work quietly failed.
     transfer_report: Option<String>,
+    /// What the clash bar has to say, worked out while the tab is drawn and
+    /// shown *outside* the window's scroll area — see
+    /// [`AnalysisTab::show_footer`]. `None` on a section that has nothing to
+    /// report there.
+    footer: Option<ClashFooter>,
     selected_section: AnalysisSection,
     indirect_source_reversal_rules: IndirectSourceReversalRules,
     custom_grouping_rules: CustomGroupingRules,
@@ -211,6 +222,9 @@ impl AnalysisTab {
         });
         ui.add_space(4.0);
 
+        // Only Custom Grouping has anything for the bar. Cleared here so a
+        // switch of section takes the last one's bar with it.
+        self.footer = None;
         match self.selected_section {
             AnalysisSection::CombatNames => {
                 self.combat_names_rules
@@ -222,13 +236,16 @@ impl AnalysisTab {
                 ui,
             ),
             AnalysisSection::CustomGrouping => {
-                ui.push_id(line!(), |ui| {
-                    self.custom_grouping_rules.show(
-                        &mut modified_settings.analysis,
-                        selected_combat,
-                        ui,
-                    );
-                });
+                self.footer = ui
+                    .push_id(line!(), |ui| {
+                        self.custom_grouping_rules.show(
+                            &mut modified_settings.analysis,
+                            selected_combat,
+                            ui,
+                        )
+                    })
+                    .inner
+                    .into();
             }
             AnalysisSection::DamageExclusion => self.damage_out_exclusion_rules.show(
                 &mut modified_settings.analysis,
@@ -239,6 +256,53 @@ impl AnalysisTab {
 
         self.show_occurred_names_window(selected_combat, ui);
         self.show_transfer_report(ui);
+    }
+
+    /// How much room the standing bar needs, so the caller can keep it before
+    /// drawing the tab.
+    ///
+    /// Read from what the bar said on the previous frame: it is worked out
+    /// while the tab is drawn, and the room for it has to be claimed first. One
+    /// frame behind on the frame a rule is picked, which nothing can tell.
+    pub fn footer_height(&self, ui: &Ui) -> f32 {
+        let Some(footer) = &self.footer else {
+            return 0.0;
+        };
+        let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
+        // The rule, the summary, and up to CLASH_DETAIL_ROWS of the detail.
+        let detail = footer
+            .detail
+            .as_ref()
+            .map_or(0.0, |_| row * CLASH_DETAIL_ROWS);
+        row + detail + ui.spacing().item_spacing.y * 2.0
+    }
+
+    /// The standing bar, drawn **outside** the Settings window's scroll area.
+    ///
+    /// Inside it, the bar scrolled away with the table it is about — which for
+    /// a list of fifty rules means it is off screen exactly when it is being
+    /// read. See [`clash_footer`] for what it says.
+    pub fn show_footer(&mut self, ui: &mut Ui) {
+        let Some(footer) = self.footer.clone() else {
+            return;
+        };
+        ui.separator();
+        ui.horizontal_wrapped(|ui| {
+            if footer.warn {
+                ui.colored_label(theme::palette().warn, "⚠");
+            }
+            ui.label(RichText::new(&footer.summary).weak());
+        });
+        if let Some(detail) = &footer.detail {
+            let row = ui.text_style_height(&TextStyle::Body) + ui.spacing().item_spacing.y;
+            ScrollArea::vertical()
+                .id_salt("clash detail")
+                .auto_shrink([false, true])
+                .max_height(row * CLASH_DETAIL_ROWS)
+                .show(ui, |ui| {
+                    ui.label(RichText::new(detail).weak());
+                });
+        }
     }
 
     /// Export and Import, for one section or for all four.
@@ -490,7 +554,7 @@ impl CustomGroupingRules {
         modified_settings: &mut AnalysisSettings,
         selected_combat: Option<&Combat>,
         ui: &mut Ui,
-    ) {
+    ) -> ClashFooter {
         const ASPECTS: [MatchAspect; 3] = [
             MatchAspect::DamageOrHealName,
             MatchAspect::IndirectSourceName,
@@ -534,76 +598,59 @@ impl CustomGroupingRules {
             .selected_group
             .and_then(|index| modified_settings.custom_group_rules.get(index))
             .map(|rule| rule.name.clone());
-        show_clash_bar(&clashes, picked.as_deref(), selected_combat, ui);
+        clash_footer(&clashes, picked.as_deref(), selected_combat)
     }
 }
 
-/// A standing bar under the table saying which rules share an effect, rather
-/// than only a ⚠ that has to be pointed at.
+/// What the standing bar under the rules table has to say.
+///
+/// Worked out here and drawn by [`AnalysisTab::show_footer`], outside the
+/// Settings window's scroll area, so the bar stays put instead of scrolling
+/// away with the table it is about.
 ///
 /// A tooltip answers a question the reader has already thought to ask. This is
 /// for the one they have not: two rules quietly fitting the same effect is
 /// something to notice while scrolling a list of fifty, and a mark that says
 /// nothing until the pointer rests on it is a mark most readers never read.
 ///
-/// It names the selected rule's clash when there is one, so clicking down the
+/// It names the picked rule's clash when there is one, so clicking down the
 /// list reads out each rule's own case, and otherwise sums up the tab.
-fn show_clash_bar(
+fn clash_footer(
     clashes: &FxHashMap<String, String>,
-    selected: Option<&str>,
+    picked: Option<&str>,
     selected_combat: Option<&Combat>,
-    ui: &mut Ui,
-) {
-    ui.add_space(4.0);
-    ui.separator();
-
-    let Some(_) = selected_combat else {
-        // Said rather than left blank: a column with no marks in it reads as
-        // "nothing clashes", and here it means "not checked".
-        ui.label(
-            RichText::new(
-                "⚠ marks two rules catching the same effect. Select a combat to have your \
-                 rules checked against it.",
-            )
-            .weak(),
-        );
-        return;
-    };
-
-    if clashes.is_empty() {
-        ui.label(RichText::new("No two rules catch the same effect in this combat.").weak());
-        return;
+) -> ClashFooter {
+    // Said rather than left blank: a column with no marks in it reads as
+    // "nothing clashes", and here it means "not checked".
+    if selected_combat.is_none() {
+        return ClashFooter {
+            summary: "⚠ marks two rules catching the same effect. Select a combat to have \
+                      your rules checked against it."
+                .to_string(),
+            warn: false,
+            detail: None,
+        };
     }
 
-    ui.horizontal_wrapped(|ui| {
-        ui.colored_label(theme::palette().warn, "⚠");
-        ui.label(
-            RichText::new(format!(
-                "{} of your rules share an effect with another rule in this combat. \
-                 The more precise one takes each.",
-                clashes.len()
-            ))
-            .weak(),
-        );
-    });
+    if clashes.is_empty() {
+        return ClashFooter {
+            summary: "No two rules catch the same effect in this combat.".to_string(),
+            warn: false,
+            detail: None,
+        };
+    }
 
-    // The selected rule's own case, spelled out. Clicking down the list then
-    // reads out one rule at a time, which is how a reader works through fifty
-    // of them — and it is the same text the ⚠ carries, so the two cannot say
-    // different things.
-    if let Some(detail) = selected.and_then(|name| clashes.get(name)) {
-        ui.add_space(2.0);
-        ScrollArea::vertical()
-            .id_salt("clash detail")
-            .auto_shrink([false, true])
-            .max_height(ROW_HEIGHT * 4.0)
-            .show(ui, |ui| {
-                ui.label(RichText::new(detail).weak());
-            });
-    } else {
-        ui.label(
-            RichText::new("Pick a marked rule to see which effects, and where they go.").weak(),
-        );
+    ClashFooter {
+        summary: format!(
+            "{} of your rules share an effect with another rule in this combat. \
+             The more precise one takes each.",
+            clashes.len()
+        ),
+        warn: true,
+        detail: Some(match picked.and_then(|name| clashes.get(name)) {
+            Some(detail) => detail.clone(),
+            None => "Pick a marked rule to see which effects, and where they go.".to_string(),
+        }),
     }
 }
 
@@ -903,7 +950,7 @@ impl<'a, T: BorrowMut<RulesGroup> + Default + Clone> GroupRulesTable<'a, T> {
             // fills it instead of ending in a narrow box beside an expanse of
             // nothing — and a long name is read without scrolling inside its
             // own field. Fourth column: On, Edit, Clone, then the name.
-            .stretch_column(NAME_COLUMN)
+            .stretch_column(NAME_COLUMN, NAME_COLUMN_MIN_WIDTH)
             .cell_spacing(10.0)
             .header(HEADER_HEIGHT)
             .body(ROW_HEIGHT, |t| {
@@ -1185,7 +1232,7 @@ impl<'a> RulesTable<'a> {
                 .max_scroll_height(height)
                 // The pattern is what is typed and read here, so it takes the
                 // width the pickers beside it do not need.
-                .stretch_column(EXPRESSION_COLUMN)
+                .stretch_column(EXPRESSION_COLUMN, NAME_COLUMN_MIN_WIDTH)
                 .cell_spacing(10.0)
                 .header(HEADER_HEIGHT)
                 .body(ROW_HEIGHT, |t| {
@@ -1346,6 +1393,26 @@ fn matches_by_aspect<'a>(
         })
         .collect()
 }
+
+/// What the standing bar under the rules table says.
+///
+/// Held from one frame to the next because the bar is drawn outside the
+/// Settings window's scroll area, and the room for it has to be kept *before*
+/// the tab is drawn — so the height is taken from what the bar said last frame.
+/// One frame behind on the frame a rule is picked, which nothing can tell.
+#[derive(Default, Clone, PartialEq)]
+struct ClashFooter {
+    /// The one-line summary: how many rules share an effect, or that none do.
+    summary: String,
+    /// Whether that summary is a warning or a plain statement.
+    warn: bool,
+    /// The picked rule's own case, spelled out.
+    detail: Option<String>,
+}
+
+/// How many lines of the picked rule's case the standing bar shows before it
+/// scrolls. Enough for a heading and the [`CLASHES_LISTED`] effects under it.
+const CLASH_DETAIL_ROWS: f32 = 5.0;
 
 /// How many clashing effects a warning names before it says "and N more".
 const CLASHES_LISTED: usize = 3;
@@ -1660,8 +1727,12 @@ mod editor_tests {
     /// A screen big enough for the dialog to open on. Without one the context
     /// has no content rectangle, and a modal centred in nothing draws nothing.
     fn a_screen() -> RawInput {
+        a_screen_of(1600.0)
+    }
+
+    fn a_screen_of(width: f32) -> RawInput {
         RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 1000.0))),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width, 1000.0))),
             ..Default::default()
         }
     }
@@ -2377,6 +2448,109 @@ mod editor_tests {
         assert_eq!(RULES_FILE_VERSION, one.version);
     }
 
+    /// Dragged narrower, the table gives the width back out of the name column
+    /// rather than standing its ground and pushing its own buttons off the
+    /// edge. The reader can still reach ✏, 🗐 and 🗑 on every row.
+    #[test]
+    fn a_narrower_window_takes_the_width_out_of_the_name_column() {
+        use crate::custom_widgets::table::{table_column_widths, table_id};
+
+        /// Every column's width, after the table has settled, on a screen of
+        /// this width.
+        fn columns(screen: f32) -> Vec<f32> {
+            let ctx = Context::default();
+            let mut groups = named(&["Quad Disruptor Cannons"]);
+            let mut selected = None;
+            let mut editing = None;
+            let mut widths = Vec::new();
+            for _ in 0..4 {
+                let _ = ctx.run_ui(a_screen_of(screen), |ui| {
+                    let id = table_id(ui);
+                    GroupRulesTable::new(
+                        &mut groups,
+                        "Custom Grouping Rules",
+                        "Group Name",
+                        &mut selected,
+                        &mut editing,
+                    )
+                    .show(ui, |_, _| {});
+                    widths = table_column_widths(ui, id);
+                });
+            }
+            widths
+        }
+
+        let wide = columns(1600.0);
+        // Narrow enough that the columns cannot all have what they claim: the
+        // stretched one has to give ground, or the buttons to its right are
+        // pushed off the edge and can only be reached by dragging sideways.
+        let narrow = columns(400.0);
+
+        assert!(
+            narrow[NAME_COLUMN] < wide[NAME_COLUMN],
+            "the name column held {:.0} points on a 400-point screen against {:.0} on a \
+             1600-point one",
+            narrow[NAME_COLUMN],
+            wide[NAME_COLUMN]
+        );
+        assert!(
+            narrow[NAME_COLUMN] < NAME_COLUMN_WIDTH,
+            "the name column stopped at its own claim of {NAME_COLUMN_WIDTH:.0} instead of \
+             giving the width back — it came to {:.0} in a 400-point window",
+            narrow[NAME_COLUMN]
+        );
+        assert!(
+            narrow[NAME_COLUMN] >= NAME_COLUMN_MIN_WIDTH,
+            "and it must not be squeezed past {NAME_COLUMN_MIN_WIDTH:.0}, but came to {:.0}",
+            narrow[NAME_COLUMN]
+        );
+
+        // Every column but the name one keeps what it needs, so the buttons to
+        // the right of the name are still on screen.
+        for (index, (wide, narrow)) in wide.iter().zip(narrow.iter()).enumerate() {
+            if index == NAME_COLUMN {
+                continue;
+            }
+            assert_eq!(
+                wide.round(),
+                narrow.round(),
+                "column {index} changed width when the window did; only the \
+                 stretched one should"
+            );
+        }
+    }
+
+    /// The bar is drawn outside the window's scroll area, so the room for it
+    /// has to be claimed before the tab is drawn. A height of zero would let
+    /// the scroll area take that room and push the bar off the bottom.
+    #[test]
+    fn the_bar_asks_for_room_only_when_it_has_something_to_say() {
+        let ctx = Context::default();
+        let mut heights = Vec::new();
+        let _ = ctx.run_ui(a_screen(), |ui| {
+            let quiet = AnalysisTab::default();
+            let speaking = AnalysisTab {
+                footer: Some(ClashFooter {
+                    summary: "2 of your rules share an effect".to_string(),
+                    warn: true,
+                    detail: Some("• Quad Disruptor Cannons — this rule takes it".to_string()),
+                }),
+                ..Default::default()
+            };
+            heights.push(quiet.footer_height(ui));
+            heights.push(speaking.footer_height(ui));
+        });
+
+        assert_eq!(
+            0.0, heights[0],
+            "a tab with nothing to report keeps no room"
+        );
+        assert!(
+            heights[1] > 0.0,
+            "a tab with something to report has to claim room for it"
+        );
+    }
+
     /// The clash bar stands under the table and says what it has to say without
     /// being pointed at. A tooltip answers a question the reader thought to
     /// ask; two rules quietly sharing an effect is the case they did not.
@@ -2387,12 +2561,14 @@ mod editor_tests {
             selected: Option<&str>,
             combat: Option<&Combat>,
         ) -> Vec<String> {
+            let mut tab = AnalysisTab {
+                footer: Some(clash_footer(clashes, selected, combat)),
+                ..Default::default()
+            };
             let ctx = Context::default();
             let mut text = Vec::new();
             for _ in 0..2 {
-                let output = ctx.run_ui(a_screen(), |ui| {
-                    show_clash_bar(clashes, selected, combat, ui);
-                });
+                let output = ctx.run_ui(a_screen(), |ui| tab.show_footer(ui));
                 text = drawn_text(&output.shapes);
             }
             text

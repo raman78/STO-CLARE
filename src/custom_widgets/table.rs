@@ -272,7 +272,7 @@ pub struct Table<'a> {
     shrink_to_content: bool,
     /// A column that takes whatever width the view has left over. See
     /// [`Table::stretch_column`].
-    stretch_column: Option<usize>,
+    stretch_column: Option<(usize, f32)>,
     /// Where the row's name ends and its figures begin, and whether the
     /// columns before it stay put. See [`Table::divided_after`] and
     /// [`Table::frozen_columns`].
@@ -303,7 +303,7 @@ pub struct HeaderSlot<'a> {
     /// How wide the view is — see [`BodyOutput::view_width`].
     view_width: f32,
     /// The column that takes the width left over, if the caller named one.
-    stretch_column: Option<usize>,
+    stretch_column: Option<(usize, f32)>,
 }
 
 pub struct TableBody<'a> {
@@ -454,8 +454,8 @@ impl<'a> Table<'a> {
     /// scrolling inside it. The column never shrinks below what it claimed, so
     /// this only ever adds width, and it is skipped entirely when the columns
     /// already overflow the view — there is nothing spare to hand out.
-    pub fn stretch_column(mut self, index: usize) -> Self {
-        self.stretch_column = Some(index);
+    pub fn stretch_column(mut self, index: usize, min_width: f32) -> Self {
+        self.stretch_column = Some((index, min_width));
         self
     }
 
@@ -722,7 +722,7 @@ struct Body {
     striped: bool,
     cell_spacing: f32,
     shrink_to_content: bool,
-    stretch_column: Option<usize>,
+    stretch_column: Option<(usize, f32)>,
     divide: Divide,
 }
 
@@ -742,7 +742,7 @@ struct BodyOutput {
     /// has to scroll at all.
     view_width: f32,
     /// The column that takes the width left over, if the caller named one.
-    stretch_column: Option<usize>,
+    stretch_column: Option<(usize, f32)>,
 }
 
 /// Draws the rows, and reports where they landed.
@@ -872,7 +872,7 @@ fn finish_table(
     cell_spacing: f32,
     divide: Divide,
     view_width: f32,
-    stretch_column: Option<usize>,
+    stretch_column: Option<(usize, f32)>,
 ) {
     ColumnState::draw_separators(&state.columns, ui, rect, columns_left, cell_spacing, divide);
     // Only a frozen column is held to a share of the view. One that scrolls away
@@ -1343,7 +1343,7 @@ impl State {
         cell_spacing: f32,
         frozen: usize,
         view_width: f32,
-        stretch_column: Option<usize>,
+        stretch_column: Option<(usize, f32)>,
     ) -> bool {
         let size_change = (self.size - self.last_size).abs();
         let mut repaint_required = size_change.x > 0.5 || size_change.y > 0.5;
@@ -1415,12 +1415,15 @@ fn frozen_widths(
     widths
 }
 
-/// Hand whatever width the view has left over to one column, so the table
-/// fills the space it was given rather than ending wherever its contents do.
+/// Make one column carry the difference between what the table wants and the
+/// width it has, so the table fills the view — and keeps fitting it.
 ///
-/// Only ever adds: a column keeps at least what it claimed, and nothing is
-/// handed out when the columns already come to more than the view — there is
-/// then no spare width, and taking any would mean cutting a column short.
+/// Both directions. Widening the window hands the spare width to the column;
+/// narrowing it takes the shortfall back out of the same column, down to
+/// `min_width`, so what stands to the right of it — the buttons on the row —
+/// stays reachable instead of being pushed off the edge. Without the second
+/// half the table simply stopped shrinking and had to be dragged sideways to
+/// reach its own buttons.
 ///
 /// Measured against the view rather than against what was drawn: a table judged
 /// by its drawn width would be widened until it filled the view, then found to
@@ -1428,18 +1431,22 @@ fn frozen_widths(
 /// frame. That is the same trap `frozen_widths` documents from the other side.
 fn stretch_to_fill(
     widths: &mut [f32],
-    stretch_column: Option<usize>,
+    stretch: Option<(usize, f32)>,
     view_width: f32,
     cell_spacing: f32,
 ) {
-    let Some(index) = stretch_column.filter(|index| *index < widths.len()) else {
+    let Some((index, min_width)) = stretch.filter(|(index, _)| *index < widths.len()) else {
         return;
     };
     let taken: f32 = widths.iter().map(|width| width + 2.0 * cell_spacing).sum();
     let spare = view_width - taken;
-    if spare > 0.5 {
-        widths[index] += spare;
+    if spare.abs() <= 0.5 {
+        return;
     }
+    // Both ways: the column takes what is spare, and gives back what is short.
+    // Only the giving back has a floor — a column narrowed to nothing tells the
+    // reader less than no column at all.
+    widths[index] = (widths[index] + spare).at_least(min_width);
 }
 
 /// The look a table cell takes when it can be picked: filled while it is the
