@@ -1,3 +1,4 @@
+use crate::custom_widgets::dialog::escape_closes;
 use std::borrow::BorrowMut;
 
 use eframe::egui::*;
@@ -142,12 +143,16 @@ impl AnalysisTab {
             return;
         }
 
+        let mut close = false;
         Window::new("Selected Combat Occurred Names")
             .collapsible(false)
             .open(&mut self.list_selected_combat_occurred_names)
             .scroll(true)
             .constrain(true)
             .show(ui.ctx(), |ui| {
+                if escape_closes(ui.ctx()) {
+                    close = true;
+                }
                 const SPACE: f32 = 40.0;
 
                 ui.label("This window is intended to help with creating combat naming rules.");
@@ -202,6 +207,9 @@ impl AnalysisTab {
                     combat.name_manager.values(),
                 );
             });
+        if close {
+            self.list_selected_combat_occurred_names = false;
+        }
     }
 
     fn show_occurred_names_table<'a>(

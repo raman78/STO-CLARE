@@ -1,3 +1,4 @@
+use crate::custom_widgets::dialog::escape_closes;
 use std::{fs::File, io::Write, path::PathBuf, thread::JoinHandle, time::Duration};
 
 use chrono::DateTime;
@@ -956,6 +957,7 @@ impl DownloadLogState {
             }
             DownloadLogState::DownloadFailed(error) => {
                 let mut open = true;
+                let mut dismissed = false;
                 Window::new("Download log failed")
                     .auto_sized()
                     .constrain(true)
@@ -963,9 +965,12 @@ impl DownloadLogState {
                     .open(&mut open)
                     .show(ui.ctx(), |ui| {
                         ui.label(&*error);
+                        if escape_closes(ui.ctx()) {
+                            dismissed = true;
+                        }
                     });
 
-                if !open {
+                if !open || dismissed {
                     *self = DownloadLogState::Idle;
                 }
             }

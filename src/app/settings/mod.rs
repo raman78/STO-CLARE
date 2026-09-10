@@ -1,3 +1,4 @@
+use crate::custom_widgets::dialog::escape_closes;
 use std::ffi::OsStr;
 
 pub use app_settings::{DebugSettings, Settings, WindowGeometry};
@@ -164,7 +165,9 @@ impl SettingsWindow {
                         self.apply_setting_changes(state);
                     }
 
-                    if ui.button("Cancel").clicked() {
+                    // Escape is Cancel. Asked after the tab's contents are drawn,
+                    // so a popup opened inside one of them takes the key first.
+                    if ui.button("Cancel").clicked() || escape_closes(ui.ctx()) {
                         self.discard_setting_changes(ui, state);
                     }
                 });

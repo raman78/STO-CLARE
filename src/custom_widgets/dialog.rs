@@ -3,6 +3,18 @@
 //! Every window in the program offers the same key rather than each one
 //! deciding for itself, so a reader who has learnt it in one dialog has learnt
 //! it in all of them. The main window is not a dialog and is left alone.
+//!
+//! Wired into: Settings (as Cancel), the rule-editing popups
+//! (`custom_widgets::popup_button`), Delete combats, Selected Combat Occurred
+//! Names, Damage by type, the Upload result and error windows, and Download log
+//! failed.
+//!
+//! Deliberately **not** wired into the windows that report work in progress —
+//! `Clearing the log` and the two `Download log` states. They have nothing to
+//! close: the window stands for a job, not a question, and goes when the job
+//! does. `Clearing the log` does carry a Cancel, but it abandons a rewrite of
+//! the reader's log rather than dismissing a dialog, and that is not something
+//! a key pressed to get out of a text field should be able to do.
 
 use std::sync::LazyLock;
 

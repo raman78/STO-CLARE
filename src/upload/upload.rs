@@ -1,3 +1,4 @@
+use crate::custom_widgets::dialog::escape_closes;
 use std::{io::Write, thread::JoinHandle, time::Duration};
 
 use eframe::egui::*;
@@ -131,7 +132,7 @@ impl Upload {
                             });
                         });
                     ui.add_space(40.0);
-                    ui.button("Close").clicked()
+                    ui.button("Close").clicked() || escape_closes(ui.ctx())
                 }) {
                     self.state = UploadState::Idle;
                 }
@@ -140,7 +141,7 @@ impl Upload {
                 if let Some(true) = Self::window(ui, false, |ui| {
                     ui.label(&*error);
                     ui.add_space(40.0);
-                    ui.button("Close").clicked()
+                    ui.button("Close").clicked() || escape_closes(ui.ctx())
                 }) {
                     self.state = UploadState::Idle;
                 }

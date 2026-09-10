@@ -19,6 +19,7 @@
 //! are ordering the rest by, is drawn in a colour that says so, and carries the
 //! button that takes it back out again.
 
+use crate::custom_widgets::dialog::escape_closes;
 use std::cmp::Ordering;
 
 use chrono::NaiveDateTime;
@@ -959,7 +960,7 @@ impl CombatsPanel {
                             action = Some(ListAction::Keep(keep_list(view, &ticked)));
                         }
                     });
-                    if ui.button("Cancel").clicked() {
+                    if ui.button("Cancel").clicked() || escape_closes(ui.ctx()) {
                         // The ticks stay: cancelling is about the question, not
                         // about giving up what was picked out.
                         self.confirm_delete = false;

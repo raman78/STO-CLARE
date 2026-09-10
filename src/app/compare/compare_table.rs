@@ -11,6 +11,7 @@
 //! into one mean per metric, and the export, which writes the same table to a
 //! spreadsheet (`export`).
 
+use crate::custom_widgets::dialog::escape_closes;
 use chrono::NaiveDateTime;
 use std::{path::PathBuf, sync::Arc};
 
@@ -1171,10 +1172,14 @@ impl Comparison {
         let cap = ui.ctx().content_rect().size() * 0.9;
         let size = self.type_summary_size(ui, &rows, with_notes);
         let width = size.x;
+        let mut dismissed = false;
         Window::new("Damage by type")
             .open(&mut open)
             .fixed_size(vec2(size.x.min(cap.x), size.y.min(cap.y)))
             .show(ui.ctx(), |ui| {
+                if escape_closes(ui.ctx()) {
+                    dismissed = true;
+                }
                 // Wrapped to the table, not the other way round. Unwrapped, this
                 // sentence is the widest thing in the window and the window opens
                 // around it; the table's width from last frame is what it should
@@ -1261,7 +1266,7 @@ impl Comparison {
         {
             self.open_types.insert(name);
         }
-        if !open {
+        if !open || dismissed {
             self.show_type_summary = false;
         }
     }
