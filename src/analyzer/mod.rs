@@ -48,11 +48,15 @@ pub struct Analyzer {
 type Players = NameMap<Player>;
 type GroupingPath = SmallVec<[GroupPathSegment; 8]>;
 
-/// The row a shot lands in when the fight proves a carrier fired it but cannot
-/// say which one. Named rather than merged into the player's own rows, because
-/// "somebody else fired this" is a fact worth showing and hiding it would put
-/// the damage under a weapon the player may not even carry.
-const UNNAMED_CARRIER: &str = "(carrier not named in the log)";
+/// The row a shot lands in when the fight proves something other than the
+/// player fired it but cannot say what. Shown as "(Damage owner unknown)" —
+/// the one wording used for this case in the program, the changelog and
+/// `docs/SHOT_MODEL.md`.
+///
+/// Named rather than merged into the player's own rows, because "somebody else
+/// fired this" is a fact worth showing, and hiding it would put the damage
+/// under a weapon the player may not even carry.
+const UNNAMED_CARRIER: &str = "(Damage owner unknown)";
 
 #[derive(Clone, Debug)]
 pub struct Combat {

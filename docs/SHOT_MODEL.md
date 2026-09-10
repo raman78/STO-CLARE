@@ -490,15 +490,27 @@ Three outcomes, and the third is the one worth arguing about:
 | the fight's hull lines for this id say | the line goes to |
 |---|---|
 | only ever one carrier, never the owner | that carrier |
-| several carriers, never the owner | a row named `(carrier not named in the log)` |
+| several carriers, never the owner | a row named `(Damage owner unknown)` |
 | the owner fires it too, or nothing seen yet | the owner, as before |
 
-The middle row is a **new row in the damage tree**. Merging those lines into the
-player's own weapon row would put damage under a weapon they may not carry;
-dropping them would lose real damage; picking one of the carriers would be a
-guess wearing an exact figure. Naming the gap is the only option that states
-what is actually known. On the reference fight it holds 13 hits and 206 471
-damage, against the 1 557 hits the two named pets hold.
+The middle row is a **new row in the damage tree**, shown as
+**`(Damage owner unknown)`** — that exact wording is used in the program, the
+changelog and this document, so the case has one name everywhere. Note it does
+not mean the line's *owner* field (§1) is missing: that is always there. It
+means the program cannot say which of the owner's carriers fired it.
+
+Merging those lines into the player's own weapon row would put damage under a
+weapon they may not carry; dropping them would lose real damage; picking one of
+the carriers would be a guess wearing an exact figure. Naming the gap is the
+only option that states what is actually known. On the reference fight it holds
+13 hits and 206 471 damage, against the 1 557 hits the two named pets hold.
+
+**Both halves of a shot go together.** A shield line carries the `*`
+placeholder even when its shot was left unsigned, so judging it on its own would
+leave it with the player while its hull line went to the carrier — one shot
+split across two rows. `ShotLookahead::partner_source_blank` carries the
+partner's unsigned status back to the shield line, so the whole shot is judged
+once. On one real fight that alone moved 7 further hits, doubling the row.
 
 ### 4.7 Validated against a hundred other players' logs
 

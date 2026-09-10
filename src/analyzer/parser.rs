@@ -76,6 +76,9 @@ pub struct Parser {
     /// The source the current line takes from the rest of its shot, when the
     /// line names none itself. Held here so it outlives the borrow of the line.
     inherited_source: Option<(String, String)>,
+    /// Whether the current line's shot was left unsigned by its partner — see
+    /// `ShotLookahead::partner_source_blank`.
+    shot_source_blank: bool,
 }
 
 /// A fully read line together with its byte range, so lines held in the
@@ -137,6 +140,7 @@ impl Parser {
             current: PeekedLine::default(),
             current_is_owned: false,
             inherited_source: None,
+            shot_source_blank: false,
         })
     }
 
@@ -193,9 +197,11 @@ impl Parser {
                 Some(NamesSource::No) => shot.source,
                 _ => None,
             };
+            self.shot_source_blank = shot.partner_source_blank;
             ambiguous && shot.has_damage_line
         } else {
             self.inherited_source = None;
+            self.shot_source_blank = false;
             false
         };
 
@@ -210,6 +216,7 @@ impl Parser {
             log_pos,
             shield_line_is_damage,
             self.inherited_source.as_ref(),
+            self.shot_source_blank,
         )
         .ok_or(RecordError::InvalidRecord(line))
     }
@@ -349,6 +356,7 @@ impl Parser {
         log_pos: Option<Range<u64>>,
         shield_line_is_damage: bool,
         inherited_source: Option<&'a (String, String)>,
+        shot_source_blank: bool,
     ) -> Option<Record<'a>> {
         let (time, line) = line.split_once("::")?;
 
@@ -414,7 +422,7 @@ impl Parser {
             value,
             _raw: line,
             log_pos,
-            source_field_blank,
+            source_field_blank: source_field_blank || shot_source_blank,
         };
         Some(record)
     }
@@ -551,6 +559,11 @@ struct ShotLookahead {
     /// when that line names nobody, or when the shot has no line left to pair
     /// with.
     source: Option<(String, String)>,
+    /// Whether the partner's source pair was written **blank**. A shield line
+    /// then belongs to a shot the game did not sign, even though the shield
+    /// line itself carries the `*` placeholder — so it must be judged the same
+    /// way its partner is, or one shot ends up split between two rows.
+    partner_source_blank: bool,
 }
 
 impl ShotLookahead {
@@ -558,12 +571,14 @@ impl ShotLookahead {
     /// leaves the shield line naming nobody as well, which is right: the two
     /// halves then agree that the owner fired it.
     fn take_source_of(&mut self, fields: &LineFields) {
-        if !fields.has_no_source() {
-            self.source = Some((
-                fields.source_name.to_string(),
-                fields.source_id.to_string(),
-            ));
+        if fields.has_no_source() {
+            self.partner_source_blank = fields.source_name.is_empty() && fields.source_id.is_empty();
+            return;
         }
+        self.source = Some((
+            fields.source_name.to_string(),
+            fields.source_id.to_string(),
+        ));
     }
 }
 
@@ -1077,7 +1092,8 @@ mod tests {
             &mut String::new(),
             None,
             false,
-            None)
+            None,
+            false)
             .unwrap();
 
         println!("{:?}", record)

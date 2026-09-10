@@ -27,3 +27,7 @@ target/
 
 # Runtime
 *.log
+
+# Research data: ladder logs fetched for validating the shot model.
+# Kept locally, never committed — 100 logs, ~490 MB.
+research/
