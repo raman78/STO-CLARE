@@ -185,12 +185,13 @@ the press:
 The system-wide checkbox is at the foot of the tab, under the state line
 described next. A change there takes effect on **Ok**, like every other setting.
 
-Its label names the combination — *Take Alt+O (Overlay) from the whole desktop*
-— and follows the Overlay row: what the desktop-wide key *is* has to be legible
-where it is switched on, because this is the one setting whose effect reaches
-every other window on the machine. It is always the combination in that row,
-never the shipped one; `the_desktop_wide_key_is_the_one_the_overlay_row_holds`
-takes a real grab and holds it to that.
+Its label names the *shortcut*, not the keys — *Take the Overlay shortcut from
+the whole desktop* — because the row above is where the combination is set and
+shown, and a second copy of it on the same page is one more thing to read and
+one more place to be out of step. Whatever that row holds is what gets taken,
+never the shipped default;
+`the_desktop_wide_key_is_the_one_the_overlay_row_holds` takes a real grab and
+holds it to that.
 
 ## The desktop-wide key
 
@@ -223,7 +224,7 @@ with no XWayland in it. On Windows the question does not arise —
 | State | Line in the tab | Means |
 |---|---|---|
 | `Off` | "Not taken — the shortcut only works while this window is in front." | the box is unticked |
-| `Held` | "`Alt+O` is taken from the whole desktop…" | the grab is up |
+| `Held` | "Taken from the whole desktop…" | the grab is up |
 | `Refused` | "Could not be taken: …" | another program holds that key, or it is not on the layout |
 | `Unsupported` | "Not available here: …" | no X server to take it from, or no backend on this platform |
 

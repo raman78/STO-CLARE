@@ -1430,7 +1430,7 @@ saying what actually happened, which is worth a glance:
 
 | What it says | What it means |
 |--------------|---------------|
-| *Alt+O is taken from the whole desktop* | It works, including while the game is in front. |
+| *Taken from the whole desktop* | It works, including while the game is in front. |
 | *Not taken — the shortcut only works while this window is in front* | The box is unticked. The key still works when you are looking at STO-CLARE. |
 | *Could not be taken: …* | Something else on your desktop already holds that combination. Pick another one. |
 | *Not available here: …* | This desktop has no way to hand the program a key from outside its own window. Everything else still works as normal. |

@@ -1,4 +1,4 @@
-use crate::custom_widgets::dialog::escape_closes;
+use crate::custom_widgets::dialog::{centred, escape_closes};
 use std::{fs::File, io::Write, path::PathBuf, thread::JoinHandle, time::Duration};
 
 use chrono::DateTime;
@@ -938,7 +938,7 @@ impl DownloadLogState {
         match self {
             DownloadLogState::Idle => (),
             DownloadLogState::Opening(path, join_handle) => {
-                Window::new("Download log")
+                centred(Window::new("Download log"), ui.ctx())
                     .auto_sized()
                     .constrain(true)
                     .collapsible(false)
@@ -961,7 +961,7 @@ impl DownloadLogState {
                 }
             }
             DownloadLogState::Downloading(message, join_handle) => {
-                Window::new("Download log")
+                centred(Window::new("Download log"), ui.ctx())
                     .auto_sized()
                     .constrain(true)
                     .collapsible(false)
@@ -980,7 +980,7 @@ impl DownloadLogState {
             DownloadLogState::DownloadFailed(error) => {
                 let mut open = true;
                 let mut dismissed = false;
-                Window::new("Download log failed")
+                centred(Window::new("Download log failed"), ui.ctx())
                     .auto_sized()
                     .constrain(true)
                     .collapsible(false)

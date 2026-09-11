@@ -1,4 +1,4 @@
-use crate::custom_widgets::dialog::escape_closes;
+use crate::custom_widgets::dialog::{centred, escape_closes};
 use std::ffi::OsStr;
 
 pub use app_settings::{DebugSettings, Settings, WindowGeometry};
@@ -113,7 +113,7 @@ impl SettingsWindow {
         // window ends up taller than the viewport.
         let max_size = (ui.ctx().content_rect().size() - vec2(16.0, 16.0) - self.window_chrome)
             .at_least(vec2(200.0, 150.0));
-        let window_response = Window::new("Settings")
+        let window_response = centred(Window::new("Settings"), ui.ctx())
             .collapsible(false)
             .resizable(true)
             .default_size(default_size)

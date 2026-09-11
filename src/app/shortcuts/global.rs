@@ -66,12 +66,17 @@ pub enum GlobalState {
 
 impl GlobalState {
     /// The line the settings tab shows.
+    ///
+    /// It says what became of the shortcut, not which keys it is — those are on
+    /// the row above, which is where they are set. A refusal is the exception
+    /// and names the combination, because there the point is *which* key could
+    /// not be had.
     pub fn message(&self) -> String {
         match self {
             Self::Off => "Not taken — the shortcut only works while this window is in front."
                 .to_owned(),
-            Self::Held(trigger) => {
-                format!("{trigger} is taken from the whole desktop; it works while the game is in front.")
+            Self::Held(_) => {
+                "Taken from the whole desktop; it works while the game is in front.".to_owned()
             }
             Self::Refused(reason) => format!("Could not be taken: {reason}"),
             Self::Unsupported(reason) => format!("Not available here: {reason}"),

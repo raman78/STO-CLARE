@@ -1,4 +1,4 @@
-use crate::custom_widgets::dialog::escape_closes;
+use crate::custom_widgets::dialog::{centred, escape_closes};
 use rustc_hash::FxHashMap;
 use std::borrow::BorrowMut;
 
@@ -419,7 +419,7 @@ impl AnalysisTab {
         }
 
         let mut close = false;
-        Window::new("Selected Combat Occurred Names")
+        centred(Window::new("Selected Combat Occurred Names"), ui.ctx())
             .collapsible(false)
             .open(&mut self.list_selected_combat_occurred_names)
             .scroll(true)

@@ -116,15 +116,16 @@ if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
   echo "settings and compare:"
   start LightDark
   click 34 17;   shot settings-general
-  click 110 65;  shot settings-analysis
-  click 169 65;  shot settings-visuals
-  click 226 65;  shot settings-upload
-  # Shortcuts was added between Upload and Debug in 2.9.0, which moved Debug
-  # from 282 to 354. Measured off an unclicked shot of this very window, so
-  # these are the window's own pixels.
-  click 290 65;  shot settings-shortcuts
-  click 354 65;  shot settings-debug
-  click 79 607                                     # Cancel
+  # The Settings window opens centred in the main window (2.9.0), which is
+  # where these coordinates come from — measured off a grab of that window, so
+  # they are its own pixels. Anything that moves the window moves all of them
+  # together.
+  click 348 105; shot settings-analysis
+  click 406 105; shot settings-visuals
+  click 463 105; shot settings-upload
+  click 527 105; shot settings-shortcuts
+  click 590 105; shot settings-debug
+  click 316 647                                    # Cancel
   click 66 38                                      # the combats panel
   click 169 38                                     # Compare Combats
   # Five runs of the same map at the same level — the set the manual's worked

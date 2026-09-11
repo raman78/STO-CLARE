@@ -1,4 +1,4 @@
-use crate::custom_widgets::dialog::escape_closes;
+use crate::custom_widgets::dialog::{centred, escape_closes};
 use std::{
     io::{Read, Write},
     sync::{
@@ -202,7 +202,7 @@ impl Upload {
     }
 
     fn window<R>(ui: &Ui, constrain: bool, add_contents: impl FnOnce(&mut Ui) -> R) -> Option<R> {
-        let mut window = Window::new("Upload")
+        let mut window = centred(Window::new("Upload"), ui.ctx())
             .collapsible(false)
             .auto_sized()
             .constrain(true);

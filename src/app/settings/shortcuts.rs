@@ -187,18 +187,14 @@ impl ShortcutsTab {
         ui: &mut Ui,
     ) {
         let overlay = ShortcutAction::ToggleOverlay;
-        // The combination is named in the label rather than left to the row
-        // above, because this is the one setting whose effect reaches outside
-        // the program: what it takes from every other window has to be spelled
-        // out where it is switched on, and it follows the row — change the
-        // combination and this says the new one.
-        let combination = modified_settings.shortcuts.effective(overlay);
+        // The row above is where the combination is set and shown, so this
+        // names the *shortcut* rather than the keys. Spelling the combination
+        // out here would be a second copy of it on the same page — right, since
+        // it would be built from the live setting, but one more thing to read
+        // and one more place for it to be out of step.
         ui.checkbox(
             &mut modified_settings.shortcuts.system_wide,
-            format!(
-                "Take {combination} ({}) from the whole desktop",
-                overlay.label()
-            ),
+            format!("Take the {} shortcut from the whole desktop", overlay.label()),
         )
         .hover(
             "Off, the shortcut only reaches the program while its window is in front — which it \
