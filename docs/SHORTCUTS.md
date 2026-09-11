@@ -98,6 +98,15 @@ never also runs what it is bound to.
   thread the press would sit in the channel until some other event woke the
   program. `GlobalHotkey` holds the main window's context for this, the way
   `AnalysisHandler` does.
+- **S7 — the grab checks the modifiers too, not just the key.** A press that
+  reaches the grabbing client is not proof that the chord was pressed: an active
+  grab reports what follows it, and a compositor forwarding keys into XWayland
+  can land a bare press there. `chord_held` compares the event's modifier state
+  against the shortcut's, with the lock bits taken out of both sides (the grab
+  is held with them, so they say nothing). Without it the action answers the
+  letter alone, which from the outside is indistinguishable from a modifier the
+  program thinks is still held down. Held by
+  `a_press_without_the_modifiers_is_not_the_shortcut`.
 
 ## What is stored
 
@@ -175,6 +184,13 @@ the press:
 
 The system-wide checkbox is at the foot of the tab, under the state line
 described next. A change there takes effect on **Ok**, like every other setting.
+
+Its label names the combination — *Take Alt+O (Overlay) from the whole desktop*
+— and follows the Overlay row: what the desktop-wide key *is* has to be legible
+where it is switched on, because this is the one setting whose effect reaches
+every other window on the machine. It is always the combination in that row,
+never the shipped one; `the_desktop_wide_key_is_the_one_the_overlay_row_holds`
+takes a real grab and holds it to that.
 
 ## The desktop-wide key
 

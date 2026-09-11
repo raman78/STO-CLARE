@@ -273,8 +273,8 @@ mod backend {
     /// The two bits are the protocol's own — `LockMask` is bit 1, and Num Lock
     /// is by universal convention on `Mod2` — rather than anything the server
     /// decides, which is why they can stand as numbers here.
-    const CAPS_LOCK: u16 = 1 << 1;
-    const NUM_LOCK: u16 = 1 << 4;
+    pub(super) const CAPS_LOCK: u16 = 1 << 1;
+    pub(super) const NUM_LOCK: u16 = 1 << 4;
     const LOCK_MASKS: [u16; 4] = [0, CAPS_LOCK, NUM_LOCK, CAPS_LOCK | NUM_LOCK];
 
     pub(super) fn take(combination: Combination, ctx: Context) -> Result<Taken, GlobalState> {
@@ -338,6 +338,7 @@ mod backend {
             root,
             keycode,
             masks,
+            wanted_modifiers,
             detectable_repeat,
         } = grabbed;
 
@@ -352,7 +353,18 @@ mod backend {
         while !stop.load(Ordering::Relaxed) {
             loop {
                 match connection.poll_for_event() {
-                    Ok(Some(Event::KeyPress(event))) if event.detail == keycode => {
+                    // The key alone is not the shortcut. A grab is asked for one
+                    // combination, but the events it delivers are not always
+                    // only that combination — an active grab reports what
+                    // follows it, and a compositor forwarding keys into
+                    // XWayland can land a bare press here. Without this test
+                    // the action answers the letter on its own, which is
+                    // exactly what a held Alt that was never released looks
+                    // like from the outside.
+                    Ok(Some(Event::KeyPress(event)))
+                        if event.detail == keycode
+                            && chord_held(event.state, wanted_modifiers) =>
+                    {
                         let repeating = down
                             || (!detectable_repeat
                                 && last_press.is_some_and(|last| {
@@ -394,7 +406,22 @@ mod backend {
         root: Window,
         keycode: u8,
         masks: Vec<ModMask>,
+        /// The modifiers the shortcut names, which every press is checked
+        /// against — see the `KeyPress` arm in [`run`].
+        wanted_modifiers: u16,
         detectable_repeat: bool,
+    }
+
+    /// Whether a key event carries exactly the modifiers the shortcut names.
+    ///
+    /// Caps Lock and Num Lock are taken out on both sides: the grab is held
+    /// with them as well (see [`LOCK_MASKS`]), so they say nothing about which
+    /// chord was pressed. Everything else has to match exactly — Ctrl+Alt+O is
+    /// not Alt+O, and a reader who bound both would otherwise get the wrong
+    /// one.
+    pub(super) fn chord_held(state: impl Into<u16>, wanted: u16) -> bool {
+        const LOCKS: u16 = CAPS_LOCK | NUM_LOCK;
+        (state.into() & !LOCKS) == (wanted & !LOCKS)
     }
 
     fn grab(combination: Combination) -> Result<Grabbed, GlobalState> {
@@ -444,6 +471,7 @@ mod backend {
             root,
             keycode,
             masks,
+            wanted_modifiers: wanted,
             detectable_repeat,
         })
     }
@@ -716,6 +744,32 @@ mod tests {
         assert!(GlobalState::Refused("taken".to_owned()).is_problem());
         assert!(GlobalState::Unsupported("no X server".to_owned()).is_problem());
         assert!(!GlobalState::Held("Alt+O".to_owned()).is_problem());
+    }
+
+    /// The key alone is not the shortcut: a press that reaches the grab without
+    /// the modifiers the shortcut names is not it, and a press carrying more
+    /// modifiers than it names is a different shortcut.
+    ///
+    /// Locks are the exception, and have to be, since the grab is held with
+    /// them — a shortcut that stopped working under Caps Lock would look like a
+    /// broken program.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_press_without_the_modifiers_is_not_the_shortcut() {
+        use backend::{CAPS_LOCK, NUM_LOCK, chord_held};
+        const ALT: u16 = 1 << 3;
+        const CTRL: u16 = 1 << 2;
+
+        assert!(chord_held(ALT, ALT), "the chord itself");
+        assert!(chord_held(ALT | CAPS_LOCK, ALT), "Caps Lock says nothing");
+        assert!(chord_held(ALT | NUM_LOCK, ALT), "nor does Num Lock");
+
+        assert!(!chord_held(0u16, ALT), "the bare key is not the shortcut");
+        assert!(
+            !chord_held(ALT | CTRL, ALT),
+            "Ctrl+Alt+O is a different shortcut from Alt+O"
+        );
+        assert!(!chord_held(CTRL, ALT), "nor is the wrong modifier");
     }
 
     /// The whole of the Linux path against a real X server: the key is found on

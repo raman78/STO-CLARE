@@ -563,6 +563,40 @@ mod tests {
         assert_eq!(0, left, "and is still taken, so nothing else sees it");
     }
 
+    /// The key taken from the desktop is the one in the Overlay row, whatever
+    /// the reader put there — not the combination the program ships with.
+    ///
+    /// Ignored for the reason the grab's own test is: taking a key is a change
+    /// to the desktop the suite is running on. Run it on a throwaway display:
+    ///
+    /// ```text
+    /// Xvfb :99 &
+    /// DISPLAY=:99 cargo test the_desktop_wide_key -- --ignored
+    /// ```
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "takes a key from the desktop it runs on"]
+    fn the_desktop_wide_key_is_the_one_the_overlay_row_holds() {
+        let chosen = Combination {
+            modifiers: Modifiers::CTRL | Modifiers::ALT,
+            key: Key::Y,
+        };
+        let mut settings = ShortcutSettings {
+            system_wide: true,
+            ..Default::default()
+        };
+        settings.set(ShortcutAction::ToggleOverlay, chosen);
+
+        let shortcuts = Shortcuts::new(&settings, &Context::default());
+
+        assert_eq!(
+            &GlobalState::Held(chosen.to_string()),
+            shortcuts.global_state(),
+            "the desktop holds what the row says: {}",
+            shortcuts.global_state().message()
+        );
+    }
+
     /// What the reader rebound is what answers.
     #[test]
     fn a_rebound_key_is_the_one_that_answers() {
