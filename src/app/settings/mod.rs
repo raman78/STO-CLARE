@@ -9,11 +9,11 @@ use eframe::{Frame, egui::*};
 use crate::analyzer::Combat;
 
 use self::{
-    analysis::AnalysisTab, debug::DebugTab, general::GeneralTab, upload::UploadTab,
-    visuals::VisualsTab,
+    analysis::AnalysisTab, debug::DebugTab, general::GeneralTab, shortcuts::ShortcutsTab,
+    upload::UploadTab, visuals::VisualsTab,
 };
 
-use super::{logging, overlay::Overlay, state::AppState};
+use super::{logging, overlay::Overlay, shortcuts::GlobalState, state::AppState};
 use crate::custom_widgets::toggle::Toggle;
 
 mod analysis;
@@ -22,6 +22,7 @@ mod columns;
 mod combat_notes;
 mod debug;
 mod general;
+mod shortcuts;
 mod upload;
 mod visuals;
 
@@ -34,6 +35,7 @@ pub struct SettingsWindow {
     visuals_tab: VisualsTab,
     upload_tab: UploadTab,
     debug_tab: DebugTab,
+    shortcuts_tab: ShortcutsTab,
     /// Title bar + frame margins, measured from the previous frame. The
     /// remembered size describes the window's *content*, so this is what has to
     /// be added to it to know how much room the whole window takes.
@@ -46,8 +48,9 @@ enum SettingsTab {
     General,
     Analysis,
     Visuals,
-    Debug,
     Upload,
+    Shortcuts,
+    Debug,
 }
 
 impl SettingsWindow {
@@ -63,16 +66,22 @@ impl SettingsWindow {
             analysis_tab: Default::default(),
             debug_tab: Default::default(),
             upload_tab: Default::default(),
+            shortcuts_tab: Default::default(),
             visuals_tab,
             window_chrome: Vec2::ZERO,
         }
     }
 
+    /// `global` is what the desktop-wide shortcut is actually doing right now,
+    /// which the Shortcuts tab reports. Passed in rather than read from the
+    /// settings: the settings say what was *asked* for, and the two differ
+    /// exactly when the reader needs to be told.
     pub fn show(
         &mut self,
         state: &mut AppState,
         selected_combat: Option<&Combat>,
         detected_owner: Option<&str>,
+        global: &GlobalState,
         ui: &mut Ui,
         frame: &Frame,
     ) {
@@ -125,6 +134,11 @@ impl SettingsWindow {
                     );
                     ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Visuals, "Visuals");
                     ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Upload, "Upload");
+                    ui.steady_toggle_value(
+                        &mut self.selected_tab,
+                        SettingsTab::Shortcuts,
+                        "Shortcuts",
+                    );
                     ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Debug, "Debug");
                 });
 
@@ -179,6 +193,10 @@ impl SettingsWindow {
                         }
                         SettingsTab::Upload => {
                             self.upload_tab.show(&mut self.modified_settings, ui)
+                        }
+                        SettingsTab::Shortcuts => {
+                            self.shortcuts_tab
+                                .show(&mut self.modified_settings, global, ui)
                         }
                         SettingsTab::Debug => self.debug_tab.show(&mut self.modified_settings, ui),
                     });
@@ -239,6 +257,30 @@ impl SettingsWindow {
                 self.apply_setting_changes(state);
             }
         });
+    }
+
+    /// Opens the window on whichever tab it was last left on, as the keyboard
+    /// shortcut asks for it.
+    ///
+    /// A window already open is left exactly as it is — not closed, and not
+    /// re-initialized. The window is left by Ok or Cancel, which is what the
+    /// toolbar button does too (its toggle only opens), and a key that threw
+    /// away a half-written rule would be a trap.
+    pub fn open(&mut self, state: &AppState) {
+        if !self.is_open {
+            self.initialize(state);
+        }
+    }
+
+    /// The same, on the grouping rules themselves.
+    ///
+    /// Both steps are needed: the Analysis tab holds four rule sets as sections
+    /// of its own and opens on Combat Names, so stopping at the tab would land
+    /// the reader on a different rule set from the one the key names.
+    pub fn open_grouping(&mut self, state: &AppState) {
+        self.open(state);
+        self.selected_tab = SettingsTab::Analysis;
+        self.analysis_tab.show_custom_grouping();
     }
 
     fn initialize(&mut self, state: &AppState) {

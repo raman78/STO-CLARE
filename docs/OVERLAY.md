@@ -14,6 +14,10 @@ from `App::ui` via `Overlay::update()`, once a frame and unconditionally;
 `Overlay::show_button()` is only the toggle in the toolbar, and draws nothing
 else.
 
+The toolbar button is not the only way in: `Overlay::toggle` is also what the
+keyboard shortcut presses, and that one is taken from the whole desktop so it
+answers while the game is in front. See `docs/SHORTCUTS.md`.
+
 **Why the split.** The overlay follows the newest combat on a handler of its
 own, whatever the main window is showing — so what drives it cannot hang off a
 piece of UI that comes and goes. It used to: both halves were one

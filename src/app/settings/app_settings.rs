@@ -10,6 +10,7 @@ use crate::{
     app::{
         compare::CompareSettings,
         settings::{ColumnVisibility, CombatNotes},
+        shortcuts::ShortcutSettings,
     },
     helpers::paths,
 };
@@ -42,6 +43,10 @@ pub struct Settings {
     /// log.
     #[serde(default)]
     pub columns: ColumnVisibility,
+    /// The keys the program answers, and whether the overlay's key is taken
+    /// from the whole desktop. Its own section for the same reason again.
+    #[serde(default)]
+    pub shortcuts: ShortcutSettings,
     /// Why the rules file could not be read at start-up, when it could not.
     ///
     /// Not part of the settings on disk — it describes this run, not a
@@ -1308,6 +1313,7 @@ mod tests {
                 "compare",
                 "debug",
                 "general",
+                "shortcuts",
                 "upload",
                 "visuals",
                 "window",
