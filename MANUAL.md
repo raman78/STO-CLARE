@@ -39,7 +39,7 @@ Everything lives in one window. From top to bottom:
 Press **☰ Combats** in the top row — or the **Tab** key — and a panel opens down
 the left-hand side with every fight in your log, newest first. Double-click a
 row and every tab fills in with that fight. Tab folds it away again — see
-[The two keys](#the-two-keys).
+[Keyboard shortcuts](#keyboard-shortcuts).
 
 ![The combats list](images/combats-list.png)
 
@@ -508,7 +508,11 @@ second, hit counts — and the slider smooths the line so a spiky graph becomes
 readable.
 
 Select an ability in the table above and the chart follows it, so you can see
-when in the fight it was actually doing something.
+when in the fight it was actually doing something. Clicking a row takes that row
+and everything under it; **Ctrl + click** adds one row at a time instead, so you
+can put two or three abilities on the same chart and compare them. Ctrl-clicking
+a row that is already in the set takes it back out. See
+[Keyboard shortcuts](#keyboard-shortcuts).
 
 ---
 
@@ -1198,7 +1202,7 @@ expect is in it, the rule is too wide. Nothing has to be applied and no log has
 to be re-read to find out.
 
 **Esc** closes the window, and closes the box you are typing in first — see
-[The two keys](#the-two-keys).
+[Keyboard shortcuts](#keyboard-shortcuts).
 
 **List Selected Combat Occurred Names** shows every name that appeared in the
 combat you are reading, which is another way to find the exact wording a rule
@@ -1282,25 +1286,39 @@ written into the settings folder under the new name.
 
 ---
 
-## The two keys
+## Keyboard shortcuts
 
-There are only two, and both do the thing you would expect if you assume the
-program has no hidden modes.
+Almost everything here can be done with the mouse alone. These are the keys
+that save a trip to a button — and the one thing, putting several abilities on
+one chart, that has no button at all:
 
-| Key | What it does |
-|-----|-----------------------------------------------------------------|
-| **Tab** | Opens and closes the combats panel. |
-| **Esc** | Closes the window you are in, or stops the job that window is doing. |
+| Key | Where | What it does |
+|-----|-------|--------------------------------------------------------|
+| **Tab** | Main window | Opens and closes the combats panel. |
+| **Esc** | Any dialog | Closes it, the same as its Cancel or Close button. |
+| **Esc** | While typing in a box | Leaves the box first; your text stays. Press again to close the window. |
+| **Esc** | Uploading to the ladder | Breaks the upload off — see below. |
+| **Ctrl + click** | A row on the damage or healing tabs | Adds that row to the selection, or takes it out again — this is how you get several abilities onto one chart. |
+| **Enter** | The Ladder's player search | Runs the search, the same as pressing Search. |
+| **Double-click** | A row in the combats list | Opens that fight in every tab. |
 
-**Tab** does nothing else. In a form, Tab usually walks the highlight from one
-button to the next — here it does not, because nothing in this program is
-operated that way, and the one thing you open and close over and over is the
-list of fights. While you are typing in a box it still belongs to the box.
+The rest of this section is the detail behind those, and the two places where a
+key deliberately does nothing.
 
-**Esc** closes a dialog exactly as its own Cancel or Close button would.
-Settings, the rule-editing window, Delete combats, the occurred-names list,
-Damage by type, the Ladder, a comparison, the upload and download result
-windows — all of them take it.
+### Tab
+
+Tab opens and closes the list of fights, and does nothing else. In a form, Tab
+usually walks the highlight from one button to the next; here it does not,
+because nothing in this program is operated that way, and the one thing you
+open and close over and over is the list of fights. While you are typing in a
+box it still belongs to the box.
+
+### Esc
+
+Esc closes a dialog exactly as its own Cancel or Close button would. Settings,
+the rule-editing window, Delete combats, the occurred-names list, Damage by
+type, the Ladder, a comparison, the upload and download result windows — all of
+them take it.
 
 Two things about Esc are worth knowing, because both exist so the key is never
 destructive:
