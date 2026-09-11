@@ -187,36 +187,24 @@ impl ShortcutsTab {
         ui: &mut Ui,
     ) {
         let overlay = ShortcutAction::ToggleOverlay;
-        // The row above is where the combination is set and shown, so this
-        // names the *shortcut* rather than the keys. Spelling the combination
-        // out here would be a second copy of it on the same page — right, since
-        // it would be built from the live setting, but one more thing to read
-        // and one more place for it to be out of step.
+        // "Global shortcut" is the name every program uses for this, so the box
+        // says that and stops. The row above is where the combination is set
+        // and shown, and what a global shortcut *is* belongs in the manual —
+        // spelling either out here is a second copy of something the reader
+        // either already knows or can read where it is explained properly.
         ui.checkbox(
             &mut modified_settings.shortcuts.system_wide,
-            format!("Take the {} shortcut from the whole desktop", overlay.label()),
+            format!("Make the {} shortcut global", overlay.label()),
         )
-        .hover(
-            "Off, the shortcut only reaches the program while its window is in front — which it \
-             is not while you are playing. On, the key belongs to STO-CLARE wherever it is \
-             pressed, and nothing else on the desktop can use it, the game included.",
-        );
+        .hover("While it is on, no other program can use that combination — the game included.");
 
-        // What is actually held right now, which is not the same as what the
-        // box says: the key is taken when the window is closed with Ok, and it
-        // can be refused (another program holds it).
-        let message = global.message();
-        match global.is_problem() {
-            true => {
-                ui.colored_label(theme::palette().warn, format!("⚠ {message}"));
-            }
-            false => {
-                ui.label(RichText::new(message).weak());
-            }
+        // Said only when the answer is no. A key that was asked for and not
+        // given leaves a ticked box standing for something that is not
+        // happening, and that is the one case the reader cannot work out by
+        // looking. Held, and switched off, are what the box itself says.
+        if global.is_problem() {
+            ui.colored_label(theme::palette().warn, format!("⚠ {}", global.message()));
         }
-        ui.label(
-            RichText::new("A change here takes effect when this window is closed with Ok.").weak(),
-        );
     }
 }
 

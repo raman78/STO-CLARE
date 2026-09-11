@@ -1372,7 +1372,7 @@ one chart, that has no button at all:
 
 | Key | Where | What it does |
 |-----|-------|--------------------------------------------------------|
-| **Alt + O** | Anywhere, the game included | Shows or hides the overlay. It reaches outside this program's own window as long as the desktop-wide box is ticked — see below. |
+| **Alt + O** | Anywhere, the game included | Shows or hides the overlay. It reaches outside this program's own window while it is set as a global shortcut — see below. |
 | **Alt + L** | Main window | Opens or closes the Ladder window. |
 | **Alt + S** | Main window | Opens Settings. |
 | **Alt + G** | Main window | Opens Settings straight on your custom grouping rules. |
@@ -1416,29 +1416,36 @@ touched keeps working even after an update moves it.
 
 **Alt + O** is the odd one out. The other four only work while STO-CLARE is the
 window you are looking at — and while you are flying, it is not. So this one is
-taken from the whole desktop: the key belongs to STO-CLARE wherever you press
-it, the game included, and the overlay comes and goes without you leaving the
-fight.
+a **global shortcut**: the key belongs to STO-CLARE wherever you press it, the
+game included, and the overlay comes and goes without you leaving the fight.
 
 That is also the cost of it. While the box is ticked, nothing else on your
 computer can use that combination — if the game has something on Alt + O, the
 game will no longer get it. Either pick a different combination in Settings →
 Shortcuts, or untick the box.
 
-The tick box is at the foot of the Shortcuts page, and under it is a line
-saying what actually happened, which is worth a glance:
+The tick box — **Make the Overlay shortcut global** — is at the foot of the
+Shortcuts page. Ticked and closed with Ok, the key is yours everywhere; that is
+all there is to it, and the page says nothing further.
+
+It does speak up when the answer is no, in a line under the box:
 
 | What it says | What it means |
 |--------------|---------------|
-| *Taken from the whole desktop* | It works, including while the game is in front. |
-| *Not taken — the shortcut only works while this window is in front* | The box is unticked. The key still works when you are looking at STO-CLARE. |
-| *Could not be taken: …* | Something else on your desktop already holds that combination. Pick another one. |
+| *Could not be taken: …* | Something else on your computer already holds that combination. Pick another one in the row above. |
 | *Not available here: …* | This desktop has no way to hand the program a key from outside its own window. Everything else still works as normal. |
+
+That is deliberate: a ticked box with nothing said means it worked, and the one
+thing you could not otherwise tell is a key you asked for and did not get.
+
+On Windows the program asks the system for the combination the ordinary way, so
+whether you get it depends on nothing more than whether something else already
+has it — and if something does, the line under the box says so.
 
 Tip: on Linux the program can only take the key while the older display system
 (X11, which modern Linux desktops keep around for programs that need it — a
 game under Proton is one) is running. It almost always is, but if you tick the
-box on a freshly started desktop with nothing else open, you may see the last
+box on a freshly started desktop with nothing else open, you may see the second
 line above. Start the game, then open Settings and press **Ok** again, and the
 key is taken.
 

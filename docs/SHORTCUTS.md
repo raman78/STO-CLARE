@@ -185,11 +185,10 @@ the press:
 The system-wide checkbox is at the foot of the tab, under the state line
 described next. A change there takes effect on **Ok**, like every other setting.
 
-Its label names the *shortcut*, not the keys — *Take the Overlay shortcut from
-the whole desktop* — because the row above is where the combination is set and
-shown, and a second copy of it on the same page is one more thing to read and
-one more place to be out of step. Whatever that row holds is what gets taken,
-never the shipped default;
+Its label is the standard one — *Make the Overlay shortcut global* — and stops
+there. What a global shortcut is belongs in the manual, and the combination
+belongs to the row above, which is where it is set and shown. Whatever that row
+holds is what gets taken, never the shipped default;
 `the_desktop_wide_key_is_the_one_the_overlay_row_holds` takes a real grab and
 holds it to that.
 
@@ -218,18 +217,21 @@ with no XWayland in it. On Windows the question does not arise —
 
 ### What the reader sees
 
-`GlobalState` is what the tab reports, and it is the difference between what was
-*asked for* and what is actually held:
+`GlobalState` carries what actually became of the key, which is not the same as
+what the tick box was set to:
 
-| State | Line in the tab | Means |
+| State | Shown in the tab | Means |
 |---|---|---|
-| `Off` | "Not taken — the shortcut only works while this window is in front." | the box is unticked |
-| `Held` | "Taken from the whole desktop…" | the grab is up |
-| `Refused` | "Could not be taken: …" | another program holds that key, or it is not on the layout |
-| `Unsupported` | "Not available here: …" | no X server to take it from, or no backend on this platform |
+| `Off` | nothing — the box is unticked | not asked for |
+| `Held` | nothing — the box is ticked | the grab is up |
+| `Refused` | "⚠ Could not be taken: …" | another program holds that key, or it is not on the layout |
+| `Unsupported` | "⚠ Not available here: …" | no X server to take it from, or no backend on this platform |
 
-The last two are drawn in the theme's warning colour. A key the reader asked
-for and did not get must not look like one that works.
+**Only the refusals are drawn**, in the theme's warning colour. The other two
+are already on screen as the state of the box, and a line restating it is one
+more thing to read on a page whose point is a table of keys; a key that was
+asked for and *not* given is the one case the box itself gets wrong. Every
+state still reaches the log, where the sequence matters.
 
 ### Auto-repeat
 
@@ -294,10 +296,24 @@ The tests build `Shortcuts` with `system_wide: false` on purpose
 (`window_only`): taking a key is a change to the desktop the suite is running
 on.
 
-The Windows backend cannot be built on a Linux machine here — a C dependency of
-the uploader will not cross-compile — so it is type-checked against the
-`x86_64-pc-windows-msvc` target from a throwaway crate that `#[path]`-includes
-these two files rather than copying them.
+**The Windows backend has never been run.** It cannot be built on a Linux
+machine here — a C dependency of the uploader will not cross-compile — so it is
+*type-checked* against the `x86_64-pc-windows-msvc` target from a throwaway
+crate that `#[path]`-includes these two files rather than copying them. That
+catches a wrong API name, a missing feature flag or a changed signature, and
+nothing else: the first time `RegisterHotKey` actually runs is on a machine
+with Windows on it.
+
+What that leaves unverified, and what to look at first when it is run:
+
+| Question | Where the answer shows |
+|---|---|
+| does `WM_HOTKEY` reach the thread's own queue with a null window? | the shortcut works at all; otherwise the log's `taken from the desktop` line appears and nothing ever fires |
+| does the combination survive a full-screen game? | press it with the game in front |
+| is it refused when another program holds it? | the Settings tab says "Could not be taken" rather than nothing |
+
+The in-window half needs none of this: it is egui's event stream on every
+platform, with no platform code between the key and the action.
 
 ## Related documents
 
