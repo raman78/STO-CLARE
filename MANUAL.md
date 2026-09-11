@@ -1451,8 +1451,19 @@ A: No. The game writes the log whether or not STO-CLARE is running. Open it
 afterwards and press Analysis of Newest Fight. Keep it open only if you want the overlay or
 live numbers.
 
-**Q: Where are my settings kept?**
-A: `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows.
+**Q: Where are my settings kept, and what are all those files?**
+A: `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows. What you
+may find in there:
+
+| File | What it is |
+|------|------------|
+| `STO-CLARE_Settings.json` | Everything you set in the Settings window, plus your notes on individual fights. |
+| `STO-CLARE_Rules.toml` | Your naming, grouping, exclusion and reversal rules. This is the one to copy to another machine. |
+| `STO-CLARE.log` | Only written while **Enable Log** is on in Debug. Safe to delete. |
+| `..._damaged.json` / `..._damaged.toml` | A file STO-CLARE could not read and put aside so that nothing of yours was lost — see *Everything is back at its default* below. |
+| `..._archived.json` | Your settings exactly as they were before the rules moved into their own file. Safe to delete once you are happy. |
+
+Only the first two matter. The program writes nothing else there.
 
 **Q: Why does one ability show as several rows?**
 A: Some abilities write more than one kind of record — a beam and its proc, or a

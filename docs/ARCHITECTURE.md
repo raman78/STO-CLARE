@@ -1741,10 +1741,16 @@ touches line reading has to keep those ranges exact.
 
 ## Where things are written
 
-Settings and the log file go to the per-user config directory
-(`~/.config/STO-CLARE` on Linux, `%APPDATA%` on Windows), with the
-old next-to-the-executable location read as a fallback. See
+The settings, the rules and the log go to the per-user config directory
+(`~/.config/STO-CLARE` on Linux, `%APPDATA%` on Windows), with the old
+next-to-the-executable location read as a fallback. See
 `app/settings/app_settings.rs` and `app/logging.rs`.
+
+**Every name written there is declared in `helpers::paths` and nowhere else**,
+so renaming one is a single edit rather than a hunt through the tree — including
+the suffixes a file gets when it is put aside (`paths::DAMAGED`,
+`paths::ARCHIVED`). That module also carries the directory over from the
+pre-2.0 name on the first start.
 
 ### A config file that cannot be read
 
