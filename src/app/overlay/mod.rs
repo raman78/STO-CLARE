@@ -977,7 +977,6 @@ impl DisplayPlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analyzer::settings::AnalysisSettings;
 
     fn test_overlay() -> Overlay {
         let ctx = Context::default();

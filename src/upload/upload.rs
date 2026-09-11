@@ -461,9 +461,6 @@ impl From<UploadResponseModel> for UploadResponse {
 mod tests {
     use super::*;
 
-    /// The shape the server answers a log it read: the rows, the message, and
-    /// the id of what it stored.
-    #[test]
     /// The body stops feeding the moment the flag goes up, which is what breaks
     /// the connection and stops the server from storing a whole request. Without
     /// this there is no way to cancel at all: reqwest's blocking client has no
@@ -501,6 +498,9 @@ mod tests {
         assert_eq!(vec![1u8, 2, 3], out);
     }
 
+    /// The shape the server answers a log it read: the rows, the message, and
+    /// the id of what it stored.
+    #[test]
     fn a_read_log_comes_back_with_its_ladder_rows() {
         let response: UploadResponseV2 = serde_json::from_str(
             r#"{"results":[{"name":"Infected Space Elite","updated":true,
