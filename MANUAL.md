@@ -226,10 +226,10 @@ with that combat:
 ![The box above the tabs: which fight is open, and what you called it](images/combat-note.png)
 
 What you type is added to the line above, after a dash and in the same lettering
-as the name — so the heading over all six tabs reads **[Solo] [Space] [TFO]
-Infected: The Conduit [Elite] | 2026-09-02 14:33:32 - 14:41:10 — Full BA**. It
-follows your typing, so you can see how the run will read while you are still
-naming it.
+as the name — so the heading over all six tabs reads **[Team] [Space] [Patrol]
+Trouble Over Terrh [Normal] | 2026-09-11 13:35:23 - 13:42:18 — back to the old
+rotation**. It follows your typing, so you can see how the run will read while
+you are still naming it.
 
 It shows up in the list's **Note** column as well, so a whole evening reads back
 by what you were flying rather than by the clock.
@@ -715,12 +715,13 @@ unevenly" are different findings.
 The rows stay in their usual order, so a row you know from the full table is
 where you left it; only the ones nobody differs over go.
 
-Worked example, five runs of the same patrol: at a small setting the table drops
-from 25 rows to 9. Turned up, two rows are left — the antiproton beams one build
-flew and the phaser group the other leaned on. That is the difference between a
-rainbow build and a single-flavour one, without reading a single number.
+Worked example, five runs of the same TFO: the full table is 71 rows, and most
+of them are things every run used in much the same measure — worth seeing once,
+not worth reading five times. Asking for a 3% spread leaves 14. Turn it higher
+and the list keeps shrinking towards the few the runs really disagree about,
+which is where a build change or a bad pull actually shows.
 
-![Another five runs of one patrol, at a 3% spread: 19 of the 28 rows are left, and the rows missing from some of the runs say so](images/compare-differences.png)
+![Five runs of one TFO, at a 3% spread: 14 of the 71 rows are left, and the rows missing from some of the runs say so](images/compare-differences.png)
 
 The Total above follows both of them: it counts the rows that are ticked **and**
 on screen. Narrow the table to one damage type and the Total is that type's;
@@ -1004,8 +1005,8 @@ something else.
 ![A ladder run beside your own](images/ladder-compare.png)
 
 The two runs are by different people, so use the **Player** column in the list to
-say whose figures each column reads. A team run from the ladder holds five
-players; yours opens on you, theirs on whoever led it.
+say whose figures each column reads. A team run from the ladder holds everyone
+who flew it; yours opens on you, theirs on whoever led it.
 
 ---
 

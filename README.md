@@ -37,7 +37,8 @@ across](#bringing-your-old-settings-across).
    `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.
 5. Click **Ok** at the bottom of the settings window, then the refresh button.
 
-Your combats appear in the list at the top. Pick one and the tabs below fill in.
+Press **☰ Combats** in the top row — or the **Tab** key — and a panel opens down
+the left with every fight in your log. Double-click one and the tabs fill in.
 
 ![The Summary tab](images/summary-tab.png)
 

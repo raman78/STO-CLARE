@@ -91,10 +91,14 @@ if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
   click 79 607                                     # Cancel
   click 66 38                                      # the combats panel
   click 169 38                                     # Compare Combats
-  # Five runs of one patrol — the set the manual's worked example is about. A
-  # click anywhere on a row ticks it, so the map column will do; the comparison
-  # follows the ticks and there is nothing to press when they are all in.
-  for y in 295 345 370 445 495; do click 300 "$y"; done
+  # Five runs of the same map at the same level — the set the manual's worked
+  # example is about, and the only kind where a spread filter says anything:
+  # rows every run used in the same measure are what it drops. A click anywhere
+  # on a row ticks it, so the map column will do; the comparison follows the
+  # ticks and there is nothing to press when they are all in. Check the rows
+  # against `compare-pick.png` if the demo log is recut — these are the Elite
+  # Infected Conduit runs in it.
+  for y in 220 245 270 320 395; do click 300 "$y"; done
   sleep 4; shot compare-pick
   click 66 38; sleep 6; shot compare-result        # the panel out of the way
   click 124 59; shot compare-averages              # Σ Averages, under the toolbar
