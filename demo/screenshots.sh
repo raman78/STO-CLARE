@@ -3,6 +3,8 @@
 #
 #   ./demo/screenshots.sh images          # the whole set
 #   ./demo/screenshots.sh /tmp/out themes # just the theme gallery
+#   ./demo/screenshots.sh images settings settings-debug,settings-shortcuts
+#                                         # that section, but only those files
 #
 # Runs the program on X11 (or XWayland) and grabs its window by name, so the
 # desktop is never photographed and nothing has to have focus. On a Wayland
@@ -13,6 +15,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$REPO/target/release/sto-clare"
 OUT="${1:-$REPO/images}"
 WHAT="${2:-all}"
+# Comma-separated picture names to write; empty means all of them.
+ONLY="${3:-}"
 CFG=/tmp/clare-demo
 LOG="${DEMO_LOG:-/tmp/games/Star Trek Online/Live/logs/GameClient/combatlog.log}"
 
@@ -29,13 +33,41 @@ start() {  # start(theme) -> sets $W to the window id
   APP=$!
   sleep 20                                   # the log is large; let it be read
   W=$(xdotool search --name "STO-CLARE" | head -1)
-  xdotool windowactivate "$W"; sleep 1
+  # Raising the window needs a window manager to ask. There is none on a bare
+  # X server — which is exactly where this is worth running, since a throwaway
+  # display costs nobody their desktop for the length of a run — and the clicks
+  # below do not need it: they are aimed at the window, and it is the only one
+  # mapped there.
+  xdotool windowactivate "$W" 2>/dev/null || true
+  sleep 1
 }
 stop() { kill "$APP" 2>/dev/null || true; wait "$APP" 2>/dev/null || true; }
-shot() { sleep 2; import -window "${2:-$W}" "$OUT/$1.png"; echo "  $1"; }
+
+# Whether this picture is one of the ones asked for. With no list given, every
+# picture in the section is taken, as before.
+#
+# The *clicks* between shots always run whatever the list says: they are how the
+# program is walked to the state the next picture is of, so skipping them would
+# photograph the wrong screen. What the list saves is the file — and therefore
+# the review: `import` rewrites a PNG even when nothing in it changed, so a full
+# section leaves a dozen files to look at and revert to find the two that
+# actually moved.
+wanted() { [ -z "$ONLY" ] || [[ ",$ONLY," == *",$1,"* ]]; }
+
+shot() {
+  sleep 2
+  wanted "$1" || { echo "  $1 (skipped)"; return 0; }
+  import -window "${2:-$W}" "$OUT/$1.png"
+  echo "  $1"
+}
 # A strip of the window rather than all of it, for the pictures that would
 # otherwise be a second copy of the whole screen with one field circled.
-crop() { sleep 2; import -window "$W" -crop "$2" +repage "$OUT/$1.png"; echo "  $1"; }
+crop() {
+  sleep 2
+  wanted "$1" || { echo "  $1 (skipped)"; return 0; }
+  import -window "$W" -crop "$2" +repage "$OUT/$1.png"
+  echo "  $1"
+}
 # The Ladder is a window of its own (a viewport), so it is grabbed by name.
 ladder_win() { xdotool search --name "^Ladder$" | tail -1; }
 clickw() { xdotool mousemove --window "$1" "$2" "$3" click 1; sleep "${4:-1}"; }
@@ -84,11 +116,16 @@ if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
   echo "settings and compare:"
   start LightDark
   click 34 17;   shot settings-general
-  click 110 65;  shot settings-analysis
-  click 169 65;  shot settings-visuals
-  click 226 65;  shot settings-upload
-  click 282 65;  shot settings-debug
-  click 79 607                                     # Cancel
+  # The Settings window opens centred in the main window (2.9.0), which is
+  # where these coordinates come from — measured off a grab of that window, so
+  # they are its own pixels. Anything that moves the window moves all of them
+  # together.
+  click 348 105; shot settings-analysis
+  click 406 105; shot settings-visuals
+  click 463 105; shot settings-upload
+  click 527 105; shot settings-shortcuts
+  click 590 105; shot settings-debug
+  click 316 647                                    # Cancel
   click 66 38                                      # the combats panel
   click 169 38                                     # Compare Combats
   # Five runs of the same map at the same level — the set the manual's worked

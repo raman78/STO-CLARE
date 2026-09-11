@@ -1,4 +1,5 @@
-//! Shared dialog behaviour: Escape closes the window that is being drawn.
+//! Shared dialog behaviour: where a window opens, and Escape closing the window
+//! that is being drawn.
 //!
 //! Every window in the program offers the same key rather than each one
 //! deciding for itself, so a reader who has learnt it in one dialog has learnt
@@ -23,7 +24,40 @@
 
 use std::sync::LazyLock;
 
-use eframe::egui::{Context, Id, Key, Modifiers};
+use eframe::egui::{Align2, Context, Id, Key, Modifiers, Pos2, Window};
+
+/// Opens a window in the middle of the program's own window, and leaves it
+/// wherever the reader drags it afterwards.
+///
+/// Applied to every window that stands *over* the work — Settings, the lists
+/// and the reports — because egui's own default cascades from the top-left
+/// corner, so a dialog opened for a moment landed over the toolbar it was
+/// opened from, and each one landed somewhere slightly different.
+///
+/// The position is given through `pivot`, which makes it the window's **centre**
+/// rather than its top-left corner. That is what lets a window whose size is
+/// only known once it has been laid out — anything `auto_sized` — be centred at
+/// all, without a guess at how big it is going to be.
+///
+/// `default_pos` rather than `anchor`: an anchored window cannot be dragged, and
+/// these are windows a reader may want to move aside to read what is behind.
+/// The windows that report work in progress do use `anchor`, deliberately — they
+/// stand for a job rather than a question.
+pub fn centred<'w>(window: Window<'w>, ctx: &Context) -> Window<'w> {
+    window
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(centre_of_the_window(ctx))
+}
+
+/// The middle of the window this context draws — the main window, or the ladder
+/// when the dialog belongs to it, since that one is a window of its own.
+///
+/// Not the middle of the *screen*: a dialog belongs to the window it was opened
+/// from, and a program in the corner of a large monitor would otherwise open its
+/// settings somewhere with no relation to it.
+fn centre_of_the_window(ctx: &Context) -> Pos2 {
+    ctx.content_rect().center()
+}
 
 /// Whether anything had the keyboard focus when the previous pass ended. Written
 /// every pass a dialog is up, read on the pass Escape arrives — see below for

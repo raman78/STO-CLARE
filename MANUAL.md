@@ -1372,6 +1372,11 @@ one chart, that has no button at all:
 
 | Key | Where | What it does |
 |-----|-------|--------------------------------------------------------|
+| **Alt + O** | Anywhere, the game included | Shows or hides the overlay. It reaches outside this program's own window while it is set as a global shortcut — see below. |
+| **Alt + L** | Main window | Opens or closes the Ladder window. |
+| **Alt + S** | Main window | Opens Settings. |
+| **Alt + G** | Main window | Opens Settings straight on your custom grouping rules. |
+| **Alt + C** | Main window | Opens a comparison of the fights you ticked, or leaves it. |
 | **Tab** | Main window | Opens and closes the combats panel. |
 | **Esc** | Any dialog | Closes it, the same as its Cancel or Close button. |
 | **Esc** | While typing in a box | Leaves the box first; your text stays. Press again to close the window. |
@@ -1383,6 +1388,66 @@ one chart, that has no button at all:
 
 The rest of this section is the detail behind those, and the two places where a
 key deliberately does nothing.
+
+### The five keys you can change
+
+The five Alt keys at the top of the table are yours to set. Open **Settings →
+Shortcuts** and you get one row per thing: the key it answers to now, a button
+to change it, and a **Reset** that appears once you have changed something.
+
+![Settings, Shortcuts](images/settings-shortcuts.png)
+
+To set one, press the button showing the current key, then press the keys you
+want. That is the whole of it — there is nothing to type. If you change your
+mind, press Esc and the row goes back to what it was.
+
+Two kinds of combination are turned down, and the program says which:
+
+| What you pressed | Why it is refused |
+|------------------|-------------------|
+| A key with no Ctrl, Alt or Shift, or something exotic like a punctuation key | A bare letter is what you type into a note or a rule, and keys that move around between keyboard layouts cannot be held reliably. Use Ctrl, Alt or Shift with a letter, a number or an F-key. |
+| A combination one of the other four already answers | Two things on one key means only the first of them ever happens. The message names the one that already has it, so you know what to change. |
+
+Your changes are saved when you close Settings with **Ok**, like every other
+setting. Only what you actually changed is written down, so a key you never
+touched keeps working even after an update moves it.
+
+### The overlay key while you are playing
+
+**Alt + O** is the odd one out. The other four only work while STO-CLARE is the
+window you are looking at — and while you are flying, it is not. So this one is
+a **global shortcut**: the key belongs to STO-CLARE wherever you press it, the
+game included, and the overlay comes and goes without you leaving the fight.
+
+That is also the cost of it. While the box is ticked, nothing else on your
+computer can use that combination — if the game has something on Alt + O, the
+game will no longer get it. Either pick a different combination in Settings →
+Shortcuts, or untick the box.
+
+The tick that does it is in the Overlay row itself, beside the combination, and
+is labelled **Global**. Ticked and closed with Ok, the key is yours everywhere;
+that is all there is to it, and the page says nothing further.
+
+It does speak up when the answer is no, in a line under the table:
+
+| What it says | What it means |
+|--------------|---------------|
+| *Could not be taken: …* | Something else on your computer already holds that combination. Pick another one in the row above. |
+| *Not available here: …* | This desktop has no way to hand the program a key from outside its own window. Everything else still works as normal. |
+
+That is deliberate: a ticked box with nothing said means it worked, and the one
+thing you could not otherwise tell is a key you asked for and did not get.
+
+On Windows the program asks the system for the combination the ordinary way, so
+whether you get it depends on nothing more than whether something else already
+has it — and if something does, the line under the box says so.
+
+Tip: on Linux the program can only take the key while the older display system
+(X11, which modern Linux desktops keep around for programs that need it — a
+game under Proton is one) is running. It almost always is, but if you tick the
+box on a freshly started desktop with nothing else open, you may see the second
+line above. Start the game, then open Settings and press **Ok** again, and the
+key is taken.
 
 ### Tab
 
@@ -1452,6 +1517,9 @@ puts the window away.
 | The upload produced no ladder entries         | That map and difficulty have no ladder for the period, or it is solo-only | Nothing to fix; the run is still uploaded.                                                                 |
 | A player's DPS is lower than the summary says | Rows are ticked off, or the table is narrowed to a damage type            | Tick the player's own row to bring every row back, and pick **Every type** in the `☰ Type` list.           |
 | The list went empty after using the deaths menu | You are browsing, several players are ticked, and no fight has all of them alive | Untick all but one. While you are browsing, the menu keeps the runs *every* ticked player came through — not any of them. |
+| Alt + O does nothing while you are in the game | The box that takes it from the whole desktop is unticked, or another program holds that combination | Settings → Shortcuts. The line under the tick box says which of the two it is; if it was refused, give the overlay a different combination. |
+| A key in the game stopped working since you started STO-CLARE | The overlay's combination is one the game also uses, and STO-CLARE now takes it first | Settings → Shortcuts: pick a combination the game does not need, or untick the desktop-wide box. |
+| One of the Alt keys does nothing, the others work | Its combination in the settings file cannot be read | Settings → Shortcuts: the row says so and shows what is standing in for it. Press **Reset** on that row. |
 
 ## FAQ
 

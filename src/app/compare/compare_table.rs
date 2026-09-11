@@ -11,7 +11,7 @@
 //! into one mean per metric, and the export, which writes the same table to a
 //! spreadsheet (`export`).
 
-use crate::custom_widgets::dialog::escape_closes;
+use crate::custom_widgets::dialog::{centred, escape_closes};
 use chrono::NaiveDateTime;
 use std::{path::PathBuf, sync::Arc};
 
@@ -1173,7 +1173,7 @@ impl Comparison {
         let size = self.type_summary_size(ui, &rows, with_notes);
         let width = size.x;
         let mut dismissed = false;
-        Window::new("Damage by type")
+        centred(Window::new("Damage by type"), ui.ctx())
             .open(&mut open)
             .fixed_size(vec2(size.x.min(cap.x), size.y.min(cap.y)))
             .show(ui.ctx(), |ui| {

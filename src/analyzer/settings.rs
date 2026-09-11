@@ -753,7 +753,10 @@ mod file_format_tests {
                 )],
                 enabled: true,
             }],
-            damage_out_exclusion_rules: vec![rule(MatchAspect::DamageOrHealName, MatchMethod::Equals)],
+            damage_out_exclusion_rules: vec![rule(
+                MatchAspect::DamageOrHealName,
+                MatchMethod::Equals,
+            )],
         }
     }
 

@@ -10,6 +10,7 @@ use crate::{
     app::{
         compare::CompareSettings,
         settings::{ColumnVisibility, CombatNotes},
+        shortcuts::ShortcutSettings,
     },
     helpers::paths,
 };
@@ -42,6 +43,10 @@ pub struct Settings {
     /// log.
     #[serde(default)]
     pub columns: ColumnVisibility,
+    /// The keys the program answers, and whether the overlay's key is taken
+    /// from the whole desktop. Its own section for the same reason again.
+    #[serde(default)]
+    pub shortcuts: ShortcutSettings,
     /// Why the rules file could not be read at start-up, when it could not.
     ///
     /// Not part of the settings on disk — it describes this run, not a
@@ -945,7 +950,11 @@ mod tests {
                 1 => String::new(),
                 n => format!("_{n}"),
             };
-            std::fs::write(dir.join(format!("STO-CLARE_Rules_damaged{counted}.toml")), "").unwrap();
+            std::fs::write(
+                dir.join(format!("STO-CLARE_Rules_damaged{counted}.toml")),
+                "",
+            )
+            .unwrap();
         }
 
         let (sets, problem) = Settings::rules_from(&path, carried("Quad Cannons"));
@@ -1147,7 +1156,10 @@ mod tests {
     /// installation has the shipped ones, and those came from the binary.
     #[test]
     fn a_settings_file_says_whether_it_still_carries_the_rules() {
-        let (dir, path) = a_temp_settings_file("cla-carried-yes", &settings_file_carrying_a_rule("Quad Cannons"));
+        let (dir, path) = a_temp_settings_file(
+            "cla-carried-yes",
+            &settings_file_carrying_a_rule("Quad Cannons"),
+        );
         let carrying = Settings::read_at(&path).unwrap().unwrap();
         assert!(carrying.settings_carried_rules);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1178,13 +1190,16 @@ mod tests {
     /// is taken out so that one setting does not live in two places.
     #[test]
     fn rules_carried_in_the_settings_are_moved_out_and_the_original_kept() {
-        let (dir, path) =
-            a_temp_settings_file("cla-migrate-out", &settings_file_carrying_a_rule("Quad Cannons"));
+        let (dir, path) = a_temp_settings_file(
+            "cla-migrate-out",
+            &settings_file_carrying_a_rule("Quad Cannons"),
+        );
         let before = std::fs::read_to_string(&path).unwrap();
         let rules_path = dir.join(paths::RULES_FILE_NAME);
 
         let mut settings = Settings::read_at(&path).unwrap().unwrap();
-        let (sets, problem) = Settings::rules_from(&rules_path, settings.rules_the_settings_carried());
+        let (sets, problem) =
+            Settings::rules_from(&rules_path, settings.rules_the_settings_carried());
         settings.analysis.set_rule_sets(sets);
         assert!(problem.is_none());
         settings.take_the_rules_out_of_the_settings_at(&path);
@@ -1264,8 +1279,7 @@ mod tests {
     /// copy of it is left lying about. Every start would otherwise leave one.
     #[test]
     fn a_settings_file_without_rules_is_left_exactly_as_it_is() {
-        let (dir, path) =
-            a_temp_settings_file("cla-migrate-none", DEFAULT_SETTINGS_WITHOUT_RULES);
+        let (dir, path) = a_temp_settings_file("cla-migrate-none", DEFAULT_SETTINGS_WITHOUT_RULES);
         let before = std::fs::read_to_string(&path).unwrap();
 
         let settings = Settings::read_at(&path).unwrap().unwrap();
@@ -1308,6 +1322,7 @@ mod tests {
                 "compare",
                 "debug",
                 "general",
+                "shortcuts",
                 "upload",
                 "visuals",
                 "window",

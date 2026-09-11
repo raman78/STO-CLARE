@@ -19,6 +19,7 @@ use self::{
     compare::CompareView,
     main_tabs::*,
     settings::*,
+    shortcuts::{ShortcutAction, Shortcuts},
     state::AppState,
     status::*,
     summary_copy::SummaryCopy,
@@ -41,6 +42,7 @@ mod main_tabs;
 mod overlay;
 pub mod self_upgrade;
 mod settings;
+mod shortcuts;
 mod state;
 mod status;
 mod summary_copy;
@@ -123,6 +125,11 @@ pub struct App {
     /// before egui could move the focus with it. Acted on at the end of the
     /// frame; see `App::ui`.
     tab_folds_the_list: bool,
+    /// The keys the program answers, and the one it holds against the whole
+    /// desktop. Kept here rather than in [`AppState`] so the settings window
+    /// can be handed what the desktop-wide key is doing while it is itself
+    /// borrowing the state.
+    shortcuts: Shortcuts,
 }
 
 /// How long the window size has to stay unchanged before it is written to the
@@ -181,6 +188,7 @@ impl App {
         let app = Self {
             settings_window,
             tab_folds_the_list: false,
+            shortcuts: Shortcuts::new(&state.settings.shortcuts, &cc.egui_ctx),
             combats: Default::default(),
             // Folded away, every time. The window opens on the fight it
             // analyzed and the list is one button from it — restoring whatever
@@ -270,6 +278,7 @@ impl eframe::App for App {
                         &mut self.state,
                         self.selected_combat.as_deref(),
                         self.log_owner.as_deref(),
+                        self.shortcuts.global_state(),
                         ui,
                         frame,
                     );
@@ -308,14 +317,7 @@ impl eframe::App for App {
                         .hover("Tick fights in the list beside this to put them side by side.")
                         .clicked()
                     {
-                        self.compare.toggle();
-                        // The list can be out of date by now — a fight
-                        // finished while something else was on screen. Only
-                        // the list is refreshed; the combat being viewed
-                        // stays.
-                        if self.compare.is_open() {
-                            self.state.analysis_handler.refresh_combats_list();
-                        }
+                        self.toggle_compare();
                     }
 
                     // Reads the log again and puts the newest fight on
@@ -479,6 +481,15 @@ impl eframe::App for App {
             self.combats_panel.toggle();
         }
 
+        // The shortcuts, asked once the window has been drawn. Anything on
+        // screen that wanted a key has taken it by now — a dialog, or the row
+        // in Settings → Shortcuts that is recording a new combination — so a
+        // key being bound never also runs what it is bound to.
+        self.shortcuts.follow(&self.state.settings.shortcuts);
+        for action in self.shortcuts.triggered(ui.ctx()) {
+            self.act_on(action, ui.ctx());
+        }
+
         // Escape closes a comparison, once everything else has had the chance
         // to take it — every dialog and the ladder window ask inside their own
         // contents, which are drawn above. The list of fights is not folded by
@@ -565,6 +576,33 @@ fn effective_handle<'a>(configured: Option<&'a str>, detected: Option<&'a str>) 
 }
 
 impl App {
+    /// Does what a shortcut asks for.
+    ///
+    /// Each arm is the same call the button it stands for makes, so a key and a
+    /// click cannot drift apart.
+    fn act_on(&mut self, action: ShortcutAction, ctx: &Context) {
+        match action {
+            ShortcutAction::ToggleOverlay => self.state.overlay.toggle(),
+            ShortcutAction::ToggleLadder => self
+                .records
+                .toggle_from_keyboard(ctx, &self.state.settings.upload.oscr_url),
+            ShortcutAction::OpenSettings => self.settings_window.open(&self.state),
+            ShortcutAction::OpenGrouping => self.settings_window.open_grouping(&self.state),
+            ShortcutAction::ToggleCompare => self.toggle_compare(),
+        }
+    }
+
+    /// Opens or leaves a comparison, from the toolbar or from the keyboard.
+    fn toggle_compare(&mut self) {
+        self.compare.toggle();
+        // The list can be out of date by now — a fight finished while something
+        // else was on screen. Only the list is refreshed; the combat being
+        // viewed stays.
+        if self.compare.is_open() {
+            self.state.analysis_handler.refresh_combats_list();
+        }
+    }
+
     /// The runs already in the list, so the ladder window can grey out the
     /// magnifier on one of them.
     fn open_run_paths(&self) -> Vec<PathBuf> {

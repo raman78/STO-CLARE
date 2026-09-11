@@ -1,4 +1,4 @@
-use crate::custom_widgets::dialog::escape_closes;
+use crate::custom_widgets::dialog::{centred, escape_closes};
 use rustc_hash::FxHashMap;
 use std::borrow::BorrowMut;
 
@@ -176,6 +176,13 @@ struct RulesTable<'a> {
 }
 
 impl AnalysisTab {
+    /// Puts the tab on the grouping rules, which is what the keyboard shortcut
+    /// for them asks for. The tab opens on Combat Names otherwise, and landing
+    /// there is landing on a different rule set.
+    pub fn show_custom_grouping(&mut self) {
+        self.selected_section = AnalysisSection::CustomGrouping;
+    }
+
     pub fn show(
         &mut self,
         modified_settings: &mut Settings,
@@ -412,7 +419,7 @@ impl AnalysisTab {
         }
 
         let mut close = false;
-        Window::new("Selected Combat Occurred Names")
+        centred(Window::new("Selected Combat Occurred Names"), ui.ctx())
             .collapsible(false)
             .open(&mut self.list_selected_combat_occurred_names)
             .scroll(true)

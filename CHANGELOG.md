@@ -1,5 +1,15 @@
 # Change Log
 
+## v2.9.0
+
+### Major Changes
+- the overlay can be switched on and off **without leaving the game**. Its shortcut is marked **Global**, which means Alt+O belongs to STO-CLARE wherever it is pressed, so the overlay comes and goes mid-fight instead of after a trip to the taskbar. It can be switched off again, and while it is on nothing else on the desktop can use that combination — the game included — so the one to pick is a combination the game's own keybinds do not need
+- five things now answer a key: the overlay (Alt+O), the Ladder window (Alt+L), Settings (Alt+S), the custom grouping rules inside Settings (Alt+G), and a comparison of the ticked fights (Alt+C)
+- every one of those keys can be changed, on the new **Settings → Shortcuts** page — one row per shortcut, with the Global tick beside the overlay's. Pressing the button that shows a combination records the next keys pressed, and that is the whole of it; there is nothing to type. A combination another shortcut already answers is turned down by name rather than quietly taking it over, and only what was changed is written to the settings, so a key left alone keeps working after an update moves it. If the global key could not be taken — another program already holds it — the page says so instead of leaving a tick that does nothing
+
+### Other Changes
+- windows that stand over the work now open in the middle of the program instead of stacking towards its top-left corner: Settings, the list of names a rule matches, the damage-type summary, and the upload and download reports. They can still be dragged anywhere
+
 ## v2.8.0
 
 ### Major Changes

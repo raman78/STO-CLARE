@@ -400,6 +400,13 @@ impl Overlay {
         }
     }
 
+    /// Shows or hides the overlay without the button — what the keyboard
+    /// shortcut presses, including the one taken from the whole desktop, which
+    /// arrives while the game is in front and this window is not.
+    pub fn toggle(&self) {
+        self.0.lock().toggle_show();
+    }
+
     /// Drive the overlay for this frame: take what the analysis has sent, and
     /// paint the surface it lives on.
     ///
