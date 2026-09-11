@@ -137,11 +137,11 @@ const ACTIVE_RESIZE_TIME: f64 = 0.5;
 /// Removes plain Tab presses from a frame's events and reports whether one was
 /// there. Modified Tab — Ctrl, Alt, Shift — is left alone, since those are not
 /// the focus walk and may mean something to the window manager.
-fn take_tab_presses(events: &mut Vec<egui::Event>) -> bool {
+fn take_tab_presses(events: &mut Vec<eframe::egui::Event>) -> bool {
     let mut pressed = false;
     events.retain(|event| match event {
-        egui::Event::Key {
-            key: egui::Key::Tab,
+        eframe::egui::Event::Key {
+            key: eframe::egui::Key::Tab,
             modifiers,
             pressed: down,
             ..
@@ -501,7 +501,11 @@ impl eframe::App for App {
     /// keeps whatever Tab means to it — egui's multi-line editor uses it for
     /// indentation. The focus state read here is the previous frame's, which is
     /// what a key pressed now was aimed at.
-    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(
+        &mut self,
+        ctx: &eframe::egui::Context,
+        raw_input: &mut eframe::egui::RawInput,
+    ) {
         if ctx.memory(|m| m.focused()).is_some() {
             return;
         }
