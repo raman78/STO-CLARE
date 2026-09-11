@@ -2611,6 +2611,58 @@ mod editor_tests {
         assert_eq!(RULES_FILE_VERSION, one.version);
     }
 
+    /// Export and Import are the same pair of functions the rules file itself
+    /// is written and read with, so the whole way out and back has to hold: a
+    /// section written to a file and picked up again is the rules that went in,
+    /// down to the wildcards and the switched-off ones. Tested through a real
+    /// file rather than in memory, because that is where the file's format
+    /// decides the answer.
+    #[test]
+    fn a_section_written_to_a_file_comes_back_the_same() {
+        let dir = std::env::temp_dir().join("cla-rules-export");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(AnalysisSection::CustomGrouping.file_name());
+
+        let switched_off = RulesGroup {
+            name: "Off until ticked".to_string(),
+            enabled: false,
+            rules: vec![MatchRule {
+                aspect: MatchAspect::DamageOrHealName,
+                expression: "Quad?Cannons".to_string(),
+                method: MatchMethod::Equals,
+                enabled: false,
+            }],
+        };
+        let settings = AnalysisSettings {
+            custom_group_rules: vec![a_named_group("Quad Cannons"), switched_off],
+            damage_out_exclusion_rules: vec![wildcard("*Torpedo*")],
+            ..Default::default()
+        };
+
+        let exported = AnalysisSection::CustomGrouping.taken_from(&settings);
+        exported.write(&path).expect("Export writes the file");
+        let imported = RuleSets::read(&path).expect("Import reads it back");
+        assert_eq!(exported, imported);
+
+        // And it lands where it belongs: importing that file into an empty tab
+        // gives back the two rules and touches nothing else.
+        let mut empty = AnalysisSettings::default();
+        let report = import_rules(&mut empty, imported, &[AnalysisSection::CustomGrouping]);
+        assert_eq!(
+            vec!["Quad Cannons", "Off until ticked"],
+            empty
+                .custom_group_rules
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(!empty.custom_group_rules[1].enabled, "a rule arrives off");
+        assert!(report.contains("Custom Grouping: 2 added"), "{report}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Dragged narrower, the table gives the width back out of the name column
     /// rather than standing its ground and pushing its own buttons off the
     /// edge. The reader can still reach ✏, 🗐 and 🗑 on every row.
