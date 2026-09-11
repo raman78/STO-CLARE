@@ -1021,8 +1021,8 @@ bottom.
 #### A log to come back to
 
 Reading a run from the ladder, or a single fight you saved out of the way, points
-the program at another file. Finding your own again used to mean walking the file
-dialog back to it every time.
+the program at another file. This is how you get back to your own without
+walking the file dialog to it again.
 
 **Remember** stores the file above as the one you come back to. **Go back to
 default** puts it back whenever you have wandered off, and **Forget** drops it.
@@ -1070,11 +1070,6 @@ your shots into a row under you, and the pet's shots into a row of the same name
 under the pet. Two rows, one name, each holding what its own shooter fired; see
 the picture in [Whose damage sits where](#whose-damage-sits-where).
 
-Before 2.8 the rule took both, so a row named after your weapon quietly held the
-pet's damage as well, and the same pet was split across two places in the tree.
-On a real Infected: The Conduit run that was 15.7% of the outgoing damage sitting
-under a weapon its owner had not fired.
-
 If you *do* want one effect gathered from everywhere it came from — your own
 guns and everything that carried it — that is what a **Source Reversal** rule is
 for: it puts the effect on top and the pets underneath.
@@ -1108,10 +1103,6 @@ If two rules fit an effect equally well, a warning mark ⚠ appears on both rows
 Point at it and it names the effects they share and which rule takes each. That
 is nearly always a sign that one of the two was meant to be narrower. The check
 runs against the combat you have selected, so select one to have it done.
-
-Before version 2.8 the rule listed higher won, which meant moving a row could
-silently change your numbers — and a rule copied from someone else worked or did
-not depending on where you happened to paste it.
 
 #### The buttons on a rule's row
 

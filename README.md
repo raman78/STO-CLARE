@@ -228,7 +228,7 @@ of the list.
 | The window remembers itself     | The main window opens at the size you left it, and comes back maximised if you closed it that way. It follows your mouse smoothly while you resize it, at any interface scale, and cannot be shrunk so far that its controls no longer fit. | [#8](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/8) |
 | Resizable Settings window       | It can be made as tall as you like, stays on the screen when a section is expanded, and remembers its size. The Analysis rules sit in sub-tabs, so each rule table gets the window's full height.                                           | —                                                                   |
 | Settings kept with your account | Your settings and the log file are written to the place your system keeps program settings, so the tool also works when it is installed somewhere you cannot write to. Settings from older versions are picked up automatically.            | —                                                                   |
-| Small comforts                  | Browse opens in the folder you last picked a log from, rules can be duplicated with one button, and a scroll bar no longer grows over the bottom row of a table.                                                                            | —                                                                   |
+| Small comforts                  | Browse opens in the folder you last picked a log from, rules can be duplicated with one button, and a scroll bar stays clear of the bottom row of a table.                                                                            | —                                                                   |
 
 ### Installing and updating
 
