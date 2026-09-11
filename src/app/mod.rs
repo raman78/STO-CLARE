@@ -1,3 +1,4 @@
+use crate::custom_widgets::dialog::escape_closes;
 use std::{path::PathBuf, sync::Arc};
 
 use chrono::NaiveDateTime;
@@ -118,6 +119,10 @@ pub struct App {
     window_geometry: WindowGeometry,
     window_geometry_dirty: bool,
     last_geometry_change: f64,
+    /// Tab was pressed with nothing being typed in, and `raw_input_hook` took it
+    /// before egui could move the focus with it. Acted on at the end of the
+    /// frame; see `App::ui`.
+    tab_folds_the_list: bool,
 }
 
 /// How long the window size has to stay unchanged before it is written to the
@@ -128,6 +133,26 @@ const GEOMETRY_SETTLE_TIME: f64 = 2.0;
 /// How long after the last size change the window still counts as being
 /// dragged, and is therefore redrawn every frame.
 const ACTIVE_RESIZE_TIME: f64 = 0.5;
+
+/// Removes plain Tab presses from a frame's events and reports whether one was
+/// there. Modified Tab — Ctrl, Alt, Shift — is left alone, since those are not
+/// the focus walk and may mean something to the window manager.
+fn take_tab_presses(events: &mut Vec<egui::Event>) -> bool {
+    let mut pressed = false;
+    events.retain(|event| match event {
+        egui::Event::Key {
+            key: egui::Key::Tab,
+            modifiers,
+            pressed: down,
+            ..
+        } if !modifiers.any() => {
+            pressed |= down;
+            false
+        }
+        _ => true,
+    });
+    pressed
+}
 
 /// Window geometry to restore at startup: last size and whether the window was
 /// maximized. Read before the viewport is built (see main.rs).
@@ -155,6 +180,7 @@ impl App {
         state.analysis_handler.enable_list_refresh(true);
         let app = Self {
             settings_window,
+            tab_folds_the_list: false,
             combats: Default::default(),
             // Folded away, every time. The window opens on the fight it
             // analyzed and the list is one button from it — restoring whatever
@@ -446,6 +472,40 @@ impl eframe::App for App {
                 }
             });
         });
+
+        // Tab folds the list of fights in and out — see `raw_input_hook`, which
+        // is where the key is taken so egui cannot walk the focus with it.
+        if std::mem::take(&mut self.tab_folds_the_list) {
+            self.combats_panel.toggle();
+        }
+
+        // Escape closes a comparison, once everything else has had the chance
+        // to take it — every dialog and the ladder window ask inside their own
+        // contents, which are drawn above. The list of fights is not folded by
+        // Escape: Tab is its key, and a reader who has opened both should not
+        // lose the list to a key aimed at the comparison over it.
+        if escape_closes(ui.ctx()) && self.compare.is_open() {
+            self.compare.toggle();
+        }
+    }
+
+    /// Runs before egui sees the frame's input.
+    ///
+    /// **Tab is taken away from egui's focus walk.** Nothing in this program is
+    /// operated by tabbing between controls, and the walk was a nuisance: press
+    /// Tab and the highlight jumped to whichever button came next. It is a
+    /// better key for folding the list of fights away, which is the one thing a
+    /// reader does over and over.
+    ///
+    /// It is only taken when **nothing is being typed in**, so a text field
+    /// keeps whatever Tab means to it — egui's multi-line editor uses it for
+    /// indentation. The focus state read here is the previous frame's, which is
+    /// what a key pressed now was aimed at.
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if ctx.memory(|m| m.focused()).is_some() {
+            return;
+        }
+        self.tab_folds_the_list |= take_tab_presses(&mut raw_input.events);
     }
 
     /// Fully transparent, because eframe hands this one colour to *every*
@@ -912,5 +972,64 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tab_tests {
+    use super::*;
+    use eframe::egui::{Event, Key, Modifiers};
+
+    fn tab(modifiers: Modifiers, pressed: bool) -> Event {
+        Event::Key {
+            key: Key::Tab,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    /// A plain Tab is taken, so egui never sees it and cannot walk the focus to
+    /// the next button with it.
+    #[test]
+    fn a_plain_tab_is_taken() {
+        let mut events = vec![tab(Modifiers::NONE, true), tab(Modifiers::NONE, false)];
+        assert!(take_tab_presses(&mut events));
+        assert!(
+            events.is_empty(),
+            "both the press and the release are taken"
+        );
+    }
+
+    /// A modified Tab is not the focus walk and may mean something to the window
+    /// manager, so it is left where it is.
+    #[test]
+    fn a_modified_tab_is_left_alone() {
+        for modifiers in [Modifiers::CTRL, Modifiers::ALT, Modifiers::SHIFT] {
+            let mut events = vec![tab(modifiers, true)];
+            assert!(
+                !take_tab_presses(&mut events),
+                "{modifiers:?}+Tab is not ours"
+            );
+            assert_eq!(1, events.len(), "{modifiers:?}+Tab stays in the frame");
+        }
+    }
+
+    /// Everything else passes through untouched.
+    #[test]
+    fn other_keys_are_untouched() {
+        let mut events = vec![
+            Event::Key {
+                key: Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            },
+            Event::Text("a".to_string()),
+        ];
+        assert!(!take_tab_presses(&mut events));
+        assert_eq!(2, events.len());
     }
 }

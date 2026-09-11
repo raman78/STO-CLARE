@@ -1,0 +1,860 @@
+version = 1
+combat_name_rules = []
+
+[[indirect_source_grouping_revers_rules]]
+aspect = "DamageOrHealName"
+expression = "Spore-Infused Anomalies"
+method = "Equals"
+enabled = false
+
+[[indirect_source_grouping_revers_rules]]
+aspect = "DamageOrHealName"
+expression = "Mycelial Lightning"
+method = "Equals"
+enabled = false
+
+[[indirect_source_grouping_revers_rules]]
+aspect = "DamageOrHealName"
+expression = "Refracting Tetryon Cascade (Rank 2)"
+method = "Equals"
+enabled = true
+
+[[indirect_source_grouping_revers_rules]]
+aspect = "DamageOrHealName"
+expression = "Quantum Phase Transfer"
+method = "Equals"
+enabled = true
+
+[[indirect_source_grouping_revers_rules]]
+aspect = "IndirectSourceName"
+expression = "Bird-of-Prey (ALPHA)"
+method = "Equals"
+enabled = false
+
+[[indirect_source_grouping_revers_rules]]
+aspect = "IndirectSourceName"
+expression = "Bird-of-Prey (BETA)"
+method = "Equals"
+enabled = false
+
+[[custom_group_rules]]
+name = "Advanced Radiant Tetryon Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Advanced Radiant Tetryon Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Advanced Radiant Tetryon Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Agony Redistributor"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Agony Redistributor"
+method = "Equals"
+enabled = true
+
+[[custom_group_rules]]
+name = "Antiproton Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Antiproton Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Antiproton Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Ba'ul Antiproton Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Ba'ul Antiproton"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Ba'ul Refraction"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Bird-of-Prey (ALPHA)"
+enabled = false
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Bird-of-Prey (ALPHA)"
+method = "Contains"
+enabled = true
+
+[[custom_group_rules]]
+name = "Dark Matter Quantum Torpedo Launcher"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Dark Matter Laced Quantum Torpedo"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Dark Matter Dissolution"
+method = "Equals"
+enabled = true
+
+[[custom_group_rules]]
+name = "Disruptor Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Disruptor Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Disruptor Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Disruptor Turret"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Disruptor Turret - "
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Distributed Targeting"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Distributed Targeting II"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Dual Heavy Pulse Phaser Cannons"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Dual Heavy Pulse Phaser Cannons"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Hellbore Light"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Hellbore Light"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Kemocite-Laced Weaponry"
+enabled = false
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Kemocite-Laced"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Khitomer Shield"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Antiproton Retort"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Kida Antiproton Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Kida Antiproton Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Kida Antiproton Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Kinetic Cutting Beam"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Kinetic Cutting Beam"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Micro-Quantum Torpedo"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Micro-Quantum Torpedo"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Micro-Quantum Torpedo"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Micro-Quantum Torpedo"
+method = "Contains"
+enabled = true
+
+[[custom_group_rules]]
+name = "Omni-Directional Herald Antiproton Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Omni-Directional Herald Antiproton"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Omni-Directional Inhibiting Phaser Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Inhibiting Phaser Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Omni-Directional Pahvan Proton Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Pahvan Proton Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Pahvan Proton Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Resonance Shock"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Omni-Directional Trilithium-Enhanced Phaser Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Trilithium-Enhanced Phaser Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Trilithium-Enhanced Phaser Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Omni-Directional&Standard Phaser Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Phaser Dual Beam Bank"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Dual Beam Bank"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Phaser Emitter Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Emitter Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Phaser Turret"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Turret"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Phaser Wide Angle Dual Heavy Beam Bank"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Wide Angle Dual Beam Bank"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Wide Angle Dual Heavy Beam Bank"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Phaser Wide Angle Dual Heavy Beam Bank"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Wide Angle Dual Heavy Beam Bank"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Polaron Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Polaron Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Polaron Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Polaron Frostbite"
+method = "Equals"
+enabled = true
+
+[[custom_group_rules]]
+name = "Prolonged Engagement Phaser Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Prolonged Engagement Phaser Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Prolonged Engagement Phaser Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Prolonged Engagement Photon Torpedo"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Photon Torpedo - "
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Prolonged Engagement Torpedo"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Pulse Phaser Dual Beam Bank"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Pulse Phaser Dual Beam Bank"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Pulse Phaser Turret"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Pulse Phaser Turret"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Quad Disruptor Cannons"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quad Disruptor Cannons"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Quad Phaser Cannons"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quad Phaser Cannons"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Quantum Phase Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quantum Phase Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quantum Phase Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Quantum Phase Torpedo"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quantum Phase Torpedo"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quantum Phase Transfer"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Quantum Phase Transfer"
+enabled = false
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quantum Phase Transfer"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Quantum Torpedo"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quantum Torpedo"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Radiolytic Phaser Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Radiolytic Phaser Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Radiolytic Phaser Array"
+method = "Equals"
+enabled = true
+
+[[custom_group_rules]]
+name = "Radiolytic Phaser Dual Beam Bank"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Radiolytic Phaser Dual Beam Bank"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Radiolytic Phaser Turret"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Radiolytic Phaser Turret"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Romulan Plasma Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Romulan Plasma Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Plasma - Plasma Fire"
+method = "Equals"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Plasma Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Romulan Plasma Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Shangri-La Torpedo"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Shangri"
+method = "Contains"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Loaded for Bear"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Terran Task Force Dual Heavy Phaser Cannons"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Terran Task Force Dual Heavy Phaser Cannons"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Terran Task Force Phaser Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Terran Task Force Phaser Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Withering Radiation"
+method = "Equals"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Terran Task Force Phaser Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Trilithium-Enhanced Phaser Turret"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Trilithium-Enhanced Phaser Turret"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Viridian Plasma Beam Array"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Viridian Plasma Beam Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Viridian Plasma Array"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "You Are Dismissed"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "You Are Dismised"
+method = "StartsWith"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Protonic Crush"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Warp Core Breach"
+method = "Equals"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Inquiry Class"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Mercury Class Escort"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Icarus Class Escort"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Ajax Class Escort"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Nimbus Pirate Distress Call"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Vigilant"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Harmony"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "IndirectSourceName"
+expression = "Courage"
+method = "Equals"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Wide Angle"
+method = "Contains"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Counter-Offensive"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Mycelial Lightning"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Terran Task Force Phaser"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Omni-Directional Pahvan"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Radiolytic Phaser Dual Beam"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Prolonged Engagement Phaser"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Pulse Phaser Turret"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Gravity Well"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Anti-Time Entanglement Singularity"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Tractor Beam Repulsor"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Plasma Conduit Purge"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Refracting Tetryon Cascade"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Barclay Maneuver"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Withering Radiation"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Beam Array"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Beam Array"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Phaser Array"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Resonance Shock"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Pahvan Proton"
+method = "StartsWith"
+enabled = false
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "But That's Just"
+method = "StartsWith"
+enabled = false

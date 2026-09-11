@@ -1,3 +1,4 @@
+use crate::custom_widgets::dialog::escape_closes;
 use std::{fs::File, io::Write, path::PathBuf, thread::JoinHandle, time::Duration};
 
 use chrono::DateTime;
@@ -220,9 +221,11 @@ impl Records {
                             ui.label(&*err);
                         }
                     });
-                    // The window's own close button, and where it was left.
+                    // The window's own close button, Escape, and where it was
+                    // left. Escape is asked after the contents are drawn, so a
+                    // dialog standing over the ladder takes it first.
                     let ctx = viewport_ui.ctx();
-                    if ctx.input(|i| i.viewport().close_requested()) {
+                    if ctx.input(|i| i.viewport().close_requested()) || escape_closes(ctx) {
                         open = false;
                     }
                     if let Some(outer) = ctx.input(|i| i.viewport().outer_rect) {
@@ -956,6 +959,7 @@ impl DownloadLogState {
             }
             DownloadLogState::DownloadFailed(error) => {
                 let mut open = true;
+                let mut dismissed = false;
                 Window::new("Download log failed")
                     .auto_sized()
                     .constrain(true)
@@ -963,9 +967,12 @@ impl DownloadLogState {
                     .open(&mut open)
                     .show(ui.ctx(), |ui| {
                         ui.label(&*error);
+                        if escape_closes(ui.ctx()) {
+                            dismissed = true;
+                        }
                     });
 
-                if !open {
+                if !open || dismissed {
                     *self = DownloadLogState::Idle;
                 }
             }

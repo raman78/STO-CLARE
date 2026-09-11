@@ -48,6 +48,16 @@ pub struct Analyzer {
 type Players = NameMap<Player>;
 type GroupingPath = SmallVec<[GroupPathSegment; 8]>;
 
+/// The row a shot lands in when the fight proves something other than the
+/// player fired it but cannot say what. Shown as "(Damage owner unknown)" —
+/// the one wording used for this case in the program, the changelog and
+/// `docs/SHOT_MODEL.md`.
+///
+/// Named rather than merged into the player's own rows, because "somebody else
+/// fired this" is a fact worth showing, and hiding it would put the damage
+/// under a weapon the player may not even carry.
+const UNNAMED_CARRIER: &str = "(Damage owner unknown)";
+
 #[derive(Clone, Debug)]
 pub struct Combat {
     pub combat_names: FxHashMap<String, CombatName>,
@@ -69,6 +79,10 @@ pub struct Combat {
     /// Per-NPC facts (keyed by internal unique name) used to detect the map and
     /// difficulty. Accumulated as records are processed.
     critters: FxHashMap<NameHandle, CritterMeta>,
+    /// What this fight has seen each event id do, keyed by owner and id. Read
+    /// when a line names no carrier at all, to answer whether that id is ever
+    /// fired directly here. See `docs/SHOT_MODEL.md` §4.6.
+    carriers_of_event: FxHashMap<(NameHandle, Box<str>), CarrierEvidence>,
     /// Detected map name (`None` when unknown, shown as "Combat").
     pub detected_map: Option<String>,
     /// Detected difficulty (`None` when the map is unknown).
@@ -227,6 +241,8 @@ impl Analyzer {
         combat.update_meta_data(&record);
         combat.update_names(&record);
         combat.update_critters(&record);
+        combat.update_carrier_evidence(&record);
+        let fired_by = combat.who_fired(&record);
 
         let combat_start_offset_millis = record
             .time
@@ -238,6 +254,7 @@ impl Analyzer {
                 Combat::get_player(&mut combat.players, combat.name_manager.handle(full_name));
             player.add_out_value(
                 &record,
+                fired_by,
                 combat_start_offset_millis,
                 &self.settings,
                 &mut combat.name_manager,
@@ -314,6 +331,7 @@ impl Combat {
             total_kills: 0,
             total_deaths: 0,
             critters: Default::default(),
+            carriers_of_event: Default::default(),
             detected_map: None,
             detected_difficulty: None,
             detected_combat_type: None,
@@ -548,6 +566,56 @@ impl Combat {
     /// of 0 and matches no tier threshold.
     ///
     /// Must run after `update_names`, which interns the unique name.
+    /// Records what this fight has seen an event id do. Only **hull lines**
+    /// count: a shield line hides its carrier, so counting it would teach the
+    /// evidence exactly the falsehood the evidence exists to correct.
+    fn update_carrier_evidence(&mut self, record: &Record) {
+        if record.value_type == "Shield" || !record.value.is_damage() {
+            return;
+        }
+        let Some(owner) = record.source.name() else {
+            return;
+        };
+        let owner = self.name_manager.handle(owner);
+        let key = (owner, record.event_id.as_ref().into());
+        match record.indirect_source.name() {
+            Some(carrier) => {
+                let carrier = self.name_manager.handle(carrier);
+                self.carriers_of_event
+                    .entry(key)
+                    .or_default()
+                    .carriers
+                    .insert(carrier);
+            }
+            // Only the placeholder says "the owner fired this". A blank pair
+            // says nothing, and is the very shape being judged.
+            None if !record.source_field_blank => {
+                self.carriers_of_event
+                    .entry(key)
+                    .or_default()
+                    .fired_directly += 1;
+            }
+            None => (),
+        }
+    }
+
+    /// Who fired a line that names no carrier at all. Answered from what this
+    /// fight has already seen of the same event id, and only for the blank
+    /// spelling — a `*` placeholder means the owner and is left alone.
+    fn who_fired(&mut self, record: &Record) -> WhoFired {
+        if !record.source_field_blank || record.indirect_source.name().is_some() {
+            return WhoFired::Unknown;
+        }
+        let Some(owner) = record.source.name() else {
+            return WhoFired::Unknown;
+        };
+        let owner = self.name_manager.handle(owner);
+        self.carriers_of_event
+            .get(&(owner, record.event_id.as_ref().into()))
+            .map(CarrierEvidence::who_fired)
+            .unwrap_or(WhoFired::Unknown)
+    }
+
     fn update_critters(&mut self, record: &Record) {
         for entity in [&record.source, &record.target] {
             if let Entity::NonPlayer { unique_name, .. } = entity {
@@ -640,6 +708,44 @@ impl Combat {
     }
 }
 
+/// What a fight has seen one event id do, under one owner. Built only from
+/// **hull lines**, which always name the carrier when there was one — a shield
+/// line hides it (see `docs/SHOT_MODEL.md` §4).
+#[derive(Default, Clone, Debug)]
+struct CarrierEvidence {
+    /// Hull lines whose source pair was the `*` placeholder: the owner fired it
+    /// themselves. One of these is enough to stop the rule.
+    fired_directly: u32,
+    /// Every carrier seen firing it in this fight.
+    carriers: NameSet,
+}
+
+/// What the fight can say about a line that names no carrier at all.
+#[derive(Clone, Copy, Debug)]
+enum WhoFired {
+    /// Every hull line of this id in this fight names one and the same carrier.
+    Carrier(NameHandle),
+    /// Carriers fired it, never the owner, but more than one carrier did — so
+    /// which of them is beyond the log.
+    SomeCarrier,
+    /// The owner fires this id here too, or the fight has not seen it yet.
+    Unknown,
+}
+
+impl CarrierEvidence {
+    fn who_fired(&self) -> WhoFired {
+        if self.fired_directly > 0 {
+            return WhoFired::Unknown;
+        }
+        let mut carriers = self.carriers.iter();
+        match (carriers.next(), carriers.next()) {
+            (Some(only), None) => WhoFired::Carrier(*only),
+            (Some(_), Some(_)) => WhoFired::SomeCarrier,
+            _ => WhoFired::Unknown,
+        }
+    }
+}
+
 impl Player {
     fn new(full_name: NameHandle) -> Self {
         Self {
@@ -680,6 +786,7 @@ impl Player {
     fn add_out_value(
         &mut self,
         record: &Record,
+        fired_by: WhoFired,
         combat_start_offset_millis: u32,
         settings: &AnalysisSettings,
         name_manager: &mut NameManager,
@@ -692,7 +799,7 @@ impl Player {
             return;
         }
         self.update_active_time(record);
-        let mut path = Self::build_grouping_path(record, settings, name_manager);
+        let mut path = Self::build_grouping_path(record, fired_by, settings, name_manager);
         let target_name = if record.is_self_directed() {
             record.source.name()
         } else {
@@ -746,16 +853,21 @@ impl Player {
         settings: &AnalysisSettings,
         name_manager: &mut NameManager,
     ) {
+        // 2 991 lines in a real 134 MB log name no owner at all — an enemy
+        // torpedo already in flight, its launcher gone. The effect's own name is
+        // the only thing the line says about where the damage came from, so it
+        // stands in for the shooter rather than leaving the row nameless.
         let source_name = record
             .source
             .name()
+            .or(Some(record.value_name.as_ref()))
             .map(|n| name_manager.handle(n))
             .unwrap_or_default();
         let source_is_self = match &record.source {
             Entity::Player { full_name, .. } => name_manager.handle(full_name) == self.name(),
             _ => false,
         };
-        let mut path = Self::build_grouping_path(record, settings, name_manager);
+        let mut path = Self::build_grouping_path(record, WhoFired::Unknown, settings, name_manager);
         path.push(GroupPathSegment::Group(source_name));
         match record.value {
             RecordValue::Damage(damage) => {
@@ -827,16 +939,39 @@ impl Player {
 
     fn build_grouping_path(
         record: &Record,
+        fired_by: WhoFired,
         settings: &AnalysisSettings,
         name_manager: &mut NameManager,
     ) -> GroupingPath {
         let mut path = GroupingPath::new();
+        // Where in the path the record's own ability sits. A custom group is
+        // laid directly over that segment and nowhere else — see below.
+        let ability_index;
+
+        // A line naming no carrier at all, which the fight's other lines say
+        // was fired by one. It is laid out exactly like a carried shot, so the
+        // damage sits with whoever fired it rather than with the owner.
+        let named_by_the_fight = match fired_by {
+            WhoFired::Carrier(carrier) => Some(carrier),
+            WhoFired::SomeCarrier => Some(name_manager.insert(UNNAMED_CARRIER, NameFlags::NONE)),
+            WhoFired::Unknown => None,
+        };
+        if let Some(carrier) = named_by_the_fight {
+            path.extend_from_slice(&[
+                GroupPathSegment::Value(name_manager.handle(&record.value_name)),
+                GroupPathSegment::Group(carrier),
+            ]);
+            ability_index = 0;
+            Self::fold_into_custom_group(&mut path, ability_index, record, settings, name_manager);
+            return path;
+        }
 
         match (&record.indirect_source, &record.target) {
             (Entity::None, _) | (_, Entity::None) => {
                 path.push(GroupPathSegment::Value(
                     name_manager.handle(&record.value_name),
                 ));
+                ability_index = 0;
             }
 
             (
@@ -856,26 +991,44 @@ impl Player {
                         GroupPathSegment::Value(name_manager.handle(name)),
                         GroupPathSegment::Group(name_manager.handle(&record.value_name)),
                     ]);
+                    ability_index = 1;
                 } else {
                     path.extend_from_slice(&[
                         GroupPathSegment::Value(name_manager.handle(&record.value_name)),
                         GroupPathSegment::Group(name_manager.handle(name)),
                     ]);
+                    ability_index = 0;
                 }
             }
         }
 
-        if let Some(rule) = settings
-            .custom_group_rules
-            .iter()
-            .find(|r| r.matches_record(record))
-        {
-            path.push(GroupPathSegment::Group(
-                name_manager.insert(rule.name.as_str(), NameFlags::NONE),
-            ));
-        }
-
+        Self::fold_into_custom_group(&mut path, ability_index, record, settings, name_manager);
         path
+    }
+
+    /// A custom group says "these effect names are one weapon", so it may only
+    /// fold the *effect* level: it goes directly above the ability segment,
+    /// never on top of the whole path. Appended to the end instead — which a
+    /// path read back to front makes the topmost level — it became the parent
+    /// of the indirect source, so a pet firing a weapon of the same name was
+    /// counted inside the player's own row for that weapon.
+    fn fold_into_custom_group(
+        path: &mut GroupingPath,
+        ability_index: usize,
+        record: &Record,
+        settings: &AnalysisSettings,
+        name_manager: &mut NameManager,
+    ) {
+        // The most precisely fitting rule, not the first one in the list: see
+        // `settings::most_specific_match`. Rules are listed alphabetically, and
+        // a list ordered for reading is not one whose order may also decide
+        // which rule a record lands in.
+        if let Some(rule) = most_specific_match(&settings.custom_group_rules, record) {
+            path.insert(
+                ability_index + 1,
+                GroupPathSegment::Group(name_manager.insert(rule.name.as_str(), NameFlags::NONE)),
+            );
+        }
     }
 
     fn update_combat_time(&mut self, record: &Record) {
@@ -1104,6 +1257,422 @@ mod tests {
             "the source-only ally must anchor the map"
         );
         assert_eq!(combat.detected_difficulty, Some(Difficulty::Advanced));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Some lines name no owner at all: an enemy torpedo already in flight,
+    /// whose launcher is gone by the time it lands. The damage is real and lands
+    /// on a player, so it has to appear in their Damage Taken — under a name.
+    /// The only name such a line carries is the effect's own.
+    #[test]
+    fn damage_from_nobody_is_named_after_the_effect() {
+        let dir = std::env::temp_dir().join("cla-ownerless-damage-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        // Verbatim shape from the log: owner display and owner id both empty.
+        let records = concat!(
+            "26:09:01:11:39:58.2::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Phaser Array,Pn.J148es1,Phaser,,100.0,100.0\n",
+            "26:09:01:11:39:58.3::,,,,Kestrel,P[1@2 Kestrel@handle],",
+            "Plasma Torpedo,Pn.Rm7fzt,Plasma,DoT,226.406,954.319\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        let names = &combat.name_manager;
+        let player = combat.players.values().next().expect("one player");
+        let rows: Vec<&str> = player
+            .damage_in
+            .sub_groups()
+            .values()
+            .map(|g| names.name(g.name()))
+            .collect();
+
+        assert!(
+            rows.contains(&"Plasma Torpedo"),
+            "the effect names the row it lands in, got {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|n| n.is_empty()),
+            "no row in Damage Taken is left without a name, got {rows:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A line that names nobody at all is not the owner's shot. Where the fight
+    /// has already seen the same event id fired only by one carrier, and never
+    /// in the shape the owner's own shots have, the damage belongs to that
+    /// carrier — a pet whose name the game stopped writing.
+    ///
+    /// Measured on a real log: 301 of 364 such lines are settled this way with
+    /// the evidence already present when the line arrives.
+    #[test]
+    fn a_line_naming_nobody_goes_to_the_carrier_the_fight_names() {
+        let dir = std::env::temp_dir().join("cla-unnamed-carrier-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        // The pet fires twice under Pn.aaa, then a third line of the same id
+        // names nobody — both source fields blank, not the "*" placeholder.
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey,C[642 Critter_Kvort],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.aaa,Disruptor,,100.0,100.0\n",
+            "26:09:09:22:28:21.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey,C[642 Critter_Kvort],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.aaa,Disruptor,,200.0,200.0\n",
+            "26:09:09:22:28:22.6::Kestrel,P[1@2 Kestrel@handle],,,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.aaa,Disruptor,,400.0,400.0\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        let names = &combat.name_manager;
+        let player = combat.players.values().next().expect("one player");
+        let row = |name: &str| {
+            player
+                .damage_out
+                .sub_groups()
+                .values()
+                .find(|g| names.name(g.name()) == name)
+                .map(|g| g.damage_metrics.total_damage.all)
+        };
+
+        assert_eq!(
+            Some(700.0),
+            row("Bird-of-Prey"),
+            "all three shots are the pet's, including the one naming nobody"
+        );
+        assert_eq!(
+            None,
+            row("Quad Cannons"),
+            "the player fired none of them, so they have no row of their own"
+        );
+    }
+
+    /// The same shape, but the fight has seen the owner fire that id directly
+    /// too — an effect they applied and something else detonated, like
+    /// Kemocite. Then it cannot be taken from them, and is not.
+    #[test]
+    fn a_line_naming_nobody_stays_with_the_owner_when_they_fire_that_id_too() {
+        let dir = std::env::temp_dir().join("cla-applied-effect-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Kemocite,Pn.bbb,Radiation,,100.0,100.0\n",
+            "26:09:09:22:28:21.6::Kestrel,P[1@2 Kestrel@handle],Bird-of-Prey,C[642 Critter_Kvort],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Kemocite,Pn.bbb,Radiation,,200.0,200.0\n",
+            "26:09:09:22:28:22.6::Kestrel,P[1@2 Kestrel@handle],,,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Kemocite,Pn.bbb,Radiation,,400.0,400.0\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        let names = &combat.name_manager;
+        let player = combat.players.values().next().expect("one player");
+        let row = |name: &str| {
+            player
+                .damage_out
+                .sub_groups()
+                .values()
+                .find(|g| names.name(g.name()) == name)
+                .map(|g| g.damage_metrics.total_damage.all)
+        };
+
+        assert_eq!(
+            Some(500.0),
+            row("Kemocite"),
+            "the owner's own 100 and the unattributed 400 stay with them"
+        );
+        assert_eq!(Some(200.0), row("Bird-of-Prey"));
+    }
+
+    /// Two carriers used the id, so which of them fired the unnamed line is
+    /// beyond the log. It must not be guessed, and must not be quietly left
+    /// with the player either — it gets a row saying exactly that.
+    #[test]
+    fn a_line_naming_nobody_gets_its_own_row_when_several_carriers_qualify() {
+        let dir = std::env::temp_dir().join("cla-two-carriers-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],BoP ALPHA,C[642 Critter_A],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.ccc,Disruptor,,100.0,100.0\n",
+            "26:09:09:22:28:21.6::Kestrel,P[1@2 Kestrel@handle],BoP BETA,C[643 Critter_B],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.ccc,Disruptor,,200.0,200.0\n",
+            "26:09:09:22:28:22.6::Kestrel,P[1@2 Kestrel@handle],,,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought],Quad Cannons,Pn.ccc,Disruptor,,400.0,400.0\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        let names = &combat.name_manager;
+        let player = combat.players.values().next().expect("one player");
+        let rows: Vec<(&str, f64)> = player
+            .damage_out
+            .sub_groups()
+            .values()
+            .map(|g| (names.name(g.name()), g.damage_metrics.total_damage.all))
+            .collect();
+
+        assert!(
+            rows.contains(&(UNNAMED_CARRIER, 400.0)),
+            "the unattributable shot is shown as unattributable, got {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(n, _)| *n == "Quad Cannons"),
+            "and is not folded into a weapon row of the player's, got {rows:?}"
+        );
+    }
+
+    /// Where two custom groups both claim a shot, the more precisely fitting
+    /// one takes it — wherever it happens to sit in the list.
+    ///
+    /// The list is ordered alphabetically for reading, so its order must not
+    /// also decide what the program does; and a group imported from someone
+    /// else's file has to behave the same whichever end of the list it lands
+    /// at. See `settings::most_specific_match`.
+    #[test]
+    fn the_more_precise_of_two_custom_groups_takes_the_shot() {
+        fn row_holding_the_shot(dir: &str, rules: Vec<RulesGroup>) -> String {
+            let dir = std::env::temp_dir().join(dir);
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let log = dir.join("combatlog.log");
+            std::fs::write(
+                &log,
+                concat!(
+                    "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+                    "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+                    "Phaser Wide Angle Dual Heavy Beam Bank - Overload I,Pn.Lb6vs91,",
+                    "Phaser,,100.0,100.0\n",
+                ),
+            )
+            .unwrap();
+
+            let mut analyzer = Analyzer::new(AnalysisSettings {
+                combatlog_file: log.to_string_lossy().into_owned(),
+                custom_group_rules: rules,
+                ..Default::default()
+            })
+            .unwrap();
+            analyzer.update();
+
+            let combat = analyzer.result().first().expect("one combat");
+            let player = combat.players.values().next().expect("one player");
+            let name = combat
+                .name_manager
+                .name(
+                    player
+                        .damage_out
+                        .sub_groups()
+                        .values()
+                        .next()
+                        .unwrap()
+                        .name(),
+                )
+                .to_string();
+            let _ = std::fs::remove_dir_all(&dir);
+            name
+        }
+
+        let group = |name: &str, expression: &str| RulesGroup {
+            name: name.to_string(),
+            enabled: true,
+            rules: vec![MatchRule {
+                aspect: MatchAspect::DamageOrHealName,
+                expression: expression.to_string(),
+                method: MatchMethod::StartsWith,
+                enabled: true,
+            }],
+        };
+        let general = group("Wide Angle", "Phaser Wide Angle");
+        let narrow = group("Wide Angle Heavy", "Phaser Wide Angle Dual Heavy Beam Bank");
+
+        assert_eq!(
+            "Wide Angle Heavy",
+            row_holding_the_shot("cla-specific-first", vec![narrow.clone(), general.clone()]),
+            "the narrower rule takes the shot when it is listed first"
+        );
+        assert_eq!(
+            "Wide Angle Heavy",
+            row_holding_the_shot("cla-specific-last", vec![general, narrow]),
+            "and still takes it when the broader rule is listed first — with \
+             first-match-wins this row was called \"Wide Angle\""
+        );
+    }
+
+    /// A custom group folds several effect names into one row. It may fold the
+    /// *effect* level and nothing above it: a pet firing a weapon of the same
+    /// name as the player's own is still the pet's damage, and belongs under
+    /// the pet's own row.
+    ///
+    /// Measured on a real Infected: The Conduit run before the fix: the row
+    /// named "Disruptor Turret" held 510 hits, of which 304 were fired by two
+    /// Bird-of-Prey pets, while the same pets also had rows of their own for the
+    /// shots that happened not to match the rule.
+    #[test]
+    fn a_custom_group_does_not_swallow_a_pets_damage() {
+        let dir = std::env::temp_dir().join("cla-custom-group-pet-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        // The player fires one turret mode themselves; their pet fires another.
+        // Both names are collected by the same custom group rule.
+        let records = concat!(
+            "26:09:09:22:28:20.6::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+            "Disruptor Turret - Rapid Fire III,Pn.Lb6vs91,Disruptor,,100.0,100.0\n",
+            "26:09:09:22:28:21.6::Kestrel,P[1@2 Kestrel@handle],",
+            "Bird-of-Prey (ALPHA),C[642 Critter_Stationmod_Kvort_T6_Alpha],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+            "Disruptor Turret - Surgical Strikes III,Pn.Lb6vs91,Disruptor,,200.0,200.0\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            custom_group_rules: vec![RulesGroup {
+                name: "Disruptor Turret".to_string(),
+                enabled: true,
+                rules: vec![MatchRule {
+                    aspect: MatchAspect::DamageOrHealName,
+                    expression: "Disruptor Turret".to_string(),
+                    method: MatchMethod::StartsWith,
+                    enabled: true,
+                }],
+            }],
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        let names = &combat.name_manager;
+        let player = combat.players.values().next().expect("one player");
+        let child = |group: &DamageGroup, name: &str| {
+            group
+                .sub_groups()
+                .values()
+                .find(|g| names.name(g.name()) == name)
+                .cloned()
+        };
+
+        let group = child(&player.damage_out, "Disruptor Turret")
+            .expect("the player's own turret damage is in the custom group");
+        assert_eq!(
+            100.0, group.damage_metrics.total_damage.all,
+            "the player's row holds only what the player fired"
+        );
+        assert!(
+            child(&group, "Bird-of-Prey (ALPHA)").is_none(),
+            "a pet must never appear under a group named after the player's weapon"
+        );
+
+        let pet = child(&player.damage_out, "Bird-of-Prey (ALPHA)")
+            .expect("the pet keeps a row of its own");
+        assert_eq!(200.0, pet.damage_metrics.total_damage.all);
+        assert!(
+            child(&pet, "Disruptor Turret").is_some(),
+            "the group still folds the pet's own effect names, one level below it"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Reversal and a custom group meet on the same record: reversal puts the
+    /// ability on top and the indirect sources under it, and the group still
+    /// goes directly over the ability — so it ends up over the whole reversed
+    /// branch, which is where a reader asked for the effect to be gathered.
+    #[test]
+    fn a_custom_group_sits_over_a_reversed_branch() {
+        let dir = std::env::temp_dir().join("cla-group-over-reversal-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        let records = concat!(
+            "26:09:09:20:52:49.7::Kestrel,P[1@2 Kestrel@handle],",
+            "Control Sphere,C[489 Space_Borg_Cruiser_Control],",
+            "Control Probe,C[485 Space_Borg_Frigate_Control],",
+            "Quantum Phase Transfer,Pn.G7ugsj1,Tetryon,,100.0,100.0\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let rule = |expression: &str| MatchRule {
+            aspect: MatchAspect::DamageOrHealName,
+            expression: expression.to_string(),
+            method: MatchMethod::Equals,
+            enabled: true,
+        };
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            indirect_source_grouping_revers_rules: vec![rule("Quantum Phase Transfer")],
+            custom_group_rules: vec![RulesGroup {
+                name: "Quantum Phase Torpedo".to_string(),
+                enabled: true,
+                rules: vec![rule("Quantum Phase Transfer")],
+            }],
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        let names = &combat.name_manager;
+        let player = combat.players.values().next().expect("one player");
+        let child = |group: &DamageGroup, name: &str| {
+            group
+                .sub_groups()
+                .values()
+                .find(|g| names.name(g.name()) == name)
+                .cloned()
+        };
+
+        let group =
+            child(&player.damage_out, "Quantum Phase Torpedo").expect("the group is on top");
+        let ability = child(&group, "Quantum Phase Transfer").expect("the effect is under it");
+        assert!(
+            child(&ability, "Control Sphere").is_some(),
+            "the indirect source sits under the effect, which is what reversal is for"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
