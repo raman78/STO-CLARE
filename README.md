@@ -37,7 +37,8 @@ across](#bringing-your-old-settings-across).
    `<your STO installation>\Star Trek Online\Live\logs\GameClient\`.
 5. Click **Ok** at the bottom of the settings window, then the refresh button.
 
-Your combats appear in the list at the top. Pick one and the tabs below fill in.
+Press **☰ Combats** in the top row — or the **Tab** key — and a panel opens down
+the left with every fight in your log. Double-click one and the tabs fill in.
 
 ![The Summary tab](images/summary-tab.png)
 
@@ -228,7 +229,7 @@ of the list.
 | The window remembers itself     | The main window opens at the size you left it, and comes back maximised if you closed it that way. It follows your mouse smoothly while you resize it, at any interface scale, and cannot be shrunk so far that its controls no longer fit. | [#8](https://github.com/AnotherNathan/STO_CombatLogAnalyzer/pull/8) |
 | Resizable Settings window       | It can be made as tall as you like, stays on the screen when a section is expanded, and remembers its size. The Analysis rules sit in sub-tabs, so each rule table gets the window's full height.                                           | —                                                                   |
 | Settings kept with your account | Your settings and the log file are written to the place your system keeps program settings, so the tool also works when it is installed somewhere you cannot write to. Settings from older versions are picked up automatically.            | —                                                                   |
-| Small comforts                  | Browse opens in the folder you last picked a log from, rules can be duplicated with one button, and a scroll bar no longer grows over the bottom row of a table.                                                                            | —                                                                   |
+| Small comforts                  | Browse opens in the folder you last picked a log from, rules can be duplicated with one button, and a scroll bar stays clear of the bottom row of a table.                                                                            | —                                                                   |
 
 ### Installing and updating
 
@@ -248,6 +249,19 @@ the tables — naming rules, source reversal, custom grouping and damage
 exclusion. You do not need any of it to read your damage. The
 [manual](MANUAL.md#analysis) explains each one, with the ready-made examples
 that ship in the settings.
+
+**A full set of rules is published with STO-CLARE**, in this repository as
+[`rules/STO-CLARE_Rules.toml`](rules/STO-CLARE_Rules.toml) — the maintainer's
+own, as actually used: 48 custom grouping rules that give each weapon one row
+instead of one per firing mode, plus damage exclusions and source reversals.
+Take it or leave it; nothing depends on it.
+
+To use it, open **Settings → Analysis** and press **Import…** at the top of the
+page. Import *adds* to whatever you already have and skips anything you have
+twice, so your own rules are safe, and nothing is written until you press
+**Ok**. Most of the exclusions arrive switched off, so nothing is left out of
+your numbers behind your back. See
+[A set of rules to start from](MANUAL.md#a-set-of-rules-to-start-from).
 
 ---
 

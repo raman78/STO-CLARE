@@ -1,3 +1,4 @@
+use crate::custom_widgets::dialog::escape_closes;
 use std::ffi::OsStr;
 
 pub use app_settings::{DebugSettings, Settings, WindowGeometry};
@@ -107,7 +108,11 @@ impl SettingsWindow {
             .collapsible(false)
             .resizable(true)
             .default_size(default_size)
-            .min_size([420.0, 300.0])
+            // Wide enough for the widest thing the window has to hold: a rules
+            // table with the list of live matches beside it. Dragged narrower
+            // than that, the Analysis tab could only be read by scrolling it
+            // sideways.
+            .min_size([680.0, 300.0])
             .max_size(max_size)
             .constrain(true)
             .show(ui.ctx(), |ui| {
@@ -123,6 +128,17 @@ impl SettingsWindow {
                     ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Debug, "Debug");
                 });
 
+                // Above the tabs rather than on one of them: it is not about
+                // any single page, every page below it is showing a default
+                // instead of what the player set, and pressing Ok would
+                // otherwise write those defaults over the file without warning.
+                // The whole message comes from the reading itself: what it did
+                // about the file depends on whether it could be moved, and a
+                // fixed preamble here would contradict the half that knows.
+                if let Some(problem) = self.modified_settings.settings_file_problem() {
+                    ui.colored_label(crate::app::theme::palette().warn, format!("⚠ {problem}"));
+                }
+
                 ui.separator();
                 // Leave room for the separator and the Ok/Cancel row below, and
                 // stop the area auto-sizing to its contents. Without both, the
@@ -130,13 +146,21 @@ impl SettingsWindow {
                 // are pushed past the bottom edge and the window springs back to
                 // full content height whenever it is dragged smaller.
                 let bottom_bar = ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 4.0;
+                // A tab may want a standing bar of its own under the scroll
+                // area — the Analysis tab's clash bar. Its room is kept here,
+                // with the Ok/Cancel row's, or the scroll area would take it
+                // and the bar would be pushed off the bottom of the window.
+                let tab_footer = match self.selected_tab {
+                    SettingsTab::Analysis => self.analysis_tab.footer_height(ui),
+                    _ => 0.0,
+                };
                 ScrollArea::both()
                     // Only the height is pinned. Pinned width made the contents
                     // as wide as the view, which the vertical bar had just made
                     // narrower — so every tab drew a horizontal bar for the few
                     // points it overflowed by, under contents that fitted.
                     .auto_shrink([true, false])
-                    .max_height((ui.available_height() - bottom_bar).at_least(80.0))
+                    .max_height((ui.available_height() - bottom_bar - tab_footer).at_least(80.0))
                     .show(ui, |ui| match self.selected_tab {
                         SettingsTab::General => self.general_tab.show(
                             &mut self.modified_settings,
@@ -144,10 +168,12 @@ impl SettingsWindow {
                             ui,
                             frame,
                         ),
-                        SettingsTab::Analysis => {
-                            self.analysis_tab
-                                .show(&mut self.modified_settings, selected_combat, ui)
-                        }
+                        SettingsTab::Analysis => self.analysis_tab.show(
+                            &mut self.modified_settings,
+                            selected_combat,
+                            ui,
+                            frame,
+                        ),
                         SettingsTab::Visuals => {
                             self.visuals_tab.show(&mut self.modified_settings, ui)
                         }
@@ -157,6 +183,10 @@ impl SettingsWindow {
                         SettingsTab::Debug => self.debug_tab.show(&mut self.modified_settings, ui),
                     });
 
+                if self.selected_tab == SettingsTab::Analysis {
+                    self.analysis_tab.show_footer(ui);
+                }
+
                 ui.separator();
 
                 ui.horizontal(|ui| {
@@ -164,7 +194,9 @@ impl SettingsWindow {
                         self.apply_setting_changes(state);
                     }
 
-                    if ui.button("Cancel").clicked() {
+                    // Escape is Cancel. Asked after the tab's contents are drawn,
+                    // so a popup opened inside one of them takes the key first.
+                    if ui.button("Cancel").clicked() || escape_closes(ui.ctx()) {
                         self.discard_setting_changes(ui, state);
                     }
                 });

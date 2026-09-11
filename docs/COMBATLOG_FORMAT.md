@@ -205,5 +205,7 @@ penetration, past zero resistance.
 
 ## Related
 
+- `docs/SHOT_MODEL.md` — who each field names, how the lines of one shot are
+  paired, and where this reading departs from the published references.
 - `docs/HEALING_MODEL.md` — the three healing pools, and why a shield line with
   a zero base magnitude cannot be told apart from a heal by its fields alone.

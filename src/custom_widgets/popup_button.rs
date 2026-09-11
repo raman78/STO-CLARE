@@ -14,6 +14,8 @@ use std::hash::Hash;
 
 use eframe::egui::{Button, Id, InnerResponse, Ui, WidgetText, Window};
 
+use super::dialog::escape_closes;
+
 pub struct PopupButton {
     title: WidgetText,
     id: Option<Id>,
@@ -65,6 +67,13 @@ impl PopupButton {
             .default_pos([button_response.rect.min.x, button_response.rect.max.y])
             .show(ui.ctx(), add_contents)
             .unwrap();
+
+        // Escape puts it away, like every other dialog. Asked here — inside the
+        // window that opened it — so a popup standing over a dialog goes first
+        // and leaves that dialog up.
+        if escape_closes(ui.ctx()) {
+            state.open = false;
+        }
 
         if !button_response.clicked()
             && inner.response.clicked_elsewhere()

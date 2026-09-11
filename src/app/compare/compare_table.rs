@@ -11,6 +11,7 @@
 //! into one mean per metric, and the export, which writes the same table to a
 //! spreadsheet (`export`).
 
+use crate::custom_widgets::dialog::escape_closes;
 use chrono::NaiveDateTime;
 use std::{path::PathBuf, sync::Arc};
 
@@ -56,6 +57,9 @@ const TYPE_SUMMARY_CAPTION: &str = "What share of each run this damage type came
 /// under this app's themes (see `custom_widgets::toggle`), so without a fixed
 /// size pointing at an arrow nudged the name beside it.
 const ARROW_SIZE: Vec2 = vec2(22.0, 18.0);
+
+/// How far a row is set in from the one it hangs under.
+const INDENT: f32 = 20.0;
 // The header is two lines — the metric name on top, the combat number below —
 // and a third when any combat carries a note.
 
@@ -219,6 +223,14 @@ pub struct Comparison {
     /// What came of the last export, shown beside the button: where the file
     /// went, or why it did not.
     export_status: Option<Result<PathBuf, String>>,
+    /// How much room the deepest, longest-named row of the whole tree would
+    /// need for its indent and its name — see `custom_widgets::table::
+    /// widest_name`. The Name column claims it whether or not that row is on
+    /// screen, so opening a branch cannot widen the column under the reader.
+    ///
+    /// Worked out on the first frame after a rebuild, because it takes the
+    /// fonts to measure a name.
+    widest_name: Option<f32>,
 }
 
 struct CompareNode {
@@ -387,6 +399,7 @@ impl Comparison {
             filter: 0.4,
             time_slice: 1.0,
             export_status: None,
+            widest_name: None,
         };
         comparison.rebuild();
         comparison
@@ -418,6 +431,8 @@ impl Comparison {
     }
 
     fn rebuild(&mut self) {
+        // A different tree is a different widest row.
+        self.widest_name = None;
         self.numbers = self.in_play();
         // With a damage type picked, the tree is built from a copy of the
         // player's damage holding only what was dealt in that type — so every
@@ -1157,10 +1172,14 @@ impl Comparison {
         let cap = ui.ctx().content_rect().size() * 0.9;
         let size = self.type_summary_size(ui, &rows, with_notes);
         let width = size.x;
+        let mut dismissed = false;
         Window::new("Damage by type")
             .open(&mut open)
             .fixed_size(vec2(size.x.min(cap.x), size.y.min(cap.y)))
             .show(ui.ctx(), |ui| {
+                if escape_closes(ui.ctx()) {
+                    dismissed = true;
+                }
                 // Wrapped to the table, not the other way round. Unwrapped, this
                 // sentence is the widest thing in the window and the window opens
                 // around it; the table's width from last frame is what it should
@@ -1247,7 +1266,7 @@ impl Comparison {
         {
             self.open_types.insert(name);
         }
-        if !open {
+        if !open || dismissed {
             self.show_type_summary = false;
         }
     }
@@ -1621,6 +1640,21 @@ impl Comparison {
             changed: false,
         };
         {
+            // What the Name column has to hold: the whole tree, not the part of
+            // it that happens to be open, or opening a branch would widen the
+            // column and slide every figure in the table sideways. Measured
+            // once — it takes the fonts, so it cannot be done at rebuild time.
+            if self.widest_name.is_none() {
+                self.widest_name = Some(widest_name(
+                    ui,
+                    &self.nodes,
+                    0.0,
+                    INDENT,
+                    |node| node.name.as_str(),
+                    |node| &node.sub_nodes,
+                ));
+            }
+            let widest = self.widest_name.unwrap_or_default();
             let nodes = &mut self.nodes;
             let height = header_height(ui, with_notes);
             // The table scrolls both ways by itself, so the bars stay at the
@@ -1628,6 +1662,10 @@ impl Comparison {
             // under it.
             Table::new(ui)
                 .cell_spacing(10.0)
+                // The tick and the name stay on screen however far the figures
+                // are dragged — and a comparison of a whole session is the
+                // widest table in the program.
+                .frozen_columns(2)
                 .header(height)
                 .body(ROW_HEIGHT, |t| {
                     for node in nodes.iter_mut() {
@@ -1642,6 +1680,7 @@ impl Comparison {
                             &mut ticks,
                             &mut selected,
                             &mut selection_changed,
+                            widest,
                         );
                     }
                 })
@@ -1782,15 +1821,26 @@ impl CompareNode {
         ticks: &mut Ticks,
         selected: &mut Option<u32>,
         selection_changed: &mut bool,
+        // What the widest row of the whole tree needs for its indent and its
+        // name, which is what every row claims for the column — see
+        // `Comparison::widest_name`.
+        widest_name: f32,
     ) {
         let is_selected = *selected == Some(self.id);
         let mut tick_rect = Rect::NOTHING;
         let response = t.selectable_row(is_selected, |r| {
             tick_rect = self.show_tick(r, depth, ticks);
 
-            r.cell(|ui| {
+            // The name is a frozen column, so it can be narrowed to fit the view
+            // and what it holds cut short with it — and a cut label has to say
+            // how much it was short of, or the column could never widen again.
+            r.measured_cell(|ui| {
+                let mut cut = 0.0;
+                // What the note beside the name took, which not every row
+                // carries — it is no part of what the tree's widest row needs.
+                let mut note = 0.0;
                 ui.horizontal(|ui| {
-                    ui.add_space(depth as f32 * 20.0);
+                    ui.add_space(depth as f32 * INDENT);
                     let symbol = if self.open { "⏷" } else { "⏵" };
                     let can_open = !self.sub_nodes.is_empty();
                     if ui
@@ -1799,16 +1849,28 @@ impl CompareNode {
                     {
                         self.open = !self.open;
                     }
-                    ui.label(&self.name);
+                    cut = show_truncated(ui, &self.name);
                     // While the differences are being read, a row missing from
                     // some of the combats says so: "flown in two runs out of
                     // five" and "flown in all five, unevenly" are different
                     // findings, and the numbers alone do not tell them apart at
                     // a glance.
                     if let Some(missing) = self.missing_from(depth, n_slots, ticks) {
-                        ui.label(RichText::new(missing).weak());
+                        let before = ui.min_rect().width();
+                        cut += show_truncated(ui, RichText::new(missing).weak());
+                        note = ui.min_rect().width() - before;
                     }
                 });
+                // What this row came to, and then what the widest row of the
+                // tree would come to. The two differ only in indent and name:
+                // the arrow and the gap after it are the same on every row, so
+                // taking this row's own indent, name and note off what it
+                // measured leaves exactly what any other row would carry as
+                // well. The note goes back on afterwards, since this row has to
+                // hold its own.
+                let drawn = ui.min_rect().width() + cut;
+                let arrow = drawn - depth as f32 * INDENT - text_width(ui, &self.name) - note;
+                drawn.max(widest_name + arrow + note)
             });
 
             // How far apart the combats are on this row — the figure the
@@ -2028,6 +2090,7 @@ impl CompareNode {
                     ticks,
                     selected,
                     selection_changed,
+                    widest_name,
                 );
             }
         }

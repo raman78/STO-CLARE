@@ -158,6 +158,7 @@ impl LayerOverlay {
                     log::error!("layer overlay: {e}");
                 }
             })
+            .inspect_err(|e| log::error!("overlay: could not start the layer-shell thread: {e}"))
             .ok();
         Self {
             tx,
@@ -165,6 +166,17 @@ impl LayerOverlay {
             position,
             events,
         }
+    }
+
+    /// Whether the overlay's own thread is still running.
+    ///
+    /// It can end without anyone asking: the compositor closes the layer surface
+    /// when it will no longer show it (see `LayerShellHandler::closed`), and the
+    /// Wayland event loop can fail. Nothing else reports that — the messages this
+    /// handle sends go into a channel whose receiver is gone, which no caller
+    /// looks at — so the thread itself is the only honest source.
+    pub fn is_alive(&self) -> bool {
+        self.join.as_ref().is_some_and(|join| !join.is_finished())
     }
 
     /// Current (top, left) anchor margin, for persisting the overlay position.
@@ -265,6 +277,7 @@ fn run(
         data: OverlayData::default(),
         needs_redraw: true,
         stop: false,
+        surface_unavailable: false,
         pointer: None,
         rel_manager: globals
             .bind::<ZwpRelativePointerManagerV1, _, _>(&qh, 1..=1, ())
@@ -374,6 +387,9 @@ struct State {
     data: OverlayData,
     needs_redraw: bool,
     stop: bool,
+    // Whether the last attempt to acquire a frame failed, so the state is
+    // reported when it changes rather than once per attempt. See `render`.
+    surface_unavailable: bool,
     // "Move" mode: when on, the surface catches pointer input and a left-button
     // drag repositions it; when off, an empty input region lets clicks fall
     // through to the game. `margin` is the (top, left) offset from the TOP|LEFT
@@ -1068,11 +1084,26 @@ impl State {
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f)
             | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-            _ => {
+            // Timed out, occluded, outdated or lost: there is nothing to draw
+            // into this frame, and reconfiguring is the recovery wgpu asks for
+            // in every one of those cases. Said once on the way in and once on
+            // the way out: a surface that stays unavailable is asked again every
+            // 16 ms, and a line per attempt would bury the log — while silence,
+            // which is what this was, hides an overlay that has stopped being
+            // drawn behind a button that still says it is on.
+            other => {
+                if !self.surface_unavailable {
+                    log::warn!("overlay: surface unavailable ({other:?}), reconfiguring");
+                    self.surface_unavailable = true;
+                }
                 gpu.surface.configure(&gpu.device, &gpu.config);
                 return;
             }
         };
+        if self.surface_unavailable {
+            log::info!("overlay: surface available again");
+            self.surface_unavailable = false;
+        }
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -1180,7 +1211,17 @@ impl State {
 }
 
 impl LayerShellHandler for State {
+    /// The compositor will not show this surface any more — the protocol names
+    /// a destroyed output as the example, which is where a blanked or locked
+    /// screen can leave us.
+    ///
+    /// There is no saving it: "further changes to the surface will be ignored",
+    /// and the protocol's own remedy is to destroy the resource and create a new
+    /// one. So the thread ends here, and says so — the app notices the thread is
+    /// gone and spawns a fresh surface (see `Overlay::update`). Without that line
+    /// this was the one way the overlay could vanish without leaving a trace.
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {
+        log::warn!("overlay: the compositor closed the layer surface");
         self.stop = true;
     }
     fn configure(

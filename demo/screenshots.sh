@@ -52,29 +52,30 @@ if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
   start LightDark
   # Every picture in this section is of one run. The newest fight in the demo
   # log is whatever the log ends on — often a short solo scrap with a single
-  # row, which shows nothing the manual is talking about — so the third entry
-  # is opened instead, a team TFO with five players and a note of its own.
-  # Check the list picture if the choice looks wrong.
+  # row, which shows nothing the manual is talking about — so a team fight is
+  # opened instead, one with several players and a note of its own. Which row
+  # that is depends on the log the demo was cut from: `combats-list.png` is the
+  # picture to check, and the Size column says Team. Right now it is the first.
   click 66 38                                      # ☰ Combats, the side panel
-  dblclick 300 245                                 # the third fight in the list
+  dblclick 300 195                                 # the one team fight in the list
   click 66 38                                      # and close the panel again
   shot summary-tab
-  click 122 97; shot damage-dealt-tab
-  click 66 164;  shot ability-breakdown            # the arrow, right of the tick
-  click 160 130; shot damage-type-picker           # ☰ Type in the Name header
-  click 160 130
+  click 122 119; shot damage-dealt-tab
+  click 67 186;  shot ability-breakdown            # the arrow, right of the tick
+  click 160 151; shot damage-type-picker           # ☰ Type in the Name header
+  click 160 151
   # Two abilities out of the player's figures. The smaller of the two goes
   # first: taking out the big one drops the player below the next one and the
   # table re-sorts under the pointer, after which neither coordinate names the
   # row it did. They are not put back either — nothing after this photographs
   # Damage Dealt, and every other tab keeps its own ticks.
-  click 25 214; click 25 189; shot damage-row-ticks
-  click 223 97; shot damage-taken-tab
-  click 400 97; shot healing-tab
-  click 39 97
-  click 598 97; shot columns-menu                  # the Columns menu, open
-  click 598 97
-  crop combat-note 1280x32+0+52                    # the name and note, above the tabs
+  click 24 236; click 24 211; shot damage-row-ticks
+  click 223 119; shot damage-taken-tab
+  click 400 119; shot healing-tab
+  click 39 119
+  click 598 119; shot columns-menu                  # the Columns menu, open
+  click 598 119
+  crop combat-note 1280x46+0+56                    # the name and note, above the tabs
   click 66 38;  shot combats-list
   stop
 fi
@@ -90,18 +91,25 @@ if [ "$WHAT" = all ] || [ "$WHAT" = settings ]; then
   click 79 607                                     # Cancel
   click 66 38                                      # the combats panel
   click 169 38                                     # Compare Combats
-  # Five runs of one patrol — the set the manual's worked example is about. A
-  # click anywhere on a row ticks it, so the map column will do; the comparison
-  # follows the ticks and there is nothing to press when they are all in.
-  for y in 295 345 370 445 495; do click 300 "$y"; done
+  # Five runs of the same map at the same level — the set the manual's worked
+  # example is about, and the only kind where a spread filter says anything:
+  # rows every run used in the same measure are what it drops. A click anywhere
+  # on a row ticks it, so the map column will do; the comparison follows the
+  # ticks and there is nothing to press when they are all in. Check the rows
+  # against `compare-pick.png` if the demo log is recut — these are the Elite
+  # Infected Conduit runs in it.
+  for y in 220 245 270 320 395; do click 300 "$y"; done
   sleep 4; shot compare-pick
   click 66 38; sleep 6; shot compare-result        # the panel out of the way
   click 124 59; shot compare-averages              # Σ Averages, under the toolbar
   click 124 59
   # Two rows out of the Total. Safe to undo by the same coordinates: ticking
   # changes what the Total is of, never the order of the rows under it.
-  click 25 207; click 25 232; shot compare-row-ticks
-  click 25 207; click 25 232
+  # The tick box is only about 16 px tall inside a 25 px row, so these have to
+  # be the row centres — 207/232 fell in the gaps between boxes, which selects
+  # the row instead and leaves the Total untouched.
+  click 24 192; click 24 217; shot compare-row-ticks
+  click 24 192; click 24 217
   click 197 59; sleep 2; shot compare-differences  # Δ Spread
   click 197 59
   stop
@@ -117,7 +125,7 @@ if [ "$WHAT" = all ] || [ "$WHAT" = ladder ]; then
   # to receive it and opens it in the main window. So there is no panel to open
   # and no row to double-click here any more — both were in this script until
   # the button started doing what its label always said.
-  clickw "$L" 990 130 14                           # the magnifier on the first entry
+  clickw "$L" 1002 130 14                          # the magnifier on the first entry
   xdotool windowactivate "$W"; sleep 6
   # The panel is folded away before the run is photographed. It used to be
   # shot beside the list — Summary was clicked at 825,97, "right of the panel" —
@@ -125,7 +133,7 @@ if [ "$WHAT" = all ] || [ "$WHAT" = ladder ]; then
   # wide enough that nothing useful is left of the window beside it. The list
   # is what `ladder-compare-pick` shows; this one shows the run.
   click 66 38                                      # the panel out of the way
-  click 39 97                                      # Summary
+  click 39 119                                     # Summary
   shot ladder-run
   click 66 38                                      # the panel back, for the ticks
   click 169 38                                     # Compare Combats

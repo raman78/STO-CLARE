@@ -116,6 +116,332 @@ children. The path a record takes into the tree is built by
 `Player::build_grouping_path` from the record plus the user's grouping rules,
 which is where Custom Group Rules and Source Reversal rules take effect.
 
+A path is read **back to front**: its last segment is the level directly under
+the player and its first is the leaf. `Player::add_out_value` inserts the target
+at the front, which is why the deepest row of a damage tree is who was hit.
+
+### What each rule may move
+
+The log says who owned a shot (field 1) and, separately, what it passed through
+on the way out — a pet, a console, an anomaly (field 3, `Record::
+indirect_source`). Where a record has both an indirect source and a target,
+`build_grouping_path` lays them down as `ability` then `indirect source`, so the
+pet ends up over the ability it fired. Source Reversal turns that pair over.
+
+**A custom group is laid directly over the ability segment**, never appended to
+the end of the path. `build_grouping_path` tracks where the ability sits
+(`ability_index`, which reversal moves) and inserts the group one place above
+it. The rule says "these effect names are one weapon", so the effect level is
+all it may fold:
+
+| the record | the path, read back to front |
+|------------|------------------------------|
+| straight from the player | group → ability → target |
+| through a pet | pet → group → ability → target |
+| through a pet, reversed | group → ability → pet → target |
+
+Appended to the end instead — which is the topmost level — the group became the
+*parent of the pet*, and a pet firing a weapon of the same name as the player's
+own was counted inside the player's row for that weapon. Measured on a real
+Infected: The Conduit run with the maintainer's 48 rules: the row named
+"Disruptor Turret" held 510 hits of which 304 were two Bird-of-Prey pets', and
+the same pets kept rows of their own for the shots whose names happened not to
+match the rule — so neither figure was the player's and neither was the pet's.
+Across that fight 15.7% of the outgoing damage sat under a group named after a
+weapon the player had not fired. Held by
+`a_custom_group_does_not_swallow_a_pets_damage` and
+`a_custom_group_sits_over_a_reversed_branch`.
+
+Note that an indirect source is **not** always a pet: the log routes a player's
+own procs through whatever entity carried them, including enemies. In the same
+log, `Mycelial Lightning` passes through a Borg `Probe` and
+`Refracting Tetryon Cascade` through a `Control Sphere`. The split the code can
+make is *direct* against *through something*, which every line states; "pet" is
+not a thing the log ever says.
+
+### How a condition matches
+
+Every rule set in the Analysis tab is built from the same part: a `MatchRule` is
+an **aspect** (which name to read), a **method** (how to compare) and the text
+to compare against. `MatchAspect` names the five kinds of name a record carries; `MatchMethod` is
+`Equals`, `StartsWith`, `EndsWith` or `Contains`. A group matches a record when
+any of its enabled conditions does — the conditions are an OR, never an AND.
+
+**Wildcards work under every method**, rather than in a method of their own.
+`wildcard_matches_anchored` treats `*` and `%` as *any run of characters* and
+`?` as *exactly one*; the method supplies the two anchors and nothing else
+(`MatchMethod::anchors`): `Equals` holds both ends, `StartsWith` the front,
+`EndsWith` the back, `Contains` neither. So the method says *where* the pattern
+sits and the pattern says what is in it, and the two do not overlap.
+
+A fifth `Wildcard` method was written first and removed. It was justified by the
+need to keep matching a literal `*` — a need that does not exist: measured over
+a 138 MB log, no owner, carrier, target or ability name contains `*`, `%` or
+`?`, and none of the 111 conditions in the live settings does either. It cost a
+reader an extra entry in the picker and a mode switch to type a wildcard, and
+bought nothing.
+
+Two spellings of the same run rather than one, because the players who write
+these rules come from two habits — file patterns and SQL — and a rule that
+silently matched nothing would be indistinguishable from one that was never
+applied. There is no escape character, for the same measured reason.
+
+A pattern with no wildcard in it takes a plain-`str` path (`==`, `starts_with`,
+…) and behaves exactly as its method always did. This is asked once per
+condition per record, millions of times over a log, so the matcher allocates
+nothing and walks the two strings in place; the fast path keeps even that off
+every rule written before wildcards existed, which today is all of them.
+`the_plain_path_and_the_matcher_agree_wherever_both_apply` holds the two
+implementations to the same answer.
+
+The methods are enumerated for the picker in exactly one place,
+`MATCH_METHODS` in `app/settings/analysis.rs`, so a variant added to the enum
+cannot go missing from the UI.
+
+### Which rule wins when two of them fit
+
+Custom grouping is the one rule set where two rules can claim the same record
+and only one can have it — a record goes into one group. The winner is the one
+that fits **most precisely**, chosen by `settings::most_specific_match`, not the
+one that happens to be first in the list.
+
+`Specificity` is read in three parts, most significant first: how many
+characters of the name the pattern actually spells out; whether it covers the
+whole name; and whether the method admits nothing else, which only `Equals`
+does. The order of those three is load-bearing. Put coverage first and
+`Wildcard "*"` — which covers every name and spells out nothing — outranks every
+carefully written rule in the list. Leave the third out and
+`Equals "Quad Cannons"` cannot be told from `Contains "Quad Cannons"`, which
+spell out the same characters against that name but were written to mean
+different things.
+
+Two rules fitting equally well are settled by name, alphabetically, so the same
+log read on two machines gives the same answer.
+
+This replaced first-match-wins, and the reason is that order was carrying two
+jobs at once. The list is sorted by name so a rule can be found in it
+(`GroupRulesTable::sort_by_name`), which means order can no longer also decide
+what the program does; and a rule imported from someone else's file has to
+behave the same wherever in the list it lands, or importing is a coin toss.
+Measured before the change on the maintainer's 48 rules against the 419 effect
+names in a 138 MB log: four names were claimed by more than one rule, and every
+one of those four was a clash between two rules **of the same name**, which file
+the record identically either way. The change moved nothing.
+
+Order-dependence is specific to custom grouping. Combat names collect every
+matching rule (`filter`), and source reversal and damage exclusion ask only
+whether any rule matches (`any`), so for those three the order never meant
+anything.
+
+A clash between rules of different names is surfaced rather than settled in
+silence: `clashing_rules` in `app/settings/analysis.rs` checks the rules against
+the selected combat and puts a ⚠ on **both** rows, naming the shared effects and
+which rule takes each. Keyed by rule name, because the list is sorted and
+positions move, and because two rules sharing a name are not a clash at all.
+
+The same finding also stands in a bar under the table (`show_clash_bar`) rather
+than only on the ⚠. A tooltip answers a question the reader already thought to
+ask; two rules quietly fitting one effect is the case they did not, and a mark
+that says nothing until pointed at is one most readers never read. The bar
+counts them, spells out the selected rule's own case, and — when there is
+nothing to report — says *that*, because a column with no marks in it otherwise
+reads as "checked and clean" when it may mean "no combat selected".
+
+### Where the rules live, and moving them about
+
+The four rule sets are their own file, `STO-CLARE_Rules.toml` in the config
+directory (`paths::RULES_FILE_NAME`), holding a `RuleSets`. Apart from the
+settings because a set of rules is something a player copies to another machine
+or hands to someone else, and the settings carry their log path, their window
+size and their handle.
+
+TOML rather than JSON, over the same serde types: this is the one file the
+program expects a player to open, read and pass around, so it has to be legible
+without a formatter. Each rule becomes an `[[custom_group_rules]]` header with
+four `key = value` lines under it, instead of braces nested four deep — 964
+lines of JSON became 860 of TOML for the same 84 rules. Nothing in the model is
+lost on the way: the shape is a handful of named arrays of flat structs with
+string, bool and enum fields, which is squarely inside what TOML expresses, and
+the one nested case (`CombatNameRule`, a rule holding a rule) round-trips as a
+sub-table. The writer orders plain values before tables on its own, so no struct
+field had to move. What TOML cannot do is hold a struct inside an *array*
+element without a sub-table header, and it has no null — neither occurs here,
+and both would be a redesign of the model rather than a format problem.
+
+`#[serde(flatten)]` is deliberately not used on `CombatNameRule::name_rule`,
+tempting though it looks for the nesting: serde's flatten goes through an
+untyped map, which cannot read the rules still embedded in a 2.7-era settings
+file. Prettier output is not worth losing the carry-over.
+
+Settings files written before the split keep their rules inside them, so the
+four fields of `AnalysisSettings` are `#[serde(default, skip_serializing)]`:
+still read from a settings file that has them, never written back.
+`Settings::load_rules` does the move on the **first start**, not on the first Ok
+— a player who never opens Settings would otherwise be left with rules in the
+old place — and the settings file is then rewritten without them, with its
+original kept aside. See [Rules still living in a settings
+file](#rules-still-living-in-a-settings-file).
+
+A rules file that exists but cannot be read is never treated as an empty one.
+That would discard every rule its owner wrote while looking exactly like a fresh
+install. It is put aside instead and the program starts from the shipped set —
+see [A config file that cannot be read](#a-config-file-that-cannot-be-read). The
+Analysis tab says so at the top (`Settings::rules_file_problem`) every time the
+tab is opened, not once at start-up, because the rules on screen are then not
+the ones that were in the file and editing them is working on the wrong copy.
+
+`version` is written and checked: a file from a newer build is refused with
+`RulesFileError::FromANewerVersion` rather than half-read.
+
+**Export and Import** write and read that same shape, for one section or for all
+four, so a file exported from a section can be imported into the whole tab and
+the other way round — a reader never has to know there are two kinds. Import
+**adds**; it never replaces. A rule identical to one already held is skipped and
+counted, and the report says both numbers: doubling every rule on a second
+import leaves a list nobody can read, and dropping them without a word leaves
+the reader unsure the file was read at all. Nothing reaches disk until Ok, so
+Cancel undoes an import.
+
+### The rules tables
+
+Both tables in Settings → Analysis are the program's own
+`custom_widgets::table::Table`, not a third-party widget. That was tested:
+`egui_extras::TableBuilder` was tried for exactly this and abandoned, because
+each of the three things it was picked for had to be worked around.
+`Column::remainder` — the feature that makes a column take the leftover width —
+cannot be used here, since egui_extras will not let such a column fall below
+`max_used_widths`, and the contents are a text field that fills the column; the
+column pins its own floor at last frame's width and never gives ground.
+`remainder` and `resizable` are also mutually exclusive there. The trial and its
+reasoning are on the abandoned `try/standard-rules-tables` branch; do not
+re-derive it.
+
+Two behaviours the tables have to keep, both of which took several attempts:
+
+- **The name column carries the difference between what the table wants and the
+  width it has** (`Table::stretch_column`, `stretch_to_fill`). Widening the
+  window hands it the spare width; narrowing it takes the shortfall back out of
+  the same column, down to `NAME_COLUMN_MIN_WIDTH`. The floor is that hard
+  minimum and *not* the longest name in the list: pinned at the longest name the
+  column stops giving ground, and the table pushes the row's buttons off the
+  edge. A name is still readable cut short; a button that is not there cannot be
+  pressed.
+- **Anything that decides a width must be computed, never read back off a drawn
+  row.** A row that does not fit is drawn clipped, so a width measured from it
+  is the width it was *cut to*: a table asked how much room it needs would
+  answer with however little it was given, whoever asked would allow that, and
+  the two would agree on a size that hides the last columns. Two attempts at
+  the shrinking behaviour measured, and both left the fault in place. Nothing
+  here reads a width back from what was drawn, and nothing added later should.
+
+`a_narrower_window_takes_the_width_out_of_the_name_column` holds the first;
+`the_name_column_takes_the_width_the_window_has_over` holds the other end of
+the same behaviour.
+
+**Ordering.** The heading of the On column and the heading of the name column
+order the list; the rest hold one button apiece and there is nothing to order
+them by. `RuleColumn` names the two, `sortable` draws a heading that reads as a
+heading but rims under the pointer and carries the sort mark, and
+`GroupRulesTable::sort_by_name` applies the order. The state is
+`SortState<RuleColumn>` — the same type the damage tables use, so the two cannot
+drift apart.
+
+Two properties the ordering has to keep, and why:
+
+- A rule with no name yet sorts to the end whichever way the order runs. It was
+  just added by ✚ and cannot be found by name, so it has to stay where it was
+  put.
+- Names settle every tie, which makes the order total. Without that, rows that
+  compare equal shuffle between frames.
+
+Sorting is skipped entirely while a field has focus or a dialog is open, or a
+row would slide out from under the cursor halfway through being renamed.
+
+### Trying a rule against a real fight
+
+A rule is edited in a centred modal opened by the ✏ on its row
+(`GroupRulesTable::show_edit_dialog`), and beside its conditions the dialog
+lists the names in the **selected combat** that those conditions currently pick
+out (`show_matches_pane`). The list is gathered *after* the conditions are drawn
+in the same frame, so a character typed into a pattern is already reflected in
+it rather than a keystroke behind.
+
+Every aspect the rule set offers is reported with a count — `12 of 340` — even
+when it matches nothing. A rule that catches nothing otherwise looks exactly
+like one that was never evaluated, and that ambiguity is what sends a player
+back to re-reading the log to find out which it was.
+
+Escape is asked through `custom_widgets::dialog::escape_closes` rather than
+egui's `ModalResponse::should_close`, which consumes the key without regard for
+what holds the keyboard: pressing Escape to leave a half-written rule name would
+otherwise shut the dialog on the way out. See `custom_widgets/dialog.rs` for the
+ordering rule between nested dialogs.
+
+Two things about the dialog's geometry are load-bearing, and both were found by
+the dialog opening empty:
+
+- **The modal is given a size instead of taking one.** An `egui::Modal` is an
+  area sized by what it holds. A table inside one that asks for a fixed height
+  gets it, the modal grows to match, and the next frame there is that much more
+  room to ask for — the dialog grew by one row per frame without end, and on the
+  frame right after it opened the budget collapsed to a few dozen points and the
+  conditions table could not draw a single row. `show_edit_dialog` pins both
+  dimensions (`EDIT_DIALOG_WIDTH`, `EDIT_DIALOG_HEIGHT`, capped to the screen)
+  and the contents then divide a fixed budget. `the_dialog_holds_its_size_
+  instead_of_growing_every_frame` holds it.
+- **Each half is given a top-down layout explicitly.** `Ui::allocate_ui` hands a
+  child the layout its parent is in, and the two halves sit in the left-to-right
+  layout that puts them side by side — so the conditions table was laid out
+  *beside* its own heading, on whatever width the heading left over, and its
+  rows fell outside the half and were clipped. Column headings are drawn outside
+  the table's scroll area and kept appearing, which is what made the dialog look
+  merely empty rather than broken. Held by
+  `a_conditions_row_is_drawn_beside_the_pane`.
+
+`EDIT_DIALOG_WIDTH` is not a round number picked for looks: a settled conditions
+table measures 751 points and the pane takes `MATCHES_PANE_WIDTH`.
+
+A column's width comes from what its cells measure, so a field that has to be
+wide before anything is typed into it claims that width through
+`TableRow::measured_cell` rather than through `TextEdit::desired_width` — a
+`TextEdit` is never wider than the room it is given, so asking the field made a
+new rule's name box 73 points wide and left the claim unmade.
+
+That claim is only a floor for the first frame. The name column and the
+pattern column are then handed whatever the view has left over, through
+`Table::stretch_column`: a table sized purely to its contents ends in a narrow
+box beside an expanse of empty window. Stretching only ever adds, is skipped
+when the columns already overflow the view, and is measured against the view
+rather than against what was drawn — judged by its drawn width a table would be
+widened until it filled the view, found to fill it, and would swing between the
+two every frame. `frozen_widths` documents the same trap from the narrowing
+side. A name longer than the filled column scrolls inside its own field rather
+than pushing the table past the window, which would put the row's buttons out
+of reach.
+
+### Who a shot belongs to
+
+Which entity a record is filed under is not simply read off the line. One shot
+is written as up to two lines and the game names the carrier on only one of
+them, so the answer comes from the shot and, for one shape, from the whole
+fight:
+
+| the line | where the answer comes from |
+|---|---|
+| names a carrier | itself |
+| carries the `*` placeholder | itself — the owner fired it |
+| leaves the source pair **blank** | `Combat::who_fired`, from what this fight has seen that event id do |
+
+`Parser::look_ahead_over_shot` pairs a shot's shield line with its damage line
+so the first two cases carry across both halves; `Combat::update_carrier_
+evidence` accumulates the third. Where the fight proves a carrier fired it but
+cannot say which, the record lands in a row of its own named
+`(Damage owner unknown)` (`UNNAMED_CARRIER`).
+
+**`docs/SHOT_MODEL.md` is the whole of it** — field meanings, the pairing rules,
+the decision diagram, what was measured against 100 other players' logs, and
+what is still unresolved. Anything in this section is a summary of that.
+
 ## Map and difficulty
 
 `analyzer::detection` derives `(map, difficulty)` from which curated NPCs
@@ -142,6 +468,39 @@ name next to the settings overrides it without a rebuild. See
 | settings                    | `app/settings`           | split into analysis settings (invalidate the parse) and the rest |
 | how it looks                | `app/theme.rs`           | the themes on offer, the app's own colours, the text sizes       |
 | overlay                     | `app/overlay`            | separate always-on-top window; see `docs/OVERLAY.md`             |
+| the two keys                | `custom_widgets/dialog.rs`, `app/mod.rs` | Escape closes a dialog, Tab folds the combats panel; see below |
+
+### The keyboard
+
+The program answers two keys, and both had to be taken off egui before they
+could mean anything here.
+
+**Escape closes a dialog.** `custom_widgets::dialog::escape_closes` is the one
+place that answers it, and every dialog asks it rather than reading the key
+itself. Its module documentation is the source of truth for *how* — that the
+key is taken rather than read, why a focused field has to give it up first and
+why that question is answered from the previous pass, and which windows
+deliberately do not take it. Do not restate any of that here; it is a page long
+and it is next to the code it constrains.
+
+What belongs in this map is the consequence for anyone adding a dialog: **ask
+`escape_closes` from inside the window's own contents**, not beside them. Order
+of asking is what decides which of several open windows closes, so a window
+drawn inside another asks first and therefore closes first. A dialog that
+checks the key on its own — including egui's `ModalResponse::should_close` —
+takes it without regard for what holds the keyboard, and the ordering breaks.
+
+**Tab folds the combats panel.** egui handles Tab itself in `Focus::begin_pass`
+and offers no way to switch the focus walk off, so the key is removed from the
+event stream before egui sees it: `App::raw_input_hook` runs ahead of
+`Context::run_ui`, and `take_tab_presses` strips plain Tab (modified Tab is left
+alone — it is not the focus walk and may mean something to the window manager).
+The hook yields the key untouched whenever anything holds focus, so Tab still
+belongs to a text field being typed in.
+
+The panel is toggled at the *end* of the frame rather than in the hook, because
+the hook runs before any widget exists and the panel's state is owned by the
+UI. `app::tab_tests` covers the stripping.
 
 Three conventions worth knowing before changing a table or a chart:
 
@@ -214,6 +573,116 @@ Three conventions worth knowing before changing a table or a chart:
   label made a column widen the moment it took charge of the order, shifting
   every column right of it. `MetricsTable`, `SummaryTable` and the comparison's
   headers all measure this way.
+
+- **Every table knows where its rows stop naming themselves.** That line is the
+  *divide* (`Divide`), and a table asks for it with the number of columns before
+  it. Two things hang off it, and a table can take the first alone or both:
+
+  | Asked with                    | The rule at the divide | The columns before it |
+  |-------------------------------|------------------------|-----------------------|
+  | `Table::divided_after(n)`     | drawn                  | scroll with the rest  |
+  | `Table::frozen_columns(n)`    | drawn                  | stay on screen        |
+  | neither (the default)         | no divide at all       | —                     |
+
+  `MetricsTable` and the comparison freeze two columns, the tick and the name;
+  the summary divides after one, its player's name, and freezes nothing — it is
+  five rows of one player each and is not dragged far, so holding the name on
+  screen would only cost the figures beside it room in a small window. Every
+  other table in the program asks for neither and is drawn exactly as it was.
+
+- **The tick and the Name stay on screen; everything right of them scrolls.**
+  Frozen columns keep to the left edge of the view however far the table is
+  dragged, the way a spreadsheet freezes the panes left of a split. Before it, a
+  table dragged to its right-hand columns was a screen of figures with nothing
+  saying what any row was of.
+
+  There is one scroll area and one pass over the rows, not a second table pinned
+  beside the first. A frozen cell is laid out where it always was, in the
+  table's own coordinates, and then pushed back to the right by exactly what the
+  body has been scrolled (`Divide::shift`), which lands it at the view's left
+  edge whatever the reader has dragged. The columns that scroll are **clipped**
+  to the right of the strip (`Divide::clip_at`), so they pass under the
+  frozen ones rather than over them: they are drawn first, and painting order
+  inside a layer is call order, so clipping is what puts them behind. It also
+  settles the pointer, because egui narrows a widget's interaction rectangle to
+  the clip rectangle it was added under (`Ui::interact`) — a cell hidden behind
+  the strip stops sensing clicks there, and the tick box and the tree arrow keep
+  theirs.
+
+  Drawing the strip into a layer of its own — the obvious alternative — does not
+  work in egui: only layers created as an `Area` are entered into
+  `Areas::order`, `hit_test` walks nothing else, and `Context::layer_id_at`
+  answers with the layer below. The frozen cells would have been drawn on top
+  and been unclickable, and the wheel would have stopped scrolling the table
+  whenever the pointer was over the names.
+
+  The shift is measured as the distance between the view's left edge and where
+  the rows were actually laid out, not read off `scroll_area::State` — that one
+  already has this frame's wheel added to it, and a frozen column pushed by a
+  distance the rows were not moved by drifts away from them for as long as the
+  wheel turns. The header is shifted by the same number, so the two stay level.
+
+- **The divide is drawn to be seen, and nothing else may draw a boundary
+  there.** Its rule (`FREEZE_RULE_WIDTH`, `FREEZE_RULE_ACCENT`) is twice the
+  width of the rules between ordinary columns and in the theme's accent rather
+  than its faint separator grey. Where the columns before it are frozen it is
+  also the seam the table folds along — what is left of it stays, what is right
+  of it goes under it — and drawn like every other rule it read as one more line
+  in a row of them, with nothing saying why the figures stopped travelling
+  there. The
+  accent is `hyperlink_color`, faded, for the reason `theme::section_frame`
+  gives: it is the one colour all seven themes declare bright enough for their
+  own background, where a fixed grey would suit two of them.
+
+  `show_group_separator` — the narrow cell that opens a split column group so
+  three same-looking numbers from neighbouring metrics do not run together —
+  returns without drawing when `TableRow::opens_after_divide` says it would land
+  against the divide. It has to
+  skip the *cell*, not merely its contents: an empty column still takes a rule
+  on each side from `draw_separators`, which is how one boundary came to be
+  three lines inside twenty points. The question is asked at the same point of
+  the same sequence of cells in the header and in every row, so the two cannot
+  answer differently and put the columns out of step.
+
+- **A tree column is sized by the whole tree, not by what is open.** Measured
+  from the rows on screen, the Name column grew the moment a branch was opened
+  and took every figure in the table sideways with it — under the reader who
+  had just clicked the arrow. `table::widest_name` walks the whole tree once and
+  reports what its deepest, longest-named row needs for its indent and its name;
+  every row then claims that for the column whether or not that row is drawn
+  (`MetricsTable::widest_name`, `Comparison::widest_name`, both worked out on
+  the first frame after a rebuild, because measuring a name takes the fonts).
+
+  What `widest_name` leaves out is the open/close arrow and the gap after it.
+  That is the same on every row, so the row being drawn measures it for real —
+  its own width, less its own indent and name — and nothing has to assume what a
+  button comes to under the current theme. The arrow is the one part of the cell
+  whose width is not ours to predict: `Button::selectable` takes its size from
+  the theme's padding.
+
+- **A frozen strip is held to a share of the view.** A frozen column never
+  leaves the screen, so a long name would permanently crowd out the figures it
+  is read against — which is why only a *frozen* column is held to a share at
+  all; one that scrolls away with the rest is keeping nothing off the screen, so
+  cutting a name short in it would buy nothing. `frozen_widths` holds the strip
+  to `FROZEN_MAX_SHARE` (40%)
+  by taking the excess off the widest column in it, and the cells that can be
+  cut short are drawn with `show_truncated`, which reports what the label was
+  short of so the column can widen again when the room comes back — a width
+  measured off a truncated label is the width it was cut *to*, and a column
+  measured that way could never grow. The whole name is on the tooltip whenever
+  it was cut.
+
+  Two floors: what the column's own **heading** claimed (`ColumnState::floor`,
+  fed by the header row only), because the eye and the type picker sit there and
+  a heading cut off is a table that cannot be worked, and `FROZEN_MIN_WIDTH`.
+  A small window therefore ends up with a strip over its share rather than with
+  a column of nothing.
+
+  Whether to narrow at all is asked of what the columns *claim*, never of what
+  they were drawn at, and only when the table does not fit the view — a table
+  judged by its drawn width could be narrowed until it fitted, found to fit, let
+  out again, and the widths would swing between the two every frame.
 
 - **A chart is dragged sideways, never up and down.** Every chart scales its y
   axis to the data (`auto_bounds`, `include_y`), so moving it vertically only
@@ -777,9 +1246,12 @@ There used to be a third: a legend, one row per combat, which at 34 runs filled 
 gone; which runs a comparison is of, in what colour, under what number and read
 for which player is said in the combats list, on the rows they were ticked on.
 
-The one thing left uneven is the table's `Name` column, which scrolls away with
-everything else — the averages toggle is the answer to a table too wide to
-read, not a frozen first column.
+The tick and the `Name` column do not scroll away with the rest: this table asks
+for `Table::frozen_columns(2)`, so however far right a reader drags a
+thirty-combat comparison, every row still says what it is of. See "The tick and
+the Name stay on screen" above for how that is drawn. The averages toggle
+remains the other answer to a table too wide to read — it replaces the columns
+rather than pinning any.
 
 **A heading can stand over a group of columns.** `TableRow::spanning_cell` draws
 one cell across several, which is what a comparison's headings use: a run's
@@ -1269,10 +1741,114 @@ touches line reading has to keep those ranges exact.
 
 ## Where things are written
 
-Settings and the log file go to the per-user config directory
-(`~/.config/STO-CLARE` on Linux, `%APPDATA%` on Windows), with the
-old next-to-the-executable location read as a fallback. See
+The settings, the rules and the log go to the per-user config directory
+(`~/.config/STO-CLARE` on Linux, `%APPDATA%` on Windows), with the old
+next-to-the-executable location read as a fallback. See
 `app/settings/app_settings.rs` and `app/logging.rs`.
+
+**Every name written there is declared in `helpers::paths` and nowhere else**,
+so renaming one is a single edit rather than a hunt through the tree — including
+the suffixes a file gets when it is put aside (`paths::DAMAGED`,
+`paths::ARCHIVED`). That module also carries the directory over from the
+pre-2.0 name on the first start.
+
+### A config file that cannot be read
+
+**A file that will not parse is not the same as a file that is not there**, and
+both config files are read that way (`Settings::read_at`, `Settings::rules_from`).
+Treating the first as the second is the worst outcome available: every default
+comes back, the window looks like a fresh installation, and the next Ok writes
+those defaults over what was still in the file. One stray character would cost
+the player their log path, handle, theme, columns and every rule, with nothing
+said at any point.
+
+So there are three cases, not two:
+
+| on disk | what happens |
+|---------|--------------|
+| no file | a fresh installation; the defaults, quietly |
+| a file that parses | used |
+| a file that does not parse | **put aside**, and the program carries on as a fresh installation would |
+
+Put aside, not deleted and not written over. "Unreadable" is this program's
+opinion, not something its owner agreed to: they can very likely still read the
+file, lift values back out of it, or repair it — and for the rules file,
+**Import…** then takes it back whole. `paths::set_aside` renames it to
+`STO-CLARE_Settings_damaged.json` (`..._2`, `..._3` if that is taken, because
+`fs::rename` overwrites silently on Linux and a second mishap must not erase the
+evidence of the first). The Settings window says what happened and where the
+file went, in the message the reading itself produced — the UI adds only the ⚠,
+because what became of the file depends on whether it could be moved and a fixed
+preamble there would contradict the half that knows.
+
+The refusal to write survives for exactly one case: the file could not even be
+moved (a read-only directory, no permission). Writing then would finish what the
+damage started, so `ConfigFileProblem::blocks_writing` stops `save` and the
+message tells the reader to move or repair it themselves. `blocks_writing` also
+covers the pre-1.6 file beside the executable, which is only ever read: a broken
+one is reported and otherwise left exactly where it is.
+
+`Settings::load_or_default` is memoized for the process, and that is load-bearing
+rather than an optimisation. Four parts of the app load the settings at start-up
+— window geometry, logger, app state, Settings dialog — and a damaged file put
+aside by the first is simply *gone* to the second, which would see a fresh
+installation and report nothing. The dialog loads last, so it is precisely the
+caller whose warning would go missing.
+
+`save_rules_at`, `save_at` and `take_the_rules_out_of_the_settings_at` take the
+path they write to rather than asking for it. That is for the tests: a refusal
+asserted against the real config directory passes whether the guard holds or
+not, because a write that got through would land there and not in the file the
+test is watching.
+
+### Rules still living in a settings file
+
+Before 2.8 the rules were a part of the settings. Two cases arrive at a build
+that keeps them apart, and both end the same way — with the rules in their own
+file, the settings rewritten without them, and the settings **as they were**
+kept beside them as `STO-CLARE_Settings_archived.json`:
+
+- **No rules file yet.** `Settings::rules_from` writes one from what the settings
+  were carrying (`Settings::rules_the_settings_carried`).
+- **A rules file already there.** It wins; the copy in the settings is not read.
+  It is still archived rather than simply dropped, because it may hold something
+  the rules file does not.
+
+The copy is what makes the rewrite safe to do without asking, and
+`take_the_rules_out_of_the_settings` will not rewrite anything if the copy
+cannot be made. One setting living in two places is a question about which of
+them is true, asked at every start and answered by whichever was written last —
+so it is worth ending, but not at the price of an unasked-for edit to somebody's
+config.
+
+"Did the settings carry rules" is noted while reading and cannot be worked out
+later from the rules in hand: on a fresh installation those are the shipped
+defaults, which came from the binary and not from anyone's file. That
+distinction is also why a damaged or missing rules file starts from the shipped
+set rather than an empty one — those include the rules that give fights their
+names, and an empty start would leave every fight unnamed.
+
+### Guards on the file formats, for the next release
+
+Both files are read with unknown keys ignored, which is what lets a file written
+by an older build still open — and also what makes a **renamed** field vanish
+without a word, read as "the player never set that". Four tests make that a
+decision rather than an accident:
+
+| test | what it pins |
+|------|--------------|
+| `the_shape_of_the_rules_file_is_pinned` | the rules file written out in full, every field and every `MatchAspect`/`MatchMethod` variant |
+| `the_published_rules_file_still_reads` | `rules/STO-CLARE_Rules.toml`, the example the manual tells players to Import — nothing else in the suite opens it |
+| `the_sections_of_the_settings_file_are_pinned` | the ten section names of the settings file |
+| `only_the_sections_that_always_existed_are_required` | which sections a settings file cannot be read without: `analysis`, `auto_refresh`, `debug`, `visuals`. A newly required section would refuse every file already written |
+
+The first of those carries the instructions for what to do when it fails, which
+is the point of it: an added field with `#[serde(default)]` is backward
+compatible and only the text needs updating, while a renamed or removed one is
+not, and needs `RULES_FILE_VERSION` raised and the published file converted.
+A round-trip test cannot stand in for any of this — write-then-read passes
+happily with a field renamed on both sides, which is exactly what was checked
+when these were written.
 
 Logging is opt-in (Debug → **Enable Log**) and mirrors to stderr at `Info` and to
 `STO-CLARE.log` at the chosen level. `log::set_logger` only takes effect once per

@@ -36,9 +36,10 @@ Everything lives in one window. From top to bottom:
 
 ### The combats list
 
-Press **☰ Combats** in the top row and a panel opens down the left-hand side
-with every fight in your log, newest first. Double-click a row and every tab
-fills in with that fight.
+Press **☰ Combats** in the top row — or the **Tab** key — and a panel opens down
+the left-hand side with every fight in your log, newest first. Double-click a
+row and every tab fills in with that fight. Tab folds it away again — see
+[Keyboard shortcuts](#keyboard-shortcuts).
 
 ![The combats list](images/combats-list.png)
 
@@ -225,10 +226,10 @@ with that combat:
 ![The box above the tabs: which fight is open, and what you called it](images/combat-note.png)
 
 What you type is added to the line above, after a dash and in the same lettering
-as the name — so the heading over all six tabs reads **[Solo] [Space] [TFO]
-Infected: The Conduit [Elite] | 2026-09-02 14:33:32 - 14:41:10 — Full BA**. It
-follows your typing, so you can see how the run will read while you are still
-naming it.
+as the name — so the heading over all six tabs reads **[Team] [Space] [Patrol]
+Trouble Over Terrh [Normal] | 2026-09-11 13:35:23 - 13:42:18 — back to the old
+rotation**. It follows your typing, so you can see how the run will read while
+you are still naming it.
 
 It shows up in the list's **Note** column as well, so a whole evening reads back
 by what you were flying rather than by the clock.
@@ -400,13 +401,55 @@ Read across the columns for one ability:
 | Max One-Hit  | The single biggest hit it landed.                                                                             |
 | Average Hit  | What a typical hit did.                                                                                       |
 
-Rows can be opened further where an ability has parts underneath it — a console
-that spawns something, a pet, an anomaly.
+#### Whose damage sits where
+
+Not everything under your name was fired by you. A hangar pet, a console that
+spawns something, an anomaly — each gets **its own row under yours**, with what
+it fired underneath that. The log names the owner of every shot, so this is
+sorted out for you; nothing has to be told which pet is yours.
+
+```
+Kestrel@yourhandle                              ← everything credited to you
+├── Phaser Beam Array                           ← fired by you
+├── Quad Cannons                                ← your rule, over your shots
+│   ├── Quad Disruptor Cannons
+│   └── Quad Disruptor Cannons - Rapid Fire III
+└── Bird-of-Prey (ALPHA)                        ← a pet of yours
+    └── Quad Cannons                            ← the same rule, for the pet
+        └── Quad Disruptor Cannons
+```
+
+So your own total includes the pet, because the pet is yours — but the pet's
+damage stays in the pet's row, where you can see how much of the total it is.
+Open a row to go a level deeper; the deepest level is always who was hit.
+
+Where the game stops naming the pet, see
+[The row called (Damage owner unknown)](#the-row-called-damage-owner-unknown).
+
+#### The row called (Damage owner unknown)
+
+You may see a row named **(Damage owner unknown)** among your weapons. It is
+real damage you are credited with, dealt by something of yours that the game
+stopped naming — most often a hangar pet that was destroyed while its shots were
+still in flight. Those shots keep landing for about a second, and the game
+writes them without saying what fired them.
+
+Where the fight gives enough to work it out, the damage goes to the pet that
+fired it and you never see this row. It appears only when more than one of your
+pets could have fired it, and picking one would be a guess. Rather than quietly
+adding it to your own weapon — which would show damage from a gun you might not
+even carry — it is put here and named for what it is.
+
+It is usually small: on a four-minute run, a dozen hits out of several thousand.
 
 ### Damage Taken
 
 The same table, for what was done to you: what hit you, how hard, and how much
 your shields absorbed.
+
+A row can also be named after the effect that hit you rather than after whoever
+sent it — an enemy torpedo still flying after its launcher died is logged with
+nobody credited, so the torpedo's own name is all there is to go on.
 
 ![The Damage Taken tab](images/damage-taken-tab.png)
 
@@ -487,7 +530,21 @@ second, hit counts — and the slider smooths the line so a spiky graph becomes
 readable.
 
 Select an ability in the table above and the chart follows it, so you can see
-when in the fight it was actually doing something.
+when in the fight it was actually doing something. Clicking a row takes that row
+and everything under it; **Ctrl + click** adds one row at a time instead, so you
+can put two or three abilities on the same chart and compare them. Ctrl-clicking
+a row that is already in the set takes it back out. See
+[Keyboard shortcuts](#keyboard-shortcuts).
+
+**Right-click a row** for the two things that are otherwise fiddly:
+
+- **copy name to clipboard** — the row's name exactly as the log spells it,
+  which is what a rule's *Text to match* wants. Quicker and safer than reading
+  a long ability name off the screen and typing it back in.
+- **show diagrams for this** — adds that one row to the chart, the same as
+  Ctrl + clicking it: just that row, not the rows underneath it, and whatever
+  you had on the chart stays. A row already on the chart is left as it is, so
+  this can only ever add.
 
 ---
 
@@ -658,12 +715,13 @@ unevenly" are different findings.
 The rows stay in their usual order, so a row you know from the full table is
 where you left it; only the ones nobody differs over go.
 
-Worked example, five runs of the same patrol: at a small setting the table drops
-from 25 rows to 9. Turned up, two rows are left — the antiproton beams one build
-flew and the phaser group the other leaned on. That is the difference between a
-rainbow build and a single-flavour one, without reading a single number.
+Worked example, five runs of the same TFO: the full table is 71 rows, and most
+of them are things every run used in much the same measure — worth seeing once,
+not worth reading five times. Asking for a 3% spread leaves 14. Turn it higher
+and the list keeps shrinking towards the few the runs really disagree about,
+which is where a build change or a bad pull actually shows.
 
-![Another five runs of one patrol, at a 3% spread: 19 of the 28 rows are left, and the rows missing from some of the runs say so](images/compare-differences.png)
+![Five runs of one TFO, at a 3% spread: 14 of the 71 rows are left, and the rows missing from some of the runs say so](images/compare-differences.png)
 
 The Total above follows both of them: it counts the rows that are ticked **and**
 on screen. Narrow the table to one damage type and the Total is that type's;
@@ -947,8 +1005,8 @@ something else.
 ![A ladder run beside your own](images/ladder-compare.png)
 
 The two runs are by different people, so use the **Player** column in the list to
-say whose figures each column reads. A team run from the ladder holds five
-players; yours opens on you, theirs on whoever led it.
+say whose figures each column reads. A team run from the ladder holds everyone
+who flew it; yours opens on you, theirs on whoever led it.
 
 ---
 
@@ -974,8 +1032,8 @@ bottom.
 #### A log to come back to
 
 Reading a run from the ladder, or a single fight you saved out of the way, points
-the program at another file. Finding your own again used to mean walking the file
-dialog back to it every time.
+the program at another file. This is how you get back to your own without
+walking the file dialog to it again.
 
 **Remember** stores the file above as the one you come back to. **Go back to
 default** puts it back whenever you have wandered off, and **Forget** drops it.
@@ -1015,12 +1073,217 @@ Beam Array, whose Technical Overload fires alongside the beam itself. There is a
 ready-made example for the Dark Matter Quantum Torpedo, again switched on with
 its "on" box.
 
+**A grouping rule works on effect names, wherever those effects sit** — under
+your own row and under each of your pets alike. What it never does is move
+damage from one shooter to another. If your pet carries the same weapon you do —
+a Bird-of-Prey with the turrets and cannons off your own build — the rule folds
+your shots into a row under you, and the pet's shots into a row of the same name
+under the pet. Two rows, one name, each holding what its own shooter fired; see
+the picture in [Whose damage sits where](#whose-damage-sits-where).
+
+If you *do* want one effect gathered from everywhere it came from — your own
+guns and everything that carried it — that is what a **Source Reversal** rule is
+for: it puts the effect on top and the pets underneath.
+
 A warning mark next to one of your rules means it overlaps a map that would be
 recognised automatically. Your rule still wins; the mark is only there so you
 know why the name is not what you expected.
 
+#### The order of your rules
+
+Rules are listed alphabetically by name, so a rule can be found in a long list.
+Click the **Group Name** heading to turn that order round, or the **On** heading
+to bring the switched-off rules to the top — handy for finding what is not doing
+anything in a list of fifty. The order does not decide anything: **where two
+rules catch the same effect, the more precise one takes it**, wherever either of
+them sits.
+
+The Group Name column takes whatever width the buttons leave, and gives it back
+when you make the window narrower — the ✏, 🗐, ⚠ and 🗑 on each row stay
+reachable rather than sliding off the edge. Squeeze the window far enough and
+the names are shortened rather than the buttons lost.
+
+"More precise" means the rule that spells out more of the name. If you have one
+rule for `Phaser Wide Angle` and another for `Phaser Wide Angle Dual Heavy Beam
+Bank`, the second one takes the heavy beam bank's shots — that is what you wrote
+it for. An exact match beats the same words used as a fragment. A wildcard is
+worth the characters it actually spells out, so `*` on its own loses to
+everything.
+
+If two rules fit an effect equally well, a warning mark ⚠ appears on both rows.
+Point at it and it names the effects they share and which rule takes each. That
+is nearly always a sign that one of the two was meant to be narrower. The check
+runs against the combat you have selected, so select one to have it done.
+
+#### The buttons on a rule's row
+
+Every rule is one row, and the buttons on it are the same in all four tabs:
+
+```
+ On   Edit  Clone   Group Name                          ⚠   Delete
+[✓]   [✏]   [🗐]   [ Quad Cannons              ]        ⚠    [🗑]
+```
+
+| Button | What it does |
+|--------|----------------------------------------------------------------|
+| ✓ On   | Switches the rule off without deleting it. An off rule changes nothing, but it is still there when you want it back. |
+| ✏ Edit | Opens the rule for editing — see [Writing a rule](#writing-a-rule) below. |
+| 🗐 Clone | Makes a copy of the rule, conditions and all. |
+| 🗑 Delete | Removes the rule. |
+| ⚠ | Not a button. It appears when another rule catches some of the same effects — point at it to see which. |
+
+The name itself is a box you can type in directly, without opening anything.
+
+Two of these behave in a way worth knowing, because both exist for the same
+reason — a new row has no name yet, so it cannot be found by name:
+
+**Add ✚** puts the new rule at the end of the list and highlights it. The list
+is otherwise alphabetical, but a rule with no name stays at the end until you
+give it one, so it does not jump somewhere else while you are still typing.
+
+**Clone 🗐** does the same with the copy: it goes to the end and becomes the
+highlighted row, so you can rename it straight away. The rule you copied does
+not move, and neither does anything around it.
+
+Nothing you do here touches your saved rules until you press **Ok**. Deleted a
+rule you meant to keep, or cloned twenty by accident? **Cancel** puts everything
+back as it was.
+
+#### Keeping and sharing your rules
+
+Your rules live in their own file, **`STO-CLARE_Rules.toml`**, next to the
+settings — `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows.
+Copy that one file to another machine and your rules go with it; nothing else of
+yours travels with it. It is plain text, one rule to a paragraph, so you can
+open it in any editor and read what you have:
+
+```toml
+[[custom_group_rules]]
+name = "Quad Phaser Cannons"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quad Phaser Cannons"
+method = "StartsWith"
+enabled = true
+```
+
+That is one group — its name, whether it is switched on, and the conditions
+underneath it, one block each. If you are upgrading from an older version, your rules
+are moved there the first time the program starts and nothing is asked of you.
+
+**Export…** writes a file you can keep as a backup or pass to someone else.
+**Import…** reads one back. Each of the four tabs has its own pair, for that
+section alone, and the pair at the top of the Analysis page covers all four at
+once. Both write the same kind of file, so a file exported from one tab can be
+imported at the top and the other way round.
+
+Import **adds** to what you already have — it never clears your rules. A rule
+identical to one you already have is skipped instead of being duplicated, so
+importing the same file twice changes nothing. Afterwards a small window says
+how many rules were added and how many were skipped. Nothing is saved until you
+press **Ok**, so **Cancel** undoes an import you did not mean.
+
+If the program cannot read your rules file, it says so at the top of the
+Analysis page and puts the file aside as **`STO-CLARE_Rules_damaged.toml`**,
+next to where it was. Nothing is deleted and nothing is written over it: the
+rules on screen are then the ones a new installation starts with, and if you can
+repair the file that was put aside, **Import…** brings your own rules straight
+back.
+
+#### A set of rules to start from
+
+Writing rules from nothing is the slow way to begin, so a working set is
+published with STO-CLARE: [`rules/STO-CLARE_Rules.toml`](rules/STO-CLARE_Rules.toml)
+in the repository. (It is not in the downloaded program — fetch the one file
+from there.) It is the maintainer's own set, as actually used:
+
+| Section | Rules | What they are |
+|---------|------:|-----------------------------------------------------|
+| Custom Grouping | 48 | One row per weapon, gathering each weapon's firing modes and procs — quad cannons, beam arrays, torpedo launchers, consoles. |
+| Damage Exclusion | 30 | Mostly switched off. They leave out things that are not your doing, such as a warp core breach or an allied NPC ship. |
+| Source Reversal | 6 | Effects worth seeing gathered from every pet and console that carried them, such as Spore-Infused Anomalies. |
+
+Most of the exclusions and some of the reversals arrive **switched off**, so
+nothing is quietly left out of your numbers. Read down the list and tick the
+ones you want.
+
+Bring them in with **Import…** at the top of the Analysis page. Import adds, so
+your own rules stay exactly as they are and anything you already have is
+skipped rather than duplicated. Nothing is written until you press **Ok**.
+
+Tip: you *can* instead copy the file straight into your config directory, since
+it has the same name as the one the program keeps there — but that **replaces**
+everything you have written. Import is the safe door, and the only one that
+lets you change your mind with Cancel.
+
+These rules are written for one player's ship. A weapon you do not fly still
+does no harm — a rule that matches nothing changes nothing — so the usual way to
+use them is to import the lot and delete what is not yours.
+
+#### Writing a rule
+
+Every rule works the same way, whichever of the four tabs it is in. Press the
+✏ on its row and a window opens in the middle of the screen with the rule's name
+at the top and its conditions below. Each condition says **which name to look
+at**, **how to compare** and **what to compare it with**. A rule matches when
+*any* one of its conditions does, so several conditions are alternatives, not
+requirements.
+
+The ways to compare:
+
+| Method      | Matches when your text…                                 |
+|-------------|----------------------------------------------------------|
+| Equals      | is the whole name                                        |
+| Starts with | is at the start of the name                              |
+| Ends with   | is at the end of the name                                |
+| Contains    | is anywhere in the name                                  |
+
+**Wildcards work in all four methods.** A wildcard is a character that stands
+for something you do not want to spell out:
+
+| Sign | Stands for | Example | Catches |
+|------|--------------------------|--------------------|-------------------------|
+| `*`  | anything at all, or nothing | `Quad*Cannons`  | `Quad Disruptor Cannons`, `QuadCannons` |
+| `%`  | the same as `*`          | `Quad%Cannons`     | the same names |
+| `?`  | exactly one character    | `Mk ?II`           | `Mk XII`, but not `Mk II` |
+
+`*` and `%` do the same thing on purpose. If you are used to writing one of
+them, write that one — you do not have to find out which the program prefers.
+
+The method and the wildcards answer two different questions, and it helps to
+keep them apart. **The method says where your text has to sit** in the name;
+**the wildcards say what may stand between its parts.** So `Starts with` with
+`Quad*Cannons` means "the name begins with Quad, then anything, then Cannons" —
+which catches `Quad Disruptor Cannons` and `Quad Phaser Cannons - Rapid Fire
+III` alike. The same text under `Contains` would find it anywhere in the name.
+
+Text with no wildcard in it works exactly as it always did, so none of your
+existing rules change by themselves.
+
+Capital letters matter: `cannons` does not catch `Cannons`.
+
+There is no way to switch a wildcard off and search for a literal `*` or `%` —
+and you will not need one. The game does not use those characters in the names
+of anything: not a ship, not a pet, not an ability. (Checked across a 138 MB
+log: not one name contains `*`, `%` or `?`.)
+
+**The list beside your conditions** shows the names from the combat you have
+selected that the rule catches right now, and it updates as you type. That is
+the quickest way to check a rule: widen the pattern until the right names appear
+and no others. Each heading counts what it looked at — "2 of 340" means two of
+the 340 effect names in that fight matched. Click any name to copy it.
+
+If the list stays empty, the rule is catching nothing yet; if a name you did not
+expect is in it, the rule is too wide. Nothing has to be applied and no log has
+to be re-read to find out.
+
+**Esc** closes the window, and closes the box you are typing in first — see
+[Keyboard shortcuts](#keyboard-shortcuts).
+
 **List Selected Combat Occurred Names** shows every name that appeared in the
-combat you are reading, which is the easy way to find the exact wording a rule
+combat you are reading, which is another way to find the exact wording a rule
 needs.
 
 ### Visuals
@@ -1101,6 +1364,65 @@ written into the settings folder under the new name.
 
 ---
 
+## Keyboard shortcuts
+
+Almost everything here can be done with the mouse alone. These are the keys
+that save a trip to a button — and the one thing, putting several abilities on
+one chart, that has no button at all:
+
+| Key | Where | What it does |
+|-----|-------|--------------------------------------------------------|
+| **Tab** | Main window | Opens and closes the combats panel. |
+| **Esc** | Any dialog | Closes it, the same as its Cancel or Close button. |
+| **Esc** | While typing in a box | Leaves the box first; your text stays. Press again to close the window. |
+| **Esc** | Uploading to the ladder | Breaks the upload off — see below. |
+| **Ctrl + click** | A row on the damage or healing tabs | Adds that row to the selection, or takes it out again — this is how you get several abilities onto one chart. |
+| **Right-click** | A row on the damage or healing tabs | Copies the row's name, or adds that one row to the chart. |
+| **Enter** | The Ladder's player search | Runs the search, the same as pressing Search. |
+| **Double-click** | A row in the combats list | Opens that fight in every tab. |
+
+The rest of this section is the detail behind those, and the two places where a
+key deliberately does nothing.
+
+### Tab
+
+Tab opens and closes the list of fights, and does nothing else. In a form, Tab
+usually walks the highlight from one button to the next; here it does not,
+because nothing in this program is operated that way, and the one thing you
+open and close over and over is the list of fights. While you are typing in a
+box it still belongs to the box.
+
+### Esc
+
+Esc closes a dialog exactly as its own Cancel or Close button would. Settings,
+the rule-editing window, Delete combats, the occurred-names list, Damage by
+type, the Ladder, a comparison, the upload and download result windows — all of
+them take it.
+
+Two things about Esc are worth knowing, because both exist so the key is never
+destructive:
+
+**A box you are typing in gets the key first.** Press Esc while writing a rule
+name and you leave the box; your text is still there. Press it again and the
+window closes. Without that, the key you press to get out of a field would
+throw away everything else the window held.
+
+**The innermost thing closes first.** With a small window open over a bigger
+one, Esc puts away the small one and leaves the big one where it was. Press it
+again for the next one out.
+
+Where a window is reporting work in progress, Esc means *stop the work*, not
+*hide the window*:
+
+| Window | What Esc does |
+|--------|-------------------------------------------------------------|
+| Uploading to the ladder | Breaks the connection part way. The ladder never receives a whole file, so nothing is stored. |
+| Clearing the log, fetching a run | Nothing. There is no dialog to dismiss — only the job — and abandoning a rewrite of your log halfway is not something a key press should do. |
+
+Tip: once the last byte of an upload has gone out and the program is only
+waiting for the ladder to answer, there is nothing left to stop. Esc then just
+puts the window away.
+
 ## Common situations
 
 | If you want to…                      | Do this                                                     |
@@ -1141,8 +1463,19 @@ A: No. The game writes the log whether or not STO-CLARE is running. Open it
 afterwards and press Analysis of Newest Fight. Keep it open only if you want the overlay or
 live numbers.
 
-**Q: Where are my settings kept?**
-A: `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows.
+**Q: Where are my settings kept, and what are all those files?**
+A: `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows. What you
+may find in there:
+
+| File | What it is |
+|------|------------|
+| `STO-CLARE_Settings.json` | Everything you set in the Settings window, plus your notes on individual fights. |
+| `STO-CLARE_Rules.toml` | Your naming, grouping, exclusion and reversal rules. This is the one to copy to another machine. |
+| `STO-CLARE.log` | Only written while **Enable Log** is on in Debug. Safe to delete. |
+| `..._damaged.json` / `..._damaged.toml` | A file STO-CLARE could not read and put aside so that nothing of yours was lost — see *Everything is back at its default* below. |
+| `..._archived.json` | Your settings exactly as they were before the rules moved into their own file. Safe to delete once you are happy. |
+
+Only the first two matter. The program writes nothing else there.
 
 **Q: Why does one ability show as several rows?**
 A: Some abilities write more than one kind of record — a beam and its proc, or a
@@ -1152,6 +1485,28 @@ see [Settings → Analysis](#analysis).
 **Q: Can I start over?**
 A: Delete the settings file from the folder above. The program writes a fresh
 one with its defaults on the next start.
+
+**Q: Everything is back at its default and there is a warning in Settings.**
+A: Your settings file was damaged and could not be read, so STO-CLARE started as
+if it were newly installed. **Nothing of yours has been deleted.** The file has
+been put aside in the same folder as
+`STO-CLARE_Settings_damaged.json`, and the warning at the top of the Settings
+window says where it is and what the reader objected to — open it and you can
+often see the damage and copy values back out. The same happens to the rules
+file, and is said on the Analysis page; a rules file you manage to repair goes
+back in whole with **Import…**.
+
+Once in a while the program cannot even move the damaged file — a folder it is
+not allowed to write to, a file another program is holding open. It says so, and
+then it saves nothing at all until you have moved the file yourself, so that it
+cannot make matters worse.
+
+**Q: There is a file called `STO-CLARE_Settings_archived.json` in my settings
+folder. Can I delete it?**
+A: Yes, once you are happy. It is your settings file exactly as it was before
+the rules moved into their own file, kept so that nothing was taken out of your
+config without a copy remaining. Everything in it that is still a setting is in
+the current file, and the rules are in `STO-CLARE_Rules.toml`.
 
 ## Where to get more help
 

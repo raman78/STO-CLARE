@@ -134,6 +134,51 @@ struct OverlayInner {
     // layer-shell backend (see `uses_layer_shell`).
     #[cfg(target_os = "linux")]
     overlay_gpu: Option<layer_shell::OverlayGpu>,
+    /// When the layer surface was last recreated after being found gone, and how
+    /// many times in a row that has happened without one lasting. See
+    /// [`OverlayInner::restart_layer_if_gone`].
+    #[cfg(target_os = "linux")]
+    layer_restarted_at: Option<std::time::Instant>,
+    #[cfg(target_os = "linux")]
+    layer_restarts: u32,
+}
+
+/// How long a recreated layer surface has to last before the attempt counts as
+/// having worked — and, equally, how long to wait before trying again.
+#[cfg(target_os = "linux")]
+const LAYER_RESTART_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// How many times in a row the surface is recreated before the overlay is left
+/// off. A surface that dies again the moment it is made has nowhere to live, and
+/// rebuilding a Wayland connection and a wgpu surface every frame would cost far
+/// more than the overlay is worth.
+#[cfg(target_os = "linux")]
+const MAX_LAYER_RESTARTS: u32 = 3;
+
+/// What to do about a layer surface that has just been found gone.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LayerRestart {
+    /// Recreate it now.
+    Now,
+    /// The last attempt is too recent to say whether it took; look again later.
+    Wait,
+    /// Recreated as often as it is worth; leave the overlay off.
+    GiveUp,
+}
+
+/// Decides between the three, from how long ago the previous automatic restart
+/// was (`None` if there has not been one since the overlay was switched on) and
+/// how many there have been in a row without one lasting.
+#[cfg(target_os = "linux")]
+fn layer_restart(since_last: Option<std::time::Duration>, restarts: u32) -> LayerRestart {
+    if restarts >= MAX_LAYER_RESTARTS {
+        return LayerRestart::GiveUp;
+    }
+    match since_last {
+        Some(since_last) if since_last < LAYER_RESTART_GRACE => LayerRestart::Wait,
+        _ => LayerRestart::Now,
+    }
 }
 
 #[derive(Default)]
@@ -318,6 +363,10 @@ impl Overlay {
             layer: None,
             #[cfg(target_os = "linux")]
             overlay_gpu: None,
+            #[cfg(target_os = "linux")]
+            layer_restarted_at: None,
+            #[cfg(target_os = "linux")]
+            layer_restarts: 0,
         })))
     }
 
@@ -398,6 +447,13 @@ impl Overlay {
             }
             if config_changed {
                 inner.force_update(ctx);
+            }
+
+            // Giving up switches the overlay off, and the `show` check at the
+            // top of this function was made before that — so stop here rather
+            // than spawn the surface just given up on.
+            if !inner.restart_layer_if_gone() {
+                return;
             }
 
             if inner.layer.is_none()
@@ -544,6 +600,73 @@ impl OverlayInner {
         {
             false
         }
+    }
+
+    /// Puts the layer surface back if the compositor took it away.
+    ///
+    /// It can be closed from under us: the protocol sends `closed` when the
+    /// surface will no longer be shown, naming a destroyed output as the case,
+    /// and a locked or blanked screen is where that has been seen. The overlay
+    /// thread then ends — and nothing used to notice. The button went on saying
+    /// the overlay was on while there was nothing on screen, and the only way
+    /// back was switching it off and on by hand.
+    ///
+    /// That off-and-on is what happens here instead, on its own: dropping the
+    /// handle joins the finished thread, and the spawn further down
+    /// [`Overlay::update`] builds a fresh surface at the remembered position —
+    /// which is what the protocol asks for, "create a new surface if they so
+    /// choose".
+    ///
+    /// A surface that dies again the moment it is made has nowhere to live, and
+    /// remaking it every frame would cost a Wayland connection and a wgpu surface
+    /// each time. So an attempt has to last [`LAYER_RESTART_GRACE`] to count, and
+    /// after [`MAX_LAYER_RESTARTS`] short-lived ones in a row the overlay is
+    /// switched off rather than retried — which at least leaves the button
+    /// telling the truth, and clicking it is a clean retry.
+    ///
+    /// Returns whether the overlay is still on. It is `false` only on the frame
+    /// this gives up, and the caller has to stop there: everything below it in
+    /// [`Overlay::update`] runs on the strength of the `show` check at the top,
+    /// which was made before this ran — so carrying on would spawn the very
+    /// surface just given up on, and leave it on screen under a button that says
+    /// the overlay is off.
+    #[cfg(target_os = "linux")]
+    fn restart_layer_if_gone(&mut self) -> bool {
+        let Some(alive) = self.layer.as_ref().map(|layer| layer.is_alive()) else {
+            return true;
+        };
+        let since_last = self.layer_restarted_at.map(|at| at.elapsed());
+        if alive {
+            // Lasted the grace period, so this run of restarts is over and the
+            // next mishap gets the full allowance again.
+            if since_last.is_some_and(|since_last| since_last >= LAYER_RESTART_GRACE) {
+                self.layer_restarted_at = None;
+                self.layer_restarts = 0;
+            }
+            return true;
+        }
+        match layer_restart(since_last, self.layer_restarts) {
+            LayerRestart::Wait => (),
+            LayerRestart::GiveUp => {
+                log::error!(
+                    "overlay: the layer surface did not last {MAX_LAYER_RESTARTS} times running; \
+                     switching the overlay off"
+                );
+                self.toggle_show();
+                return false;
+            }
+            LayerRestart::Now => {
+                self.layer_restarts += 1;
+                self.layer_restarted_at = Some(std::time::Instant::now());
+                log::warn!(
+                    "overlay: the layer surface is gone, recreating it (attempt {} of {})",
+                    self.layer_restarts,
+                    MAX_LAYER_RESTARTS
+                );
+                self.layer = None; // joins the finished thread
+            }
+        }
+        true
     }
 
     /// Whether the pointer is over the overlay's own toolbar, which is what
@@ -739,8 +862,15 @@ impl OverlayInner {
         self.show = !self.show;
         self.analysis_handler.enable_auto_refresh(self.show);
         #[cfg(target_os = "linux")]
-        if !self.show {
-            self.layer = None; // dropping stops the layer-shell overlay thread
+        {
+            if !self.show {
+                self.layer = None; // dropping stops the layer-shell overlay thread
+            }
+            // A run of failed restarts belongs to the surface that had it. Using
+            // the button either way is the user asking for a clean try, and is
+            // the retry offered after `restart_layer_if_gone` has given up.
+            self.layer_restarted_at = None;
+            self.layer_restarts = 0;
         }
     }
 
@@ -847,7 +977,6 @@ impl DisplayPlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analyzer::settings::AnalysisSettings;
 
     fn test_overlay() -> Overlay {
         let ctx = Context::default();
@@ -898,6 +1027,48 @@ mod tests {
         // overlay is still driven through it.
         let _ = ctx.run_ui(Default::default(), |_| overlay.update(&ctx));
         assert!(overlay.is_shown());
+    }
+
+    /// The first time the surface is found gone it is put back at once — an
+    /// overlay switched on has to be an overlay on screen, and waiting would
+    /// leave the button lying about it for as long as the wait.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_surface_found_gone_is_recreated_at_once() {
+        assert_eq!(layer_restart(None, 0), LayerRestart::Now);
+    }
+
+    /// A surface that dies again straight away is not retried on the next frame:
+    /// remaking it costs a Wayland connection and a wgpu surface, and at frame
+    /// rate that is a storm rather than a recovery.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_surface_remade_a_moment_ago_is_left_to_settle() {
+        let just_now = LAYER_RESTART_GRACE / 2;
+        assert_eq!(layer_restart(Some(just_now), 1), LayerRestart::Wait);
+    }
+
+    /// Once the grace period is up the next attempt is due — a surface closed
+    /// again half a minute later is a second mishap, not the same one.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_surface_gone_again_after_the_grace_period_is_recreated() {
+        assert_eq!(
+            layer_restart(Some(LAYER_RESTART_GRACE), 1),
+            LayerRestart::Now
+        );
+    }
+
+    /// Retrying for ever would keep rebuilding a surface that has nowhere to
+    /// live. The overlay is switched off instead, which at least leaves the
+    /// button telling the truth.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_surface_that_never_lasts_is_given_up_on() {
+        assert_eq!(
+            layer_restart(Some(LAYER_RESTART_GRACE), MAX_LAYER_RESTARTS),
+            LayerRestart::GiveUp
+        );
     }
 
     fn visuals_filled_with(color: Color32) -> Visuals {
