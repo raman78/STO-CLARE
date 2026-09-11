@@ -1163,6 +1163,36 @@ Analysis page and leaves the file alone rather than writing over it. Your rules
 on screen are then the ones from before, so fix or move the file before editing
 anything.
 
+#### A set of rules to start from
+
+Writing rules from nothing is the slow way to begin, so a working set is
+published with STO-CLARE: [`rules/STO-CLARE_Rules.json`](rules/STO-CLARE_Rules.json)
+in the repository. (It is not in the downloaded program — fetch the one file
+from there.) It is the maintainer's own set, as actually used:
+
+| Section | Rules | What they are |
+|---------|------:|-----------------------------------------------------|
+| Custom Grouping | 48 | One row per weapon, gathering each weapon's firing modes and procs — quad cannons, beam arrays, torpedo launchers, consoles. |
+| Damage Exclusion | 30 | Mostly switched off. They leave out things that are not your doing, such as a warp core breach or an allied NPC ship. |
+| Source Reversal | 6 | Effects worth seeing gathered from every pet and console that carried them, such as Spore-Infused Anomalies. |
+
+Most of the exclusions and some of the reversals arrive **switched off**, so
+nothing is quietly left out of your numbers. Read down the list and tick the
+ones you want.
+
+Bring them in with **Import…** at the top of the Analysis page. Import adds, so
+your own rules stay exactly as they are and anything you already have is
+skipped rather than duplicated. Nothing is written until you press **Ok**.
+
+Tip: you *can* instead copy the file straight into your config directory, since
+it has the same name as the one the program keeps there — but that **replaces**
+everything you have written. Import is the safe door, and the only one that
+lets you change your mind with Cancel.
+
+These rules are written for one player's ship. A weapon you do not fly still
+does no harm — a rule that matches nothing changes nothing — so the usual way to
+use them is to import the lot and delete what is not yours.
+
 #### Writing a rule
 
 Every rule works the same way, whichever of the four tabs it is in. Press the

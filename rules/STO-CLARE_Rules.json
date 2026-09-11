@@ -1,0 +1,964 @@
+{
+  "version": 1,
+  "combat_name_rules": [],
+  "indirect_source_grouping_revers_rules": [
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Spore-Infused Anomalies",
+      "method": "Equals",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Mycelial Lightning",
+      "method": "Equals",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Refracting Tetryon Cascade (Rank 2)",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Quantum Phase Transfer",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Bird-of-Prey (ALPHA)",
+      "method": "Equals",
+      "enabled": false
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Bird-of-Prey (BETA)",
+      "method": "Equals",
+      "enabled": false
+    }
+  ],
+  "custom_group_rules": [
+    {
+      "name": "Advanced Radiant Tetryon Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Advanced Radiant Tetryon Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Advanced Radiant Tetryon Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Agony Redistributor",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Agony Redistributor",
+          "method": "Equals",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Antiproton Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Antiproton Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Antiproton Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Ba'ul Antiproton Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Ba'ul Antiproton",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Ba'ul Refraction",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Bird-of-Prey (ALPHA)",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Bird-of-Prey (ALPHA)",
+          "method": "Contains",
+          "enabled": true
+        }
+      ],
+      "enabled": false
+    },
+    {
+      "name": "Dark Matter Quantum Torpedo Launcher",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Dark Matter Laced Quantum Torpedo",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Dark Matter Dissolution",
+          "method": "Equals",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Disruptor Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Disruptor Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Disruptor Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Disruptor Turret",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Disruptor Turret - ",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Distributed Targeting",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Distributed Targeting II",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Dual Heavy Pulse Phaser Cannons",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Dual Heavy Pulse Phaser Cannons",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Hellbore Light",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Hellbore Light",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Kemocite-Laced Weaponry",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Kemocite-Laced",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": false
+    },
+    {
+      "name": "Khitomer Shield",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Antiproton Retort",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Kida Antiproton Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Kida Antiproton Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Kida Antiproton Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Kinetic Cutting Beam",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Kinetic Cutting Beam",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Micro-Quantum Torpedo",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Micro-Quantum Torpedo",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Micro-Quantum Torpedo",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Micro-Quantum Torpedo",
+          "method": "Contains",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Omni-Directional Herald Antiproton Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Omni-Directional Herald Antiproton",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Omni-Directional Inhibiting Phaser Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Inhibiting Phaser Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Omni-Directional Pahvan Proton Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Pahvan Proton Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Pahvan Proton Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Resonance Shock",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Omni-Directional Trilithium-Enhanced Phaser Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Trilithium-Enhanced Phaser Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Trilithium-Enhanced Phaser Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Omni-Directional&Standard Phaser Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Phaser Dual Beam Bank",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Dual Beam Bank",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Phaser Emitter Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Emitter Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Phaser Turret",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Turret",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Phaser Wide Angle Dual Heavy Beam Bank",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Wide Angle Dual Beam Bank",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Wide Angle Dual Heavy Beam Bank",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Phaser Wide Angle Dual Heavy Beam Bank",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Phaser Wide Angle Dual Heavy Beam Bank",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Polaron Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Polaron Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Polaron Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Polaron Frostbite",
+          "method": "Equals",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Prolonged Engagement Phaser Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Prolonged Engagement Phaser Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Prolonged Engagement Phaser Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Prolonged Engagement Photon Torpedo",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Photon Torpedo - ",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Prolonged Engagement Torpedo",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Pulse Phaser Dual Beam Bank",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Pulse Phaser Dual Beam Bank",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Pulse Phaser Turret",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Pulse Phaser Turret",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Quad Disruptor Cannons",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quad Disruptor Cannons",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Quad Phaser Cannons",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quad Phaser Cannons",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Quantum Phase Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quantum Phase Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quantum Phase Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Quantum Phase Torpedo",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quantum Phase Torpedo",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quantum Phase Transfer",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Quantum Phase Transfer",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quantum Phase Transfer",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": false
+    },
+    {
+      "name": "Quantum Torpedo",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Quantum Torpedo",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Radiolytic Phaser Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Radiolytic Phaser Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Radiolytic Phaser Array",
+          "method": "Equals",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Radiolytic Phaser Dual Beam Bank",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Radiolytic Phaser Dual Beam Bank",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Radiolytic Phaser Turret",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Radiolytic Phaser Turret",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Romulan Plasma Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Romulan Plasma Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Plasma - Plasma Fire",
+          "method": "Equals",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Plasma Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Romulan Plasma Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Shangri-La Torpedo",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Shangri",
+          "method": "Contains",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Loaded for Bear",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Terran Task Force Dual Heavy Phaser Cannons",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Terran Task Force Dual Heavy Phaser Cannons",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Terran Task Force Phaser Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Terran Task Force Phaser Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Withering Radiation",
+          "method": "Equals",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Terran Task Force Phaser Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Trilithium-Enhanced Phaser Turret",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Trilithium-Enhanced Phaser Turret",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Viridian Plasma Beam Array",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Viridian Plasma Beam Array",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Viridian Plasma Array",
+          "method": "StartsWith",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "name": "You Are Dismissed",
+      "rules": [
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "You Are Dismised",
+          "method": "StartsWith",
+          "enabled": true
+        },
+        {
+          "aspect": "DamageOrHealName",
+          "expression": "Protonic Crush",
+          "method": "Equals",
+          "enabled": true
+        }
+      ],
+      "enabled": true
+    }
+  ],
+  "damage_out_exclusion_rules": [
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Warp Core Breach",
+      "method": "Equals",
+      "enabled": false
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Inquiry Class",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Mercury Class Escort",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Icarus Class Escort",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Ajax Class Escort",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Nimbus Pirate Distress Call",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Vigilant",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Harmony",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "IndirectSourceName",
+      "expression": "Courage",
+      "method": "Equals",
+      "enabled": true
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Phaser Wide Angle",
+      "method": "Contains",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Counter-Offensive",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Mycelial Lightning",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Terran Task Force Phaser",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Omni-Directional Pahvan",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Radiolytic Phaser Dual Beam",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Prolonged Engagement Phaser",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Pulse Phaser Turret",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Gravity Well",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Anti-Time Entanglement Singularity",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Tractor Beam Repulsor",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Plasma Conduit Purge",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Refracting Tetryon Cascade",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Barclay Maneuver",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Withering Radiation",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Phaser Beam Array",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Beam Array",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Phaser Array",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Resonance Shock",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "Pahvan Proton",
+      "method": "StartsWith",
+      "enabled": false
+    },
+    {
+      "aspect": "DamageOrHealName",
+      "expression": "But That's Just",
+      "method": "StartsWith",
+      "enabled": false
+    }
+  ]
+}

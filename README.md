@@ -249,6 +249,19 @@ exclusion. You do not need any of it to read your damage. The
 [manual](MANUAL.md#analysis) explains each one, with the ready-made examples
 that ship in the settings.
 
+**A full set of rules is published with STO-CLARE**, in this repository as
+[`rules/STO-CLARE_Rules.json`](rules/STO-CLARE_Rules.json) — the maintainer's
+own, as actually used: 48 custom grouping rules that give each weapon one row
+instead of one per firing mode, plus damage exclusions and source reversals.
+Take it or leave it; nothing depends on it.
+
+To use it, open **Settings → Analysis** and press **Import…** at the top of the
+page. Import *adds* to whatever you already have and skips anything you have
+twice, so your own rules are safe, and nothing is written until you press
+**Ok**. Most of the exclusions arrive switched off, so nothing is left out of
+your numbers behind your back. See
+[A set of rules to start from](MANUAL.md#a-set-of-rules-to-start-from).
+
 ---
 
 ## Common situations
