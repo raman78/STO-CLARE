@@ -1461,6 +1461,16 @@ see [Settings → Analysis](#analysis).
 A: Delete the settings file from the folder above. The program writes a fresh
 one with its defaults on the next start.
 
+**Q: Everything is back at its default and there is a warning in Settings.**
+A: Your settings file is damaged and the program could not read it. It says
+which file and what is wrong with it at the top of the Settings window, and it
+is working on defaults for this run only. **It will not write over that file**,
+so nothing of yours has been lost yet: your rules are in a separate file and
+are untouched either way. Move the damaged file somewhere else — or fix it, if
+the message points at something you can see — and start STO-CLARE again. The
+same happens, and says so on the Analysis page, if it is the rules file that
+cannot be read.
+
 ## Where to get more help
 
 - Report a problem or ask a question in the

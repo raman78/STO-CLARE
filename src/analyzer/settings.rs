@@ -94,9 +94,12 @@ pub struct RulesGroup {
 /// stay first: TOML puts plain values before tables, and the writer will not
 /// emit a value after a table has been opened.
 ///
-/// `version` is written but not yet acted on: it exists so that a later change
-/// of shape can be recognised rather than guessed at from which fields happen
-/// to parse.
+/// `version` is written and checked on the way in, so a file from a newer build
+/// is refused rather than half-read. That check is only worth anything if the
+/// number is raised whenever the shape changes, which is what
+/// `the_shape_of_the_rules_file_is_pinned` is there to force: unknown keys are
+/// ignored on the way in, so a renamed field would otherwise be dropped in
+/// silence and read as "the player never set it".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuleSets {
     pub version: u32,
@@ -684,6 +687,205 @@ pub fn wildcard_matches_anchored(
 /// condition per record.
 fn has_wildcards(pattern: &str) -> bool {
     pattern.contains(['*', '%', '?'])
+}
+
+/// Guards on the rules file's format, for the next release rather than for
+/// this one.
+///
+/// The file is read with unknown keys ignored, which is what makes a file
+/// written by an older build still open — and also what makes a *renamed* field
+/// vanish without a word, read as "the player never set that". So two things
+/// are pinned here: the shape the current build writes, and the example file
+/// published with the program. Between them, a change to the model cannot reach
+/// a release without somebody deciding what to do about the files already out
+/// there.
+#[cfg(test)]
+mod file_format_tests {
+    use super::*;
+
+    /// Where the example set published with the program lives, found from the
+    /// crate root so the test does not care what directory it is run from.
+    fn published_rules_file() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("rules")
+            .join("STO-CLARE_Rules.toml")
+    }
+
+    /// Every field and every variant the model has, so that renaming any one of
+    /// them lands here.
+    fn one_of_everything() -> RuleSets {
+        let rule = |aspect, method| MatchRule {
+            aspect,
+            expression: "Quad*Cannons".to_string(),
+            method,
+            enabled: true,
+        };
+        RuleSets {
+            version: RULES_FILE_VERSION,
+            combat_name_rules: vec![CombatNameRule {
+                name_rule: RulesGroup {
+                    name: "Infected".to_string(),
+                    rules: vec![rule(MatchAspect::SourceOrTargetName, MatchMethod::Equals)],
+                    enabled: true,
+                },
+                additional_info_rules: vec![RulesGroup {
+                    name: "Space".to_string(),
+                    rules: vec![rule(
+                        MatchAspect::SourceOrTargetUniqueName,
+                        MatchMethod::StartsWith,
+                    )],
+                    enabled: false,
+                }],
+            }],
+            indirect_source_grouping_revers_rules: vec![rule(
+                MatchAspect::IndirectSourceName,
+                MatchMethod::EndsWith,
+            )],
+            custom_group_rules: vec![RulesGroup {
+                name: "Quad Cannons".to_string(),
+                rules: vec![rule(
+                    MatchAspect::IndirectUniqueSourceName,
+                    MatchMethod::Contains,
+                )],
+                enabled: true,
+            }],
+            damage_out_exclusion_rules: vec![rule(MatchAspect::DamageOrHealName, MatchMethod::Equals)],
+        }
+    }
+
+    /// What a rules file looks like today, written out in full.
+    ///
+    /// This is a promise to every file already on a player's disk, not a
+    /// snapshot of the code: a key here is a key some rules file out there
+    /// spells that way. If this test fails, the model changed shape, and the
+    /// question to answer before it can be made green again is what happens to
+    /// the files that are already written:
+    ///
+    /// - a field **added** with `#[serde(default)]`: older files still read, so
+    ///   update the text below and leave `RULES_FILE_VERSION` alone;
+    /// - a field **renamed or removed**, or a variant renamed: older files stop
+    ///   carrying that setting *in silence*. Raise `RULES_FILE_VERSION`, read
+    ///   the old spelling too, and convert the published file.
+    ///
+    /// Never re-paste the new output without answering that.
+    #[test]
+    fn the_shape_of_the_rules_file_is_pinned() {
+        let written = toml::to_string_pretty(&one_of_everything()).unwrap();
+        assert_eq!(
+            EVERY_FIELD_OF_A_RULES_FILE, written,
+            "the rules file's shape changed — see this test's notes before \
+             updating it, and decide what happens to files already written"
+        );
+        assert_eq!(
+            one_of_everything(),
+            toml::from_str::<RuleSets>(EVERY_FIELD_OF_A_RULES_FILE).unwrap(),
+            "and it has to read back as what it was"
+        );
+    }
+
+    const EVERY_FIELD_OF_A_RULES_FILE: &str = r#"version = 1
+
+[[combat_name_rules]]
+
+[combat_name_rules.name_rule]
+name = "Infected"
+enabled = true
+
+[[combat_name_rules.name_rule.rules]]
+aspect = "SourceOrTargetName"
+expression = "Quad*Cannons"
+method = "Equals"
+enabled = true
+
+[[combat_name_rules.additional_info_rules]]
+name = "Space"
+enabled = false
+
+[[combat_name_rules.additional_info_rules.rules]]
+aspect = "SourceOrTargetUniqueName"
+expression = "Quad*Cannons"
+method = "StartsWith"
+enabled = true
+
+[[indirect_source_grouping_revers_rules]]
+aspect = "IndirectSourceName"
+expression = "Quad*Cannons"
+method = "EndsWith"
+enabled = true
+
+[[custom_group_rules]]
+name = "Quad Cannons"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "IndirectUniqueSourceName"
+expression = "Quad*Cannons"
+method = "Contains"
+enabled = true
+
+[[damage_out_exclusion_rules]]
+aspect = "DamageOrHealName"
+expression = "Quad*Cannons"
+method = "Equals"
+enabled = true
+"#;
+
+    /// The example set published with the program is read by the build that
+    /// publishes it. It is the file the manual tells a player to Import, and
+    /// the one place where a model change could ship as a file nobody can use —
+    /// nothing else in the suite ever opens it.
+    #[test]
+    fn the_published_rules_file_still_reads() {
+        let path = published_rules_file();
+        let sets = RuleSets::read(&path)
+            .unwrap_or_else(|e| panic!("the published rules file must read: {e}"));
+
+        assert_eq!(RULES_FILE_VERSION, sets.version);
+        assert!(
+            !sets.custom_group_rules.is_empty(),
+            "it is published for its grouping rules"
+        );
+        // A rule that parsed but lost its conditions would still count as
+        // "read", and would group nothing.
+        for group in &sets.custom_group_rules {
+            assert!(!group.name.is_empty(), "every group is named");
+            assert!(
+                !group.rules.is_empty(),
+                "{} has no conditions left",
+                group.name
+            );
+            for rule in &group.rules {
+                assert!(
+                    !rule.expression.is_empty(),
+                    "{} has a condition matching nothing",
+                    group.name
+                );
+            }
+        }
+        for rule in sets
+            .damage_out_exclusion_rules
+            .iter()
+            .chain(&sets.indirect_source_grouping_revers_rules)
+        {
+            assert!(!rule.expression.is_empty(), "a condition matching nothing");
+        }
+    }
+
+    /// Written and read back through a real file, not just through the parser:
+    /// that is the path both the config directory and Export/Import take.
+    #[test]
+    fn everything_the_model_holds_survives_a_file() {
+        let dir = std::env::temp_dir().join("cla-rules-shape");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("STO-CLARE_Rules.toml");
+
+        let sets = one_of_everything();
+        sets.write(&path).unwrap();
+        assert_eq!(sets, RuleSets::read(&path).unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]

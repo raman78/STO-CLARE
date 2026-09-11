@@ -1746,6 +1746,56 @@ Settings and the log file go to the per-user config directory
 old next-to-the-executable location read as a fallback. See
 `app/settings/app_settings.rs` and `app/logging.rs`.
 
+### A config file that cannot be read
+
+**A file that will not parse is not the same as a file that is not there**, and
+both config files are read that way (`Settings::read_at`,
+`Settings::load_rules_at`). Treating the first as the second is the worst
+outcome available: every default comes back, the window looks like a fresh
+installation, and the next Ok writes those defaults over what was still in the
+file. One stray character would cost the player their log path, handle, theme,
+columns and every rule, with nothing said at any point.
+
+So there are three cases, not two. No file is a fresh installation and goes
+quietly to the defaults. A file that reads is used. A file that is there but
+does not parse leaves the program on the defaults *and*: the reason is kept
+(`SettingsFileProblem`, `Settings::rules_file_problem`), the Settings window
+says so above its tabs with the path and the parser's own words, and `save`
+refuses to write that file at all. The player can fix or move it; nothing is
+lost while they decide.
+
+`SettingsFileProblem::blocks_writing` separates the two files the program reads
+settings from: the one in the config directory is the one it writes, so a broken
+one stops the write; the pre-1.6 file next to the executable is only ever read,
+so a broken one is worth saying but is no reason to stop saving.
+
+`save_rules_at` and `save_at` take the path they write to rather than asking for
+it. That is for the tests: a refusal asserted against the real config directory
+passes whether the guard holds or not, because a write that got through would
+land there and not in the file the test is watching.
+
+### Guards on the file formats, for the next release
+
+Both files are read with unknown keys ignored, which is what lets a file written
+by an older build still open — and also what makes a **renamed** field vanish
+without a word, read as "the player never set that". Four tests make that a
+decision rather than an accident:
+
+| test | what it pins |
+|------|--------------|
+| `the_shape_of_the_rules_file_is_pinned` | the rules file written out in full, every field and every `MatchAspect`/`MatchMethod` variant |
+| `the_published_rules_file_still_reads` | `rules/STO-CLARE_Rules.toml`, the example the manual tells players to Import — nothing else in the suite opens it |
+| `the_sections_of_the_settings_file_are_pinned` | the ten section names of the settings file |
+| `only_the_sections_that_always_existed_are_required` | which sections a settings file cannot be read without: `analysis`, `auto_refresh`, `debug`, `visuals`. A newly required section would refuse every file already written |
+
+The first of those carries the instructions for what to do when it fails, which
+is the point of it: an added field with `#[serde(default)]` is backward
+compatible and only the text needs updating, while a renamed or removed one is
+not, and needs `RULES_FILE_VERSION` raised and the published file converted.
+A round-trip test cannot stand in for any of this — write-then-read passes
+happily with a field renamed on both sides, which is exactly what was checked
+when these were written.
+
 Logging is opt-in (Debug → **Enable Log**) and mirrors to stderr at `Info` and to
 `STO-CLARE.log` at the chosen level. `log::set_logger` only takes effect once per
 process, so `app/logging.rs` installs one router at startup and the settings

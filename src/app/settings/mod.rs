@@ -128,6 +128,21 @@ impl SettingsWindow {
                     ui.steady_toggle_value(&mut self.selected_tab, SettingsTab::Debug, "Debug");
                 });
 
+                // Above the tabs rather than on one of them: it is not about
+                // any single page, every page below it is showing a default
+                // instead of what the player set, and pressing Ok would
+                // otherwise write those defaults over the file without warning.
+                if let Some(problem) = self.modified_settings.settings_file_problem() {
+                    ui.colored_label(
+                        crate::app::theme::palette().warn,
+                        format!(
+                            "⚠ Your settings file could not be read, so everything below is \
+                             back at its default. The file is being left alone — move it aside \
+                             or repair it, then start STO-CLARE again.\n{problem}"
+                        ),
+                    );
+                }
+
                 ui.separator();
                 // Leave room for the separator and the Ok/Cancel row below, and
                 // stop the area auto-sizing to its contents. Without both, the

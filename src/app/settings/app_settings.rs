@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::OnceLock};
+use std::{
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +50,25 @@ pub struct Settings {
     /// which refuses to write over a file it could not read.
     #[serde(skip)]
     rules_file_problem: Option<String>,
+    /// The same, for the settings file itself. See [`SettingsFileProblem`].
+    #[serde(skip)]
+    settings_file_problem: Option<SettingsFileProblem>,
+}
+
+/// Why the settings file on disk could not be read, and whether writing over it
+/// is therefore refused.
+///
+/// Refusing matters more here than anywhere else: the settings in memory are
+/// then the defaults, and saving them would finish what the broken file
+/// started. The player gets the chance to fix or move the file instead.
+#[derive(Debug, Clone, PartialEq)]
+struct SettingsFileProblem {
+    /// Said in the Settings window, with the path, so it can be acted on.
+    text: String,
+    /// True when the unreadable file is the one `save` writes to. The pre-1.6
+    /// file next to the executable is only ever read, so a broken one is worth
+    /// saying but is no reason to stop saving.
+    blocks_writing: bool,
 }
 
 /// Size and maximized state of the main window, remembered between runs.
@@ -176,13 +198,68 @@ impl Settings {
     }
 
     pub fn load_or_default() -> Self {
-        let mut settings: Self = Self::file_path()
-            .and_then(|f| std::fs::read_to_string(&f).ok())
-            .or_else(|| Self::legacy_file_path().and_then(|f| std::fs::read_to_string(&f).ok()))
-            .and_then(|d| serde_json::from_str(&d).ok())
-            .unwrap_or_default();
+        let (mut settings, problem) = Self::read_or_default();
+        if let Some(problem) = &problem {
+            // Written from here for the same reason as the rules file's: the
+            // logger is configured from the settings, so nothing said while
+            // reading them goes anywhere. Said by the first of the four
+            // start-up callers that finds a logger listening, and only that one.
+            static REPORTED: OnceLock<()> = OnceLock::new();
+            if log::log_enabled!(log::Level::Error) && REPORTED.set(()).is_ok() {
+                log::error!("the settings could not be read: {}", problem.text);
+            }
+        }
+        settings.settings_file_problem = problem;
         settings.rules_file_problem = settings.load_rules();
         settings
+    }
+
+    /// The settings as they are on disk, or the defaults — and, when the file
+    /// is there but cannot be read, why.
+    ///
+    /// A settings file that will not parse is **not** the same as no settings
+    /// file. Reading it as "no settings" puts back every default, and the next
+    /// Ok writes those defaults over it: the log path, the window size, the
+    /// handle, the chosen columns and the theme are gone, with nothing said at
+    /// any point. A fresh installation is the case with no file at all, and
+    /// that one alone goes quietly to the defaults.
+    ///
+    /// The pre-1.6 file next to the executable is only ever read, never
+    /// written, so a broken one is worth saying but is no reason to stop the
+    /// program saving.
+    fn read_or_default() -> (Self, Option<SettingsFileProblem>) {
+        Self::file_path()
+            .and_then(|p| Self::read_at(&p, true))
+            .or_else(|| Self::legacy_file_path().and_then(|p| Self::read_at(&p, false)))
+            // No settings anywhere: a fresh installation.
+            .unwrap_or_else(|| (Self::default(), None))
+    }
+
+    /// One settings file, or `None` when there is none there to read.
+    ///
+    /// `blocks_writing` says whether this is the file `save` would write to, so
+    /// that a broken one stops the write.
+    fn read_at(path: &Path, blocks_writing: bool) -> Option<(Self, Option<SettingsFileProblem>)> {
+        let data = std::fs::read_to_string(path).ok()?;
+        Some(match serde_json::from_str(&data) {
+            Ok(settings) => (settings, None),
+            // Not logged here: the logger is configured from the settings and
+            // is not up yet. The caller writes it, as with the rules file.
+            Err(e) => (
+                Self::default(),
+                Some(SettingsFileProblem {
+                    text: format!("{}\n\n{e}", path.display()),
+                    blocks_writing,
+                }),
+            ),
+        })
+    }
+
+    /// Why the settings file could not be read at start-up, when it could not.
+    /// Held so the Settings window can say it while the settings on screen are
+    /// the defaults rather than the player's own.
+    pub fn settings_file_problem(&self) -> Option<&str> {
+        self.settings_file_problem.as_ref().map(|p| p.text.as_str())
     }
 
     /// Bring the rules in from their own file, or leave in place the ones that
@@ -273,27 +350,47 @@ impl Settings {
     }
 
     fn save_rules(&self) {
+        let Some(path) = RuleSets::path() else {
+            return;
+        };
+        self.save_rules_at(&path);
+    }
+
+    /// Takes the path so that the refusal below can be tested against a file
+    /// somewhere harmless. Asserting that the real config directory was left
+    /// alone would pass either way — a guard that let the write through would
+    /// put it there, not in the file the test is watching.
+    fn save_rules_at(&self, path: &Path) {
         if self.rules_file_problem.is_some() {
             log::warn!("not writing the rules file: it could not be read at start-up");
             return;
         }
-        let Some(path) = RuleSets::path() else {
-            return;
-        };
-        if let Err(e) = self.analysis.rule_sets().write(&path) {
+        if let Err(e) = self.analysis.rule_sets().write(path) {
             log::error!("could not write {}: {e}", path.display());
         }
     }
 
     pub fn save(&self) {
         self.save_rules();
-        let file_path = match Self::file_path() {
-            Some(p) => p,
-            None => {
-                return;
-            }
+        let Some(path) = Self::file_path() else {
+            return;
         };
-        if let Some(dir) = file_path.parent() {
+        self.save_at(&path);
+    }
+
+    /// Takes the path for the same reason as [`Self::save_rules_at`].
+    fn save_at(&self, path: &Path) {
+        // The settings in hand are the defaults, because the file could not be
+        // read. Writing them would destroy what is still in it.
+        if self
+            .settings_file_problem
+            .as_ref()
+            .is_some_and(|p| p.blocks_writing)
+        {
+            log::warn!("not writing the settings file: it could not be read at start-up");
+            return;
+        }
+        if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
         let data = match serde_json::to_string_pretty(self) {
@@ -303,7 +400,7 @@ impl Settings {
             }
         };
 
-        let _ = std::fs::write(&file_path, data);
+        let _ = std::fs::write(path, data);
     }
 }
 
@@ -647,9 +744,11 @@ mod tests {
             "and the file is untouched"
         );
 
-        // And saving must not finish the job the broken file started.
+        // And saving must not finish the job the broken file started. Aimed at
+        // the file itself: `save_rules` would write to the real config
+        // directory, leaving this one untouched whether the guard held or not.
         settings.rules_file_problem = Some(problem);
-        settings.save_rules();
+        settings.save_rules_at(&path);
         assert_eq!(before, std::fs::read_to_string(&path).unwrap());
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -708,6 +807,165 @@ mod tests {
                 .collect::<Vec<_>>(),
             "an existing installation's rules still have to be found"
         );
+    }
+
+    /// A scratch directory with a settings file of the given contents in it.
+    fn a_temp_settings_file(name: &str, contents: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(paths::SETTINGS_FILE_NAME);
+        std::fs::write(&path, contents).unwrap();
+        (dir, path)
+    }
+
+    /// A settings file that will not parse is not the same as no settings file.
+    /// Read as "none", every default comes back and the next Ok writes those
+    /// defaults over it — the log path, the handle, the window size and the
+    /// theme gone, with nothing said at any point.
+    #[test]
+    fn an_unreadable_settings_file_is_not_read_as_a_fresh_install() {
+        let (dir, path) = a_temp_settings_file("cla-settings-broken", "{ not json at all");
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let (settings, problem) = Settings::read_at(&path, true).expect("the file is there");
+        let problem = problem.expect("it has to say what is wrong");
+
+        assert!(problem.text.contains("cla-settings-broken"), "{problem:?}");
+        assert!(
+            problem.blocks_writing,
+            "the file it could not read is the one it writes to"
+        );
+        assert_eq!(Settings::default().general, settings.general);
+
+        // And Ok must not finish what the broken file started.
+        let mut settings = settings;
+        settings.settings_file_problem = Some(problem);
+        settings.save_at(&path);
+        assert_eq!(
+            before,
+            std::fs::read_to_string(&path).unwrap(),
+            "the file has to be left as it was"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Once the file is out of the way, saving works again — the refusal is
+    /// about this one file, not a latch that leaves the player unable to save.
+    #[test]
+    fn a_readable_settings_file_is_still_written() {
+        let (dir, path) = a_temp_settings_file("cla-settings-ok", DEFAULT_SETTINGS);
+
+        let (settings, problem) = Settings::read_at(&path, true).expect("the file is there");
+        assert!(problem.is_none(), "a good file has nothing to report");
+        settings.save_at(&path);
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("\"analysis\""), "{written}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// No settings file anywhere is a fresh installation, and that one goes
+    /// quietly to the defaults.
+    #[test]
+    fn a_missing_settings_file_says_nothing() {
+        let dir = std::env::temp_dir().join("cla-settings-absent");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(Settings::read_at(&dir.join(paths::SETTINGS_FILE_NAME), true).is_none());
+    }
+
+    /// The pre-1.6 file next to the executable is only ever read, so a broken
+    /// one is worth saying but must not stop the program writing its own.
+    #[test]
+    fn a_broken_file_from_before_1_6_does_not_stop_saving() {
+        let (dir, path) = a_temp_settings_file("cla-settings-legacy", "not json");
+
+        let (_, problem) = Settings::read_at(&path, false).expect("the file is there");
+        assert!(!problem.expect("still said").blocks_writing);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The sections of the settings file, as written today.
+    ///
+    /// A section the reader does not know is ignored, so a *renamed* one is a
+    /// preference every existing installation loses without a word — read as
+    /// "the player never set that". The names are pinned so that renaming or
+    /// dropping one is a decision about the files already on disk rather than a
+    /// side effect of tidying a struct. Adding a section is safe; add it here
+    /// too.
+    #[test]
+    fn the_sections_of_the_settings_file_are_pinned() {
+        let written = serde_json::to_value(Settings::default()).unwrap();
+        let mut sections: Vec<_> = written
+            .as_object()
+            .expect("the settings are written as an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        sections.sort_unstable();
+
+        assert_eq!(
+            vec![
+                "analysis",
+                "auto_refresh",
+                "columns",
+                "combat_notes",
+                "compare",
+                "debug",
+                "general",
+                "upload",
+                "visuals",
+                "window",
+            ],
+            sections,
+            "the settings file changed shape — a renamed or dropped section is \
+             a setting every existing installation silently loses"
+        );
+    }
+
+    /// Which sections a settings file cannot be read without.
+    ///
+    /// A section without `#[serde(default)]` is required, and a file lacking it
+    /// does not half-read — the whole file is refused, and the player starts at
+    /// the defaults with their own file left alone. That is the right outcome,
+    /// but it is a hard break, so adding a *new* required section would refuse
+    /// every settings file already written. This pins which ones are required,
+    /// so that stays a decision: a new section gets `#[serde(default)]`, and if
+    /// it genuinely cannot, the old files need a way through first.
+    #[test]
+    fn only_the_sections_that_always_existed_are_required() {
+        let full: serde_json::Value = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
+        let mut required: Vec<&str> = full
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|key| {
+                let mut without = full.clone();
+                without.as_object_mut().unwrap().remove(*key);
+                serde_json::from_value::<Settings>(without).is_err()
+            })
+            .map(String::as_str)
+            .collect();
+        required.sort_unstable();
+
+        assert_eq!(
+            vec!["analysis", "auto_refresh", "debug", "visuals"],
+            required,
+            "a newly required section refuses every settings file already written"
+        );
+    }
+
+    /// The defaults shipped in the binary are a settings file the build can
+    /// read. They are what a fresh installation gets and what every test here
+    /// starts from, so a typo in them would surface as a panic at start-up.
+    #[test]
+    fn the_shipped_default_settings_still_read() {
+        let settings: Settings =
+            serde_json::from_str(DEFAULT_SETTINGS).expect("the shipped defaults must parse");
+        assert!(settings.settings_file_problem.is_none());
     }
 
     #[test]
