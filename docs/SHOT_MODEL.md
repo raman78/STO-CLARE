@@ -112,6 +112,55 @@ is not enough — a player heals their own pet, so damage-versus-heal has to be
 part of the test. Nothing in the program uses this yet; it is recorded here
 because it is the only measured way to tell the two apart.
 
+#### An allied ship is a third case, and one field settles it
+
+The table above has a pet and an enemy in it. A **friendly NPC that is nobody's
+pet** is neither: it is never shot at by the player and never healed by them, so
+the test above says nothing about it. Mission allies are common — the Lukari
+ships of *Sunrise*, escort wings, station defenders — and a player's applied
+effects ride on them exactly as they ride on a pet.
+
+Measured on the fight of 2026-09-11 10:42 (19 241 lines), asking of each
+entity in field 3 whether it is also the **owner** of lines of its own:
+
+| in field 3 under the player | lines carried | owns lines of its own | what it is |
+|---|---:|---:|---|
+| `L.S.S. Jaaleet` | 194 | **301** | allied ship |
+| `L.S.S. Treluun` | 151 | **252** | allied ship |
+| `L.S.S. Vuut` | 152 | **217** | allied ship |
+| `L.S.S. Reskava` | 32 | **164** | allied ship |
+| `Bird-of-Prey (ALPHA)` / `(BETA)` | 91 / 64 | 0 | the player's hangar pets |
+| `EMP Probe II` | 58 | 0 | the player's device |
+| `Warp Plasma`, `Anti-Time Entanglement Singularity (Rank 2)` | 13 each | 0 | the player's devices |
+
+**A carrier that owns lines of its own is an independent ship; one that owns
+nothing exists only as a carrier, and is the player's pet or device.** No
+overlap, and it needs one pass over field 1.
+
+The two ownerships stay apart in what they fire, too. Under the player's
+ownership `L.S.S. Jaaleet` carries nothing but `Hellbore Light - Drain` and
+`- Ignition`; its own five weapons (`Piezo-Polaron Turret`, `Piezo-Polaron
+Array`, `Aceton Beam II`, `Protomatter Regenerative Influx`, `Piezo-Photon
+Torpedo`) never once appear under the player's. So the log does separate "an
+effect the player applied" from "the ally's own gun" — in field 1, and
+completely. What it does not do is say what the carrier *is* to the player.
+
+**A test that looks right and is not.** An applied effect is tempting to
+recognise as one that appears both carried and fired directly. Measured on the
+same fight:
+
+| effect | carried | fired directly by the player |
+|---|---:|---:|
+| `Hellbore Light - Drain` | 504 | 3 588 |
+| `Warp Plasma` | 99 | 0 |
+| `Quad Disruptor Cannons` | 53 | 26 |
+
+The third row is a **pet carrying the same weapon the player carries**, not an
+effect the player applied, and it is indistinguishable from the first by this
+test. `Warp Plasma` is applied by the player and never appears directly, so the
+test misses it as well. Name-based tests do not separate these; the ownership
+test above does.
+
 ## 2. A shot is not a line
 
 One shot writes **one or two lines**, and occasionally more. The two lines of a
