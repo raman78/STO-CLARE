@@ -536,6 +536,16 @@ can put two or three abilities on the same chart and compare them. Ctrl-clicking
 a row that is already in the set takes it back out. See
 [Keyboard shortcuts](#keyboard-shortcuts).
 
+**Right-click a row** for the two things that are otherwise fiddly:
+
+- **copy name to clipboard** — the row's name exactly as the log spells it,
+  which is what a rule's *Text to match* wants. Quicker and safer than reading
+  a long ability name off the screen and typing it back in.
+- **show diagrams for this** — adds that one row to the chart, the same as
+  Ctrl + clicking it: just that row, not the rows underneath it, and whatever
+  you had on the chart stays. A row already on the chart is left as it is, so
+  this can only ever add.
+
 ---
 
 ## Comparing combats
@@ -1366,6 +1376,7 @@ one chart, that has no button at all:
 | **Esc** | While typing in a box | Leaves the box first; your text stays. Press again to close the window. |
 | **Esc** | Uploading to the ladder | Breaks the upload off — see below. |
 | **Ctrl + click** | A row on the damage or healing tabs | Adds that row to the selection, or takes it out again — this is how you get several abilities onto one chart. |
+| **Right-click** | A row on the damage or healing tabs | Copies the row's name, or adds that one row to the chart. |
 | **Enter** | The Ladder's player search | Runs the search, the same as pressing Search. |
 | **Double-click** | A row in the combats list | Opens that fight in every tab. |
 
