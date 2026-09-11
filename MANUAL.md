@@ -401,8 +401,31 @@ Read across the columns for one ability:
 | Max One-Hit  | The single biggest hit it landed.                                                                             |
 | Average Hit  | What a typical hit did.                                                                                       |
 
-Rows can be opened further where an ability has parts underneath it — a console
-that spawns something, a pet, an anomaly.
+#### Whose damage sits where
+
+Not everything under your name was fired by you. A hangar pet, a console that
+spawns something, an anomaly — each gets **its own row under yours**, with what
+it fired underneath that. The log names the owner of every shot, so this is
+sorted out for you; nothing has to be told which pet is yours.
+
+```
+Raman@handle                            ← you: everything credited to you
+├── Phaser Beam Array                   ← fired by you
+├── Quad Cannons                        ← a grouping rule of yours, over your
+│   ├── Quad Disruptor Cannons            own shots
+│   └── Quad Disruptor Cannons - Rapid Fire III
+└── Bird-of-Prey (ALPHA)                ← a pet of yours
+    └── Quad Cannons                    ← the same rule, over the pet's shots
+        └── Quad Disruptor Cannons
+```
+
+So your own total includes the pet, because the pet is yours — but the pet's
+damage stays in the pet's row, where you can see how much of the total it is.
+Open a row to go a level deeper; the deepest level is always who was hit.
+
+Where the game stops naming the pet, see
+[The row called (Damage owner unknown)](#the-row-called-damage-owner-unknown).
+
 
 #### The row called (Damage owner unknown)
 
@@ -1040,12 +1063,18 @@ Beam Array, whose Technical Overload fires alongside the beam itself. There is a
 ready-made example for the Dark Matter Quantum Torpedo, again switched on with
 its "on" box.
 
-A grouping rule folds effects together; it never moves damage from one shooter
-to another. If your pet carries the same weapon you do — a Bird-of-Prey with the
-turrets and cannons off your own build — its shots stay under the pet's row, and
-your rule folds them there, under the pet. Your own row holds what you fired.
+**A grouping rule works on effect names, wherever those effects sit** — under
+your own row and under each of your pets alike. What it never does is move
+damage from one shooter to another. If your pet carries the same weapon you do —
+a Bird-of-Prey with the turrets and cannons off your own build — the rule folds
+your shots into a row under you, and the pet's shots into a row of the same name
+under the pet. Two rows, one name, each holding what its own shooter fired; see
+the picture in [Whose damage sits where](#whose-damage-sits-where).
+
 Before 2.8 the rule took both, so a row named after your weapon quietly held the
 pet's damage as well, and the same pet was split across two places in the tree.
+On a real Infected: The Conduit run that was 15.7% of the outgoing damage sitting
+under a weapon its owner had not fired.
 
 If you *do* want one effect gathered from everywhere it came from — your own
 guns and everything that carried it — that is what a **Source Reversal** rule is
