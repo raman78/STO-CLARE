@@ -1395,6 +1395,8 @@ The five Alt keys at the top of the table are yours to set. Open **Settings →
 Shortcuts** and you get one row per thing: the key it answers to now, a button
 to change it, and a **Reset** that appears once you have changed something.
 
+![Settings, Shortcuts](images/settings-shortcuts.png)
+
 To set one, press the button showing the current key, then press the keys you
 want. That is the whole of it — there is nothing to type. If you change your
 mind, press Esc and the row goes back to what it was.
