@@ -49,25 +49,29 @@ pub struct Settings {
     /// on it already holds a `Settings`: the dialog that says so, and `save`,
     /// which refuses to write over a file it could not read.
     #[serde(skip)]
-    rules_file_problem: Option<String>,
-    /// The same, for the settings file itself. See [`SettingsFileProblem`].
+    rules_file_problem: Option<ConfigFileProblem>,
+    /// The same, for the settings file itself.
     #[serde(skip)]
-    settings_file_problem: Option<SettingsFileProblem>,
+    settings_file_problem: Option<ConfigFileProblem>,
+    /// The settings file read at start-up still had the rules inside it — an
+    /// installation from before they moved to their own file. Describes this
+    /// run rather than a preference, so it is not written anywhere.
+    #[serde(skip)]
+    settings_carried_rules: bool,
 }
 
-/// Why the settings file on disk could not be read, and whether writing over it
-/// is therefore refused.
+/// Why a config file could not be read, and whether writing over it is
+/// therefore refused.
 ///
-/// Refusing matters more here than anywhere else: the settings in memory are
-/// then the defaults, and saving them would finish what the broken file
-/// started. The player gets the chance to fix or move the file instead.
+/// Normally it is not: the file has been put aside under a name that says what
+/// happened, so there is nothing left to write over and the program can go on
+/// saving as a fresh installation would. The refusal is for the one case where
+/// it could not even be moved — writing then would finish what the damage
+/// started, and the player would have nothing left to repair.
 #[derive(Debug, Clone, PartialEq)]
-struct SettingsFileProblem {
+struct ConfigFileProblem {
     /// Said in the Settings window, with the path, so it can be acted on.
     text: String,
-    /// True when the unreadable file is the one `save` writes to. The pre-1.6
-    /// file next to the executable is only ever read, so a broken one is worth
-    /// saying but is no reason to stop saving.
     blocks_writing: bool,
 }
 
@@ -197,62 +201,150 @@ impl Settings {
         Some(path)
     }
 
+    /// The settings this run works from.
+    ///
+    /// **Done once per process.** Four separate parts of the app load the
+    /// settings at start-up — the window geometry, the logger, the app state
+    /// and the Settings dialog. Each would otherwise repeat everything below,
+    /// and the parts of it that move files about can only be right the first
+    /// time: a damaged file put aside by the first caller is simply *gone* to
+    /// the second, which would then see a fresh installation and say nothing at
+    /// all. The Settings dialog loads last, so that is precisely the caller
+    /// whose warning would go missing.
     pub fn load_or_default() -> Self {
-        let (mut settings, problem) = Self::read_or_default();
-        if let Some(problem) = &problem {
-            // Written from here for the same reason as the rules file's: the
-            // logger is configured from the settings, so nothing said while
-            // reading them goes anywhere. Said by the first of the four
-            // start-up callers that finds a logger listening, and only that one.
-            static REPORTED: OnceLock<()> = OnceLock::new();
-            if log::log_enabled!(log::Level::Error) && REPORTED.set(()).is_ok() {
-                log::error!("the settings could not be read: {}", problem.text);
+        static ONCE: OnceLock<Settings> = OnceLock::new();
+        ONCE.get_or_init(|| {
+            let (mut settings, problem) = Self::read_or_default();
+            settings.settings_file_problem = problem;
+            settings.rules_file_problem = settings.load_rules();
+            settings.take_the_rules_out_of_the_settings();
+            settings
+        })
+        .clone()
+        .reported()
+    }
+
+    /// Writes whatever went wrong at start-up to the log, once.
+    ///
+    /// Said from out here rather than while reading, because the logger is
+    /// configured *from* the settings and is not up yet at that point — an
+    /// error written in there goes nowhere. Written by the first caller that
+    /// finds a logger listening, and only that one.
+    fn reported(self) -> Self {
+        static REPORTED: OnceLock<()> = OnceLock::new();
+        let problems = [
+            self.settings_file_problem.as_ref().map(|p| p.text.as_str()),
+            self.rules_file_problem.as_ref().map(|p| p.text.as_str()),
+        ];
+        if problems.iter().any(Option::is_some)
+            && log::log_enabled!(log::Level::Error)
+            && REPORTED.set(()).is_ok()
+        {
+            for problem in problems.into_iter().flatten() {
+                log::error!("{problem}");
             }
         }
-        settings.settings_file_problem = problem;
-        settings.rules_file_problem = settings.load_rules();
-        settings
+        self
     }
 
-    /// The settings as they are on disk, or the defaults — and, when the file
-    /// is there but cannot be read, why.
+    /// The settings as they are on disk, or the defaults — and, when a file is
+    /// there but cannot be read, why.
     ///
     /// A settings file that will not parse is **not** the same as no settings
-    /// file. Reading it as "no settings" puts back every default, and the next
-    /// Ok writes those defaults over it: the log path, the window size, the
-    /// handle, the chosen columns and the theme are gone, with nothing said at
-    /// any point. A fresh installation is the case with no file at all, and
-    /// that one alone goes quietly to the defaults.
+    /// file. Read as "no settings", every default comes back and the next Ok
+    /// writes those defaults over it: the log path, the window size, the handle,
+    /// the chosen columns and the theme gone, with nothing said at any point.
+    /// A fresh installation is the case with no file at all, and that one alone
+    /// goes quietly to the defaults.
+    ///
+    /// So a damaged file is **put aside** rather than written over, and the
+    /// program goes on as a fresh installation: its owner may well be able to
+    /// read it, or lift values back out of it, and "unreadable" is this
+    /// program's opinion rather than something they agreed to. If it cannot
+    /// even be moved — a read-only directory, no permission — nothing is
+    /// written at all, which is the one case where saving has to stop.
     ///
     /// The pre-1.6 file next to the executable is only ever read, never
-    /// written, so a broken one is worth saying but is no reason to stop the
-    /// program saving.
-    fn read_or_default() -> (Self, Option<SettingsFileProblem>) {
-        Self::file_path()
-            .and_then(|p| Self::read_at(&p, true))
-            .or_else(|| Self::legacy_file_path().and_then(|p| Self::read_at(&p, false)))
-            // No settings anywhere: a fresh installation.
-            .unwrap_or_else(|| (Self::default(), None))
+    /// written. A damaged one is said and otherwise left exactly where it is.
+    fn read_or_default() -> (Self, Option<ConfigFileProblem>) {
+        if let Some(path) = Self::file_path()
+            && let Some(read) = Self::read_at(&path)
+        {
+            return match read {
+                Ok(settings) => (settings, None),
+                Err(why) => (Self::default(), Some(Self::put_aside(&path, why))),
+            };
+        }
+        if let Some(path) = Self::legacy_file_path()
+            && let Some(read) = Self::read_at(&path)
+        {
+            return match read {
+                Ok(settings) => (settings, None),
+                Err(why) => (
+                    Self::default(),
+                    Some(ConfigFileProblem {
+                        text: format!(
+                            "The settings left by a version before 1.6 could not be read, so \
+                             STO-CLARE has started with its defaults. That file is not one it \
+                             writes to, and it has been left alone.\n\n{}\n\n{why}",
+                            path.display()
+                        ),
+                        blocks_writing: false,
+                    }),
+                ),
+            };
+        }
+        // No settings anywhere: a fresh installation.
+        (Self::default(), None)
     }
 
-    /// One settings file, or `None` when there is none there to read.
+    /// One settings file: `None` when there is none there, otherwise what it
+    /// held or what the reader objected to.
     ///
-    /// `blocks_writing` says whether this is the file `save` would write to, so
-    /// that a broken one stops the write.
-    fn read_at(path: &Path, blocks_writing: bool) -> Option<(Self, Option<SettingsFileProblem>)> {
+    /// Notes on the way past whether the file still had the rules in it. That
+    /// cannot be worked out later from the rules in hand, because on a fresh
+    /// installation those are the shipped defaults, which came from the binary
+    /// and not from anyone's file.
+    fn read_at(path: &Path) -> Option<Result<Self, String>> {
         let data = std::fs::read_to_string(path).ok()?;
-        Some(match serde_json::from_str(&data) {
-            Ok(settings) => (settings, None),
-            // Not logged here: the logger is configured from the settings and
-            // is not up yet. The caller writes it, as with the rules file.
-            Err(e) => (
-                Self::default(),
-                Some(SettingsFileProblem {
-                    text: format!("{}\n\n{e}", path.display()),
-                    blocks_writing,
-                }),
-            ),
-        })
+        Some(
+            serde_json::from_str::<Self>(&data)
+                .map(|mut settings| {
+                    let analysis = &settings.analysis;
+                    settings.settings_carried_rules = !(analysis.combat_name_rules.is_empty()
+                        && analysis.indirect_source_grouping_revers_rules.is_empty()
+                        && analysis.custom_group_rules.is_empty()
+                        && analysis.damage_out_exclusion_rules.is_empty());
+                    settings
+                })
+                .map_err(|e| e.to_string()),
+        )
+    }
+
+    /// Moves a settings file that cannot be read out of the way, and says so in
+    /// the words the Settings window shows.
+    fn put_aside(path: &Path, why: String) -> ConfigFileProblem {
+        match paths::set_aside(path, paths::DAMAGED) {
+            Ok(moved) => ConfigFileProblem {
+                text: format!(
+                    "Your settings file could not be read, so STO-CLARE has started as if it \
+                     were newly installed. Nothing has been deleted: the file is now\n\n{}\n\n\
+                     so you can look at it or copy values back out of it.\n\n{why}",
+                    moved.display()
+                ),
+                blocks_writing: false,
+            },
+            Err(e) => ConfigFileProblem {
+                text: format!(
+                    "Your settings file could not be read, and could not be moved aside \
+                     either, so STO-CLARE is leaving it completely alone and will not save \
+                     over it. Move or repair it, then start STO-CLARE again.\n\n{}\n\n\
+                     {why}\n\nMoving it aside failed with: {e}",
+                    path.display()
+                ),
+                blocks_writing: true,
+            },
+        }
     }
 
     /// Why the settings file could not be read at start-up, when it could not.
@@ -262,91 +354,141 @@ impl Settings {
         self.settings_file_problem.as_ref().map(|p| p.text.as_str())
     }
 
-    /// Bring the rules in from their own file, or leave in place the ones that
-    /// came out of the settings.
-    ///
-    /// No rules file means one of two things and they are handled the same way:
-    /// this installation predates the split, in which case the rules just read
-    /// out of the settings are the ones to keep and to write out; or this is a
-    /// fresh installation, in which case those are the shipped defaults and
-    /// writing them out gives the player a file to edit. Either way the move
-    /// happens on the first start rather than waiting for the first Ok, so a
-    /// player who never opens Settings is not left with rules in the old place.
-    ///
-    /// A rules file that exists but cannot be read is **not** treated as an
-    /// empty one — that would throw away every rule its owner wrote and look
-    /// exactly like a fresh install. The rules from the settings stay in place,
-    /// the file is left untouched, and the reason is returned for the UI to
-    /// show and for the save path to refuse to overwrite it.
-    /// Done **once per process.** Four separate parts of the app load the
-    /// settings at start-up — the window geometry, the logger, the app state
-    /// and the Settings dialog — and each of them would otherwise re-read the
-    /// file, re-run the move, and, when the file is unreadable, log the same
-    /// error four times over.
-    fn load_rules(&mut self) -> Option<String> {
-        static ONCE: OnceLock<Result<RuleSets, String>> = OnceLock::new();
-
+    /// Bring the rules in from their own file, writing one if there is none.
+    fn load_rules(&mut self) -> Option<ConfigFileProblem> {
         let path = RuleSets::path()?;
-        let from_the_settings = self.analysis.rule_sets();
-        let outcome = ONCE.get_or_init(move || {
-            let mut analysis = AnalysisSettings::default();
-            analysis.set_rule_sets(from_the_settings);
-            match Self::load_rules_at(&mut analysis, &path) {
-                Some(problem) => Err(problem),
-                None => Ok(analysis.rule_sets()),
-            }
-        });
+        let (sets, problem) = Self::rules_from(&path, self.rules_the_settings_carried());
+        self.analysis.set_rule_sets(sets);
+        problem
+    }
 
-        match outcome {
-            Ok(sets) => {
-                self.analysis.set_rule_sets(sets.clone());
-                None
-            }
-            Err(problem) => {
-                // Logged from out here rather than from inside the once-only
-                // block, because the logger is configured *from* the settings
-                // and so is not up yet the first time they are loaded — an
-                // error written in there goes nowhere. Written by the first
-                // caller that finds a logger listening, and only that one.
-                static REPORTED: OnceLock<()> = OnceLock::new();
-                if log::log_enabled!(log::Level::Error) && REPORTED.set(()).is_ok() {
-                    log::error!("{problem}");
-                }
-                Some(problem.clone())
-            }
-        }
+    /// The rules the settings file was still carrying, or `None` when it was
+    /// not carrying any.
+    ///
+    /// Not the same question as "are there any rules in hand": on a fresh
+    /// installation the rules in hand are the shipped defaults, which came from
+    /// the binary and not from anybody's file. Only a file written before the
+    /// rules moved out has rules in it, and only that case is a migration.
+    fn rules_the_settings_carried(&self) -> Option<RuleSets> {
+        self.settings_carried_rules
+            .then(|| self.analysis.rule_sets())
     }
 
     /// The body of [`Settings::load_rules`], against a path a test can name.
-    fn load_rules_at(analysis: &mut AnalysisSettings, path: &std::path::Path) -> Option<String> {
+    ///
+    /// Three cases, and the third is the one worth spelling out:
+    ///
+    /// - **No file.** An installation from before the split, whose rules are in
+    ///   `carried` and get written out; or a fresh one, which gets the shipped
+    ///   defaults so that it has a file to edit and its fight names read
+    ///   properly. Done on the first start rather than at the first Ok, so a
+    ///   player who never opens Settings is not left with rules in the old
+    ///   place.
+    /// - **A file that reads.** Used, and it wins over anything the settings
+    ///   were still carrying.
+    /// - **A file that does not read.** Put aside under a name that says why,
+    ///   and the program goes on with what a fresh installation starts from.
+    ///   Never read as an empty file, and never written over: those rules are
+    ///   the only copy of an evening's work, their owner can very likely still
+    ///   read the file, and **Import…** will take it back whole once it is
+    ///   repaired. If it cannot even be moved, nothing is written at all.
+    fn rules_from(path: &Path, carried: Option<RuleSets>) -> (RuleSets, Option<ConfigFileProblem>) {
+        let as_a_fresh_install = || Self::default().analysis.rule_sets();
         if !path.exists() {
-            if let Err(e) = analysis.rule_sets().write(path) {
-                log::warn!("could not write {}: {e}", path.display());
-            } else {
-                log::info!("rules moved to {}", path.display());
+            let sets = carried.unwrap_or_else(as_a_fresh_install);
+            match sets.write(path) {
+                Ok(()) => log::info!("rules written to {}", path.display()),
+                Err(e) => log::warn!("could not write {}: {e}", path.display()),
             }
-            return None;
+            return (sets, None);
         }
-        match RuleSets::read(path) {
-            Ok(sets) => {
-                analysis.set_rule_sets(sets);
-                None
+        let why = match RuleSets::read(path) {
+            Ok(sets) => return (sets, None),
+            Err(e) => e,
+        };
+        match paths::set_aside(path, paths::DAMAGED) {
+            Ok(moved) => {
+                let sets = as_a_fresh_install();
+                if let Err(e) = sets.write(path) {
+                    log::warn!("could not write {}: {e}", path.display());
+                }
+                (
+                    sets,
+                    Some(ConfigFileProblem {
+                        text: format!(
+                            "Your rules file could not be read, so the rules below are the ones \
+                             a new installation starts with. Nothing has been deleted: your file \
+                             is now\n\n{}\n\nand if it can be repaired, Import… will bring your \
+                             rules back.\n\n{why}",
+                            moved.display()
+                        ),
+                        blocks_writing: false,
+                    }),
+                )
             }
-            // Not logged here: the caller writes it, because the logger is
-            // configured from the settings and is not up yet the first time
-            // they are loaded.
-            Err(e) => Some(format!("{}\n\n{e}", path.display())),
+            Err(e) => (
+                carried.unwrap_or_else(as_a_fresh_install),
+                Some(ConfigFileProblem {
+                    text: format!(
+                        "Your rules file could not be read, and could not be moved aside \
+                         either, so STO-CLARE is leaving it completely alone and will not save \
+                         over it. The rules below are not the ones in that file. Move or repair \
+                         it, then start STO-CLARE again.\n\n{}\n\n{why}\n\nMoving it aside \
+                         failed with: {e}",
+                        path.display()
+                    ),
+                    blocks_writing: true,
+                }),
+            ),
         }
     }
 
-    /// Whether the rules file was unreadable at start-up, and why.
+    /// Take the rules out of a settings file that still holds them, keeping the
+    /// original beside it.
     ///
-    /// Held so the Settings window can say it, and so `save` will not write
-    /// over a file it could not read: the rules in memory are the ones from
-    /// before the split, and overwriting with those would finish the job the
-    /// unreadable file started.
+    /// The rules have their own file now, and one setting living in two places
+    /// is a question about which of them is true — asked every start, answered
+    /// differently depending on which was written last. So the settings file is
+    /// rewritten without them.
+    ///
+    /// A copy is kept first, and the copy is what makes this safe to do without
+    /// asking: the rules are not being taken away, they are being left in two
+    /// places instead of one. If the copy cannot be made, the settings file is
+    /// left exactly as it is and the rules in it are simply ignored — an
+    /// unasked-for rewrite of somebody's config is not worth tidiness.
+    fn take_the_rules_out_of_the_settings(&self) {
+        let Some(path) = Self::file_path() else {
+            return;
+        };
+        self.take_the_rules_out_of_the_settings_at(&path);
+    }
+
+    /// Takes the path for the same reason as [`Self::save_at`].
+    fn take_the_rules_out_of_the_settings_at(&self, path: &Path) {
+        if !self.settings_carried_rules || !path.is_file() {
+            return;
+        }
+        match paths::keep_a_copy(path, paths::ARCHIVED) {
+            Ok(copy) => {
+                log::info!(
+                    "the rules have their own file now; {} kept as it was at {}",
+                    path.display(),
+                    copy.display()
+                );
+                self.save_at(path);
+            }
+            Err(e) => log::warn!(
+                "leaving the rules in {} alone: it could not be copied aside first ({e})",
+                path.display()
+            ),
+        }
+    }
+
+    /// Whether the rules file could not be read at start-up, and why. Held so
+    /// the Settings window can say it while the rules on screen are not the
+    /// ones that were in the file.
     pub fn rules_file_problem(&self) -> Option<&str> {
-        self.rules_file_problem.as_deref()
+        self.rules_file_problem.as_ref().map(|p| p.text.as_str())
     }
 
     fn save_rules(&self) {
@@ -361,7 +503,11 @@ impl Settings {
     /// alone would pass either way — a guard that let the write through would
     /// put it there, not in the file the test is watching.
     fn save_rules_at(&self, path: &Path) {
-        if self.rules_file_problem.is_some() {
+        if self
+            .rules_file_problem
+            .as_ref()
+            .is_some_and(|p| p.blocks_writing)
+        {
             log::warn!("not writing the rules file: it could not be read at start-up");
             return;
         }
@@ -655,27 +801,62 @@ mod tests {
         settings
     }
 
+    /// The rules a settings file was carrying, for the migration tests.
+    fn carried(name: &str) -> Option<RuleSets> {
+        Some(RuleSets {
+            custom_group_rules: vec![RulesGroup {
+                name: name.to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+    }
+
+    fn names(sets: &RuleSets) -> Vec<&str> {
+        sets.custom_group_rules
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect()
+    }
+
     /// An installation from before the split has its rules inside the settings.
     /// The first start writes them out to their own file, so a player who never
     /// opens Settings is not left with them in the old place.
     #[test]
     fn rules_are_moved_out_of_the_settings_on_the_first_start() {
         let (dir, path) = a_temp_rules_file("cla-rules-migrate");
-        let mut settings = settings_with_a_rule("Quad Cannons");
+        let _ = std::fs::remove_file(&path);
 
-        assert_eq!(None, Settings::load_rules_at(&mut settings.analysis, &path));
+        let (sets, problem) = Settings::rules_from(&path, carried("Quad Cannons"));
+
+        assert!(problem.is_none());
+        assert_eq!(vec!["Quad Cannons"], names(&sets));
         assert!(path.exists(), "the rules file was not written");
 
         let written = RuleSets::read(&path).expect("and it reads back");
-        assert_eq!(
-            vec!["Quad Cannons"],
-            written
-                .custom_group_rules
-                .iter()
-                .map(|r| r.name.as_str())
-                .collect::<Vec<_>>()
-        );
+        assert_eq!(vec!["Quad Cannons"], names(&written));
         assert_eq!(RULES_FILE_VERSION, written.version);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A fresh installation has no rules of anybody's to move, and gets the set
+    /// the program ships with — not an empty file. Those include the rules that
+    /// give fights their names, so an empty start would leave every fight
+    /// unnamed.
+    #[test]
+    fn a_fresh_installation_starts_from_the_shipped_rules() {
+        let (dir, path) = a_temp_rules_file("cla-rules-fresh");
+        let _ = std::fs::remove_file(&path);
+
+        let (sets, problem) = Settings::rules_from(&path, None);
+
+        assert!(problem.is_none());
+        assert!(
+            !sets.combat_name_rules.is_empty(),
+            "a new installation has to be able to name a fight"
+        );
+        assert_eq!(sets, RuleSets::read(&path).expect("and it was written out"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -695,58 +876,97 @@ mod tests {
         .write(&path)
         .unwrap();
 
-        let mut settings = settings_with_a_rule("From the settings");
-        assert_eq!(None, Settings::load_rules_at(&mut settings.analysis, &path));
+        let (sets, problem) = Settings::rules_from(&path, carried("From the settings"));
+
+        assert!(problem.is_none());
+        assert_eq!(vec!["From the file"], names(&sets));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A rules file that cannot be read is never read as an empty one, and
+    /// never written over. It is moved aside under a name that says what
+    /// happened, the program goes on with what a new installation starts from,
+    /// and the message points at where the file went — because Import… takes it
+    /// back whole if its owner can repair it.
+    #[test]
+    fn an_unreadable_rules_file_is_put_aside_rather_than_lost() {
+        let (dir, path) = a_temp_rules_file("cla-rules-broken");
+        std::fs::write(&path, "this is not = a rules file").unwrap();
+
+        let (sets, problem) = Settings::rules_from(&path, carried("Quad Cannons"));
+        let problem = problem.expect("it says what happened");
+
+        let put_aside = dir.join("STO-CLARE_Rules_damaged.toml");
         assert_eq!(
-            vec!["From the file"],
-            settings
-                .analysis
-                .custom_group_rules
-                .iter()
-                .map(|r| r.name.as_str())
-                .collect::<Vec<_>>()
+            "this is not = a rules file",
+            std::fs::read_to_string(&put_aside).unwrap(),
+            "the file itself has to survive, byte for byte"
+        );
+        assert!(
+            problem.text.contains("STO-CLARE_Rules_damaged.toml"),
+            "the reader has to be told where it went: {}",
+            problem.text
+        );
+        assert!(
+            problem.text.contains("Import"),
+            "and how to get the rules back: {}",
+            problem.text
+        );
+        assert!(
+            !problem.blocks_writing,
+            "with the file out of the way there is nothing left to write over"
+        );
+        assert!(
+            !sets.combat_name_rules.is_empty(),
+            "and the program carries on as a new installation would"
+        );
+        assert_eq!(
+            sets,
+            RuleSets::read(&path).expect("the rules file has to be usable again"),
+            "a start that leaves the damaged file in place would hit the same \
+             wall on every later start"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A rules file that cannot be read is never treated as an empty one: that
-    /// would throw away every rule its owner wrote while looking exactly like a
-    /// fresh installation. What was in hand stays, the file is left alone, and
-    /// the reason is reported.
+    /// If the damaged file cannot even be moved — a read-only directory, no
+    /// permission — then nothing is written at all. Writing would finish what
+    /// the damage started and leave its owner with nothing to repair.
     #[test]
-    fn an_unreadable_rules_file_does_not_wipe_the_rules() {
-        let (dir, path) = a_temp_rules_file("cla-rules-broken");
+    fn a_rules_file_that_cannot_be_moved_aside_is_not_written_over() {
+        let (dir, path) = a_temp_rules_file("cla-rules-stuck");
         std::fs::write(&path, "this is not = a rules file").unwrap();
         let before = std::fs::read_to_string(&path).unwrap();
+        // Every name it could be moved to is taken, so the move has to fail.
+        for attempt in 1..100 {
+            let counted = match attempt {
+                1 => String::new(),
+                n => format!("_{n}"),
+            };
+            std::fs::write(dir.join(format!("STO-CLARE_Rules_damaged{counted}.toml")), "").unwrap();
+        }
 
-        let mut settings = settings_with_a_rule("Quad Cannons");
-        let problem =
-            Settings::load_rules_at(&mut settings.analysis, &path).expect("it says what is wrong");
+        let (sets, problem) = Settings::rules_from(&path, carried("Quad Cannons"));
+        let problem = problem.expect("it says what happened");
 
-        assert!(
-            problem.contains("does not look like a rules file"),
-            "{problem}"
-        );
-        assert_eq!(
-            vec!["Quad Cannons"],
-            settings
-                .analysis
-                .custom_group_rules
-                .iter()
-                .map(|r| r.name.as_str())
-                .collect::<Vec<_>>(),
-            "the rules in hand must survive"
-        );
+        assert!(problem.blocks_writing, "saving has to stop");
         assert_eq!(
             before,
             std::fs::read_to_string(&path).unwrap(),
-            "and the file is untouched"
+            "and the file is left exactly as it was"
+        );
+        assert_eq!(
+            vec!["Quad Cannons"],
+            names(&sets),
+            "what was in hand stays in hand"
         );
 
-        // And saving must not finish the job the broken file started. Aimed at
-        // the file itself: `save_rules` would write to the real config
-        // directory, leaving this one untouched whether the guard held or not.
+        // And Ok must not finish the job. Aimed at the file itself:
+        // `save_rules` would write to the real config directory, leaving this
+        // one untouched whether the guard held or not.
+        let mut settings = settings_with_a_rule("Quad Cannons");
         settings.rules_file_problem = Some(problem);
         settings.save_rules_at(&path);
         assert_eq!(before, std::fs::read_to_string(&path).unwrap());
@@ -824,22 +1044,57 @@ mod tests {
     /// defaults over it — the log path, the handle, the window size and the
     /// theme gone, with nothing said at any point.
     #[test]
-    fn an_unreadable_settings_file_is_not_read_as_a_fresh_install() {
+    fn an_unreadable_settings_file_is_put_aside_rather_than_lost() {
         let (dir, path) = a_temp_settings_file("cla-settings-broken", "{ not json at all");
-        let before = std::fs::read_to_string(&path).unwrap();
 
-        let (settings, problem) = Settings::read_at(&path, true).expect("the file is there");
-        let problem = problem.expect("it has to say what is wrong");
+        let why = Settings::read_at(&path)
+            .expect("the file is there")
+            .expect_err("and it does not parse");
+        let problem = Settings::put_aside(&path, why);
 
-        assert!(problem.text.contains("cla-settings-broken"), "{problem:?}");
-        assert!(
-            problem.blocks_writing,
-            "the file it could not read is the one it writes to"
+        let put_aside = dir.join("STO-CLARE_Settings_damaged.json");
+        assert_eq!(
+            "{ not json at all",
+            std::fs::read_to_string(&put_aside).unwrap(),
+            "the file itself has to survive, byte for byte"
         );
-        assert_eq!(Settings::default().general, settings.general);
+        assert!(
+            problem.text.contains("STO-CLARE_Settings_damaged.json"),
+            "the reader has to be told where it went: {}",
+            problem.text
+        );
+        assert!(
+            !problem.blocks_writing,
+            "with the file out of the way there is nothing left to write over"
+        );
+        assert!(!path.exists(), "and it is out of the way");
 
-        // And Ok must not finish what the broken file started.
-        let mut settings = settings;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// If the damaged file cannot even be moved, nothing is written at all:
+    /// writing would finish what the damage started.
+    #[test]
+    fn a_settings_file_that_cannot_be_moved_aside_is_not_written_over() {
+        let (dir, path) = a_temp_settings_file("cla-settings-stuck", "{ not json at all");
+        let before = std::fs::read_to_string(&path).unwrap();
+        // Every name it could be moved to is taken, so the move has to fail.
+        for attempt in 1..100 {
+            let counted = match attempt {
+                1 => String::new(),
+                n => format!("_{n}"),
+            };
+            std::fs::write(
+                dir.join(format!("STO-CLARE_Settings_damaged{counted}.json")),
+                "",
+            )
+            .unwrap();
+        }
+
+        let problem = Settings::put_aside(&path, "broken".to_string());
+        assert!(problem.blocks_writing, "saving has to stop");
+
+        let mut settings = Settings::default();
         settings.settings_file_problem = Some(problem);
         settings.save_at(&path);
         assert_eq!(
@@ -852,13 +1107,15 @@ mod tests {
     }
 
     /// Once the file is out of the way, saving works again — the refusal is
-    /// about this one file, not a latch that leaves the player unable to save.
+    /// about the one file that could not be moved, not a latch that leaves the
+    /// player unable to save at all.
     #[test]
     fn a_readable_settings_file_is_still_written() {
         let (dir, path) = a_temp_settings_file("cla-settings-ok", DEFAULT_SETTINGS);
 
-        let (settings, problem) = Settings::read_at(&path, true).expect("the file is there");
-        assert!(problem.is_none(), "a good file has nothing to report");
+        let settings = Settings::read_at(&path)
+            .expect("the file is there")
+            .expect("and it parses");
         settings.save_at(&path);
 
         let written = std::fs::read_to_string(&path).unwrap();
@@ -873,17 +1130,152 @@ mod tests {
     fn a_missing_settings_file_says_nothing() {
         let dir = std::env::temp_dir().join("cla-settings-absent");
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(Settings::read_at(&dir.join(paths::SETTINGS_FILE_NAME), true).is_none());
+        assert!(Settings::read_at(&dir.join(paths::SETTINGS_FILE_NAME)).is_none());
     }
 
-    /// The pre-1.6 file next to the executable is only ever read, so a broken
-    /// one is worth saying but must not stop the program writing its own.
-    #[test]
-    fn a_broken_file_from_before_1_6_does_not_stop_saving() {
-        let (dir, path) = a_temp_settings_file("cla-settings-legacy", "not json");
+    /// A settings file from before the rules moved out, with one rule in it.
+    fn settings_file_carrying_a_rule(name: &str) -> String {
+        let mut file: serde_json::Value = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
+        file["analysis"]["custom_group_rules"] = serde_json::json!([
+            { "name": name, "rules": [], "enabled": true }
+        ]);
+        serde_json::to_string_pretty(&file).unwrap()
+    }
 
-        let (_, problem) = Settings::read_at(&path, false).expect("the file is there");
-        assert!(!problem.expect("still said").blocks_writing);
+    /// Reading has to note whether the rules came out of somebody's file, which
+    /// is not the same question as whether there are any rules in hand: a fresh
+    /// installation has the shipped ones, and those came from the binary.
+    #[test]
+    fn a_settings_file_says_whether_it_still_carries_the_rules() {
+        let (dir, path) = a_temp_settings_file("cla-carried-yes", &settings_file_carrying_a_rule("Quad Cannons"));
+        let carrying = Settings::read_at(&path).unwrap().unwrap();
+        assert!(carrying.settings_carried_rules);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let (dir, path) = a_temp_settings_file("cla-carried-no", DEFAULT_SETTINGS_WITHOUT_RULES);
+        let not_carrying = Settings::read_at(&path).unwrap().unwrap();
+        assert!(!not_carrying.settings_carried_rules);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            !Settings::default().settings_carried_rules,
+            "the shipped defaults are not anybody's file"
+        );
+    }
+
+    /// A settings file with no rules in it at all, which is what every file
+    /// written since the split looks like.
+    const DEFAULT_SETTINGS_WITHOUT_RULES: &str = r#"{
+        "analysis": { "combatlog_file": "", "combat_separation_time_seconds": 60.0 },
+        "auto_refresh": { "enable": false, "interval_seconds": 1.0 },
+        "visuals": { "ui_scale": 1.0, "theme": "Dark" },
+        "debug": { "enable_log": false, "log_level_filter": "Info" }
+    }"#;
+
+    /// An installation from before the split, on its first start with a build
+    /// that keeps the rules apart. The rules go to their own file, the settings
+    /// are kept exactly as they were beside it, and the copy the settings held
+    /// is taken out so that one setting does not live in two places.
+    #[test]
+    fn rules_carried_in_the_settings_are_moved_out_and_the_original_kept() {
+        let (dir, path) =
+            a_temp_settings_file("cla-migrate-out", &settings_file_carrying_a_rule("Quad Cannons"));
+        let before = std::fs::read_to_string(&path).unwrap();
+        let rules_path = dir.join(paths::RULES_FILE_NAME);
+
+        let mut settings = Settings::read_at(&path).unwrap().unwrap();
+        let (sets, problem) = Settings::rules_from(&rules_path, settings.rules_the_settings_carried());
+        settings.analysis.set_rule_sets(sets);
+        assert!(problem.is_none());
+        settings.take_the_rules_out_of_the_settings_at(&path);
+
+        assert_eq!(
+            vec!["Quad Cannons"],
+            names(&RuleSets::read(&rules_path).expect("the rules have their own file now"))
+        );
+        assert_eq!(
+            before,
+            std::fs::read_to_string(dir.join("STO-CLARE_Settings_archived.json")).unwrap(),
+            "the settings as they were have to be kept, untouched"
+        );
+        let rewritten: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            rewritten["analysis"].get("custom_group_rules").is_none(),
+            "and taken out of the settings, or they are a second source of the same truth"
+        );
+        assert_eq!(
+            60.0, rewritten["analysis"]["combat_separation_time_seconds"],
+            "while everything else in the settings stays"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The worse case: a rules file is already there *and* the settings still
+    /// hold a copy — a build that split them ran, then an older one wrote the
+    /// settings back. The rules file wins, and the settings are still cleaned
+    /// out, but only after their original is kept aside: the copy inside them
+    /// may hold something the rules file does not.
+    #[test]
+    fn a_settings_copy_of_the_rules_is_archived_even_when_the_rules_file_wins() {
+        let (dir, path) = a_temp_settings_file(
+            "cla-migrate-both",
+            &settings_file_carrying_a_rule("From the settings"),
+        );
+        let before = std::fs::read_to_string(&path).unwrap();
+        let rules_path = dir.join(paths::RULES_FILE_NAME);
+        RuleSets {
+            custom_group_rules: vec![RulesGroup {
+                name: "From the file".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+        .write(&rules_path)
+        .unwrap();
+
+        let mut settings = Settings::read_at(&path).unwrap().unwrap();
+        let (sets, _) = Settings::rules_from(&rules_path, settings.rules_the_settings_carried());
+        settings.analysis.set_rule_sets(sets);
+        settings.take_the_rules_out_of_the_settings_at(&path);
+
+        assert_eq!(
+            vec!["From the file"],
+            names(&RuleSets::read(&rules_path).unwrap()),
+            "the rules file is the one that counts"
+        );
+        assert!(
+            before.contains("From the settings"),
+            "and the settings copy is not thrown away"
+        );
+        assert_eq!(
+            before,
+            std::fs::read_to_string(dir.join("STO-CLARE_Settings_archived.json")).unwrap()
+        );
+        let rewritten: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(rewritten["analysis"].get("custom_group_rules").is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A settings file that never carried any rules is not rewritten, and no
+    /// copy of it is left lying about. Every start would otherwise leave one.
+    #[test]
+    fn a_settings_file_without_rules_is_left_exactly_as_it_is() {
+        let (dir, path) =
+            a_temp_settings_file("cla-migrate-none", DEFAULT_SETTINGS_WITHOUT_RULES);
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let settings = Settings::read_at(&path).unwrap().unwrap();
+        settings.take_the_rules_out_of_the_settings_at(&path);
+
+        assert_eq!(before, std::fs::read_to_string(&path).unwrap());
+        assert!(
+            !dir.join("STO-CLARE_Settings_archived.json").exists(),
+            "nothing was taken out, so there is nothing to keep a copy of"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

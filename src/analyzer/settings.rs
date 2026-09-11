@@ -151,10 +151,14 @@ impl std::fmt::Display for RulesFileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unreadable(e) => write!(f, "the file could not be read: {e}"),
+            // The reason goes last because a TOML error is several lines of its
+            // own, ending in a caret under the offending character. Anything
+            // written after that reads as part of the diagram.
             Self::NotRules(e) => write!(
                 f,
-                "this does not look like a rules file — {e}. A rules file is the \
-                 one Export writes; a settings file or a combat log will not do."
+                "This does not look like a rules file. A rules file is the one Export \
+                 writes; a settings file or a combat log will not do. The reader stopped \
+                 here:\n\n{e}"
             ),
             Self::FromANewerVersion { found, understood } => write!(
                 f,

@@ -132,15 +132,11 @@ impl SettingsWindow {
                 // any single page, every page below it is showing a default
                 // instead of what the player set, and pressing Ok would
                 // otherwise write those defaults over the file without warning.
+                // The whole message comes from the reading itself: what it did
+                // about the file depends on whether it could be moved, and a
+                // fixed preamble here would contradict the half that knows.
                 if let Some(problem) = self.modified_settings.settings_file_problem() {
-                    ui.colored_label(
-                        crate::app::theme::palette().warn,
-                        format!(
-                            "⚠ Your settings file could not be read, so everything below is \
-                             back at its default. The file is being left alone — move it aside \
-                             or repair it, then start STO-CLARE again.\n{problem}"
-                        ),
-                    );
+                    ui.colored_label(crate::app::theme::palette().warn, format!("⚠ {problem}"));
                 }
 
                 ui.separator();

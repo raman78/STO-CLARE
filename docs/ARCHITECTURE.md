@@ -273,22 +273,22 @@ tempting though it looks for the nesting: serde's flatten goes through an
 untyped map, which cannot read the rules still embedded in a 2.7-era settings
 file. Prettier output is not worth losing the carry-over.
 
-Existing installations keep their rules inside the settings, so the four fields
-of `AnalysisSettings` are `#[serde(default, skip_serializing)]`: still read from
-a settings file that has them, never written back. `Settings::load_rules` then
-does the move on the **first start**, not on the first Ok — a player who never
-opens Settings would otherwise be left with rules in the old place. A missing
-rules file and a fresh installation are the same case and take the same path:
-write out what is in hand, which for a fresh installation is the shipped
-defaults, giving the player a file to edit.
+Settings files written before the split keep their rules inside them, so the
+four fields of `AnalysisSettings` are `#[serde(default, skip_serializing)]`:
+still read from a settings file that has them, never written back.
+`Settings::load_rules` does the move on the **first start**, not on the first Ok
+— a player who never opens Settings would otherwise be left with rules in the
+old place — and the settings file is then rewritten without them, with its
+original kept aside. See [Rules still living in a settings
+file](#rules-still-living-in-a-settings-file).
 
 A rules file that exists but cannot be read is never treated as an empty one.
 That would discard every rule its owner wrote while looking exactly like a fresh
-install. Instead the rules from the settings stay in place, the file is left
-untouched, `save` refuses to write over it (`Settings::rules_file_problem`), and
-the Analysis tab says so at the top — every time the tab is opened, not once at
-start-up, because the rules on screen are then not the ones in the file and
-editing them is working on the wrong copy.
+install. It is put aside instead and the program starts from the shipped set —
+see [A config file that cannot be read](#a-config-file-that-cannot-be-read). The
+Analysis tab says so at the top (`Settings::rules_file_problem`) every time the
+tab is opened, not once at start-up, because the rules on screen are then not
+the ones that were in the file and editing them is working on the wrong copy.
 
 `version` is written and checked: a file from a newer build is refused with
 `RulesFileError::FromANewerVersion` rather than half-read.
@@ -1749,30 +1749,78 @@ old next-to-the-executable location read as a fallback. See
 ### A config file that cannot be read
 
 **A file that will not parse is not the same as a file that is not there**, and
-both config files are read that way (`Settings::read_at`,
-`Settings::load_rules_at`). Treating the first as the second is the worst
-outcome available: every default comes back, the window looks like a fresh
-installation, and the next Ok writes those defaults over what was still in the
-file. One stray character would cost the player their log path, handle, theme,
-columns and every rule, with nothing said at any point.
+both config files are read that way (`Settings::read_at`, `Settings::rules_from`).
+Treating the first as the second is the worst outcome available: every default
+comes back, the window looks like a fresh installation, and the next Ok writes
+those defaults over what was still in the file. One stray character would cost
+the player their log path, handle, theme, columns and every rule, with nothing
+said at any point.
 
-So there are three cases, not two. No file is a fresh installation and goes
-quietly to the defaults. A file that reads is used. A file that is there but
-does not parse leaves the program on the defaults *and*: the reason is kept
-(`SettingsFileProblem`, `Settings::rules_file_problem`), the Settings window
-says so above its tabs with the path and the parser's own words, and `save`
-refuses to write that file at all. The player can fix or move it; nothing is
-lost while they decide.
+So there are three cases, not two:
 
-`SettingsFileProblem::blocks_writing` separates the two files the program reads
-settings from: the one in the config directory is the one it writes, so a broken
-one stops the write; the pre-1.6 file next to the executable is only ever read,
-so a broken one is worth saying but is no reason to stop saving.
+| on disk | what happens |
+|---------|--------------|
+| no file | a fresh installation; the defaults, quietly |
+| a file that parses | used |
+| a file that does not parse | **put aside**, and the program carries on as a fresh installation would |
 
-`save_rules_at` and `save_at` take the path they write to rather than asking for
-it. That is for the tests: a refusal asserted against the real config directory
-passes whether the guard holds or not, because a write that got through would
-land there and not in the file the test is watching.
+Put aside, not deleted and not written over. "Unreadable" is this program's
+opinion, not something its owner agreed to: they can very likely still read the
+file, lift values back out of it, or repair it — and for the rules file,
+**Import…** then takes it back whole. `paths::set_aside` renames it to
+`STO-CLARE_Settings_damaged.json` (`..._2`, `..._3` if that is taken, because
+`fs::rename` overwrites silently on Linux and a second mishap must not erase the
+evidence of the first). The Settings window says what happened and where the
+file went, in the message the reading itself produced — the UI adds only the ⚠,
+because what became of the file depends on whether it could be moved and a fixed
+preamble there would contradict the half that knows.
+
+The refusal to write survives for exactly one case: the file could not even be
+moved (a read-only directory, no permission). Writing then would finish what the
+damage started, so `ConfigFileProblem::blocks_writing` stops `save` and the
+message tells the reader to move or repair it themselves. `blocks_writing` also
+covers the pre-1.6 file beside the executable, which is only ever read: a broken
+one is reported and otherwise left exactly where it is.
+
+`Settings::load_or_default` is memoized for the process, and that is load-bearing
+rather than an optimisation. Four parts of the app load the settings at start-up
+— window geometry, logger, app state, Settings dialog — and a damaged file put
+aside by the first is simply *gone* to the second, which would see a fresh
+installation and report nothing. The dialog loads last, so it is precisely the
+caller whose warning would go missing.
+
+`save_rules_at`, `save_at` and `take_the_rules_out_of_the_settings_at` take the
+path they write to rather than asking for it. That is for the tests: a refusal
+asserted against the real config directory passes whether the guard holds or
+not, because a write that got through would land there and not in the file the
+test is watching.
+
+### Rules still living in a settings file
+
+Before 2.8 the rules were a part of the settings. Two cases arrive at a build
+that keeps them apart, and both end the same way — with the rules in their own
+file, the settings rewritten without them, and the settings **as they were**
+kept beside them as `STO-CLARE_Settings_archived.json`:
+
+- **No rules file yet.** `Settings::rules_from` writes one from what the settings
+  were carrying (`Settings::rules_the_settings_carried`).
+- **A rules file already there.** It wins; the copy in the settings is not read.
+  It is still archived rather than simply dropped, because it may hold something
+  the rules file does not.
+
+The copy is what makes the rewrite safe to do without asking, and
+`take_the_rules_out_of_the_settings` will not rewrite anything if the copy
+cannot be made. One setting living in two places is a question about which of
+them is true, asked at every start and answered by whichever was written last —
+so it is worth ending, but not at the price of an unasked-for edit to somebody's
+config.
+
+"Did the settings carry rules" is noted while reading and cannot be worked out
+later from the rules in hand: on a fresh installation those are the shipped
+defaults, which came from the binary and not from anyone's file. That
+distinction is also why a damaged or missing rules file starts from the shipped
+set rather than an empty one — those include the rules that give fights their
+names, and an empty start would leave every fight unnamed.
 
 ### Guards on the file formats, for the next release
 

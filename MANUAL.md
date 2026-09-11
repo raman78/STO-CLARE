@@ -1175,9 +1175,11 @@ how many rules were added and how many were skipped. Nothing is saved until you
 press **Ok**, so **Cancel** undoes an import you did not mean.
 
 If the program cannot read your rules file, it says so at the top of the
-Analysis page and leaves the file alone rather than writing over it. Your rules
-on screen are then the ones from before, so fix or move the file before editing
-anything.
+Analysis page and puts the file aside as **`STO-CLARE_Rules_damaged.toml`**,
+next to where it was. Nothing is deleted and nothing is written over it: the
+rules on screen are then the ones a new installation starts with, and if you can
+repair the file that was put aside, **Import…** brings your own rules straight
+back.
 
 #### A set of rules to start from
 
@@ -1462,14 +1464,26 @@ A: Delete the settings file from the folder above. The program writes a fresh
 one with its defaults on the next start.
 
 **Q: Everything is back at its default and there is a warning in Settings.**
-A: Your settings file is damaged and the program could not read it. It says
-which file and what is wrong with it at the top of the Settings window, and it
-is working on defaults for this run only. **It will not write over that file**,
-so nothing of yours has been lost yet: your rules are in a separate file and
-are untouched either way. Move the damaged file somewhere else — or fix it, if
-the message points at something you can see — and start STO-CLARE again. The
-same happens, and says so on the Analysis page, if it is the rules file that
-cannot be read.
+A: Your settings file was damaged and could not be read, so STO-CLARE started as
+if it were newly installed. **Nothing of yours has been deleted.** The file has
+been put aside in the same folder as
+`STO-CLARE_Settings_damaged.json`, and the warning at the top of the Settings
+window says where it is and what the reader objected to — open it and you can
+often see the damage and copy values back out. The same happens to the rules
+file, and is said on the Analysis page; a rules file you manage to repair goes
+back in whole with **Import…**.
+
+Once in a while the program cannot even move the damaged file — a folder it is
+not allowed to write to, a file another program is holding open. It says so, and
+then it saves nothing at all until you have moved the file yourself, so that it
+cannot make matters worse.
+
+**Q: There is a file called `STO-CLARE_Settings_archived.json` in my settings
+folder. Can I delete it?**
+A: Yes, once you are happy. It is your settings file exactly as it was before
+the rules moved into their own file, kept so that nothing was taken out of your
+config without a copy remaining. Everything in it that is still a setting is in
+the current file, and the rules are in `STO-CLARE_Rules.toml`.
 
 ## Where to get more help
 

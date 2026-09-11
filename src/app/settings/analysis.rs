@@ -184,17 +184,13 @@ impl AnalysisTab {
         frame: &Frame,
     ) {
         // Said here, where the rules are, and said every time the tab is opened
-        // rather than once at start-up: the rules on screen are not the ones in
-        // the file, and editing them without knowing that would be working on
-        // the wrong copy. Nothing is written over that file while this stands.
+        // rather than once at start-up: the rules on screen are not the ones
+        // that were in the file, and editing them without knowing that would be
+        // working on the wrong copy. The whole message comes from the reading
+        // itself — what became of the file depends on whether it could be moved
+        // aside, and a fixed preamble here would contradict the half that knows.
         if let Some(problem) = modified_settings.rules_file_problem() {
-            ui.colored_label(
-                theme::palette().warn,
-                format!(
-                    "⚠ Your rules file could not be read, so the rules below are the ones \
-                     from before it was split out, and the file is being left alone.\n{problem}"
-                ),
-            );
+            ui.colored_label(theme::palette().warn, format!("⚠ {problem}"));
             ui.separator();
         }
 
