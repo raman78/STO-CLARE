@@ -1,5 +1,4 @@
-//! The Shortcuts tab: which key does what, and whether the overlay's key is
-//! taken from the whole desktop.
+//! The Shortcuts tab: which key does what, and which of them is global.
 //!
 //! A row per action, and the combination is a button: press it and the next
 //! keys pressed are recorded. Recording is the only way to set one, rather than
@@ -28,11 +27,11 @@ pub struct ShortcutsTab {
 
 impl ShortcutsTab {
     pub fn show(&mut self, modified_settings: &mut Settings, global: &GlobalState, ui: &mut Ui) {
-        ui.label("These keys work while this window is in front.");
+        ui.label("These keys work while this window is in front. A global one works everywhere.");
         ui.add_space(4.0);
 
         Grid::new("shortcuts")
-            .num_columns(3)
+            .num_columns(4)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
                 for action in ShortcutAction::ALL {
@@ -41,9 +40,17 @@ impl ShortcutsTab {
                 }
             });
 
+        // Everything that went wrong gathers here, under the table: a
+        // combination that was turned down, and a global key that was asked for
+        // and not given. Both are about a row above, and a reader who has just
+        // pressed something looks below it for the answer.
         if let Some(refused) = &self.refused {
             ui.add_space(4.0);
             ui.colored_label(theme::palette().warn, format!("⚠ {refused}"));
+        }
+        if global.is_problem() {
+            ui.add_space(4.0);
+            ui.colored_label(theme::palette().warn, format!("⚠ {}", global.message()));
         }
 
         // Keys the file holds for something this build does not have. They are
@@ -62,10 +69,6 @@ impl ShortcutsTab {
                 .weak(),
             );
         }
-
-        ui.add_space(10.0);
-        ui.separator();
-        self.show_system_wide(modified_settings, global, ui);
     }
 
     fn show_row(&mut self, action: ShortcutAction, modified_settings: &mut Settings, ui: &mut Ui) {
@@ -88,6 +91,20 @@ impl ShortcutsTab {
             // moves the recording to it, so only one is ever live.
             self.recording = (!recording).then_some(action);
             self.refused = None;
+        }
+
+        // Beside the combination it applies to, rather than under the table:
+        // this is a property of that one shortcut, and at the foot of the page
+        // it read as a setting of its own that happened to mention the overlay.
+        // A column of its own, so the rows stay in line.
+        if action.can_be_system_wide() {
+            ui.checkbox(&mut modified_settings.shortcuts.system_wide, "Global")
+                .hover(
+                    "The key works while the game is in front. Nothing else on the desktop can \
+                     use that combination while this is on — the game included.",
+                );
+        } else {
+            ui.label("");
         }
 
         let is_custom = modified_settings.shortcuts.is_custom(action);
@@ -179,33 +196,6 @@ impl ShortcutsTab {
         self.refused = None;
         modified_settings.shortcuts.set(action, combination);
     }
-
-    fn show_system_wide(
-        &mut self,
-        modified_settings: &mut Settings,
-        global: &GlobalState,
-        ui: &mut Ui,
-    ) {
-        let overlay = ShortcutAction::ToggleOverlay;
-        // "Global shortcut" is the name every program uses for this, so the box
-        // says that and stops. The row above is where the combination is set
-        // and shown, and what a global shortcut *is* belongs in the manual —
-        // spelling either out here is a second copy of something the reader
-        // either already knows or can read where it is explained properly.
-        ui.checkbox(
-            &mut modified_settings.shortcuts.system_wide,
-            format!("Make the {} shortcut global", overlay.label()),
-        )
-        .hover("While it is on, no other program can use that combination — the game included.");
-
-        // Said only when the answer is no. A key that was asked for and not
-        // given leaves a ticked box standing for something that is not
-        // happening, and that is the one case the reader cannot work out by
-        // looking. Held, and switched off, are what the box itself says.
-        if global.is_problem() {
-            ui.colored_label(theme::palette().warn, format!("⚠ {}", global.message()));
-        }
-    }
 }
 
 #[cfg(test)]
@@ -273,7 +263,9 @@ mod tests {
     fn a_combination_another_action_holds_is_refused_by_name() {
         let (tab, settings) = record(Key::O, Modifiers::ALT);
         assert!(
-            tab.refused.as_deref().is_some_and(|text| text.contains("Overlay")),
+            tab.refused
+                .as_deref()
+                .is_some_and(|text| text.contains("Overlay")),
             "the refusal names what holds the key: {:?}",
             tab.refused
         );

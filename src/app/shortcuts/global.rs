@@ -73,8 +73,9 @@ impl GlobalState {
     /// not be had.
     pub fn message(&self) -> String {
         match self {
-            Self::Off => "Not taken — the shortcut only works while this window is in front."
-                .to_owned(),
+            Self::Off => {
+                "Not taken — the shortcut only works while this window is in front.".to_owned()
+            }
             Self::Held(_) => {
                 "Taken from the whole desktop; it works while the game is in front.".to_owned()
             }
@@ -290,7 +291,15 @@ mod backend {
 
         let thread = thread::Builder::new()
             .name("cla-global-hotkey".to_owned())
-            .spawn(move || run(combination, &ready_sender, &press_sender, &thread_stop, &ctx))
+            .spawn(move || {
+                run(
+                    combination,
+                    &ready_sender,
+                    &press_sender,
+                    &thread_stop,
+                    &ctx,
+                )
+            })
             .map_err(|error| {
                 GlobalState::Unsupported(format!("the thread could not be started ({error})"))
             })?;
@@ -367,8 +376,7 @@ mod backend {
                     // exactly what a held Alt that was never released looks
                     // like from the outside.
                     Ok(Some(Event::KeyPress(event)))
-                        if event.detail == keycode
-                            && chord_held(event.state, wanted_modifiers) =>
+                        if event.detail == keycode && chord_held(event.state, wanted_modifiers) =>
                     {
                         let repeating = down
                             || (!detectable_repeat
@@ -439,7 +447,9 @@ mod backend {
         let root = connection.setup().roots[screen].root;
 
         let keysym = keysym(combination.key).ok_or_else(|| {
-            GlobalState::Refused(format!("{combination} is not a key the X server can be told"))
+            GlobalState::Refused(format!(
+                "{combination} is not a key the X server can be told"
+            ))
         })?;
         let keycode = keycode(&connection, keysym).ok_or_else(|| {
             GlobalState::Refused(format!(
@@ -680,7 +690,9 @@ mod backend {
         }
     }
 
-    fn modifier_flags(combination: Combination) -> windows_sys::Win32::UI::Input::KeyboardAndMouse::HOT_KEY_MODIFIERS {
+    fn modifier_flags(
+        combination: Combination,
+    ) -> windows_sys::Win32::UI::Input::KeyboardAndMouse::HOT_KEY_MODIFIERS {
         let modifiers = combination.modifiers;
         let mut flags = MOD_NOREPEAT;
         if modifiers.shift {

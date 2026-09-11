@@ -107,9 +107,8 @@ impl ShortcutAction {
     pub fn hint(self) -> &'static str {
         match self {
             Self::ToggleOverlay => {
-                "Show or hide the overlay in front of the game. Taken from the whole desktop \
-                 when the system-wide box below is ticked, so it works while the game has the \
-                 screen."
+                "Show or hide the overlay in front of the game. Marked Global, the key \
+                 works while the game has the screen rather than only in this window."
             }
             Self::ToggleLadder => "Open or close the window that reads the OSCR ladder.",
             Self::OpenSettings => "Open this window.",
@@ -342,7 +341,11 @@ impl ShortcutSettings {
     /// The actions this combination is already taken by — asked before a new
     /// one is recorded, since two actions on one key means the first of them
     /// answers and the other never runs.
-    pub fn taken_by(&self, combination: Combination, except: ShortcutAction) -> Vec<ShortcutAction> {
+    pub fn taken_by(
+        &self,
+        combination: Combination,
+        except: ShortcutAction,
+    ) -> Vec<ShortcutAction> {
         ShortcutAction::ALL
             .into_iter()
             .filter(|action| *action != except && self.effective(*action) == combination)
@@ -544,7 +547,10 @@ mod tests {
         );
 
         assert!(fired.is_empty(), "Alt+Shift+L is not Alt+L");
-        assert_eq!(1, left, "and the press is left for whoever it was meant for");
+        assert_eq!(
+            1, left,
+            "and the press is left for whoever it was meant for"
+        );
     }
 
     /// A key held down repeats, and a toggle answering thirty times a second
@@ -698,7 +704,10 @@ mod tests {
         };
         settings.set(ShortcutAction::ToggleLadder, changed);
         assert!(settings.is_custom(ShortcutAction::ToggleLadder));
-        assert_eq!(Ok(changed), settings.combination(ShortcutAction::ToggleLadder));
+        assert_eq!(
+            Ok(changed),
+            settings.combination(ShortcutAction::ToggleLadder)
+        );
 
         // Put back by hand rather than by the Reset button: the same rule has
         // to hold, or the file keeps a copy of the shipped table.
@@ -783,9 +792,7 @@ mod tests {
 
         assert_eq!(
             "Ctrl+F9",
-            settings
-                .effective(ShortcutAction::ToggleLadder)
-                .to_string(),
+            settings.effective(ShortcutAction::ToggleLadder).to_string(),
             "the shortcuts this build does know still work"
         );
         assert!(

@@ -182,12 +182,14 @@ the press:
 | a combination another action already answers  | two on one key means only the first ever runs; the message names the other action |
 | nothing — the press is recorded               | —                                          |
 
-The system-wide checkbox is at the foot of the tab, under the state line
-described next. A change there takes effect on **Ok**, like every other setting.
+The **Global** tick sits in the Overlay row itself, beside the combination it
+applies to — it is a property of that one shortcut, and at the foot of the page
+it read as a setting of its own that happened to mention the overlay. The other
+rows leave that column empty. A change takes effect on **Ok**, like every other
+setting.
 
-Its label is the standard one — *Make the Overlay shortcut global* — and stops
-there. What a global shortcut is belongs in the manual, and the combination
-belongs to the row above, which is where it is set and shown. Whatever that row
+One word, *Global*, and nothing under it. What a global shortcut is belongs in
+the manual, and the combination is right beside the tick. Whatever that row
 holds is what gets taken, never the shipped default;
 `the_desktop_wide_key_is_the_one_the_overlay_row_holds` takes a real grab and
 holds it to that.
@@ -272,7 +274,7 @@ as the overlay's `layer_restart`. Closing Settings with Ok is the clean retry.
 | the key does nothing while the game is in front, and the tab says `Held` | the game is not an X client, or a compositor keeps the key | `run`'s event loop; the log line `global shortcut: … taken from the desktop` |
 | the tab says "already held by another program" | another program's grab or global shortcut has that key | `refusal`; on KDE, System Settings → Shortcuts |
 | the tab says "there is no X server to take a key from" | no `DISPLAY`, or no XWayland in this session | `grab`'s connect step |
-| the shortcut works in the window but not outside it | the box is unticked, or the grab was refused | the state line at the foot of the tab |
+| the shortcut works in the window but not outside it | the Global tick is off, or the grab was refused | the tick in the Overlay row, and the warning line under the table |
 | `global shortcut: … was lost, taking it again` in the log | the X connection dropped | [When the grab dies](#when-the-grab-dies) |
 
 ## Testing

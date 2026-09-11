@@ -1424,11 +1424,11 @@ computer can use that combination — if the game has something on Alt + O, the
 game will no longer get it. Either pick a different combination in Settings →
 Shortcuts, or untick the box.
 
-The tick box — **Make the Overlay shortcut global** — is at the foot of the
-Shortcuts page. Ticked and closed with Ok, the key is yours everywhere; that is
-all there is to it, and the page says nothing further.
+The tick that does it is in the Overlay row itself, beside the combination, and
+is labelled **Global**. Ticked and closed with Ok, the key is yours everywhere;
+that is all there is to it, and the page says nothing further.
 
-It does speak up when the answer is no, in a line under the box:
+It does speak up when the answer is no, in a line under the table:
 
 | What it says | What it means |
 |--------------|---------------|
