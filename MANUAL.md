@@ -409,13 +409,13 @@ it fired underneath that. The log names the owner of every shot, so this is
 sorted out for you; nothing has to be told which pet is yours.
 
 ```
-Raman@handle                            ← you: everything credited to you
-├── Phaser Beam Array                   ← fired by you
-├── Quad Cannons                        ← a grouping rule of yours, over your
-│   ├── Quad Disruptor Cannons            own shots
+Kestrel@yourhandle                              ← everything credited to you
+├── Phaser Beam Array                           ← fired by you
+├── Quad Cannons                                ← your rule, over your shots
+│   ├── Quad Disruptor Cannons
 │   └── Quad Disruptor Cannons - Rapid Fire III
-└── Bird-of-Prey (ALPHA)                ← a pet of yours
-    └── Quad Cannons                    ← the same rule, over the pet's shots
+└── Bird-of-Prey (ALPHA)                        ← a pet of yours
+    └── Quad Cannons                            ← the same rule, for the pet
         └── Quad Disruptor Cannons
 ```
 
@@ -425,7 +425,6 @@ Open a row to go a level deeper; the deepest level is always who was hit.
 
 Where the game stops naming the pet, see
 [The row called (Damage owner unknown)](#the-row-called-damage-owner-unknown).
-
 
 #### The row called (Damage owner unknown)
 
