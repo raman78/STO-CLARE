@@ -468,12 +468,32 @@ name next to the settings overrides it without a rebuild. See
 | settings                    | `app/settings`           | split into analysis settings (invalidate the parse) and the rest |
 | how it looks                | `app/theme.rs`           | the themes on offer, the app's own colours, the text sizes       |
 | overlay                     | `app/overlay`            | separate always-on-top window; see `docs/OVERLAY.md`             |
-| the two keys                | `custom_widgets/dialog.rs`, `app/mod.rs` | Escape closes a dialog, Tab folds the combats panel; see below |
+| the structural keys         | `custom_widgets/dialog.rs`, `app/mod.rs` | Escape closes a dialog, Tab folds the combats panel; see below |
+| the shortcuts               | `app/shortcuts`          | the keys the reader may rebind, and the one held against the whole desktop; see `docs/SHORTCUTS.md` |
 
 ### The keyboard
 
-The program answers two keys, and both had to be taken off egui before they
-could mean anything here.
+Two kinds of key, and the difference is whether the reader may change it.
+
+**Escape and Tab are structural** — they are what the window *is*, not a
+preference, and both had to be taken off egui before they could mean anything
+here. They are the rest of this section.
+
+**Everything else is a shortcut** the reader can rebind in Settings →
+Shortcuts: the overlay, the ladder, the settings, the grouping rules, a
+comparison. `app/shortcuts` owns the table, `App::act_on` makes the same call
+the matching button does, and the overlay's key is additionally taken from the
+whole desktop so it answers while the game is in front. **`docs/SHORTCUTS.md`
+is the whole of it** — what is stored and why an unreadable entry costs one
+shortcut rather than the settings file, which grab is used on which platform
+and what was measured to pick it, and what the Settings tab refuses.
+
+What belongs in this map is the ordering: the shortcuts are asked **at the end
+of the frame**, after everything on screen has had its chance at the key, and
+they *take* the event rather than reading it — the same discipline as below. A
+dialog, or the row in the Shortcuts tab that is recording a new combination,
+therefore answers first, and a key being bound never also runs what it is bound
+to.
 
 **Escape closes a dialog.** `custom_widgets::dialog::escape_closes` is the one
 place that answers it, and every dialog asks it rather than reading the key
@@ -1866,5 +1886,6 @@ drops `log::max_level()` to `Off` so every call site skips its formatting.
 | `docs/DIFFICULTY_DETECTION.md` | how map and difficulty are derived                    |
 | `docs/DETECTION_SAMPLES.md`    | the measurements behind the difficulty tiers          |
 | `docs/OVERLAY.md`              | the always-on-top overlay, including the Wayland path |
+| `docs/SHORTCUTS.md`            | the keys the reader can rebind, and the desktop-wide one |
 | `docs/LADDER_UPLOAD.md`        | uploading a combat to the OSCR ladder                 |
 | `docs/DISTRIBUTION.md`         | packaging and releases                                |

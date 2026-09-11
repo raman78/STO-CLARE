@@ -176,6 +176,13 @@ struct RulesTable<'a> {
 }
 
 impl AnalysisTab {
+    /// Puts the tab on the grouping rules, which is what the keyboard shortcut
+    /// for them asks for. The tab opens on Combat Names otherwise, and landing
+    /// there is landing on a different rule set.
+    pub fn show_custom_grouping(&mut self) {
+        self.selected_section = AnalysisSection::CustomGrouping;
+    }
+
     pub fn show(
         &mut self,
         modified_settings: &mut Settings,

@@ -164,14 +164,7 @@ impl Records {
             }
         };
         if ui.steady_toggle(!self.collapsed(), "Ladder").clicked() {
-            // A toggle both ways. It lit up while the window was open but
-            // pressing it again fetched the whole ladder afresh instead of
-            // putting the window away, which is not what a lit button offers.
-            *self = if self.collapsed() {
-                Self::begin_load_ladders(ui.ctx().clone(), url.clone())
-            } else {
-                Self::Collapsed
-            };
+            self.toggle(ui.ctx(), &url);
         }
 
         let mut open = !self.collapsed();
@@ -239,6 +232,33 @@ impl Records {
             *self = Self::Collapsed;
         }
         runs.open_run
+    }
+
+    /// Opens the window, or puts it away.
+    ///
+    /// A toggle both ways. It lit up while the window was open but pressing it
+    /// again fetched the whole ladder afresh instead of putting the window
+    /// away, which is not what a lit button offers.
+    fn toggle(&mut self, ctx: &Context, url: &Url) {
+        *self = match self.collapsed() {
+            true => Self::begin_load_ladders(ctx.clone(), url.clone()),
+            false => Self::Collapsed,
+        };
+    }
+
+    /// The same from the keyboard, which has not parsed the address the way
+    /// [`Self::show`] has.
+    ///
+    /// An address that cannot be read opens nothing: the toolbar is already
+    /// saying so where the button would be — `show` puts the message there
+    /// instead of the button — so the reader is looking at the answer.
+    pub fn toggle_from_keyboard(&mut self, ctx: &Context, url: &str) {
+        match Url::parse(url) {
+            Ok(url) => self.toggle(ctx, &url),
+            Err(error) => log::warn!(
+                "ladder: the upload URL cannot be read ({error}); it is set in Settings → Upload"
+            ),
+        }
     }
 
     fn collapsed(&self) -> bool {
