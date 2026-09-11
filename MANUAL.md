@@ -38,10 +38,8 @@ Everything lives in one window. From top to bottom:
 
 Press **☰ Combats** in the top row — or the **Tab** key — and a panel opens down
 the left-hand side with every fight in your log, newest first. Double-click a
-row and every tab fills in with that fight. Tab folds it away again.
-
-Tab does nothing else in the program: it does not walk between the buttons the
-way it does in a form, because nothing here is operated that way.
+row and every tab fills in with that fight. Tab folds it away again — see
+[The two keys](#the-two-keys).
 
 ![The combats list](images/combats-list.png)
 
@@ -1160,16 +1158,34 @@ The ways to compare:
 | Ends with   | is at the end of the name                                |
 | Contains    | is anywhere in the name                                  |
 
-**Wildcards work in all four.** `*` and `%` both mean "anything at all here",
-and `?` means "exactly one character". So `Starts with` `Quad*Cannons` catches
-`Quad Disruptor Cannons` and `Quad Phaser Cannons - Rapid Fire III` alike.
-Whichever of `*` or `%` you are used to writing, it does the same thing.
+**Wildcards work in all four methods.** A wildcard is a character that stands
+for something you do not want to spell out:
 
-The method only says *where* your text has to sit; the wildcards say what may
-stand between its parts. Text with no wildcard in it works exactly as it always
-did, so none of your existing rules change.
+| Sign | Stands for | Example | Catches |
+|------|--------------------------|--------------------|-------------------------|
+| `*`  | anything at all, or nothing | `Quad*Cannons`  | `Quad Disruptor Cannons`, `QuadCannons` |
+| `%`  | the same as `*`          | `Quad%Cannons`     | the same names |
+| `?`  | exactly one character    | `Mk ?II`           | `Mk XII`, but not `Mk II` |
 
-Capital letters matter.
+`*` and `%` do the same thing on purpose. If you are used to writing one of
+them, write that one — you do not have to find out which the program prefers.
+
+The method and the wildcards answer two different questions, and it helps to
+keep them apart. **The method says where your text has to sit** in the name;
+**the wildcards say what may stand between its parts.** So `Starts with` with
+`Quad*Cannons` means "the name begins with Quad, then anything, then Cannons" —
+which catches `Quad Disruptor Cannons` and `Quad Phaser Cannons - Rapid Fire
+III` alike. The same text under `Contains` would find it anywhere in the name.
+
+Text with no wildcard in it works exactly as it always did, so none of your
+existing rules change by themselves.
+
+Capital letters matter: `cannons` does not catch `Cannons`.
+
+There is no way to switch a wildcard off and search for a literal `*` or `%` —
+and you will not need one. The game does not use those characters in the names
+of anything: not a ship, not a pet, not an ability. (Checked across a 138 MB
+log: not one name contains `*`, `%` or `?`.)
 
 **The list beside your conditions** shows the names from the combat you have
 selected that the rule catches right now, and it updates as you type. That is
@@ -1181,9 +1197,8 @@ If the list stays empty, the rule is catching nothing yet; if a name you did not
 expect is in it, the rule is too wide. Nothing has to be applied and no log has
 to be re-read to find out.
 
-Escape closes the window. Pressed while you are typing in a box, the first
-Escape only leaves the box — your text is safe — and the next one closes the
-window.
+**Esc** closes the window, and closes the box you are typing in first — see
+[The two keys](#the-two-keys).
 
 **List Selected Combat Occurred Names** shows every name that appeared in the
 combat you are reading, which is another way to find the exact wording a rule
@@ -1266,6 +1281,50 @@ you can skip the renaming — the old file is found there and read once, then
 written into the settings folder under the new name.
 
 ---
+
+## The two keys
+
+There are only two, and both do the thing you would expect if you assume the
+program has no hidden modes.
+
+| Key | What it does |
+|-----|-----------------------------------------------------------------|
+| **Tab** | Opens and closes the combats panel. |
+| **Esc** | Closes the window you are in, or stops the job that window is doing. |
+
+**Tab** does nothing else. In a form, Tab usually walks the highlight from one
+button to the next — here it does not, because nothing in this program is
+operated that way, and the one thing you open and close over and over is the
+list of fights. While you are typing in a box it still belongs to the box.
+
+**Esc** closes a dialog exactly as its own Cancel or Close button would.
+Settings, the rule-editing window, Delete combats, the occurred-names list,
+Damage by type, the Ladder, a comparison, the upload and download result
+windows — all of them take it.
+
+Two things about Esc are worth knowing, because both exist so the key is never
+destructive:
+
+**A box you are typing in gets the key first.** Press Esc while writing a rule
+name and you leave the box; your text is still there. Press it again and the
+window closes. Without that, the key you press to get out of a field would
+throw away everything else the window held.
+
+**The innermost thing closes first.** With a small window open over a bigger
+one, Esc puts away the small one and leaves the big one where it was. Press it
+again for the next one out.
+
+Where a window is reporting work in progress, Esc means *stop the work*, not
+*hide the window*:
+
+| Window | What Esc does |
+|--------|-------------------------------------------------------------|
+| Uploading to the ladder | Breaks the connection part way. The ladder never receives a whole file, so nothing is stored. |
+| Clearing the log, fetching a run | Nothing. There is no dialog to dismiss — only the job — and abandoning a rewrite of your log halfway is not something a key press should do. |
+
+Tip: once the last byte of an upload has gone out and the program is only
+waiting for the ladder to answer, there is nothing left to stop. Esc then just
+puts the window away.
 
 ## Common situations
 

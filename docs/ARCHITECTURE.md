@@ -450,6 +450,39 @@ name next to the settings overrides it without a rebuild. See
 | settings                    | `app/settings`           | split into analysis settings (invalidate the parse) and the rest |
 | how it looks                | `app/theme.rs`           | the themes on offer, the app's own colours, the text sizes       |
 | overlay                     | `app/overlay`            | separate always-on-top window; see `docs/OVERLAY.md`             |
+| the two keys                | `custom_widgets/dialog.rs`, `app/mod.rs` | Escape closes a dialog, Tab folds the combats panel; see below |
+
+### The keyboard
+
+The program answers two keys, and both had to be taken off egui before they
+could mean anything here.
+
+**Escape closes a dialog.** `custom_widgets::dialog::escape_closes` is the one
+place that answers it, and every dialog asks it rather than reading the key
+itself. Its module documentation is the source of truth for *how* — that the
+key is taken rather than read, why a focused field has to give it up first and
+why that question is answered from the previous pass, and which windows
+deliberately do not take it. Do not restate any of that here; it is a page long
+and it is next to the code it constrains.
+
+What belongs in this map is the consequence for anyone adding a dialog: **ask
+`escape_closes` from inside the window's own contents**, not beside them. Order
+of asking is what decides which of several open windows closes, so a window
+drawn inside another asks first and therefore closes first. A dialog that
+checks the key on its own — including egui's `ModalResponse::should_close` —
+takes it without regard for what holds the keyboard, and the ordering breaks.
+
+**Tab folds the combats panel.** egui handles Tab itself in `Focus::begin_pass`
+and offers no way to switch the focus walk off, so the key is removed from the
+event stream before egui sees it: `App::raw_input_hook` runs ahead of
+`Context::run_ui`, and `take_tab_presses` strips plain Tab (modified Tab is left
+alone — it is not the focus walk and may mean something to the window manager).
+The hook yields the key untouched whenever anything holds focus, so Tab still
+belongs to a text field being typed in.
+
+The panel is toggled at the *end* of the frame rather than in the hook, because
+the hook runs before any widget exists and the panel's state is owned by the
+UI. `app::tab_tests` covers the stripping.
 
 Three conventions worth knowing before changing a table or a chart:
 
