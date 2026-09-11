@@ -250,7 +250,7 @@ exclusion. You do not need any of it to read your damage. The
 that ship in the settings.
 
 **A full set of rules is published with STO-CLARE**, in this repository as
-[`rules/STO-CLARE_Rules.json`](rules/STO-CLARE_Rules.json) — the maintainer's
+[`rules/STO-CLARE_Rules.toml`](rules/STO-CLARE_Rules.toml) — the maintainer's
 own, as actually used: 48 custom grouping rules that give each weapon one row
 instead of one per firing mode, plus damage exclusions and source reversals.
 Take it or leave it; nothing depends on it.

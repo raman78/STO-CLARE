@@ -360,7 +360,7 @@ impl AnalysisTab {
             .clicked()
             && let Some(path) = FileDialog::new()
                 .set_title("Export rules")
-                .add_filter("rules", &["json"])
+                .add_filter("rules", &["toml"])
                 .set_file_name(&file_name)
                 .set_parent(frame)
                 .save_file()
@@ -379,7 +379,7 @@ impl AnalysisTab {
             .clicked()
             && let Some(path) = FileDialog::new()
                 .set_title("Import rules")
-                .add_filter("rules", &["json"])
+                .add_filter("rules", &["toml"])
                 .set_parent(frame)
                 .pick_file()
         {
@@ -1495,7 +1495,7 @@ impl AnalysisSection {
 
     /// The suggested file name for exporting this section on its own.
     fn file_name(self) -> String {
-        format!("STO-CLARE_{}_Rules.json", self.label().replace(' ', "-"))
+        format!("STO-CLARE_{}_Rules.toml", self.label().replace(' ', "-"))
     }
 
     /// Just this section's rules, as a file of the same shape as the whole one.

@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn an_unreadable_rules_file_does_not_wipe_the_rules() {
         let (dir, path) = a_temp_rules_file("cla-rules-broken");
-        std::fs::write(&path, "{ this is not json").unwrap();
+        std::fs::write(&path, "this is not = a rules file").unwrap();
         let before = std::fs::read_to_string(&path).unwrap();
 
         let mut settings = settings_with_a_rule("Quad Cannons");
@@ -660,14 +660,7 @@ mod tests {
     #[test]
     fn a_rules_file_from_a_newer_build_is_refused() {
         let (dir, path) = a_temp_rules_file("cla-rules-newer");
-        std::fs::write(
-            &path,
-            format!(
-                r#"{{"version": {}, "custom_group_rules": []}}"#,
-                RULES_FILE_VERSION + 1
-            ),
-        )
-        .unwrap();
+        std::fs::write(&path, format!("version = {}\n", RULES_FILE_VERSION + 1)).unwrap();
 
         match RuleSets::read(&path) {
             Err(RulesFileError::FromANewerVersion { found, understood }) => {

@@ -24,7 +24,7 @@ pub const LOG_FILE_NAME: &str = "STO-CLARE.log";
 /// can be copied to another machine or handed to someone else on its own.
 /// Written from 2.8 on; before that the rules lived inside the settings file
 /// and are carried over on the first start — see `AnalysisSettings::load_rules`.
-pub const RULES_FILE_NAME: &str = "STO-CLARE_Rules.json";
+pub const RULES_FILE_NAME: &str = "STO-CLARE_Rules.toml";
 
 /// Per-user config directory: `~/.config/STO-CLARE` on Linux,
 /// `%APPDATA%\STO-CLARE` on Windows. Using the OS config dir means settings and

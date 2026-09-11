@@ -249,11 +249,29 @@ reads as "checked and clean" when it may mean "no combat selected".
 
 ### Where the rules live, and moving them about
 
-The four rule sets are their own file, `STO-CLARE_Rules.json` in the config
+The four rule sets are their own file, `STO-CLARE_Rules.toml` in the config
 directory (`paths::RULES_FILE_NAME`), holding a `RuleSets`. Apart from the
 settings because a set of rules is something a player copies to another machine
 or hands to someone else, and the settings carry their log path, their window
 size and their handle.
+
+TOML rather than JSON, over the same serde types: this is the one file the
+program expects a player to open, read and pass around, so it has to be legible
+without a formatter. Each rule becomes an `[[custom_group_rules]]` header with
+four `key = value` lines under it, instead of braces nested four deep — 964
+lines of JSON became 860 of TOML for the same 84 rules. Nothing in the model is
+lost on the way: the shape is a handful of named arrays of flat structs with
+string, bool and enum fields, which is squarely inside what TOML expresses, and
+the one nested case (`CombatNameRule`, a rule holding a rule) round-trips as a
+sub-table. The writer orders plain values before tables on its own, so no struct
+field had to move. What TOML cannot do is hold a struct inside an *array*
+element without a sub-table header, and it has no null — neither occurs here,
+and both would be a redesign of the model rather than a format problem.
+
+`#[serde(flatten)]` is deliberately not used on `CombatNameRule::name_rule`,
+tempting though it looks for the nesting: serde's flatten goes through an
+untyped map, which cannot read the rules still embedded in a 2.7-era settings
+file. Prettier output is not worth losing the carry-over.
 
 Existing installations keep their rules inside the settings, so the four fields
 of `AnalysisSettings` are `#[serde(default, skip_serializing)]`: still read from

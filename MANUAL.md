@@ -1140,10 +1140,26 @@ back as it was.
 
 #### Keeping and sharing your rules
 
-Your rules live in their own file, **`STO-CLARE_Rules.json`**, next to the
+Your rules live in their own file, **`STO-CLARE_Rules.toml`**, next to the
 settings — `~/.config/STO-CLARE` on Linux, `%APPDATA%\STO-CLARE` on Windows.
 Copy that one file to another machine and your rules go with it; nothing else of
-yours travels with it. If you are upgrading from an older version, your rules
+yours travels with it. It is plain text, one rule to a paragraph, so you can
+open it in any editor and read what you have:
+
+```toml
+[[custom_group_rules]]
+name = "Quad Phaser Cannons"
+enabled = true
+
+[[custom_group_rules.rules]]
+aspect = "DamageOrHealName"
+expression = "Quad Phaser Cannons"
+method = "StartsWith"
+enabled = true
+```
+
+That is one group — its name, whether it is switched on, and the conditions
+underneath it, one block each. If you are upgrading from an older version, your rules
 are moved there the first time the program starts and nothing is asked of you.
 
 **Export…** writes a file you can keep as a backup or pass to someone else.
@@ -1166,7 +1182,7 @@ anything.
 #### A set of rules to start from
 
 Writing rules from nothing is the slow way to begin, so a working set is
-published with STO-CLARE: [`rules/STO-CLARE_Rules.json`](rules/STO-CLARE_Rules.json)
+published with STO-CLARE: [`rules/STO-CLARE_Rules.toml`](rules/STO-CLARE_Rules.toml)
 in the repository. (It is not in the downloaded program — fetch the one file
 from there.) It is the maintainer's own set, as actually used:
 

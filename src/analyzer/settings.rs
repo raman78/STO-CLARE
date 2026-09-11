@@ -85,6 +85,15 @@ pub struct RulesGroup {
 /// Export and Import write and read, so the file in the config directory and
 /// the file a player passes around are the same shape.
 ///
+/// Written as TOML rather than JSON, because this one is meant to be opened and
+/// read: a rule becomes a named section with four plain `key = value` lines,
+/// instead of a nest of braces and quoted keys. The settings file stays JSON —
+/// nobody reads that one by hand.
+///
+/// The field order here is the order it is written in, and `version` has to
+/// stay first: TOML puts plain values before tables, and the writer will not
+/// emit a value after a table has been opened.
+///
 /// `version` is written but not yet acted on: it exists so that a later change
 /// of shape can be recognised rather than guessed at from which fields happen
 /// to parse.
@@ -125,8 +134,14 @@ impl Default for RuleSets {
 #[derive(Debug)]
 pub enum RulesFileError {
     Unreadable(std::io::Error),
-    NotRules(serde_json::Error),
-    FromANewerVersion { found: u32, understood: u32 },
+    /// The file parsed as something, but not as a set of rules — or did not
+    /// parse at all. Carries the reason in the words the format's own parser
+    /// used, which for TOML names the line and what it expected there.
+    NotRules(String),
+    FromANewerVersion {
+        found: u32,
+        understood: u32,
+    },
 }
 
 impl std::fmt::Display for RulesFileError {
@@ -154,7 +169,8 @@ impl RuleSets {
 
     pub fn read(path: &Path) -> Result<Self, RulesFileError> {
         let data = std::fs::read_to_string(path).map_err(RulesFileError::Unreadable)?;
-        let sets: Self = serde_json::from_str(&data).map_err(RulesFileError::NotRules)?;
+        let sets: Self =
+            toml::from_str(&data).map_err(|e| RulesFileError::NotRules(e.to_string()))?;
         if sets.version > RULES_FILE_VERSION {
             return Err(RulesFileError::FromANewerVersion {
                 found: sets.version,
@@ -168,7 +184,8 @@ impl RuleSets {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(RulesFileError::Unreadable)?;
         }
-        let data = serde_json::to_string_pretty(self).map_err(RulesFileError::NotRules)?;
+        let data =
+            toml::to_string_pretty(self).map_err(|e| RulesFileError::NotRules(e.to_string()))?;
         std::fs::write(path, data).map_err(RulesFileError::Unreadable)
     }
 
