@@ -16,7 +16,7 @@ path a log line takes to become a number in a table, and links onward.
 | `DIFFICULTY_DETECTION.md` | How a combat's map and difficulty are derived, and why name rules alone cannot do it.                                            |
 | `DETECTION_SAMPLES.md`    | The measurements the difficulty tiers were built from.                                                                           |
 | `OVERLAY.md`              | The always-on-top overlay, including the Wayland layer-shell path.                                                               |
-| `SHORTCUTS.md`            | The keys the reader can rebind, and the one taken from the whole desktop so it works while the game is in front.                  |
+| `SHORTCUTS.md`            | The keys the reader can rebind, clear or leave on the same combination as another, and the one taken from the whole desktop so it works while the game is in front. |
 | `LADDER_UPLOAD.md`        | Uploading a combat to the OSCR ladder, and why one is rejected.                                                                  |
 | `DISTRIBUTION.md`         | Packaging, installers and releases.                                                                                              |
 

@@ -1392,8 +1392,8 @@ key deliberately does nothing.
 ### The five keys you can change
 
 The five Alt keys at the top of the table are yours to set. Open **Settings →
-Shortcuts** and you get one row per thing: the key it answers to now, a button
-to change it, and a **Reset** that appears once you have changed something.
+Shortcuts** and you get one row per thing: the key it answers to now, and the
+buttons that change it.
 
 ![Settings, Shortcuts](images/settings-shortcuts.png)
 
@@ -1401,16 +1401,61 @@ To set one, press the button showing the current key, then press the keys you
 want. That is the whole of it — there is nothing to type. If you change your
 mind, press Esc and the row goes back to what it was.
 
-Two kinds of combination are turned down, and the program says which:
+| Button | What it does | When it is there |
+|--------|--------------|------------------|
+| **Clear** | Leaves the row on no key at all | While the row has a key |
+| **Reset** | Puts the row back to the key the program came with | Once you have changed that row |
 
-| What you pressed | Why it is refused |
-|------------------|-------------------|
-| A key with no Ctrl, Alt or Shift, or something exotic like a punctuation key | A bare letter is what you type into a note or a rule, and keys that move around between keyboard layouts cannot be held reliably. Use Ctrl, Alt or Shift with a letter, a number or an F-key. |
-| A combination one of the other four already answers | Two things on one key means only the first of them ever happens. The message names the one that already has it, so you know what to change. |
+**Clear** is for a combination you want gone rather than moved. Say the game
+already uses Alt + C for something you need mid-fight: clear that row and the
+key belongs to the game again. A cleared row shows an empty field. Press that
+field and record a key whenever you want it back, or press **Reset** for the
+original.
+
+Losing a key costs you nothing but the key. Every one of these five has a button
+of its own in the toolbar or an entry inside Settings, so a cleared row never
+puts anything out of reach — and the combination it used to hold is nobody's
+again, free for another row to take.
+
+Above the table sits **Reset all shortcuts**, which puts every row back at once.
+It asks before it does anything, and it only touches this page.
+
+One kind of combination is turned down, and the program says so: a key with no
+Ctrl, Alt or Shift, or something exotic like a punctuation key. A bare letter is
+what you type into a note or a rule, and keys that move around between keyboard
+layouts cannot be held reliably. Use Ctrl, Alt or Shift together with a letter,
+a number or an F-key.
+
+Anything else is recorded, **including a combination another row already has**.
+Both rows keep it, both are marked with a warning sign, and a line under the
+table says which of the two the key actually runs: the one higher up the table.
+The other never hears the press at all. That is useful in the middle of
+rearranging keys, and it is never hidden from you — you can see both rows
+holding the same thing and read which one wins.
 
 Your changes are saved when you close Settings with **Ok**, like every other
 setting. Only what you actually changed is written down, so a key you never
 touched keeps working even after an update moves it.
+
+### When a row has something wrong with it
+
+A warning sign in a row means *this row is the one the line below is about*. The
+lines gather under the table, and each names its row; the sign says the same
+thing under the mouse pointer, so you do not have to look down the page.
+
+You will see one in three cases. The first is two rows holding the same
+combination, where the sign is in both of them. The second is a key the program
+could not take from the rest of the computer, which is the next section. The
+third is rarer: if the file the program keeps your settings in has been edited
+by hand and the combination there makes no sense, the row falls back to the key
+it came with and the line says so. Record a key in that row and it is fixed.
+
+There is one more line that can appear under the table, with no sign in any row,
+and it is not a fault: it says your settings hold a shortcut set by a **newer
+version** of STO-CLARE than the one you are running. There is nothing here to
+put that key on, so it does nothing — but it is left exactly as it is, and going
+back to the newer version gets it working again. **Reset all shortcuts** is what
+clears it if you would rather it were gone.
 
 ### The overlay key while you are playing
 
@@ -1428,7 +1473,12 @@ The tick that does it is in the Overlay row itself, beside the combination, and
 is labelled **Global**. Ticked and closed with Ok, the key is yours everywhere;
 that is all there is to it, and the page says nothing further.
 
-It does speak up when the answer is no, in a line under the table:
+Clear the Overlay row and the tick greys out — there is no key left to take from
+the desktop. It keeps your answer rather than quietly turning itself off, so
+recording a combination again brings the global key straight back.
+
+It does speak up when the answer is no, with a sign in the Overlay row and a
+line under the table:
 
 | What it says | What it means |
 |--------------|---------------|
