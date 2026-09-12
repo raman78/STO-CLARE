@@ -1,7 +1,10 @@
 # Build diff — design note
 
-Status: design only. Nothing described here is implemented. The branch
-`feat/build-diff` exists to build and try it.
+Status: a proof of concept exists on `poc/build-diff` — `app/compare/build_diff`
+plus the ignored test `build_diff_on_a_real_log` that runs it over a real log
+and prints the report. Nothing draws it; there is no UI. What the proof of
+concept found is in "What running it showed" at the end, and two of its findings
+have already changed what is written above.
 
 ## Purpose
 
@@ -315,3 +318,34 @@ the plan is to do them in order:
 
 Either way the report shows the evidence and not only the label: "10 of 10 rows
 within 2% of 1.12x" lets the reader judge the call the program made.
+
+## What running it showed
+
+Run over two combats of a real log — the same map, the same difficulty, both
+solo, one noted `HBL` and one noted `APB`, which is the labelling the design
+rests on. Both figures below come from the code on the branch, not from a
+separate script.
+
+The classifier picked the resistance effect out on its own, knowing nothing
+about any ability: **`targets softer`, median 1.075x, 16 of 19 rows agreeing**,
+worth +96k of a +243k difference. The discrete source showed up opposite it, as
+one row present in the other run only: `Hellbore Light - Ignition`, 33k. That is
+the shape the design predicted, arriving without being told to look for it.
+
+Three things the run taught that the design did not have:
+
+1. **An aggregate factor moves when the *mix* of rows moves, not only when the
+   rows move.** The common core's crit multiplier rose 8.7% while the rows' own
+   median rose 2.6%: most of that +95k was the proportions of the weapons
+   firing, not any weapon critting harder. Presenting it as a crit finding would
+   have been an artefact reported as a result. The report now prints the
+   aggregate change and the rows' own median side by side and marks the gap.
+2. **The tool catches the reader changing more than one thing.** The two runs
+   also swapped a weapon — one array present in each run and not the other,
+   +46k and -35k. Neither is a bridge officer slot, and nothing else would have
+   said so.
+3. **The defaults discriminate on the evidence available.** `DEFAULT_TOLERANCE`
+   0.05 with `DEFAULT_AGREEMENT` 0.8 fires on the `APB`/`HBL` pair and stays
+   silent on a second pair whose resistance genuinely did not differ (median
+   0.997x, 16 of 19 agreeing — agreement about nothing happening). Two pairs is
+   thin, and these remain provisional for the reason in "Calibration left open".

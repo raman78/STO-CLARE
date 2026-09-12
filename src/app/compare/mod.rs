@@ -21,6 +21,7 @@ use crate::{
     app::{settings::Settings, state::AppState, theme},
 };
 
+mod build_diff;
 mod compare_table;
 
 use compare_table::Comparison;

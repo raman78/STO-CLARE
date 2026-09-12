@@ -298,9 +298,9 @@ struct SlotCell {
 ///
 /// which add up to `r2*m2 - r1*m1` exactly — the whole difference, with no
 /// leftover cross term to attribute by hand.
-struct DpsBreakdown {
-    rate: f64,
-    size: f64,
+pub(super) struct DpsBreakdown {
+    pub(super) rate: f64,
+    pub(super) size: f64,
 }
 
 struct MetricCell {
@@ -3280,7 +3280,7 @@ fn dps_breakdown(reference: Option<&DamageGroup>, slot: Option<&DamageGroup>) ->
     split_dps_difference(r1, m1, r2, m2)
 }
 
-fn split_dps_difference(r1: f64, m1: f64, r2: f64, m2: f64) -> DpsBreakdown {
+pub(super) fn split_dps_difference(r1: f64, m1: f64, r2: f64, m2: f64) -> DpsBreakdown {
     DpsBreakdown {
         rate: (r2 - r1) * (m1 + m2) / 2.0,
         size: (m2 - m1) * (r1 + r2) / 2.0,
