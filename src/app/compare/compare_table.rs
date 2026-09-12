@@ -26,6 +26,7 @@ use crate::custom_widgets::table::SortState;
 use crate::{
     analyzer::{
         AnalysisGroup, Combat, DamageGroup, Hit, HitsManager, NameHandle, NameManager, ValueFlags,
+        percentage_f64,
     },
     app::fonts::bold_family,
     app::main_tabs::diagrams::{
@@ -245,14 +246,19 @@ struct CompareNode {
     /// Per-slot hit series for charting (`None` when the slot lacks this node).
     series: Vec<Option<SeriesData>>,
     /// What this row is of each combat, per slot: its share of that combat's
-    /// own total (percent) and its DPS. Held apart from `cells` because those
+    /// whole damage (percent) and its DPS. Held apart from `cells` because those
     /// follow the reader's chosen columns, while these two decide which rows
     /// are on screen and have to be there whether or not they are shown.
+    ///
+    /// Of the **run**, at every depth — deliberately not the `Damage %` column
+    /// beside it, which is of the row above and so means something different on
+    /// every level. A Spread whose scale changes with depth cannot be read
+    /// across rows, and reading it across rows is the whole point of the column.
+    /// At the first level the two coincide, the row above being the run itself.
     shares: Vec<Option<f64>>,
     dps: Vec<Option<f64>>,
-    /// Per slot: the damage this row did in that combat. Adds up across rows,
-    /// which `shares` does not below the first level — a share there is of the
-    /// row's parent — so this is what the damage-type summary is built from.
+    /// Per slot: the damage this row did in that combat — what the damage-type
+    /// summary is built from, and what `shares` is worked out from.
     damage: Vec<Option<f64>>,
     /// The damage types this row dealt, over all the combats — what the type
     /// picker filters on. A group of several weapons carries all of theirs.
@@ -465,15 +471,24 @@ impl Comparison {
         // Top row is the player's overall total (root of the damage tree); the
         // ability groups hang under it, expanded by default.
         let runs = runs_in_play(&parents);
+        // The denominator every row's share is taken against, at every depth:
+        // the player's whole damage in that combat.
+        let run_totals: Vec<f64> = parents
+            .iter()
+            .map(|g| g.map(|g| g.total_damage.all).unwrap_or_default())
+            .collect();
         let (cells, averages) = build_row(&parents, &self.columns, runs);
         let series = build_series(&parents, &hits_managers, &durations);
         let sub_nodes = build_level(
             &parents,
-            &name_managers,
-            &hits_managers,
-            &durations,
-            &self.columns,
-            runs,
+            &LevelContext {
+                name_managers: &name_managers,
+                hits_managers: &hits_managers,
+                durations: &durations,
+                columns: &self.columns,
+                runs,
+                run_totals: &run_totals,
+            },
             &mut id_source,
         );
         let sort_key = parents
@@ -1286,9 +1301,9 @@ impl Comparison {
                     .steady_toggle_value(&mut self.difference_measure, measure, measure.label())
                     .hover(match measure {
                         DifferenceMeasure::Share => {
-                            "Measure a difference in what the row was of its own combat — the same \
-                             figure the Damage % column shows. A shorter or weaker run then does \
-                             not read as a different build in every row at once."
+                            "Measure a difference in what the row was of its own combat — of the \
+                             whole run, wherever the row sits in the tree. A shorter or weaker run \
+                             then does not read as a different build in every row at once."
                         }
                         DifferenceMeasure::Dps => {
                             "Measure a difference in DPS — what the row was actually worth, \
@@ -1500,9 +1515,17 @@ impl Comparison {
                 span: 1,
                 tooltip: format!(
                     "How far apart the combats are on this row: the largest less the smallest, in \
-                     {}. A combat without the row counts as zero. Rows below the figure on the \
+                     {}{}. A combat without the row counts as zero. Rows below the figure on the \
                      slider are hidden. Click to order the rows by it.",
-                    measure.label()
+                    measure.label(),
+                    match measure {
+                        // Worth saying here because the Damage % cells beside it
+                        // are of the row above once the tree is expanded, so the
+                        // two stop agreeing and the reader can see that they do.
+                        DifferenceMeasure::Share =>
+                            " — of the whole run, on an expanded row as much as on a top one",
+                        DifferenceMeasure::Dps => "",
+                    }
                 ),
                 sort: Some(SortBy::Spread),
             });
@@ -2236,8 +2259,9 @@ enum DifferenceMeasure {
 impl DifferenceMeasure {
     fn label(self) -> &'static str {
         match self {
-            // The same figure the Damage % column holds, and named after it:
-            // two names for one number is one name too many.
+            // Named after the Damage % column, which is what it is on the rows
+            // the threshold is about. Deeper in the tree that column is of the
+            // row above while this stays of the run: see `CompareNode::shares`.
             DifferenceMeasure::Share => "Damage %",
             DifferenceMeasure::Dps => "DPS",
         }
@@ -3102,20 +3126,38 @@ fn players_by_dps(combat: &Combat) -> Vec<(NameHandle, String)> {
         .collect()
 }
 
+/// What every level of the tree is built against, and what therefore goes down
+/// the recursion unchanged rather than being worked out again per level.
+///
+/// `runs` and `run_totals` are the two that matter for being held still: an
+/// average is divided by the same run count at every depth, which is what makes
+/// a level come to the row it hangs under, and a share is of the run wherever it
+/// is taken rather than of the level above (see `CompareNode::shares`).
+struct LevelContext<'a> {
+    name_managers: &'a [&'a NameManager],
+    hits_managers: &'a [&'a HitsManager],
+    durations: &'a [f64],
+    columns: &'a [CompareMetric],
+    runs: usize,
+    /// Per slot: the player's whole damage in that combat.
+    run_totals: &'a [f64],
+}
+
 /// Build one level of the aligned tree from the parent damage groups of each
 /// slot (union of child ability names), recursing into sub-groups.
-/// `runs` is the whole comparison's run count and is passed down unchanged, not
-/// recounted per level: an average is divided by the same number at every depth,
-/// which is what makes a level come to the row it hangs under.
 fn build_level(
     parents: &[Option<&DamageGroup>],
-    name_managers: &[&NameManager],
-    hits_managers: &[&HitsManager],
-    durations: &[f64],
-    columns: &[CompareMetric],
-    runs: usize,
+    context: &LevelContext,
     id_source: &mut u32,
 ) -> Vec<CompareNode> {
+    let LevelContext {
+        name_managers,
+        hits_managers,
+        durations,
+        columns,
+        runs,
+        run_totals,
+    } = *context;
     let n = parents.len();
     let mut order: Vec<String> = Vec::new();
     let mut index: FxHashMap<String, usize> = Default::default();
@@ -3144,15 +3186,7 @@ fn build_level(
             let sort_key = per_slot[0].map(|g| g.dps.all).unwrap_or(f64::NEG_INFINITY);
             let (cells, averages) = build_row(per_slot, columns, runs);
             let series = build_series(per_slot, hits_managers, durations);
-            let sub_nodes = build_level(
-                per_slot,
-                name_managers,
-                hits_managers,
-                durations,
-                columns,
-                runs,
-                id_source,
-            );
+            let sub_nodes = build_level(per_slot, context, id_source);
             CompareNode {
                 name,
                 id,
@@ -3161,7 +3195,10 @@ fn build_level(
                 series,
                 shares: per_slot
                     .iter()
-                    .map(|g| g.and_then(|g| g.damage_percentage.all))
+                    .zip(run_totals)
+                    .map(|(g, run_total)| {
+                        g.and_then(|g| percentage_f64(g.total_damage.all, *run_total))
+                    })
                     .collect(),
                 dps: per_slot.iter().map(|g| g.map(|g| g.dps.all)).collect(),
                 damage: per_slot
@@ -3478,6 +3515,68 @@ mod tests {
         assert!(split.rate > 0.0, "the extra hits helped");
         assert!(split.size < 0.0, "each one landing softer cost");
         assert!((split.rate + split.size - 1000.0).abs() < 1e-9);
+    }
+
+    /// A row deep in the tree is a share of the whole run, not of the row it
+    /// hangs under. The two coincide at the first level — the row above is the
+    /// run — and part company below it, which is where the Spread column used
+    /// to change scale without saying so.
+    #[test]
+    fn a_share_is_of_the_run_at_every_depth() {
+        use crate::analyzer::{GroupPathSegment, Hits, NameFlags};
+
+        let mut names = NameManager::default();
+        let (player, weapon, proc) = (
+            names.insert("Player", NameFlags::NONE),
+            names.insert("Weapon", NameFlags::NONE),
+            names.insert("Proc", NameFlags::NONE),
+        );
+        // `of_parent` is what the analyzer fills in and what the Damage % column
+        // shows. Set here so that reading it instead of the run total is a
+        // passing answer for the weapon and a wrong one for the proc — the test
+        // has to be able to tell the two rules apart, not merely notice one.
+        let group = |name, damage: f64, of_parent: f64| {
+            let mut group = DamageGroup {
+                segment: GroupPathSegment::Value(name),
+                hits: Hits::Leaf(Vec::new()),
+                ..Default::default()
+            };
+            group.damage_metrics.total_damage.all = damage;
+            group.damage_percentage.all = Some(of_parent);
+            group
+        };
+
+        // A quarter of the run, hanging under a row that is half of it: the two
+        // answers this test tells apart are 25% (of the run) and 50% (of the
+        // weapon).
+        let proc = group(proc, 250.0, 50.0);
+        let mut weapon = group(weapon, 500.0, 50.0);
+        weapon.sub_groups.insert(proc.name(), proc);
+        let mut player = group(player, 1_000.0, 100.0);
+        player.sub_groups.insert(weapon.name(), weapon);
+
+        let hits_manager = HitsManager::default();
+        let mut id_source = 0;
+        let rows = build_level(
+            &[Some(&player)],
+            &LevelContext {
+                name_managers: &[&names],
+                hits_managers: &[&hits_manager],
+                durations: &[10.0],
+                columns: &[],
+                runs: 1,
+                run_totals: &[1_000.0],
+            },
+            &mut id_source,
+        );
+
+        let weapon_row = &rows[0];
+        assert_eq!(vec![Some(50.0)], weapon_row.shares, "half the run");
+        assert_eq!(
+            vec![Some(25.0)],
+            weapon_row.sub_nodes[0].shares,
+            "a quarter of the run, not half of the weapon"
+        );
     }
 
     /// A combat the user named is charted under that name, so the legend says

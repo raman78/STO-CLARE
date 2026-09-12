@@ -31,7 +31,7 @@ pub use damage::*;
 use detection::{CritterMeta, DETECTION_RULES};
 pub use detection::{Difficulty, curated_map_identifiers, curated_map_names};
 use groups::*;
-pub use groups::{AnalysisGroup, DamageGroup, HealGroup};
+pub use groups::{AnalysisGroup, DamageGroup, GroupPathSegment, HealGroup};
 pub use heal::*;
 pub use name_manager::*;
 pub use values_manager::*;

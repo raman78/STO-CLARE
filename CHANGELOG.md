@@ -8,6 +8,7 @@
 - a combination another shortcut already uses is now accepted instead of turned down. Both rows keep it and both are marked, and a line under the table says which of the two the key actually runs — the one higher up the page. Refusing it used to leave you told about something the table could not show you, and the row you had just pressed a key in looked as though nothing had happened
 
 ### Other Changes
+- when comparing fights, the Spread figure on a row you have opened up is now measured against the whole fight, the same as the rows above it. It used to be measured against the row it hangs under, so the same number meant different things depending on how deep you had opened the tree and two rows could not be held side by side. The rows the slider keeps or hides, and the order they come in, are unchanged
 - a shortcut that has something wrong with it is now marked in its own row, with the explanation under the table naming the row it belongs to — a page with two warnings on it no longer leaves you matching sentences to rows by eye
 - the buttons in a shortcut row no longer slide sideways while that row is waiting for you to press a key, which could put Clear where you were aiming
 - the Global tick greys out while the overlay's row is empty, rather than staying on for a key that no longer exists. It remembers your answer, so recording a combination again brings the desktop-wide key straight back

@@ -1432,13 +1432,27 @@ for, and treating the absence as missing data would rank it as agreement. What
 
 | measure | value per slot | why |
 |---------|----------------|-----|
-| `Share` | `damage_percentage.all` — the row's share of that combat's own damage, so the threshold is in percentage points | a shorter or weaker run does not read as a different build in every row at once |
+| `Share` | `CompareNode::shares` — the row's damage over the player's whole damage in that combat, so the threshold is in percentage points | a shorter or weaker run does not read as a different build in every row at once |
 | `Dps` | `dps.all` | what the row was actually worth, whatever share of the run it came to |
 
 Each carries its own threshold, from zero up: a number that means something in
 percentage points means nothing in DPS, and the bottom of either scale has to
 mean "hide nothing". The figure itself is shown in a `Spread` column, so the
 threshold is visible rather than an invisible rule the table obeys.
+
+`shares` is worked out in `build_level` against `LevelContext::run_totals` — the
+player's whole damage per slot, held still all the way down the recursion — and
+is deliberately **not** the `Damage %` column beside it. That column is the
+analyzer's `damage_percentage`, which is of the row above; below the first level
+the two therefore differ, and a Spread whose scale changed with depth could not
+be read across rows, which is the whole point of a column the reader sorts and
+thresholds by. At the first level they coincide, the row above being the run.
+The filter and the sort only ever act on the first level (`is_hidden` returns
+`false` for `parent_depth != 0`, `sort_rows` reorders `total.sub_nodes` alone),
+so this changes no threshold and no ordering — only what an expanded sub-row
+reports. Under a damage-type filter the denominator is the filtered player group
+returned by `parents`, matching what `set_child_percentages` states for the rows
+above it.
 
 Two decisions worth keeping:
 
