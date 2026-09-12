@@ -100,36 +100,70 @@ reachable from any `DamageGroup` through its `Deref`, and therefore from every
 
 ## The four stages
 
-### Stage 1 — Normalise out the crit streaks
+### Stage 1 — Lift the crit multiplier out as a factor of its own
 
-The largest source of a difference that is not a build difference is luck on
-crits. Before anything is compared, each row's average hit is restated at a
-crit rate common to both runs:
+Crits are **not** noise to be removed. Crit chance and crit severity are things
+a player fits — consoles, traits and gear raise both — so a run that crits more
+may be a better build rather than a luckier one, and a stage that quietly
+normalised them away would erase the very difference the report exists to find.
+The crit contribution is therefore made a named factor and shown, not cancelled.
+
+The observed mean hull hit factors exactly:
 
 ```
-neutral_avg_hit = non_crit_avg * (1 - shared_crit_rate)
-                + crit_avg     * shared_crit_rate
+mean_hull_hit = neutral_hit * crit_multiplier
+
+  crit_multiplier = 1 + p * (S - 1)
+  p = critical_percentage / 100
+  S = average_crit_hit / average_non_crit_hull_hit      (severity ratio)
 ```
 
-`average_non_crit_hull_hit` and `average_crit_hit` are already kept per group,
-so this is arithmetic over existing fields. `shared_crit_rate` is the pooled
-rate over both runs, which keeps the correction symmetric — neither run is the
-reference.
+`p * crit_avg + (1 - p) * non_crit_avg` is `non_crit_avg * (1 + p(S - 1))`, so
+this is an identity over fields the analyzer already keeps, not an estimate.
 
-Observable: with the stage on, two runs of the same build whose crit rates
-differed should move closer together. If they do not, the difference was not
-crit luck, which is itself worth knowing.
+`S` is a ratio of two post-mitigation averages, so target resistance cancels
+out of it — but only when the crit and non-crit hits of that row went to the
+same population of targets. See "Failure modes" for what it looks like when
+they did not.
 
-### Stage 2 — Split the difference into three factors
+**Measured, and it decides where the factor sits.** Whether the game's logged
+base damage already contains crit severity is not documented — the reference
+says only "base damage of the shot" (`COMBATLOG_FORMAT.md`). Measured over the
+last 40 MB of a real 128 MB log with `awk` on the raw lines (not through this
+program's code): across 16 weapons with at least 500 crit and 500 non-crit hull
+hits each, crit-flagged hits carry a mean base damage **2.42x** that of
+non-crit hits of the same weapon, per-weapon ratios running about 2.2 to 2.9.
+Were severity applied after the base figure, the ratio would sit at 1.0.
+
+Two consequences follow, and both matter:
+
+- Crit severity is **inside** `total_base_damage`, so `base_dps` is not a
+  crit-free measure of offence. The crit factor is split out of potency, not
+  layered on top of it.
+- The per-weapon ratios are not equal. Whether that is sampling scatter or real
+  per-weapon severity is an open calibration question, and it is exactly the
+  kind of thing the stage-3 classifier is built to surface.
+
+**The luck question is separate, and answerable.** Whether a difference in crit
+*rate* between two runs is build or luck does not need a toggle: a crit rate is
+a binomial proportion over thousands of hits, so its sampling error is small and
+computable from the hit count the analyzer already has. The report can state
+whether the observed gap is larger than luck would plausibly produce, rather
+than leaving the reader to guess. The counterfactual view — both runs restated
+at a pooled crit rate — stays available as a toggle, **off by default**, because
+the default has to be that crits count.
+
+### Stage 2 — Split the difference into four factors
 
 On the hull channel (B3):
 
 ```
-hull potential DPS = cadence * potency * efficiency
+hull potential DPS = cadence * neutral potency * crit multiplier * efficiency
 
-  cadence     = hits per second
-  potency     = average base damage per hit    (before mitigation)
-  efficiency  = 1 - target resistance
+  cadence          = hits per second
+  neutral potency  = base damage per non-crit hit    (before mitigation)
+  crit multiplier  = 1 + p * (S - 1)                 (stage 1)
+  efficiency       = 1 - target resistance
 ```
 
 Each factor answers a different question, and which one moved says what kind of
@@ -138,12 +172,13 @@ change it was:
 | factor moved | what that is |
 |---|---|
 | efficiency | the targets were softer — a debuff on them |
-| potency | your shots were bigger before mitigation — a buff on you |
+| neutral potency | your shots were bigger before mitigation — a damage buff |
+| crit multiplier | you critted more often, or harder — a crit-stat change |
 | cadence | you fired more often — a firing-cycle change |
 
 The split into shares is the midpoint pairing already used for the `ΔDPS
 breakdown` columns (`split_dps_difference`, documented at `DpsBreakdown`),
-extended from two factors to three. It is chosen over the obvious alternative
+extended from two factors to four. It is chosen over the obvious alternative
 for the reason in "Decisions and trade-offs".
 
 ### Stage 3 — Name the shape of each row's change
@@ -214,6 +249,7 @@ from the measured part of the report.
 | `GlobalLift` on a comparison of unrelated maps | different enemies have different base resistance, so efficiency moves for a reason that is not the build | the detected map and difficulty per run |
 | Efficiency moved but potency did too | a teammate's debuff, or your own buff state differed | `base_dps` per run: if it matches, offence was the same and the whole difference is mitigation |
 | Waterfall does not close | shield damage leaked into a hull-channel figure | B3 |
+| One row's severity ratio `S` far off the rest | its crit and non-crit hits went to targets of different resistance, so resistance did not cancel out of the ratio — a damage-over-time row ticking on a mixed group is the usual case | compare that row's ratio of *base* damage against its ratio of *actual* damage: they agree when the target population is the same and part company when it is not |
 
 ## Decisions and trade-offs
 
@@ -239,16 +275,43 @@ already exists, is already shown in the compare view's headers and the chart
 legend, and is already how the reader tells runs apart. A second labelling
 mechanism would be a second thing to keep in step.
 
-## Open questions
+## Where the report lives
 
-1. **Where the report lives.** A third pane in the compare view, or a window of
-   its own like the damage-type summary. The type summary's window is the
-   nearest precedent. Needs a decision before the UI work starts; blocks
-   nothing before then.
-2. **Whether stage 1 is on by default.** Crit normalisation changes displayed
-   figures away from what the rest of the program shows for the same run, which
-   is a reason to make it explicit. Against that, leaving it off by default
-   means the first thing most readers see is the noisiest version.
-3. **What counts as "tightly clustered" for `GlobalLift`.** The threshold has to
-   be picked against real logs, not chosen in advance. It is the one tuned
-   number here, and belongs with the others listed in `ARCHITECTURE.md`.
+**A headline in the compare view, the report itself in a window.**
+
+The compare view is a `Splitter::horizontal` carrying two panes that both want
+height — the tree table and the chart — with a draggable boundary between them.
+A third pane there would take height from both for something the reader consults
+occasionally rather than scans continuously, and the `Damage by type` window
+exists because that same pressure already came up once. The build diff is the
+same kind of object as that summary: a derived read over the whole comparison,
+not a column of the tree. It gets the same treatment — a toolbar toggle, a
+window sized to its content, centred, closed by Escape.
+
+The exception is the one line that answers the question the reader arrived
+with: which run is ahead, by how much, and whether that is inside the run-to-run
+spread. That goes where the hint line under the toolbar sits, always visible,
+and clicking it opens the full report. A verdict nobody can find because they
+did not know the button was there is a verdict that was not delivered.
+
+## Calibration left open
+
+**What counts as "tightly clustered" for `GlobalLift`.** This cannot be chosen
+in advance; it has to be fitted against real logs. Two ways to get there, and
+the plan is to do them in order:
+
+1. A slider over a narrow range, defaulted from whatever the first real
+   comparisons show, sitting with the other tuned numbers listed in
+   `ARCHITECTURE.md`. Shipping this first means the classifier can be used while
+   the right value is still being learnt.
+2. Better, if the data supports it: no fixed threshold at all. Each row's ratio
+   carries its own sampling error, set by how many hits it is built from — a row
+   with 200 hits scatters more than one with 20 000. Comparing the observed
+   scatter against the scatter those hit counts alone would produce makes the
+   test self-calibrating, and removes the magic number. Whether hit count
+   actually explains the observed scatter is the thing to measure first; the
+   per-weapon severity ratios noted in stage 1, which range about 2.2 to 2.9,
+   are a ready test case.
+
+Either way the report shows the evidence and not only the label: "10 of 10 rows
+within 2% of 1.12x" lets the reader judge the call the program made.
