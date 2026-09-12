@@ -1,5 +1,18 @@
 # Change Log
 
+# unreleased
+
+### Major Changes
+- a shortcut can now be taken off a key entirely, not only moved to another one. Each row on **Settings → Shortcuts** has a **Clear** button that leaves it on no key, which is what to reach for when a combination is needed by the game instead — the row goes empty, the key belongs to the game again, and everything it did is still a button away. Recording a key in that row brings it back, and **Reset** returns the one the program came with. A new **Reset all shortcuts** puts the whole page back at once, after asking
+
+- a combination another shortcut already uses is now accepted instead of turned down. Both rows keep it and both are marked, and a line under the table says which of the two the key actually runs — the one higher up the page. Refusing it used to leave you told about something the table could not show you, and the row you had just pressed a key in looked as though nothing had happened
+
+### Other Changes
+- a shortcut that has something wrong with it is now marked in its own row, with the explanation under the table naming the row it belongs to — a page with two warnings on it no longer leaves you matching sentences to rows by eye
+- the buttons in a shortcut row no longer slide sideways while that row is waiting for you to press a key, which could put Clear where you were aiming
+- the Global tick greys out while the overlay's row is empty, rather than staying on for a key that no longer exists. It remembers your answer, so recording a combination again brings the desktop-wide key straight back
+- shortcuts saved by a newer version of STO-CLARE than the one you are running are left alone rather than being taken over, and the page says plainly that they are there and do nothing here
+
 ## v2.9.0
 
 ### Major Changes
