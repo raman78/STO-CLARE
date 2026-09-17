@@ -59,6 +59,9 @@ pub const DEFAULT_AGREEMENT: f64 = 0.8;
 /// splits are not interchangeable — see `docs/BUILD_DIFF.md` stage 1.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Tally {
+    /// Hull hits whose base damage was counted — that is, not `IMMUNE`. The
+    /// analyzer counts an immune hit in `hits` but adds none of its damage, so
+    /// counting it here would break `cadence * neutral = base_dps`.
     pub hull_hits: u64,
     pub crit_hull_hits: u64,
     /// Damage of the shot before the target mitigated any of it.
@@ -66,13 +69,24 @@ pub struct Tally {
     pub crit_base_damage: f64,
     /// Damage that reached the hull.
     pub hull_damage: f64,
-    /// Damage the shields stopped from reaching the hull. The other half of the
-    /// resistance numerator, and the reason a shield line is read at all here.
+    /// Damage dealt to shields, drains included — the other half of the figure
+    /// the tables call Total Damage. Stripping a shield is work the build has to
+    /// do, so leaving it out measured something the reader never reads.
+    pub shield_damage: f64,
+    /// Damage the shields stopped from reaching the hull. Not damage dealt: the
+    /// hull-damage equivalent of what they absorbed, which is the other half of
+    /// the resistance numerator.
     pub prevented_to_hull: f64,
 }
 
 impl Tally {
     pub fn add_hit(&mut self, hit: &Hit) {
+        // Immune contributes nothing anywhere, exactly as the analyzer has it
+        // (`DamageMetrics::calc_and_apply_delta`). Counting it would put damage
+        // in this module's totals that no table shows.
+        if hit.flags.contains(ValueFlags::IMMUNE) {
+            return;
+        }
         match hit.specific {
             SpecificHit::Hull { base_damage } => {
                 self.hull_hits += 1;
@@ -85,11 +99,14 @@ impl Tally {
             }
             SpecificHit::Shield {
                 damage_prevented_to_hull,
-            } => self.prevented_to_hull += damage_prevented_to_hull,
-            // A drain is resisted through DrainX and carries neither a hull
-            // component nor a base damage, so it enters neither side of any
-            // fraction here.
-            SpecificHit::ShieldDrain => (),
+            } => {
+                self.shield_damage += hit.damage;
+                self.prevented_to_hull += damage_prevented_to_hull;
+            }
+            // A drain deals shield damage and carries neither a hull component
+            // nor a base damage, so it counts towards the total and towards no
+            // factor.
+            SpecificHit::ShieldDrain => self.shield_damage += hit.damage,
         }
     }
 
@@ -99,14 +116,50 @@ impl Tally {
         self.base_damage += other.base_damage;
         self.crit_base_damage += other.crit_base_damage;
         self.hull_damage += other.hull_damage;
+        self.shield_damage += other.shield_damage;
         self.prevented_to_hull += other.prevented_to_hull;
     }
 
-    /// What the hull would have taken from this, per second: the damage that
-    /// reached it plus the damage its shields stopped.
+    /// Damage dealt per second, hull and shields together — the figure the
+    /// tables call DPS and the one a build is judged by.
     ///
-    /// This and not the DPS in the tables, because this is the quantity the
-    /// four factors multiply out to.
+    /// This is the verdict's quantity. An earlier version led with
+    /// `hull_potential_dps` instead, which is a different question and gave a
+    /// different answer: see `docs/BUILD_DIFF.md` "What the grouped runs
+    /// showed".
+    pub fn total_dps(&self, duration_s: f64) -> f64 {
+        if duration_s <= 0.0 {
+            return 0.0;
+        }
+        (self.hull_damage + self.shield_damage) / duration_s
+    }
+
+    /// Damage that reached the hull, per second. What the five factors multiply
+    /// out to, exactly.
+    pub fn hull_dps(&self, duration_s: f64) -> f64 {
+        if duration_s <= 0.0 {
+            return 0.0;
+        }
+        self.hull_damage / duration_s
+    }
+
+    /// Damage dealt to shields, per second. Additive rather than factored: a
+    /// shield line carries no base damage, so nothing about target mitigation
+    /// can be read off it.
+    pub fn shield_dps(&self, duration_s: f64) -> f64 {
+        if duration_s <= 0.0 {
+            return 0.0;
+        }
+        self.shield_damage / duration_s
+    }
+
+    /// What the hull would have taken with no shields in the way: what reached
+    /// it plus what they absorbed.
+    ///
+    /// Kept because it is the right quantity for "how much hull-killing power
+    /// did this deliver", and deliberately **not** the verdict's quantity: a
+    /// build can raise it without raising DPS at all, which is what the real
+    /// runs turned out to do.
     pub fn hull_potential_dps(&self, duration_s: f64) -> f64 {
         if duration_s <= 0.0 {
             return 0.0;
@@ -114,7 +167,7 @@ impl Tally {
         (self.hull_damage + self.prevented_to_hull) / duration_s
     }
 
-    /// The four factors, or `None` when there is nothing to take them of.
+    /// The five factors, or `None` when there is nothing to take them of.
     pub fn factors(&self, duration_s: f64) -> Option<Factors> {
         if self.hull_hits == 0 || self.base_damage <= 0.0 || duration_s <= 0.0 {
             return None;
@@ -132,17 +185,30 @@ impl Tally {
         } else {
             (self.base_damage - self.crit_base_damage) / non_crit_hits as f64
         };
+        let would_have_taken = self.hull_damage + self.prevented_to_hull;
         Some(Factors {
             cadence: hull_hits / duration_s,
             neutral,
             crit_multiplier: mean_base / neutral,
-            efficiency: (self.hull_damage + self.prevented_to_hull) / self.base_damage,
+            efficiency: would_have_taken / self.base_damage,
+            shield_passthrough: if would_have_taken > 0.0 {
+                self.hull_damage / would_have_taken
+            } else {
+                0.0
+            },
         })
     }
 }
 
-/// The four things a hull DPS difference can be made of. Their product is
-/// `Tally::hull_potential_dps`, exactly.
+/// The five things a hull DPS difference can be made of. Their product is
+/// `Tally::hull_dps`, exactly.
+///
+/// Five rather than four because the fourth used to be the last: the product
+/// came to what the hull *would* have taken, which is not a figure the program
+/// shows anywhere. `shield_passthrough` carries the rest of the way to damage
+/// that actually landed, and what is left over — damage dealt to shields — is
+/// an additive term rather than a factor, since a shield line has no base
+/// damage to be a fraction of.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Factors {
     /// Hull hits per second.
@@ -155,27 +221,35 @@ pub struct Factors {
     pub crit_multiplier: f64,
     /// `1 - target resistance`. Above 1 when the target was debuffed past zero.
     pub efficiency: f64,
+    /// What share of the hull damage owed actually got through rather than
+    /// being absorbed by a shield. Softening a target raises `efficiency`; it
+    /// does nothing here, and a build whose shots land on full shields loses
+    /// that gain again exactly at this factor.
+    pub shield_passthrough: f64,
 }
 
 impl Factors {
     /// In the order `as_array` returns them, for the report to label a split by.
-    pub const NAMES: [&'static str; 4] = [
+    pub const NAMES: [&'static str; 5] = [
         "fired more often",
         "each hit bigger before crits",
         "critted more, or harder",
         "targets softer",
+        "got past shields",
     ];
 
-    pub fn as_array(self) -> [f64; 4] {
+    pub fn as_array(self) -> [f64; 5] {
         [
             self.cadence,
             self.neutral,
             self.crit_multiplier,
             self.efficiency,
+            self.shield_passthrough,
         ]
     }
 
-    pub fn hull_potential_dps(self) -> f64 {
+    /// Damage that reached the hull, per second.
+    pub fn hull_dps(self) -> f64 {
         self.as_array().iter().product()
     }
 }
@@ -270,8 +344,8 @@ impl Run {
             .collect();
         rows.sort_by(|a, b| {
             b.tally
-                .hull_potential_dps(duration_s)
-                .total_cmp(&a.tally.hull_potential_dps(duration_s))
+                .total_dps(duration_s)
+                .total_cmp(&a.tally.total_dps(duration_s))
         });
         let mut whole = Tally::default();
         for row in &rows {
@@ -312,7 +386,7 @@ pub struct OnlyIn {
     pub name: String,
     /// Which of the two runs has it.
     pub run: usize,
-    pub hull_potential_dps: f64,
+    pub total_dps: f64,
 }
 
 /// What the rows the two runs share agree about, on one factor.
@@ -352,8 +426,12 @@ pub struct BuildDiff {
     pub common: [Tally; 2],
     pub common_factors: Option<[Factors; 2]>,
     /// Per factor, in `Factors::NAMES` order. Sums to the change in the common
-    /// core's hull potential DPS exactly.
-    pub factor_shares: Option<[f64; 4]>,
+    /// core's **hull** DPS exactly. The change in damage dealt to shields is
+    /// not among them — it is additive, `shield_dps_change`.
+    pub factor_shares: Option<[f64; 5]>,
+    /// What the change in damage dealt to shields came to, per second. Added to
+    /// the factor shares this is the whole change in DPS.
+    pub shield_dps_change: f64,
     pub clusters: Vec<Cluster>,
 }
 
@@ -375,12 +453,12 @@ impl BuildDiff {
                     only_in.push(OnlyIn {
                         name: name.clone(),
                         run: run_i,
-                        hull_potential_dps: tally.hull_potential_dps(duration),
+                        total_dps: tally.total_dps(duration),
                     });
                 }
             }
         }
-        only_in.sort_by(|x, y| y.hull_potential_dps.total_cmp(&x.hull_potential_dps));
+        only_in.sort_by(|x, y| y.total_dps.total_cmp(&x.total_dps));
 
         let mut common = [Tally::default(); 2];
         for (name, ta) in &ia {
@@ -397,6 +475,8 @@ impl BuildDiff {
             .map(|[fa, fb]| split_product_change(fa.as_array(), fb.as_array()));
 
         let clusters = clusters_of(&ia, &ib, a.duration_s, b.duration_s, min_hits);
+        let shield_dps_change =
+            common[1].shield_dps(b.duration_s) - common[0].shield_dps(a.duration_s);
 
         BuildDiff {
             runs: [a, b],
@@ -404,6 +484,7 @@ impl BuildDiff {
             common,
             common_factors,
             factor_shares,
+            shield_dps_change,
             clusters,
         }
     }
@@ -417,11 +498,11 @@ impl BuildDiff {
         let mut out = String::new();
         let [a, b] = &self.runs;
         let (pa, pb) = (
-            a.whole.hull_potential_dps(a.duration_s),
-            b.whole.hull_potential_dps(b.duration_s),
+            a.whole.total_dps(a.duration_s),
+            b.whole.total_dps(b.duration_s),
         );
 
-        out.push_str("What the hull would have taken, per second\n");
+        out.push_str("DPS, the figure the tables show\n");
         out.push_str(&format!(
             "  {:<28} {:>12.0}   {} rows, {:.0}s\n",
             a.label,
@@ -448,7 +529,7 @@ impl BuildDiff {
             let sign = if only.run == 1 { 1.0 } else { -1.0 };
             out.push_str(&format!(
                 "  {:>+12.0}   {} (only in {})\n",
-                sign * only.hull_potential_dps,
+                sign * only.total_dps,
                 only.name,
                 self.runs[only.run].label
             ));
@@ -461,12 +542,17 @@ impl BuildDiff {
             }
             None => out.push_str("  (no row both runs have dealt hull damage)\n"),
         }
+        out.push_str(&format!(
+            "  {:>+12.0}   damage dealt to shields (rows both runs have)\n",
+            self.shield_dps_change
+        ));
         let accounted: f64 = self
             .only_in
             .iter()
-            .map(|o| if o.run == 1 { o.hull_potential_dps } else { -o.hull_potential_dps })
+            .map(|o| if o.run == 1 { o.total_dps } else { -o.total_dps })
             .sum::<f64>()
-            + self.factor_shares.map(|s| s.iter().sum()).unwrap_or(0.0);
+            + self.factor_shares.map(|s| s.iter().sum::<f64>()).unwrap_or(0.0)
+            + self.shield_dps_change;
         out.push_str(&format!(
             "  {:>+12.0}   accounted for, against {:+.0} to explain\n\n",
             accounted,

@@ -78,10 +78,13 @@ pub struct Group {
 }
 
 impl Group {
+    /// Damage per second, hull and shields together — the figure the tables
+    /// show. The verdict is on this and not on hull potential: see
+    /// `Tally::total_dps`.
     pub fn potentials(&self) -> Vec<f64> {
         self.runs
             .iter()
-            .map(|run| run.whole.hull_potential_dps(run.duration_s))
+            .map(|run| run.whole.total_dps(run.duration_s))
             .collect()
     }
 
@@ -116,7 +119,7 @@ pub struct Presence {
     pub name: String,
     pub in_a: usize,
     pub in_b: usize,
-    /// Median hull potential DPS over the runs that have it, per group.
+    /// Median DPS over the runs that have it, per group.
     pub dps: [Option<f64>; 2],
 }
 
@@ -196,7 +199,7 @@ impl GroupVerdict {
         let rank = rank_test(&pa, &pb);
 
         let (fa, fb) = (a.factors(), b.factors());
-        let agreements = (0..4)
+        let agreements = (0..Factors::NAMES.len())
             .map(|i| {
                 let mut up = 0usize;
                 let mut down = 0usize;
@@ -243,7 +246,7 @@ fn presences_of(a: &Group, b: &Group) -> Vec<Presence> {
             for row in &run.rows {
                 let entry = counts.entry(row.name.clone()).or_default();
                 entry.0[side] += 1;
-                entry.1[side].push(row.tally.hull_potential_dps(run.duration_s));
+                entry.1[side].push(row.tally.total_dps(run.duration_s));
             }
         }
     }
@@ -422,7 +425,7 @@ impl GroupVerdict {
         }
         out.push('\n');
 
-        out.push_str("What the hull would have taken, per second\n");
+        out.push_str("DPS, the figure the tables show\n");
         for (group, stats) in [a, b].into_iter().zip(self.potential) {
             match stats {
                 Some(s) => out.push_str(&format!(
@@ -660,6 +663,50 @@ mod tests {
             }
             group
         };
+
+        // Printed beside the diff's own figure because the reader compares
+        // builds by the DPS the tables show, and a verdict resting on a
+        // different quantity has to be shown to agree with that one — or be
+        // the wrong quantity.
+        println!("\nPer run, in the analyzer's own figures and in this module's");
+        println!(
+            "  {:<26} {:>6}  {:>12}  {:>12}  {:>12}  {:>8}",
+            "run", "secs", "DPS (all)", "this module", "hull potent.", "gap"
+        );
+        for names in &wanted {
+            for combat in combats.iter() {
+                let note = notes.get(&CombatNotes::key(combat));
+                if !names.iter().any(|n| n == note) {
+                    continue;
+                }
+                let Some((_, player)) = combat.players.iter().max_by(|(_, x), (_, y)| {
+                    x.damage_out.dps.all.total_cmp(&y.damage_out.dps.all)
+                }) else {
+                    continue;
+                };
+                let duration = metrics_duration(&player.combat_time);
+                let run = Run::of(
+                    &player.damage_out,
+                    &combat.name_manager,
+                    &combat.hits_manger,
+                    duration,
+                    String::new(),
+                );
+                // The gap is the check that matters: this module's own sums
+                // have to come to the analyzer's DPS, or the verdict is about a
+                // quantity nothing else in the program agrees with.
+                let mine = run.whole.total_dps(duration);
+                println!(
+                    "  {:<26} {:>6.0}  {:>12.0}  {:>12.0}  {:>12.0}  {:>7.3}%",
+                    format!("{note} {}", combat.active_time.start.format("%m-%d %H:%M")),
+                    duration,
+                    player.damage_out.dps.all,
+                    mine,
+                    run.whole.hull_potential_dps(duration),
+                    100.0 * (mine - player.damage_out.dps.all) / player.damage_out.dps.all,
+                );
+            }
+        }
 
         let verdict = GroupVerdict::of(group_of(&wanted[0]), group_of(&wanted[1]));
         println!("\n{}", verdict.report());

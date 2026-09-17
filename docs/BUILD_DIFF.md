@@ -25,11 +25,10 @@ runs — say a bridge officer slot holding either a target-resistance debuff or 
 discrete damage source — and wants a sentence, not a table:
 
 ```
-Hellbore ahead by 3%. It adds one 11.2k DPS line; the other run instead
-made every target 12 points softer, worth 9.4k DPS spread over ten weapon
-rows. Every Hellbore run beat every other run, with nothing in between — but
-at three runs a side the cleanest possible result is still 1 in 10, so four
-a side is the least that can settle it.
+No winner: 1.110M DPS against 1.103M, and the runs overlap. But the two
+builds are not doing the same thing — one made every target 9% softer, the
+other got 7% more of its damage past shields, in every one of the nine
+pairings. The two cancel. They are substitutes, not rivals.
 ```
 
 Everything in that sentence is derivable from what the analyzer already
@@ -367,52 +366,81 @@ Three things the run taught that the design did not have:
 
 Six runs, three noted `APB` and three noted `HBL`, all solo on the same map at
 the same difficulty — checked by the report rather than assumed, which is why
-`Group::maps` exists. Figures from `build_groups` on the branch.
+`Group::maps` exists. Figures from `build_groups` on the branch, whose own sums
+are printed beside `DamageMetrics::dps` per run and agree with it to 0.000%.
 
 | | APB | HBL |
 |---|---|---|
-| median hull potential DPS | 1 226 577 | 1 101 198 |
-| its own runs | 1 159 074 – 1 332 003 | 1 089 378 – 1 110 857 |
-| pairings won | 9 of 9 | 0 of 9 |
+| median DPS | 1 109 935 | 1 103 213 |
+| its own runs | 1 024 132 – 1 171 790 | 1 094 340 – 1 139 439 |
+| pairings won | 5 of 9 | 4 of 9 |
 
-**Every `APB` run beat every `HBL` run, with nothing in between**, for a median
-lead of 11.4%. And the mechanism came out unanimous: `targets softer` moved the
-same way in all nine pairings, median 0.913x — `HBL`'s targets about 9.5%
-harder. One pair of runs could not have told that from a good session; nine
-pairings agreeing can.
+**There is no winner.** The medians are 0.6% apart, the ranges overlap almost
+entirely, and the pairings split five to four: `p = 1.000`. Three runs a side
+could not have settled it in any case (best possible 0.100), but this is not a
+sample-size result — the two builds simply do the same DPS.
 
-Four findings, three of which changed the design above.
+What is *not* a null result is how they get there. Two factors moved
+unanimously, in opposite directions, across all nine pairings:
 
-1. **A range is not a noise floor, and using one as a floor contradicted the
-   rank test.** The first version compared the difference of medians against the
-   larger group's own spread and reported "inside the noise" — while the line
-   below it said every run of one build had beaten every run of the other. Both
-   were computed from the same six numbers. A range grows with the run count and
-   one good run stretches it, so it cannot be a threshold; whether the two sets
-   of runs *overlap* can, and that is what `RankTest::complete` now answers.
-   The spread is still printed, as context rather than as a verdict.
-2. **The rank test has to be two-sided, which changes how many runs are needed.**
-   The reader is asking which build is better, not confirming a direction chosen
-   in advance, so both complete separations count. Three a side therefore reaches
-   1 in 10 and not 1 in 20: **four runs per build** is the first count whose best
-   possible result clears 0.05. An earlier version of this document said three,
-   and was wrong.
-3. **A one-sided `p` reported against a fixed group is actively misleading.**
-   With `APB` ahead 9-0 the figure came out as 1.000 — "nothing here" for the
-   strongest evidence in the sample. `RankTest::favours` names the direction the
-   runs point and `p` is taken in it.
-4. **The drift list is not a footnote. It is the gate.** `Thoron Infused Polaron
-   Array - Fire at Will III`, worth 45.8k, is in every `APB` run and only two of
-   three `HBL` runs — **more than the 34.8k of `Hellbore Light - Ignition`, the
-   row that is actually the build difference.** Part of the measured lead is a
-   weapon that was not held constant. Nothing else in the program would have said
-   so, and a reader eyeballing damage rows would not have noticed a row that is
-   *present* in five runs out of six.
+| factor | direction | median ratio HBL/APB |
+|---|---|---|
+| `targets softer` | APB ahead in all 9 | 0.913 |
+| `got past shields` | HBL ahead in all 9 | 1.074 |
 
-That last one also invalidated a grouping. Pooling the earlier runs noted
-`Attack Patern Beta` and `Hellbore` with these gives four a side, which is the
-count that could settle the question — but the drift list then lists whole
-weapon arrays present in one run of four, the largest worth 172.9k. Those
-sessions were flown on a different loadout, so the pooled comparison measures
-the loadout and not the bridge officer slot. **The check that says a comparison
+`0.913 x 1.074 = 0.980`. **The two effects cancel**, which is the whole answer:
+`APB` lowers the target's hull resistance so each shot that reaches the hull
+does more, and `HBL` strips shields so more shots reach the hull at all. Same
+destination, different factor. Neither is better; they are substitutes.
+
+The structural side says the same thing from the other end. `Hellbore Light -
+Drain` deals **82 519** DPS of shield damage in every `HBL` run and none of
+`APB`'s, beside 31 171 from `Hellbore Light - Ignition`. The drain is the
+mechanism behind the passthrough factor, and it is visible as a row.
+
+### Five findings, all of which changed the design above
+
+1. **Leading with the wrong quantity produced a confident wrong verdict.** The
+   first version reported on `hull_potential_dps` — hull damage plus what
+   shields absorbed — and announced that every `APB` run beat every `HBL` run
+   with an 11.4% median lead. That is true *of that quantity* and false of DPS,
+   which is what every table in the program shows and what a build is judged
+   by. The quantity is still computed and still labelled, but the verdict is on
+   `Tally::total_dps`, and the driver prints that against the analyzer's own
+   `dps` so the two can be seen to agree.
+2. **Shield drains were dropped, hiding a third of one build's contribution.**
+   `SpecificHit::ShieldDrain` carries no hull side and no base damage, so it was
+   skipped entirely — but the analyzer counts its damage in
+   `total_damage.shield`, and `Hellbore Light - Drain` is 82 519 of it. The row
+   read as 0 in an earlier report. Anything outside every factor still belongs
+   in the total.
+3. **`IMMUNE` hits have to be skipped, exactly as the analyzer skips them.**
+   Counting them put damage in this module's totals that no table shows.
+4. **A range is not a noise floor, and using one as a floor contradicted the
+   rank test.** Comparing the difference of medians against the larger group's
+   own spread reported "inside the noise" while the line below said the runs
+   separated completely. A range grows with the run count and one good run
+   stretches it; whether the two sets of runs *overlap* does not, so that is
+   `RankTest::complete`.
+5. **The rank test has to be two-sided, which changes how many runs are needed,
+   and a one-sided `p` against a fixed group is actively misleading.** Both
+   complete separations count, so three a side reaches 1 in 10 rather than 1 in
+   20 and **four runs per build** is the first count that can clear 0.05. With
+   `APB` apparently ahead 9-0 under the old quantity, `p` came out as 1.000 —
+   "nothing here" for what looked like the strongest evidence in the sample.
+   `RankTest::favours` names the direction and `p` is taken in it.
+
+### And one grouping the tool refused
+
+Pooling the earlier runs noted `Attack Patern Beta` and `Hellbore` with these
+gives four a side, the count that could settle the question — but the drift list
+then names whole weapon arrays present in one run of four, the largest worth
+172.9k. Those sessions were flown on a different loadout, so the pooled
+comparison measures the loadout and not the bridge officer slot.
+
+Even within the clean 3-and-3 grouping the list earns its place: `Thoron Infused
+Polaron Array - Fire at Will III`, 39.9k, is in every `APB` run and two of three
+`HBL` runs, and `Temporal Defense Polaron Beam Array - Fire at Will III`, 32.3k,
+in one `HBL` run only — one array swapped for another, roughly compensating,
+which is why `HBL`'s own spread stays narrow. **The check that says a comparison
 is worth reading has to come before the verdict, not after it.**
