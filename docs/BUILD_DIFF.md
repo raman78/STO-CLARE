@@ -1,10 +1,17 @@
 # Build diff — design note
 
-Status: a proof of concept exists on `poc/build-diff` — `app/compare/build_diff`
-plus the ignored test `build_diff_on_a_real_log` that runs it over a real log
-and prints the report. Nothing draws it; there is no UI. What the proof of
-concept found is in "What running it showed" at the end, and two of its findings
-have already changed what is written above.
+Status: a proof of concept exists on `poc/build-diff`, in two modules and two
+ignored tests that run them over a real log and print a report. Nothing draws
+either; there is no UI.
+
+| Module | Unit | Driver |
+|---|---|---|
+| `app/compare/build_diff` | one run against one run | `build_diff_on_a_real_log` |
+| `app/compare/build_groups` | every run of one build against every run of another, grouped by note | `build_groups_on_a_real_log` |
+
+What running them found is in "What running it showed" at the end. Four of those
+findings have already changed what is written above, one of them a correction to
+the arithmetic of how many runs are needed.
 
 ## Purpose
 
@@ -20,8 +27,9 @@ discrete damage source — and wants a sentence, not a table:
 ```
 Hellbore ahead by 3%. It adds one 11.2k DPS line; the other run instead
 made every target 12 points softer, worth 9.4k DPS spread over ten weapon
-rows. Run-to-run spread within a build is +-5k DPS, so this lead is thinner
-than the noise: three runs per build is the least that can settle it.
+rows. Every Hellbore run beat every other run, with nothing in between — but
+at three runs a side the cleanest possible result is still 1 in 10, so four
+a side is the least that can settle it.
 ```
 
 Everything in that sentence is derivable from what the analyzer already
@@ -231,11 +239,16 @@ A waterfall from one run's DPS to the other's, closing exactly (B2):
 
 Below it, in prose: which build is ahead and by how much, what the run-to-run
 spread within a build is, and — when the run count cannot settle it — what
-would. The honest statement at two runs per build is not a p-value but a
-counting fact: with two against two there are only six orderings, so the best
-attainable one-sided result is 1 in 6. Three against three reaches 1 in 20.
-Below three runs per build the question is unanswerable however the data falls,
-and the output says that rather than reporting a lead.
+would. The honest statement at these sample sizes is not a p-value from a table
+but a counting fact, and the count is **two-sided**, because the reader is
+asking which of two builds is better rather than confirming a direction picked
+beforehand. Of the six ways four runs split two and two, two separate them
+completely, one per direction — so the best attainable result is 1 in 3. Three a
+side reaches 1 in 10, four a side 1 in 35 (`rank_test`, and the test
+`four_runs_a_side_is_the_first_count_that_can_settle_anything`). **Four runs per
+build is therefore the first count whose best possible outcome clears 0.05**;
+below it the question is unanswerable however the runs fall, and the output says
+so rather than reporting a lead.
 
 **The stacking counterfactual.** Take one run, add the other's `New` rows, apply
 the other's `GlobalLift`. This is the figure a reader asking "what if I could
@@ -349,3 +362,57 @@ Three things the run taught that the design did not have:
    silent on a second pair whose resistance genuinely did not differ (median
    0.997x, 16 of 19 agreeing — agreement about nothing happening). Two pairs is
    thin, and these remain provisional for the reason in "Calibration left open".
+
+## What the grouped runs showed
+
+Six runs, three noted `APB` and three noted `HBL`, all solo on the same map at
+the same difficulty — checked by the report rather than assumed, which is why
+`Group::maps` exists. Figures from `build_groups` on the branch.
+
+| | APB | HBL |
+|---|---|---|
+| median hull potential DPS | 1 226 577 | 1 101 198 |
+| its own runs | 1 159 074 – 1 332 003 | 1 089 378 – 1 110 857 |
+| pairings won | 9 of 9 | 0 of 9 |
+
+**Every `APB` run beat every `HBL` run, with nothing in between**, for a median
+lead of 11.4%. And the mechanism came out unanimous: `targets softer` moved the
+same way in all nine pairings, median 0.913x — `HBL`'s targets about 9.5%
+harder. One pair of runs could not have told that from a good session; nine
+pairings agreeing can.
+
+Four findings, three of which changed the design above.
+
+1. **A range is not a noise floor, and using one as a floor contradicted the
+   rank test.** The first version compared the difference of medians against the
+   larger group's own spread and reported "inside the noise" — while the line
+   below it said every run of one build had beaten every run of the other. Both
+   were computed from the same six numbers. A range grows with the run count and
+   one good run stretches it, so it cannot be a threshold; whether the two sets
+   of runs *overlap* can, and that is what `RankTest::complete` now answers.
+   The spread is still printed, as context rather than as a verdict.
+2. **The rank test has to be two-sided, which changes how many runs are needed.**
+   The reader is asking which build is better, not confirming a direction chosen
+   in advance, so both complete separations count. Three a side therefore reaches
+   1 in 10 and not 1 in 20: **four runs per build** is the first count whose best
+   possible result clears 0.05. An earlier version of this document said three,
+   and was wrong.
+3. **A one-sided `p` reported against a fixed group is actively misleading.**
+   With `APB` ahead 9-0 the figure came out as 1.000 — "nothing here" for the
+   strongest evidence in the sample. `RankTest::favours` names the direction the
+   runs point and `p` is taken in it.
+4. **The drift list is not a footnote. It is the gate.** `Thoron Infused Polaron
+   Array - Fire at Will III`, worth 45.8k, is in every `APB` run and only two of
+   three `HBL` runs — **more than the 34.8k of `Hellbore Light - Ignition`, the
+   row that is actually the build difference.** Part of the measured lead is a
+   weapon that was not held constant. Nothing else in the program would have said
+   so, and a reader eyeballing damage rows would not have noticed a row that is
+   *present* in five runs out of six.
+
+That last one also invalidated a grouping. Pooling the earlier runs noted
+`Attack Patern Beta` and `Hellbore` with these gives four a side, which is the
+count that could settle the question — but the drift list then lists whole
+weapon arrays present in one run of four, the largest worth 172.9k. Those
+sessions were flown on a different loadout, so the pooled comparison measures
+the loadout and not the bridge officer slot. **The check that says a comparison
+is worth reading has to come before the verdict, not after it.**

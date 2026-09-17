@@ -22,6 +22,7 @@ use crate::{
 };
 
 mod build_diff;
+mod build_groups;
 mod compare_table;
 
 use compare_table::Comparison;
