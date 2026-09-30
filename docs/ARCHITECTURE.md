@@ -449,7 +449,10 @@ appeared and how much hull damage they took — the log carries no map marker at
 all. Rules live in `src/analyzer/detection_rules.json`, and a file of the same
 name next to the settings overrides it without a rebuild. See
 `docs/DIFFICULTY_DETECTION.md` and the measurements in
-`docs/DETECTION_SAMPLES.md`.
+`docs/DETECTION_SAMPLES.md`. Every step of the decision is kept with the combat;
+where the map or level is in doubt, the combats panel adds it to the row's
+tooltip, which opens after a 2 s hover (`app/detection_explanation.rs`), so a fight left
+without a level says why.
 
 ## UI
 

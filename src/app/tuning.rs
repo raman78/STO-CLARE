@@ -23,6 +23,14 @@ pub use crate::app::settings::MAX_NOTE_CHARS;
 pub const ROW_HEIGHT: f32 = 25.0;
 pub const HEADER_HEIGHT: f32 = 25.0;
 
+/// How long, in seconds, the pointer has to rest on a fight's row in the
+/// combats panel before its tooltip — the full name and times, and why the map
+/// or level is in doubt where it is (`app/detection_explanation.rs`) — opens.
+/// Chosen by Raman: at egui's usual half second the tooltip opened over every
+/// row the pointer crossed, and 2.5 s was tried and felt too long. It is for
+/// the reader who stops on a row to ask.
+pub const ROW_TOOLTIP_DELAY: f32 = 2.0;
+
 /// The narrowest the combats panel may be dragged. It still holds the map name
 /// and the DPS beside it; below that the table would be a column of ellipses.
 pub const PANEL_MIN_WIDTH: f32 = 260.0;

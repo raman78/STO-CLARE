@@ -106,10 +106,14 @@ Combat::update() ─▶ Combat::update_detection()
                        ├─ build view: unique_name &str ─▶ &CritterMeta
                        └─ detection::detect(&DETECTION_RULES, &view) ─▶ Detected
                               stored on Combat.detected_map / .detected_difficulty
+                              and the steps on Combat.detection_steps
 
 AnalysisContext::latest_info() ─▶ AnalysisInfo::Refreshed { combats, .. }
    ─▶ App.combats: Arc<[CombatSummary]> ─▶ the combats list's level menu
       (CombatSummary::difficulty; see docs/ARCHITECTURE.md, "The filter menus")
+   ─▶ combats panel row tooltip, after ROW_TOOLTIP_DELAY, where
+      detection_explanation::worth_explaining() ─▶ explain()
+      (CombatSummary::detection; see "Explaining the result" below)
 
 Combat::name() ─▶ base = user rules ? join names : detected_map ?? "Combat"
                   prepend_detected_combat_type(base, detected_combat_type)
@@ -190,7 +194,8 @@ the same way when a map misreads.
 
 It deliberately has the **last word** rather than acting as a fallback, so that a
 disagreement with a hand-verified per-map table surfaces instead of being masked.
-Disagreements are logged via `warn!`. Against the live log the two never
+Disagreements are logged via `warn!`, and the explanation on hover says which
+tier the vote replaced (see "Explaining the result"). Against the live log the two never
 disagreed on the 19 tabled maps.
 
 ⚠ The `hull_critter` test helper now sets `deaths = 1` (a median hull figure is
@@ -286,10 +291,13 @@ refreshed when OSCR/the wiki updates, ideally from a shared canonical file.
 
 Mirrors OSCR's `detect_map`, iterating `rules.maps`:
 
-1. **Existence** — find a map that `MapDef::is_present`: any one of its any-of
-   `identifiers` is present, or its whole all-of `identifiers_all` set is present
-   together. No match ⇒ `map = None` ("Combat"). A matching map that pins a
-   non-`Any` `difficulty` returns immediately (e.g. Winter Invasion ⇒ Normal).
+1. **Existence** — collect every map that `MapDef::is_present`: any one of its
+   any-of `identifiers` is present, or its whole all-of `identifiers_all` set is
+   present together. No match ⇒ `map = None` ("Combat"). Of several matches, the
+   first one that pins a non-`Any` `difficulty` wins and returns immediately
+   (e.g. Winter Invasion ⇒ Normal); without such a map the **last** match wins.
+   "First" and "last" are in `HashMap` order, i.e. arbitrary, which is why every
+   other match is reported as `AlsoMatched`.
    (`identifiers_all` anchors on a *combination* of non-dying friend/objective
    ships that recur individually but not as a set.)
 2. **Death counts** — for the identified map, test each tier low→high
@@ -306,13 +314,92 @@ Mirrors OSCR's `detect_map`, iterating `rules.maps`:
    enough) — used for faction-randomized maps where the tier signal is one entity
    per faction (list every variant with the same band; only whichever spawned is
    checked, e.g. Unwanted Guests' dreadnought). Both run after the death phase and
-   override it (higher tiers still win); skipped when death tables existed but
-   none matched (that stays `Any`).
+   override it (higher tiers still win). When death tables existed but none
+   matched, the hull phase is skipped unless the map also has hull tables (Bug
+   Hunt), and the tier is `Any` unless the global table decides it.
+4. **Global ship-class vote** — see "The global ship-class tier" above; it runs
+   last and its winner replaces whatever the tables said.
+
+## Explaining the result (`DetectionStep`)
+
+`detect` records every step it takes in `Detected::steps`, in order. A combat
+the program cannot place used to show only a dash, which could mean an unknown
+map, an Elite run that lost one kill to a combat split, or a hull figure just
+under a threshold — the reader had no way to tell, and neither did we when
+adding a map. The steps are carried on `Combat::detection_steps` and
+`CombatSummary::detection`. `app/detection_explanation.rs` turns them into text,
+which the combats panel appends to a row's tooltip (the full name with its
+times) — only where `worth_explaining` says the name leaves a question open:
+
+- no map recognized (`NoAnchor`);
+- a map but no level (`Any` or none);
+- another map matched as well (`AlsoMatched`);
+- the ship-class vote replaced a level the map's own tables had settled.
+
+A plainly recognized fight is fully said by its name, and explaining it only
+repeated that.
+
+The whole row tooltip opens only after the pointer has rested on the row for
+`ROW_TOOLTIP_DELAY` (2 s, `app/tuning.rs`); at egui's usual half second it
+opened over every row the pointer crossed. egui's delay is one global setting,
+so the wait is measured by `hovered_for` in `app/combats_list.rs`, called on
+every frame the row is hovered: a skipped frame number means the pointer left,
+and the count restarts. The tooltip is requested only once the wait is over,
+with a repaint scheduled for that moment. Only the panel's rows carry it, not
+the compare picker or the delete dialog, which share the cells but not the row.
+
+| step | written when |
+|------|--------------|
+| `NoAnchor` | no map's identifiers were present |
+| `Anchor { map, entities }` | the chosen map, with only the identifiers actually present |
+| `AlsoMatched { map }` | once per other map that matched and lost (see Existence above) |
+| `Pinned(difficulty)` | the map pins its tier; nothing else follows |
+| `Table { tier, kind, outcome }` | once per tier table checked: `Deaths`, `Hull` or `HullAny` |
+| `ShipClassVote { vote, from_tables }` | the global table ran; `from_tables` is what the map's tables said before it |
+
+A failed table reports the **first** entity that failed it, as `TableOutcome`:
+`Missing`, `Deaths { expected, got }`, `Survived` (a hull table only trusts an
+entity that died) or `LowHull { needed, median }`. Tables are walked in entity
+name order (`sorted`), so the same combat always names the same entity; with
+`HashMap` order the named entity changed from run to run. An any-of table has no
+single "first failure", so it names the listed entity that came **closest** to
+its threshold, or `NonePresent`.
+
+When the name comes from one of the reader's naming rules
+(`CombatSummary::named_by_rule`), the explanation says so first: the detection
+still decides the level, but the map name shown is not its answer.
+
+The explanation is modelled on the one the OSCR client shows (`DetectionInfo`,
+rendered in `OSCR-UI/OSCRUI/dialogs.py`). That one also names the first entity
+to fail each table, but in table order, and has no vote to report.
+
+## Where this departs from OSCR
+
+The ladder does **not** use this code: the OSCR server runs the OSCR library
+(`STO-OSCR>=2025.2.15.0` in `OSCR-server/requirements.txt`) over the uploaded
+bytes (see `LADDER_UPLOAD.md`). A combat can therefore carry a level here and
+`Any` on the ladder. Compared against `OSCR/detection.py` and
+`OSCR/combat.py::detect_map` on 2026-09-30:
+
+| | OSCR | here |
+|---|---|---|
+| presence | only an entity that took damage | an entity in either role |
+| anchors | 29, hard-coded | JSON; any-of and all-of |
+| death count `0` | must have died at least once | present, any number of deaths |
+| hull tables | all-of; death not required | all-of or any-of; only entities that died count |
+| deaths fail, hull tables exist | `Any`, hull skipped | hull checked |
+| deaths fail, nothing else | `Any` | global ship-class vote |
+| global ship-class vote | none | runs last, replaces the tables' answer |
+
+The death-count `0` difference matters wherever such an entity is present but
+survives. Five entries use it: Khitomer Vortex Advanced
+(`Space_Borg_Dreadnought_Raidisode`), both Cure Found pets, Bug Hunt Elite and
+Jupiter Station Showdown Elite. OSCR needs them killed, we only need them
+present. Not reconciled; it is a decision still open.
 
 ## Shared objective entities (anchor on the enemy, not the objective)
 
-The existence phase takes the **first** matching map; when several match, the
-winner is order-dependent (`maps` is a `HashMap`), so a map must list
+When several maps match, the existence phase's winner is order-dependent (`maps` is a `HashMap`), so a map must list
 `identifiers` that are **unique to it**. This bites when two maps share an
 *objective* entity. Example: both **[TFO] Azure Nebula Rescue** and the
 **[Patrol] Trouble Over Terrh** patrol rescue the same allied ship
@@ -344,5 +431,9 @@ keyed by unique name.
   Any", a fixed-difficulty map, the Hive Space hull tie-break (Advanced vs Elite
   from median hull damage), the Trouble Over Terrh hull tiers, and that Azure vs
   Terrh are told apart by enemy faction. `bundled_rules_parse` guards the JSON.
+  The explanation tests (`failed_kill_tables_name_the_entity_and_the_vote_settles_it`
+  and the ones after it) pin the steps, each checked to fail with its piece of
+  the explanation removed.
+- `app::detection_explanation::tests` — the text the hover shows.
 - `analyzer::tests::detects_maps_in_real_log` (ignored) — smoke test that prints
   detected `(map, difficulty)` for each combat in the live log.
