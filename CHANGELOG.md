@@ -1,6 +1,6 @@
 # Change Log
 
-# unreleased
+## v2.10.0
 
 ### Major Changes
 - where the program is unsure which map or level a fight was, keeping the pointer on its row in the combats list for a couple of seconds now explains why: which ship or object gave the map away, which checks for each level passed or failed — naming the ship that was killed the wrong number of times, or had too little hull — and how the ships that died voted on the level. A level that shows only a dash now says why, so a map the program does not know yet can be told apart from a run where a kill went missing. Fights recognized without doubt get no explanation, since their name already says it all
