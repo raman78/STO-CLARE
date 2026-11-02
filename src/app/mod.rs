@@ -33,6 +33,7 @@ mod compare;
 pub(crate) mod damage_subset;
 mod date_range;
 pub mod desktop_install;
+mod detection_explanation;
 mod export;
 mod fonts;
 mod job;

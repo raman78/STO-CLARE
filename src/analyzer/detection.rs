@@ -226,11 +226,10 @@ struct GlobalTier {
 }
 
 impl GlobalTier {
-    /// Tier this combat by majority vote of the entities that died. Returns
-    /// `None` when nothing could vote, or when the vote is tied (ambiguous —
-    /// better to fall back to the map's own tables than to guess).
-    fn classify(&self, critters: &FxHashMap<&str, &CritterMeta>) -> Option<Difficulty> {
-        let (mut normal, mut advanced, mut elite) = (0usize, 0usize, 0usize);
+    /// Count the votes of the entities that died, one per entity, against their
+    /// class bands. [`ShipClassVote::winner`] turns the tally into a tier.
+    fn vote(&self, critters: &FxHashMap<&str, &CritterMeta>) -> ShipClassVote {
+        let mut vote = ShipClassVote::default();
         for (name, meta) in critters.iter() {
             // Only entities that died: for the others the hull figure is damage
             // we happened to deal, not the entity's HP.
@@ -257,23 +256,38 @@ impl GlobalTier {
                 continue;
             }
             if median > band.threshold {
-                elite += 1;
+                vote.elite += 1;
             } else if band.normal_threshold.is_some_and(|n| median <= n) {
-                normal += 1;
+                vote.normal += 1;
             } else {
-                advanced += 1;
+                vote.advanced += 1;
             }
         }
-        // Strict majority wins; a tie is ambiguous, so decline and let the map's
-        // own tables decide.
+        vote
+    }
+}
+
+/// How the entities that died voted in the global ship-class table.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ShipClassVote {
+    pub normal: usize,
+    pub advanced: usize,
+    pub elite: usize,
+}
+
+impl ShipClassVote {
+    /// The tier a strict majority voted for. `None` when nothing could vote, or
+    /// when the vote is tied (ambiguous — better to fall back to the map's own
+    /// tables than to guess).
+    pub fn winner(&self) -> Option<Difficulty> {
         let winner = [
-            (elite, Difficulty::Elite),
-            (advanced, Difficulty::Advanced),
-            (normal, Difficulty::Normal),
+            (self.elite, Difficulty::Elite),
+            (self.advanced, Difficulty::Advanced),
+            (self.normal, Difficulty::Normal),
         ]
         .into_iter()
         .max_by_key(|(votes, _)| *votes)?;
-        let tied = [elite, advanced, normal]
+        let tied = [self.elite, self.advanced, self.normal]
             .iter()
             .filter(|v| **v == winner.0)
             .count()
@@ -308,6 +322,75 @@ pub struct Detected {
     /// of the displayed map name as a `[TFO]` prefix; carried on its own as
     /// well so a list can put it in a column of its own and order by it.
     pub category: Option<String>,
+    /// How the result was reached, step by step, in the order the checks ran.
+    /// Shown to the reader so that a map or level the program could not settle
+    /// says why, instead of just showing nothing.
+    pub steps: Vec<DetectionStep>,
+}
+
+/// One step of the detection, as the reader is told about it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DetectionStep {
+    /// No curated map's identifying entity was in the combat.
+    NoAnchor,
+    /// The map was recognized by these entities (the present ones only).
+    Anchor { map: String, entities: Vec<String> },
+    /// Another map's identifying entities were present too, and lost.
+    AlsoMatched { map: String },
+    /// The map has a single level, so there was nothing to check.
+    Pinned(Difficulty),
+    /// One tier table of the map was checked against the combat.
+    Table {
+        tier: Difficulty,
+        kind: TableKind,
+        outcome: TableOutcome,
+    },
+    /// The global ship-class table voted. `from_tables` is what the map's own
+    /// tables had said before it (`None` when they settled nothing); the winner
+    /// of the vote, if any, replaces it.
+    ShipClassVote {
+        vote: ShipClassVote,
+        from_tables: Option<Difficulty>,
+    },
+}
+
+/// Which kind of tier table a [`DetectionStep::Table`] was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableKind {
+    /// `death_counts`: exact deaths per entity.
+    Deaths,
+    /// `hull_counts`: every listed entity above its hull threshold.
+    Hull,
+    /// `hull_any`: one listed entity above its hull threshold.
+    HullAny,
+}
+
+/// Whether a tier table matched and, if not, the first entity that failed it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TableOutcome {
+    Matched,
+    /// A listed entity was not in the combat.
+    Missing {
+        entity: String,
+    },
+    /// A listed entity died a different number of times than the tier needs.
+    Deaths {
+        entity: String,
+        expected: u32,
+        got: u32,
+    },
+    /// A listed entity never died, so its hull figure says nothing about its HP.
+    Survived {
+        entity: String,
+    },
+    /// A listed entity's median hull damage did not exceed what the tier needs.
+    LowHull {
+        entity: String,
+        needed: f64,
+        median: f64,
+    },
+    /// Any-of table: none of the listed entities was in the combat.
+    NonePresent,
 }
 
 /// The active rules, parsed once: a user override from the config dir if
@@ -374,25 +457,58 @@ pub fn curated_map_identifiers() -> Vec<(String, String)> {
 /// each entity's internal unique name. Mirrors OSCR's `detect_map`: identify the
 /// map by a present curated entity, then resolve the tier from death counts.
 pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) -> Detected {
-    // Existence phase: find a map whose identifying entity is present. A map that
-    // pins a fixed difficulty returns immediately.
-    let mut matched: Option<(&str, &MapDef)> = None;
-    for (name, def) in rules.maps.iter() {
-        if def.is_present(critters) {
-            matched = Some((name.as_str(), def));
-            if def.difficulty != Difficulty::Any {
-                return Detected {
-                    map: Some(def.display_name(name)),
-                    difficulty: Some(def.difficulty),
-                    combat_type: def.combat_type.clone(),
-                    category: def.category.clone(),
-                };
-            }
-        }
-    }
-    let Some((name, def)) = matched else {
-        return Detected::default();
+    // Existence phase: find a map whose identifying entity is present. The first
+    // map that pins a fixed difficulty wins outright; otherwise the last match.
+    let matches: Vec<(&str, &MapDef)> = rules
+        .maps
+        .iter()
+        .filter(|(_, def)| def.is_present(critters))
+        .map(|(name, def)| (name.as_str(), def))
+        .collect();
+    let Some(&(name, def)) = matches
+        .iter()
+        .find(|(_, def)| def.difficulty != Difficulty::Any)
+        .or(matches.last())
+    else {
+        return Detected {
+            steps: vec![DetectionStep::NoAnchor],
+            ..Default::default()
+        };
     };
+
+    let mut entities: Vec<String> = def
+        .all_identifiers()
+        .filter(|e| critters.contains_key(e.as_str()))
+        .cloned()
+        .collect();
+    entities.sort_unstable();
+    entities.dedup();
+    let mut steps = vec![DetectionStep::Anchor {
+        map: def.display_name(name),
+        entities,
+    }];
+    // Which one wins among several is down to the order of an unordered map,
+    // so say that it happened.
+    steps.extend(
+        matches
+            .iter()
+            .filter(|(other, _)| *other != name)
+            .map(|(other, other_def)| DetectionStep::AlsoMatched {
+                map: other_def.display_name(other),
+            }),
+    );
+    let detected = |difficulty, steps| Detected {
+        map: Some(def.display_name(name)),
+        difficulty,
+        combat_type: def.combat_type.clone(),
+        category: def.category.clone(),
+        steps,
+    };
+
+    if def.difficulty != Difficulty::Any {
+        steps.push(DetectionStep::Pinned(def.difficulty));
+        return detected(Some(def.difficulty), steps);
+    }
 
     // Death-count phase: check each tier (low to high); a higher matching tier
     // overrides. If the map has tables but none match, the tier stays `Any`.
@@ -401,50 +517,76 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
     for tier in DIFFICULTY_ORDER {
         if let Some(table) = def.death_counts.get(&tier) {
             had_tables = true;
-            if death_counts_match(table, critters) {
+            let outcome = death_counts_outcome(table, critters);
+            if outcome == TableOutcome::Matched {
                 difficulty = Some(tier);
             }
+            steps.push(DetectionStep::Table {
+                tier,
+                kind: TableKind::Deaths,
+                outcome,
+            });
         }
     }
     // Map-independent tier, from the ship classes present. Computed up front so
     // it can also rescue a map whose death tables did not match.
-    let global = rules
+    let vote = rules
         .global_tier
         .as_ref()
-        .and_then(|global| global.classify(critters));
+        .map(|global| global.vote(critters));
+    let global = vote.and_then(|vote| vote.winner());
 
     // Death tables exist but none matched: the tier cannot be resolved *by deaths*.
     // Report `Any` and skip the hull tie-break (as OSCR does) — unless the map also
     // has hull tables, in which case a death marker is only one signal (e.g. Bug
     // Hunt: an Elite-only entity plus hull bands) and we fall through to hull.
     if had_tables && difficulty.is_none() && def.hull_counts.is_empty() && def.hull_any.is_empty() {
-        return Detected {
-            map: Some(def.display_name(name)),
-            difficulty: Some(global.unwrap_or(Difficulty::Any)),
-            combat_type: def.combat_type.clone(),
-            category: def.category.clone(),
-        };
+        if let Some(vote) = vote {
+            steps.push(DetectionStep::ShipClassVote {
+                vote,
+                from_tables: None,
+            });
+        }
+        return detected(Some(global.unwrap_or(Difficulty::Any)), steps);
     }
 
     // Hull-damage tie-break: overrides the death-count result where the tiers
     // share death counts (e.g. Hive Onslaught). Higher tiers still override lower.
     for tier in DIFFICULTY_ORDER {
-        if let Some(table) = def.hull_counts.get(&tier)
-            && hull_damage_match(table, critters)
-        {
-            difficulty = Some(tier);
+        if let Some(table) = def.hull_counts.get(&tier) {
+            let outcome = hull_damage_outcome(table, critters);
+            if outcome == TableOutcome::Matched {
+                difficulty = Some(tier);
+            }
+            steps.push(DetectionStep::Table {
+                tier,
+                kind: TableKind::Hull,
+                outcome,
+            });
         }
     }
     // Any-of hull tie-break: for faction-randomized maps, whichever listed
     // variant spawned decides the tier. Same low-to-high override.
     for tier in DIFFICULTY_ORDER {
-        if let Some(table) = def.hull_any.get(&tier)
-            && hull_any_match(table, critters)
-        {
-            difficulty = Some(tier);
+        if let Some(table) = def.hull_any.get(&tier) {
+            let outcome = hull_any_outcome(table, critters);
+            if outcome == TableOutcome::Matched {
+                difficulty = Some(tier);
+            }
+            steps.push(DetectionStep::Table {
+                tier,
+                kind: TableKind::HullAny,
+                outcome,
+            });
         }
     }
 
+    if let Some(vote) = vote {
+        steps.push(DetectionStep::ShipClassVote {
+            vote,
+            from_tables: difficulty,
+        });
+    }
     // The global table has the last word, so that disagreements with the curated
     // per-map tables surface immediately instead of being masked by them. Any
     // disagreement is logged: on a map with hand-verified tables it means one of
@@ -464,65 +606,114 @@ pub fn detect(rules: &DetectionRules, critters: &FxHashMap<&str, &CritterMeta>) 
         difficulty = Some(global);
     }
 
-    Detected {
-        map: Some(def.display_name(name)),
-        difficulty,
-        combat_type: def.combat_type.clone(),
-        category: def.category.clone(),
-    }
+    detected(difficulty, steps)
 }
 
-/// A tier matches when *at least one* listed entity is present and its median
-/// hull damage exceeds `threshold * (1 - VAR)`. See `MapDef::hull_any`.
-fn hull_any_match(table: &HashMap<String, f64>, critters: &FxHashMap<&str, &CritterMeta>) -> bool {
-    table.iter().any(|(unique_name, threshold)| {
-        critters.get(unique_name.as_str()).is_some_and(|meta| {
-            meta.deaths > 0 && threshold * (1.0 - HULL_VARIANCE) < meta.median_hull_damage()
-        })
-    })
+/// A table's entries in name order, so the entity an explanation names as the
+/// first failure is the same on every run.
+fn sorted<V>(table: &HashMap<String, V>) -> Vec<(&String, &V)> {
+    let mut entries: Vec<_> = table.iter().collect();
+    entries.sort_unstable_by_key(|(name, _)| name.as_str());
+    entries
 }
 
-/// A tier matches when every listed entity is present and its median hull damage
-/// suffered exceeds `threshold * (1 - VAR)`.
-fn hull_damage_match(
+/// A tier matches when *at least one* listed entity is present, died, and its
+/// median hull damage exceeds `threshold * (1 - VAR)`. See `MapDef::hull_any`.
+/// On a miss, reports the listed entity that came closest.
+fn hull_any_outcome(
     table: &HashMap<String, f64>,
     critters: &FxHashMap<&str, &CritterMeta>,
-) -> bool {
-    for (unique_name, threshold) in table.iter() {
-        match critters.get(unique_name.as_str()) {
-            None => return false,
-            Some(meta) => {
-                let low = threshold * (1.0 - HULL_VARIANCE);
-                // Negated on purpose rather than written as `>=`: a median that
-                // is NaN must count as "not above the threshold" and reject the
-                // map, which `>=` would do the other way round.
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                if meta.deaths == 0 || !(low < meta.median_hull_damage()) {
-                    return false;
-                }
-            }
+) -> TableOutcome {
+    let mut closest: Option<TableOutcome> = None;
+    for (unique_name, threshold) in sorted(table) {
+        let Some(meta) = critters.get(unique_name.as_str()) else {
+            continue;
+        };
+        if meta.deaths == 0 {
+            closest.get_or_insert(TableOutcome::Survived {
+                entity: unique_name.clone(),
+            });
+            continue;
+        }
+        let needed = threshold * (1.0 - HULL_VARIANCE);
+        let median = meta.median_hull_damage();
+        if needed < median {
+            return TableOutcome::Matched;
+        }
+        let nearer = match &closest {
+            Some(TableOutcome::LowHull {
+                needed: n,
+                median: m,
+                ..
+            }) => median / needed > m / n,
+            _ => true,
+        };
+        if nearer {
+            closest = Some(TableOutcome::LowHull {
+                entity: unique_name.clone(),
+                needed,
+                median,
+            });
         }
     }
-    true
+    closest.unwrap_or(TableOutcome::NonePresent)
+}
+
+/// A tier matches when every listed entity is present, died, and its median
+/// hull damage suffered exceeds `threshold * (1 - VAR)`.
+fn hull_damage_outcome(
+    table: &HashMap<String, f64>,
+    critters: &FxHashMap<&str, &CritterMeta>,
+) -> TableOutcome {
+    for (unique_name, threshold) in sorted(table) {
+        let entity = || unique_name.clone();
+        let Some(meta) = critters.get(unique_name.as_str()) else {
+            return TableOutcome::Missing { entity: entity() };
+        };
+        if meta.deaths == 0 {
+            return TableOutcome::Survived { entity: entity() };
+        }
+        let needed = threshold * (1.0 - HULL_VARIANCE);
+        let median = meta.median_hull_damage();
+        // Negated on purpose rather than written as `>=`: a median that is NaN
+        // must count as "not above the threshold" and reject the map, which `>=`
+        // would do the other way round.
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
+        if !(needed < median) {
+            return TableOutcome::LowHull {
+                entity: entity(),
+                needed,
+                median,
+            };
+        }
+    }
+    TableOutcome::Matched
 }
 
 /// A tier matches when every listed entity is present and, for entries with a
 /// required count > 0, died exactly that many times.
-fn death_counts_match(
+fn death_counts_outcome(
     table: &HashMap<String, u32>,
     critters: &FxHashMap<&str, &CritterMeta>,
-) -> bool {
-    for (unique_name, required) in table.iter() {
+) -> TableOutcome {
+    for (unique_name, required) in sorted(table) {
         match critters.get(unique_name.as_str()) {
-            None => return false,
-            Some(meta) => {
-                if *required > 0 && meta.deaths != *required {
-                    return false;
-                }
+            None => {
+                return TableOutcome::Missing {
+                    entity: unique_name.clone(),
+                };
             }
+            Some(meta) if *required > 0 && meta.deaths != *required => {
+                return TableOutcome::Deaths {
+                    entity: unique_name.clone(),
+                    expected: *required,
+                    got: meta.deaths,
+                };
+            }
+            Some(_) => {}
         }
     }
-    true
+    TableOutcome::Matched
 }
 
 #[cfg(test)]
@@ -1418,5 +1609,177 @@ mod tests {
         let result = detect(&bundled_rules(), &view(&owned));
         assert_eq!(result.map.as_deref(), Some("[TFO] Winter Invasion"));
         assert_eq!(result.difficulty, Some(Difficulty::Normal));
+    }
+
+    /// The steps a caller gets, for the explanation tests below.
+    fn steps(owned: &[(&'static str, CritterMeta)]) -> Vec<DetectionStep> {
+        detect(&bundled_rules(), &view(owned)).steps
+    }
+
+    fn killed(name: &'static str, deaths: u32, hull_damage: f64) -> (&'static str, CritterMeta) {
+        let mut meta = CritterMeta::default();
+        for instance in 0..deaths {
+            meta.hull_damage_per_instance
+                .insert(u64::from(instance), hull_damage);
+        }
+        meta.deaths = deaths;
+        (name, meta)
+    }
+
+    #[test]
+    fn unrecognized_fight_explains_itself() {
+        let owned = critters(&[("Some_Random_Npc", 3)]);
+        assert_eq!(steps(&owned), vec![DetectionStep::NoAnchor]);
+    }
+
+    /// The Elite Infected run OSCR reported as undetectable: one of the two
+    /// Elite-only battleships was killed once. Both kill tables have to name the
+    /// entity that failed them with both counts, and the ship-class vote — which
+    /// OSCR does not have — settles it at Elite.
+    #[test]
+    fn failed_kill_tables_name_the_entity_and_the_vote_settles_it() {
+        let owned = vec![
+            killed(
+                "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss",
+                1,
+                45_000_000.0,
+            ),
+            killed(
+                "Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss",
+                1,
+                18_000_000.0,
+            ),
+            killed(
+                "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial",
+                1,
+                7_000_000.0,
+            ),
+            killed(
+                "Space_Borg_Cruiser_Raidisode_Sibrian_Elite_Initial",
+                4,
+                2_150_000.0,
+            ),
+            killed("Space_Borg_Battleship_Raidisode", 2, 2_200_000.0),
+            killed("Mission_Borgraid1_Transwarp_02", 1, 0.0),
+        ];
+        let result = detect(&bundled_rules(), &view(&owned));
+        assert_eq!(result.difficulty, Some(Difficulty::Elite));
+        assert_eq!(
+            result.steps,
+            vec![
+                DetectionStep::Anchor {
+                    map: "[TFO] Infected: The Conduit".to_owned(),
+                    entities: vec![
+                        "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial".to_owned(),
+                        "Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss".to_owned(),
+                    ],
+                },
+                DetectionStep::Table {
+                    tier: Difficulty::Advanced,
+                    kind: TableKind::Deaths,
+                    outcome: TableOutcome::Deaths {
+                        entity: "Space_Borg_Battleship_Raidisode".to_owned(),
+                        expected: 5,
+                        got: 2,
+                    },
+                },
+                DetectionStep::Table {
+                    tier: Difficulty::Elite,
+                    kind: TableKind::Deaths,
+                    outcome: TableOutcome::Deaths {
+                        entity: "Space_Borg_Battleship_Raidisode_Sibrian_Elite_Initial".to_owned(),
+                        expected: 2,
+                        got: 1,
+                    },
+                },
+                DetectionStep::ShipClassVote {
+                    vote: ShipClassVote {
+                        normal: 0,
+                        advanced: 0,
+                        elite: 3,
+                    },
+                    from_tables: None,
+                },
+            ]
+        );
+    }
+
+    /// Two maps matching is resolved by the order of an unordered map; the
+    /// loser must be named rather than dropped.
+    #[test]
+    fn a_map_that_also_matched_is_named() {
+        let owned = vec![
+            hull_critter("Space_Tholian_Dreadnought_Red_Alert", 1_619_134.0),
+            hull_critter("Space_Tholian_Cruiser_Web", 198_722.0),
+        ];
+        let steps = steps(&owned);
+        assert!(steps.contains(&DetectionStep::AlsoMatched {
+            map: "[TFO] Azure Nebula Rescue".to_owned()
+        }));
+        assert_eq!(
+            steps.last(),
+            Some(&DetectionStep::Pinned(Difficulty::Normal))
+        );
+    }
+
+    /// Hive Onslaught at Advanced: the Elite hull table fails, and says on
+    /// which entity and by how much.
+    #[test]
+    fn a_failed_hull_table_names_the_entity_and_both_figures() {
+        let owned = vec![
+            hull_critter("Space_Borg_Dreadnought_Hive_Intro", 1_707_034.0),
+            hull_critter("Space_Borg_Cruiser_Hive_Intro1", 461_582.0),
+            hull_critter("Space_Borg_Cruiser_Hive_Intro2", 461_582.0),
+            hull_critter("Space_Borg_Battleship_Hive_Intro", 576_977.0),
+        ];
+        assert!(steps(&owned).contains(&DetectionStep::Table {
+            tier: Difficulty::Elite,
+            kind: TableKind::Hull,
+            outcome: TableOutcome::LowHull {
+                entity: "Space_Borg_Battleship_Hive_Intro".to_owned(),
+                needed: 2_706_549.0 * (1.0 - HULL_VARIANCE),
+                median: 576_977.0,
+            },
+        }));
+    }
+
+    /// An any-of hull table that fails reports the ship that came closest.
+    #[test]
+    fn a_failed_any_of_hull_table_names_the_closest_ship() {
+        // Two variants, the one first by name the further off: the explanation
+        // must point at the one nearest the threshold, not at whichever it met
+        // first.
+        let owned = vec![
+            hull_critter("Space_Aetherian_Cruiser", 0.0),
+            hull_critter("Space_Aetherian_Dreadnought", 0.0),
+            hull_critter("Space_Borg_Dreadnought", 100_000.0),
+            hull_critter("Space_Borg_Dreadnought_Mirror", 1_954_225.0),
+        ];
+        let failed_elite = steps(&owned).into_iter().find_map(|step| match step {
+            DetectionStep::Table {
+                tier: Difficulty::Elite,
+                kind: TableKind::HullAny,
+                outcome,
+            } => Some(outcome),
+            _ => None,
+        });
+        assert!(matches!(
+            failed_elite,
+            Some(TableOutcome::LowHull { entity, .. }) if entity == "Space_Borg_Dreadnought_Mirror"
+        ));
+    }
+
+    /// The anchor names what was actually in the fight, not every entity the
+    /// map could have been recognized by.
+    #[test]
+    fn the_anchor_names_only_entities_that_were_present() {
+        let owned = critters(&[("Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss", 1)]);
+        assert_eq!(
+            steps(&owned).first(),
+            Some(&DetectionStep::Anchor {
+                map: "[TFO] Infected: The Conduit".to_owned(),
+                entities: vec!["Space_Borg_Dreadnought_Raidisode_Sibrian_Final_Boss".to_owned()],
+            })
+        );
     }
 }

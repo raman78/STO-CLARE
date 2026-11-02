@@ -17,7 +17,7 @@ use std::sync::Arc;
 use chrono::{Duration, NaiveDateTime};
 use rustc_hash::FxHashMap;
 
-use super::{Combat, Difficulty};
+use super::{Combat, DetectionStep, Difficulty};
 use crate::helpers::time_range_to_duration_or_zero;
 
 /// The combats list as it is passed around: cheap to clone, because every
@@ -47,6 +47,12 @@ pub struct CombatSummary {
     /// "Space", "Ground", … where the map was recognized.
     pub environment: Option<String>,
     pub difficulty: Option<Difficulty>,
+    /// How the map and difficulty were reached, or why not. What the Map and
+    /// Level cells explain on hover.
+    pub detection: Arc<[DetectionStep]>,
+    /// Whether the map name comes from one of the reader's own naming rules
+    /// rather than from the detection, which still decides the level.
+    pub named_by_rule: bool,
     /// Whether one player fought it — the ladder's test, see [`Combat::is_solo`].
     pub solo: bool,
     /// Start of the fight's active time. The one per-combat value the log itself
@@ -107,6 +113,8 @@ impl Combat {
             category: self.detected_category.clone(),
             environment: self.detected_combat_type.clone(),
             difficulty: self.detected_difficulty,
+            detection: self.detection_steps.clone(),
+            named_by_rule: !self.combat_names.is_empty(),
             solo: self.is_solo(),
             start: self.active_time.start,
             duration: time_range_to_duration_or_zero(&self.combat_time),
@@ -189,6 +197,8 @@ mod tests {
             start: NaiveDateTime::default(),
             duration: Duration::seconds(252),
             abilities: Arc::from([]),
+            detection: Arc::from([]),
+            named_by_rule: false,
             players: players
                 .iter()
                 .map(|&(handle, dps)| PlayerSummary {

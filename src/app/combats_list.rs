@@ -32,6 +32,7 @@ use crate::{
     app::{
         combat_filter::{CombatEntry, CombatFilter, DeathsFilter, DifficultyFilter},
         date_range::DateRange,
+        detection_explanation,
         settings::CombatNotes,
         theme,
     },
@@ -47,7 +48,7 @@ const PANEL_ID: &str = "combats panel";
 /// reason it has the value it has.
 use crate::app::tuning::{
     self, ARROW_SIZE, BADGE_PADDING, CELL_SPACING, HEADER_HEIGHT, PANEL_AUTO_WIDTH,
-    PANEL_MAX_SHARE, PANEL_MIN_WIDTH, PLAYER_PICKER_WIDTH, ROW_HEIGHT,
+    PANEL_MAX_SHARE, PANEL_MIN_WIDTH, PLAYER_PICKER_WIDTH, ROW_HEIGHT, ROW_TOOLTIP_DELAY,
 };
 
 /// What the reader asked the list to do.
@@ -768,7 +769,27 @@ impl CombatsPanel {
             // a run out and looking is the quickest question there is.
             self.ticks_changed = true;
         }
-        row.on_hover_text(&combat.identifier);
+        // The row's own tooltip waits for the pointer to rest on it: see
+        // `ROW_TOOLTIP_DELAY`. egui's tooltip delay is one setting for the
+        // whole program, so the wait is measured here and the tooltip is only
+        // asked for once it is over.
+        if row.hovered() {
+            let hovered_for = hovered_for(&row.ctx, row.id);
+            if hovered_for >= ROW_TOOLTIP_DELAY {
+                row.on_hover_ui(|ui| {
+                    ui.set_max_width(ui.spacing().tooltip_width);
+                    ui.label(&combat.identifier);
+                    // Only where the name leaves a question open.
+                    if detection_explanation::worth_explaining(combat) {
+                        ui.separator();
+                        ui.label(detection_explanation::explain(combat, formatter));
+                    }
+                });
+            } else {
+                row.ctx
+                    .request_repaint_after_secs(ROW_TOOLTIP_DELAY - hovered_for);
+            }
+        }
 
         if fold != unfolded {
             if fold {
@@ -1409,6 +1430,21 @@ fn level_rank(difficulty: Option<Difficulty>) -> u8 {
     }
 }
 
+/// How long, in seconds, the widget with this `id` has been hovered without a
+/// break. Called on every frame it is hovered and on no other: a frame missed
+/// means the pointer left in between, and the count starts again.
+fn hovered_for(ctx: &Context, id: Id) -> f32 {
+    let key = id.with("hovered_since");
+    let now = ctx.input(|i| i.time);
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|data| {
+        let (since, last_frame) = data.get_temp::<(f64, u64)>(key).unwrap_or((now, frame));
+        let since = if frame > last_frame + 1 { now } else { since };
+        data.insert_temp(key, (since, frame));
+        (now - since) as f32
+    })
+}
+
 /// One combat's cells, in the order [`show_header_cells`] names them.
 ///
 /// `fold` is the fold-out state of this row's player list, where the caller
@@ -1636,6 +1672,8 @@ mod tests {
             start: NaiveDateTime::default(),
             duration: chrono::Duration::seconds(252),
             abilities: Arc::from([]),
+            detection: Arc::from([]),
+            named_by_rule: false,
             players: players
                 .iter()
                 .map(|&(handle, dps)| PlayerSummary {
@@ -2532,6 +2570,8 @@ mod layout_tests {
             start: NaiveDateTime::default(),
             duration: chrono::Duration::seconds(3700),
             abilities: Arc::from([]),
+            detection: Arc::from([]),
+            named_by_rule: false,
             players: vec![PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 121_700.0,
@@ -2557,6 +2597,8 @@ mod layout_tests {
             start: NaiveDateTime::default(),
             duration: chrono::Duration::seconds(3700),
             abilities: Arc::from([]),
+            detection: Arc::from([]),
+            named_by_rule: false,
             players: vec![PlayerSummary {
                 handle: "@ramanwaleczny".to_owned(),
                 dps: 121700.0,

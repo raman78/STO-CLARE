@@ -63,6 +63,17 @@ same test the OSCR ladder uses, so a run of yours and one read from the ladder
 say the same thing. The map, the level and the kind of content are worked out
 from what happened in the fight, so you do not have to name anything yourself.
 
+Keep the pointer on a fight's row for a couple of seconds and a pop-up gives
+its full name with the time it started and ended. Where the program is unsure
+about the fight, the pop-up also explains why:
+which ship or object gave the map away, which checks the level passed or failed
+and why, and how the ships that died voted. That covers a fight on a map the
+program does not know, a level that shows only a dash, a fight where two maps
+fitted, and one where the vote overruled the map's own checks. So a map the
+program has never heard of reads differently from an Elite run where one kill
+went missing. A fight recognized plainly gets no explanation — its name already
+says everything there is.
+
 An arrow at the start of a team fight's row folds it out and shows what each
 player did:
 
