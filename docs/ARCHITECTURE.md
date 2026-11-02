@@ -720,6 +720,32 @@ Three conventions worth knowing before changing a table or a chart:
   pickers opened as a banner across the window until their separators became
   `add_space`.
 
+- **A range picked on a per-second chart is averaged from the values, not
+  from the line.** `ValuePerSecondGraph` holds the range (`selection`) and
+  picks it up from a primary drag made with Shift held. While Shift is down, or
+  a selection drag is under way, the pan is off (`allow_drag` gets
+  `Vec2b::FALSE`), so the drag is not also moving the chart. The plot's
+  response is read inside its build closure, where it already carries this
+  frame's input, so the shaded `Span` follows the pointer without a frame's
+  lag. The ends are clamped to the fight, and a plain click clears the range.
+  `GraphLine::average_over` sums the series' values inside the range and
+  divides by its length. The line is a Gaussian smoothing and spills over both
+  ends of any range, so an average read off it would move with the smoothing
+  slider. The range is half-open, so ranges laid end to end count each value
+  once, except where it reaches the fight's end — the time of the last value —
+  so that the whole fight averages to the total over the duration, as the
+  tables have it. The summary box (`show_range_summary`) lists the series in
+  legend order and colour, up to `RANGE_SUMMARY_MAX_SERIES` and then a count
+  of the rest. It leaves out what the legend hid; it reads that from
+  `PlotMemory::hidden_items`, which is why the plot and each line carry an
+  explicit id (`line_id`). The range lives on the graph itself, so whatever
+  builds a new `DamageDiagrams` / `HealDiagrams` drops it: opening another
+  combat, selecting another row, and — with Auto Refresh on — every
+  `AnalysisInfo::Refreshed`, which rebuilds the tabs each time the log grows.
+  Ctrl + click on a damage or heal tab row adds or removes one series
+  (`add_line` / `remove_line`) and keeps the range. The compare view always
+  rebuilds its chart (`Comparison::rebuild_diagram`), so any change there —
+  another row, a tick, the averages toggle — drops it.
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.

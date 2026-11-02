@@ -5,17 +5,19 @@
 ### Major Changes
 - where the program is unsure which map or level a fight was, keeping the pointer on its row in the combats list for a couple of seconds now explains why: which ship or object gave the map away, which checks for each level passed or failed — naming the ship that was killed the wrong number of times, or had too little hull — and how the ships that died voted on the level. A level that shows only a dash now says why, so a map the program does not know yet can be told apart from a run where a kill went missing. Fights recognized without doubt get no explanation, since their name already says it all
 
+- the DPS, HPS and other per-second charts can now give the average over any part of a fight. Dragging across a chart with Shift held marks a stretch of it: the stretch is shaded and a box in the corner gives how long it is and each line's average over it — what a burst window or one phase of a fight was worth, rather than the whole fight's figure. The average comes from the hits themselves, so the smoothing slider does not move it. A plain click clears it, and an ordinary drag still moves the chart
+
 - a shortcut can now be taken off a key entirely, not only moved to another one. Each row on **Settings → Shortcuts** has a **Clear** button that leaves it on no key, which is what to reach for when a combination is needed by the game instead — the row goes empty, the key belongs to the game again, and everything it did is still a button away. Recording a key in that row brings it back, and **Reset** returns the one the program came with. A new **Reset all shortcuts** puts the whole page back at once, after asking
 
-- a combination another shortcut already uses is now accepted instead of turned down. Both rows keep it and both are marked, and a line under the table says which of the two the key actually runs — the one higher up the page. Refusing it used to leave you told about something the table could not show you, and the row you had just pressed a key in looked as though nothing had happened
+- a combination another shortcut already uses is now accepted instead of turned down. Both rows keep it and both are marked, and a line under the table says which of the two the key actually runs — the one higher up the page. Refusing it used to report a clash the table could not show, and the row a key had just been pressed in looked as though nothing had happened
 
 ### Other Changes
 - the pop-up with a fight's full name and times now waits until the pointer has rested on the row for a couple of seconds, instead of opening over every row the pointer crosses
-- when comparing fights, the Spread figure on a row you have opened up is now measured against the whole fight, the same as the rows above it. It used to be measured against the row it hangs under, so the same number meant different things depending on how deep you had opened the tree and two rows could not be held side by side. The rows the slider keeps or hides, and the order they come in, are unchanged
-- a shortcut that has something wrong with it is now marked in its own row, with the explanation under the table naming the row it belongs to — a page with two warnings on it no longer leaves you matching sentences to rows by eye
-- the buttons in a shortcut row no longer slide sideways while that row is waiting for you to press a key, which could put Clear where you were aiming
-- the Global tick greys out while the overlay's row is empty, rather than staying on for a key that no longer exists. It remembers your answer, so recording a combination again brings the desktop-wide key straight back
-- shortcuts saved by a newer version of STO-CLARE than the one you are running are left alone rather than being taken over, and the page says plainly that they are there and do nothing here
+- when comparing fights, the Spread figure on an opened-up row is now measured against the whole fight, the same as the rows above it. It used to be measured against the row it hangs under, so the same number meant different things depending on how deep the tree had been opened and two rows could not be held side by side. The rows the slider keeps or hides, and the order they come in, are unchanged
+- a shortcut that has something wrong with it is now marked in its own row, with the explanation under the table naming the row it belongs to — a page with two warnings on it no longer leaves sentences to be matched to rows by eye
+- the buttons in a shortcut row no longer slide sideways while that row is waiting for a key press, which could move Clear out from under the pointer
+- the Global tick greys out while the overlay's row is empty, rather than staying on for a key that no longer exists. It remembers the choice, so recording a combination again brings the desktop-wide key straight back
+- shortcuts saved by a newer version of STO-CLARE than the one running are left alone rather than being taken over, and the page says plainly that they are there and do nothing here
 
 ## v2.9.0
 
