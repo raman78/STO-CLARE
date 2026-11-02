@@ -28,10 +28,14 @@ mod values_manager;
 pub use combat_summary::{CombatSummaries, CombatSummary, PlayerSummary, detect_log_owner};
 pub use common::*;
 pub use damage::*;
+#[cfg(test)]
+pub use detection::ShipClassVote;
 use detection::{CritterMeta, DETECTION_RULES};
-pub use detection::{Difficulty, curated_map_identifiers, curated_map_names};
+pub use detection::{
+    DetectionStep, Difficulty, TableKind, TableOutcome, curated_map_identifiers, curated_map_names,
+};
 use groups::*;
-pub use groups::{AnalysisGroup, DamageGroup, HealGroup};
+pub use groups::{AnalysisGroup, DamageGroup, GroupPathSegment, HealGroup};
 pub use heal::*;
 pub use name_manager::*;
 pub use values_manager::*;
@@ -95,6 +99,10 @@ pub struct Combat {
     /// metadata like the environment. Already the `[TFO]` prefix of the name;
     /// kept apart as well so a list of fights can order by it.
     pub detected_category: Option<String>,
+    /// How the map and difficulty above were reached, or why not — see
+    /// [`detection::DetectionStep`]. Shared, since every refresh hands a copy to
+    /// the combats list.
+    pub detection_steps: Arc<[DetectionStep]>,
     pub name_manager: NameManager,
     pub hits_manger: HitsManager,
     pub heal_ticks_manger: HealTicksManager,
@@ -336,6 +344,7 @@ impl Combat {
             detected_difficulty: None,
             detected_combat_type: None,
             detected_category: None,
+            detection_steps: Arc::from([]),
             name_manager: Default::default(),
             hits_manger: Default::default(),
             heal_ticks_manger: Default::default(),
@@ -526,6 +535,7 @@ impl Combat {
         self.detected_difficulty = detected.difficulty;
         self.detected_combat_type = detected.combat_type;
         self.detected_category = detected.category;
+        self.detection_steps = detected.steps.into();
     }
 
     fn recalculate_damage_group_percentage(

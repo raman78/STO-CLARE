@@ -276,6 +276,19 @@ fn yes() -> bool {
     true
 }
 
+/// What the settings file holds for a shortcut the reader cleared.
+///
+/// A third spelling is needed because the other two are spoken for: **no entry
+/// at all** means the shipped combination, and any readable combination means
+/// itself. Without it a cleared row could not be written down, and would come
+/// back on its default the next time the program started.
+///
+/// Not the empty string: unreadable text already means "the file is damaged
+/// here, the default is in force", and a cleared row would then come back with
+/// a warning beside it. `Off` is not the name of any key egui knows, so it
+/// cannot collide with a combination.
+const CLEARED: &str = "Off";
+
 impl Default for ShortcutSettings {
     fn default() -> Self {
         Self {
@@ -287,20 +300,22 @@ impl Default for ShortcutSettings {
 
 impl ShortcutSettings {
     /// What an action answers to, or why the text in the file could not be
-    /// read. The default is what stands when nothing was written for it.
-    pub fn combination(&self, action: ShortcutAction) -> Result<Combination, String> {
+    /// read. The default is what stands when nothing was written for it, and
+    /// `None` is a row the reader cleared: it answers no key at all.
+    pub fn combination(&self, action: ShortcutAction) -> Result<Option<Combination>, String> {
         match self.custom.get(action.key()) {
-            None => Ok(action.default_combination()),
-            Some(text) => text.parse(),
+            None => Ok(Some(action.default_combination())),
+            Some(text) if text == CLEARED => Ok(None),
+            Some(text) => text.parse().map(Some),
         }
     }
 
     /// What an action answers to, falling back to the default where the file
     /// holds something unreadable — which is what the program has to act on,
-    /// the tab being the place that says so.
-    pub fn effective(&self, action: ShortcutAction) -> Combination {
+    /// the tab being the place that says so. `None` is a cleared row.
+    pub fn effective(&self, action: ShortcutAction) -> Option<Combination> {
         self.combination(action)
-            .unwrap_or_else(|_| action.default_combination())
+            .unwrap_or_else(|_| Some(action.default_combination()))
     }
 
     /// Records a combination, or forgets it again when it is the default:
@@ -314,41 +329,63 @@ impl ShortcutSettings {
         }
     }
 
+    /// Leaves an action on no key at all, until the reader sets one or resets
+    /// it. A shortcut that gets in the way of the game is otherwise only
+    /// movable, never removable.
+    pub fn clear(&mut self, action: ShortcutAction) {
+        self.custom
+            .insert(action.key().to_owned(), CLEARED.to_owned());
+    }
+
     /// Puts an action back to the shipped combination.
     pub fn reset(&mut self, action: ShortcutAction) {
         self.custom.remove(action.key());
     }
 
-    /// Whether the reader has changed this one.
+    /// Puts the whole table back to what the program ships with.
+    ///
+    /// This is also the one thing that clears the entries written by a newer
+    /// version (see [`Self::set_by_a_newer_version`]): they are left alone
+    /// everywhere else, and this is the reader saying to be rid of them.
+    pub fn reset_all(&mut self) {
+        self.custom.clear();
+    }
+
+    /// Whether the reader has changed this one — a cleared row included, since
+    /// clearing is a change and has to be undoable.
     pub fn is_custom(&self, action: ShortcutAction) -> bool {
         self.custom.contains_key(action.key())
     }
 
-    /// The shortcuts in the file that name an action this build does not have.
+    /// Whether the file holds a shortcut for an action this build does not
+    /// have.
     ///
-    /// Kept and written back rather than dropped, and said out loud in the
-    /// settings tab: a file holding keys that do nothing here is something the
-    /// reader can only make sense of if they are told the keys belong to a
-    /// newer version.
-    pub fn set_by_a_newer_version(&self) -> Vec<&str> {
+    /// Such an entry is written back untouched rather than dropped — it is a
+    /// key set by a newer version, and running an older build for an evening
+    /// must not be a way to lose it. It is not registered here, and the tab
+    /// says as much: a file holding keys that do nothing only makes sense to a
+    /// reader who is told why.
+    pub fn holds_shortcuts_for_a_newer_version(&self) -> bool {
         self.custom
             .keys()
-            .filter(|name| ShortcutAction::from_key(name).is_none())
-            .map(String::as_str)
-            .collect()
+            .any(|name| ShortcutAction::from_key(name).is_none())
     }
 
-    /// The actions this combination is already taken by — asked before a new
-    /// one is recorded, since two actions on one key means the first of them
-    /// answers and the other never runs.
-    pub fn taken_by(
-        &self,
-        combination: Combination,
-        except: ShortcutAction,
-    ) -> Vec<ShortcutAction> {
+    /// Every action on this combination, in the order they are tried.
+    ///
+    /// Two actions on one key is allowed, and one of them then never runs: the
+    /// first in [`ShortcutAction::ALL`] takes the press out of the frame and
+    /// the rest find nothing (see [`Shortcuts::triggered`]). Refusing the
+    /// second one instead would be the tidier rule and was what the tab did at
+    /// first, but it left the reader told about a state the table could not
+    /// show them. Written down, marked in both rows and named in a warning, it
+    /// is a thing they can see and undo.
+    ///
+    /// A cleared action is on no key, so it is never one of these.
+    pub fn on_the_same_key(&self, combination: Combination) -> Vec<ShortcutAction> {
         ShortcutAction::ALL
             .into_iter()
-            .filter(|action| *action != except && self.effective(*action) == combination)
+            .filter(|action| self.effective(*action) == Some(combination))
             .collect()
     }
 }
@@ -391,14 +428,21 @@ impl Shortcuts {
     /// one and gives the old one back.
     fn rebuild(&mut self, settings: &ShortcutSettings) {
         self.from = settings.clone();
+        // A cleared action is not in the table at all, which is the whole of
+        // what "no key" costs: nothing to match, so nothing can answer it.
         self.table = ShortcutAction::ALL
             .into_iter()
-            .map(|action| (action, settings.effective(action)))
+            .filter_map(|action| Some((action, settings.effective(action)?)))
             .collect();
 
+        // Nothing to take from the desktop when the overlay is on no key. The
+        // tick stays as the reader left it — it is the standing answer to "and
+        // globally?", and turning it off behind their back would hand them a
+        // window-only shortcut on the day they set a combination again.
         let wanted = settings
             .system_wide
-            .then(|| settings.effective(ShortcutAction::ToggleOverlay));
+            .then(|| settings.effective(ShortcutAction::ToggleOverlay))
+            .flatten();
         self.global.bind(wanted);
     }
 
@@ -626,6 +670,110 @@ mod tests {
         assert_eq!(vec![ShortcutAction::ToggleCompare], new);
     }
 
+    /// A cleared action is on no key: the combination it used to hold is left
+    /// in the frame for whoever else wants it, rather than merely ignored.
+    #[test]
+    fn a_cleared_shortcut_answers_nothing_and_keeps_its_hands_off_the_frame() {
+        let mut settings = ShortcutSettings {
+            system_wide: false,
+            ..Default::default()
+        };
+        settings.clear(ShortcutAction::ToggleLadder);
+        let mut shortcuts = Shortcuts::new(&settings, &Context::default());
+
+        let (fired, left) = one_frame(&mut shortcuts, press(Key::L, Modifiers::ALT));
+
+        assert!(fired.is_empty(), "the action is on no key");
+        assert_eq!(1, left, "and the press was never ours to take");
+    }
+
+    /// Clearing has to survive a restart, which is the whole reason it needs a
+    /// spelling of its own: an action absent from the file is one on its
+    /// shipped combination, so "cleared" cannot be written as "nothing".
+    #[test]
+    fn a_cleared_shortcut_survives_the_settings_file() {
+        let mut settings = ShortcutSettings::default();
+        settings.clear(ShortcutAction::ToggleCompare);
+
+        let written = serde_json::to_string(&settings).unwrap();
+        let read: ShortcutSettings = serde_json::from_str(&written).unwrap();
+
+        assert_eq!(
+            None,
+            read.effective(ShortcutAction::ToggleCompare),
+            "it came back on a key: {written}"
+        );
+        assert!(
+            read.is_custom(ShortcutAction::ToggleCompare),
+            "and Reset has to be there to undo it"
+        );
+    }
+
+    /// The spelling of a cleared shortcut, pinned the way the rest of the
+    /// section is: `docs/SHORTCUTS.md` prints it, and a file written by one
+    /// build is read by the next.
+    #[test]
+    fn a_cleared_shortcut_is_written_the_way_the_document_says() {
+        let mut settings = ShortcutSettings::default();
+        settings.clear(ShortcutAction::ToggleOverlay);
+
+        assert_eq!(
+            r#"{"custom":{"ToggleOverlay":"Off"},"system_wide":true}"#,
+            serde_json::to_string(&settings).unwrap(),
+            "the spelling of a cleared shortcut changed — update docs/SHORTCUTS.md, and note \
+             that the old spelling then reads as an unreadable entry and hands the shortcut \
+             back to its default"
+        );
+        assert!(
+            Combination::from_str(CLEARED).is_err(),
+            "and it must not also be the name of a key"
+        );
+    }
+
+    /// Nothing is taken from the desktop for an action that is on no key. The
+    /// tick is left alone — it is the standing answer to "and globally?", and
+    /// turning it off here would quietly hand back a shortcut the reader set a
+    /// combination for a moment later.
+    #[test]
+    fn the_desktop_takes_nothing_when_the_overlay_row_is_empty() {
+        let mut settings = ShortcutSettings {
+            system_wide: true,
+            ..Default::default()
+        };
+        settings.clear(ShortcutAction::ToggleOverlay);
+
+        let shortcuts = Shortcuts::new(&settings, &Context::default());
+
+        assert_eq!(&GlobalState::Off, shortcuts.global_state());
+    }
+
+    /// Reset all is the one place the entries this build cannot use are got rid
+    /// of: everywhere else they are left exactly as they are.
+    #[test]
+    fn reset_all_puts_back_the_shipped_table_and_the_unusable_entries_with_it() {
+        let mut settings: ShortcutSettings = serde_json::from_str(
+            r#"{"custom":{"ToggleLadder":"Ctrl+F9","ToggleCompare":"Off",
+                "SomethingAddedLater":"Alt+K"}}"#,
+        )
+        .unwrap();
+        assert!(settings.holds_shortcuts_for_a_newer_version());
+
+        settings.reset_all();
+
+        for action in ShortcutAction::ALL {
+            assert_eq!(
+                Some(action.default_combination()),
+                settings.effective(action),
+                "{} is not back on the shipped combination",
+                action.label()
+            );
+        }
+        assert!(
+            !settings.holds_shortcuts_for_a_newer_version(),
+            "the reader asked to be rid of those too"
+        );
+    }
+
     /// Every shipped combination round-trips through the text the file holds.
     /// The file is written by one build and read by the next, so a key whose
     /// name does not come back is a shortcut silently lost.
@@ -705,7 +853,7 @@ mod tests {
         settings.set(ShortcutAction::ToggleLadder, changed);
         assert!(settings.is_custom(ShortcutAction::ToggleLadder));
         assert_eq!(
-            Ok(changed),
+            Ok(Some(changed)),
             settings.combination(ShortcutAction::ToggleLadder)
         );
 
@@ -728,12 +876,12 @@ mod tests {
 
         assert!(settings.combination(ShortcutAction::ToggleLadder).is_err());
         assert_eq!(
-            ShortcutAction::ToggleLadder.default_combination(),
+            Some(ShortcutAction::ToggleLadder.default_combination()),
             settings.effective(ShortcutAction::ToggleLadder),
             "the shipped combination stands until the reader fixes it"
         );
         assert_eq!(
-            ShortcutAction::OpenSettings.default_combination(),
+            Some(ShortcutAction::OpenSettings.default_combination()),
             settings.effective(ShortcutAction::OpenSettings),
             "and nothing else is affected"
         );
@@ -791,8 +939,10 @@ mod tests {
         .expect("an unknown action is not a broken settings file");
 
         assert_eq!(
-            "Ctrl+F9",
-            settings.effective(ShortcutAction::ToggleLadder).to_string(),
+            Some("Ctrl+F9".to_owned()),
+            settings
+                .effective(ShortcutAction::ToggleLadder)
+                .map(|combination| combination.to_string()),
             "the shortcuts this build does know still work"
         );
         assert!(
@@ -803,23 +953,41 @@ mod tests {
         );
     }
 
-    /// Two actions on one key means the second never runs, so the tab has to be
-    /// able to say which one is in the way.
+    /// Two actions on one key is allowed, so the tab has to be able to name
+    /// both of them and say which one answers.
     #[test]
-    fn a_combination_already_in_use_is_named() {
+    fn both_actions_on_one_key_are_named_in_the_order_they_are_tried() {
         let mut settings = ShortcutSettings::default();
         let overlay = ShortcutAction::ToggleOverlay.default_combination();
         settings.set(ShortcutAction::ToggleLadder, overlay);
 
         assert_eq!(
+            vec![ShortcutAction::ToggleOverlay, ShortcutAction::ToggleLadder],
+            settings.on_the_same_key(overlay),
+            "the one that answers is first"
+        );
+    }
+
+    /// The one that answers is the first of them, and the other never sees the
+    /// press — which is what the tab's warning tells the reader, so it has to
+    /// be what actually happens.
+    #[test]
+    fn only_the_first_of_two_actions_on_one_key_runs() {
+        let mut settings = ShortcutSettings {
+            system_wide: false,
+            ..Default::default()
+        };
+        let overlay = ShortcutAction::ToggleOverlay.default_combination();
+        settings.set(ShortcutAction::ToggleLadder, overlay);
+        let mut shortcuts = Shortcuts::new(&settings, &Context::default());
+
+        let (fired, left) = one_frame(&mut shortcuts, press(Key::O, Modifiers::ALT));
+
+        assert_eq!(
             vec![ShortcutAction::ToggleOverlay],
-            settings.taken_by(overlay, ShortcutAction::ToggleLadder)
+            fired,
+            "the ladder must not answer the same press"
         );
-        assert!(
-            settings
-                .taken_by(overlay, ShortcutAction::ToggleOverlay)
-                .contains(&ShortcutAction::ToggleLadder),
-            "and the other way round"
-        );
+        assert_eq!(0, left, "and the press is taken once");
     }
 }

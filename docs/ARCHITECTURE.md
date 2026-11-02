@@ -449,7 +449,10 @@ appeared and how much hull damage they took — the log carries no map marker at
 all. Rules live in `src/analyzer/detection_rules.json`, and a file of the same
 name next to the settings overrides it without a rebuild. See
 `docs/DIFFICULTY_DETECTION.md` and the measurements in
-`docs/DETECTION_SAMPLES.md`.
+`docs/DETECTION_SAMPLES.md`. Every step of the decision is kept with the combat;
+where the map or level is in doubt, the combats panel adds it to the row's
+tooltip, which opens after a 2 s hover (`app/detection_explanation.rs`), so a fight left
+without a level says why.
 
 ## UI
 
@@ -717,6 +720,32 @@ Three conventions worth knowing before changing a table or a chart:
   pickers opened as a banner across the window until their separators became
   `add_space`.
 
+- **A range picked on a per-second chart is averaged from the values, not
+  from the line.** `ValuePerSecondGraph` holds the range (`selection`) and
+  picks it up from a primary drag made with Shift held. While Shift is down, or
+  a selection drag is under way, the pan is off (`allow_drag` gets
+  `Vec2b::FALSE`), so the drag is not also moving the chart. The plot's
+  response is read inside its build closure, where it already carries this
+  frame's input, so the shaded `Span` follows the pointer without a frame's
+  lag. The ends are clamped to the fight, and a plain click clears the range.
+  `GraphLine::average_over` sums the series' values inside the range and
+  divides by its length. The line is a Gaussian smoothing and spills over both
+  ends of any range, so an average read off it would move with the smoothing
+  slider. The range is half-open, so ranges laid end to end count each value
+  once, except where it reaches the fight's end — the time of the last value —
+  so that the whole fight averages to the total over the duration, as the
+  tables have it. The summary box (`show_range_summary`) lists the series in
+  legend order and colour, up to `RANGE_SUMMARY_MAX_SERIES` and then a count
+  of the rest. It leaves out what the legend hid; it reads that from
+  `PlotMemory::hidden_items`, which is why the plot and each line carry an
+  explicit id (`line_id`). The range lives on the graph itself, so whatever
+  builds a new `DamageDiagrams` / `HealDiagrams` drops it: opening another
+  combat, selecting another row, and — with Auto Refresh on — every
+  `AnalysisInfo::Refreshed`, which rebuilds the tabs each time the log grows.
+  Ctrl + click on a damage or heal tab row adds or removes one series
+  (`add_line` / `remove_line`) and keeps the range. The compare view always
+  rebuilds its chart (`Comparison::rebuild_diagram`), so any change there —
+  another row, a tick, the averages toggle — drops it.
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
@@ -1432,13 +1461,27 @@ for, and treating the absence as missing data would rank it as agreement. What
 
 | measure | value per slot | why |
 |---------|----------------|-----|
-| `Share` | `damage_percentage.all` — the row's share of that combat's own damage, so the threshold is in percentage points | a shorter or weaker run does not read as a different build in every row at once |
+| `Share` | `CompareNode::shares` — the row's damage over the player's whole damage in that combat, so the threshold is in percentage points | a shorter or weaker run does not read as a different build in every row at once |
 | `Dps` | `dps.all` | what the row was actually worth, whatever share of the run it came to |
 
 Each carries its own threshold, from zero up: a number that means something in
 percentage points means nothing in DPS, and the bottom of either scale has to
 mean "hide nothing". The figure itself is shown in a `Spread` column, so the
 threshold is visible rather than an invisible rule the table obeys.
+
+`shares` is worked out in `build_level` against `LevelContext::run_totals` — the
+player's whole damage per slot, held still all the way down the recursion — and
+is deliberately **not** the `Damage %` column beside it. That column is the
+analyzer's `damage_percentage`, which is of the row above; below the first level
+the two therefore differ, and a Spread whose scale changed with depth could not
+be read across rows, which is the whole point of a column the reader sorts and
+thresholds by. At the first level they coincide, the row above being the run.
+The filter and the sort only ever act on the first level (`is_hidden` returns
+`false` for `parent_depth != 0`, `sort_rows` reorders `total.sub_nodes` alone),
+so this changes no threshold and no ordering — only what an expanded sub-row
+reports. Under a damage-type filter the denominator is the filtered player group
+returned by `parents`, matching what `set_child_percentages` states for the rows
+above it.
 
 Two decisions worth keeping:
 

@@ -63,6 +63,17 @@ same test the OSCR ladder uses, so a run of yours and one read from the ladder
 say the same thing. The map, the level and the kind of content are worked out
 from what happened in the fight, so you do not have to name anything yourself.
 
+Keep the pointer on a fight's row for a couple of seconds and a pop-up gives
+its full name with the time it started and ended. Where the program is unsure
+about the fight, the pop-up also explains why:
+which ship or object gave the map away, which checks the level passed or failed
+and why, and how the ships that died voted. That covers a fight on a map the
+program does not know, a level that shows only a dash, a fight where two maps
+fitted, and one where the vote overruled the map's own checks. So a map the
+program has never heard of reads differently from an Elite run where one kill
+went missing. A fight recognized plainly gets no explanation — its name already
+says everything there is.
+
 An arrow at the start of a team fight's row folds it out and shows what each
 player did:
 
@@ -545,6 +556,50 @@ a row that is already in the set takes it back out. See
   Ctrl + clicking it: just that row, not the rows underneath it, and whatever
   you had on the chart stays. A row already on the chart is left as it is, so
   this can only ever add.
+
+#### The average over part of a fight
+
+The figure in the table is the whole fight averaged, and a fight is rarely
+even: a burst while your cooldowns are up, a lull while the next group of
+enemies spawns, a slow finish on one last ship. A line chart shows those
+moments, and you can measure any of them by marking it on the chart.
+
+1. Open one of the line charts: DPS, HPS, hits per second or ticks per second.
+2. Hold **Shift**.
+3. Press the left mouse button where the stretch begins, drag to where it
+   ends, and let go.
+
+![A burst marked on the DPS chart, with each line's average over it](images/chart-range-average.png)
+
+The stretch you marked is shaded, and a box in the chart's top left corner
+gives its start, its end and its length in seconds, then the average of each
+line over it, in that line's colour and in the legend's order. The marked
+stretch stays until you click on the chart without Shift held. An ordinary
+drag without Shift still moves the chart sideways, as before.
+
+The average is counted from the hits themselves: everything the line did
+between the two ends, divided by the stretch's length. It is not read off the
+drawn line. The line is smoothed, and the smoothing spreads every hit a little
+into the seconds around it, so the line's height inside the shaded band can
+look higher or lower than the number in the box, especially near the edges.
+The box is the one to trust, and moving the smoothing slider does not change
+it. Mark the whole fight and the box gives the same figure as the table.
+
+A few things decide what the box lists:
+
+- a line you hid by clicking its name in the legend is left out;
+- with more than ten lines on the chart, the box lists the first ten and says
+  how many more there are;
+- dragging past either end of the fight stops the stretch at that end, because
+  no hit can land outside the fight.
+
+The mark goes away when the chart is redrawn from scratch: when you open
+another fight, click another row in the table, or change anything in a
+comparison. Ctrl + clicking a row only adds or takes away one line, so the mark
+stays and the box picks up the new line. With **Auto Refresh** on, the
+chart is redrawn each time the game writes more to the log, so during a fight
+the mark lasts only until the next update. To measure a stretch of a fight you
+are still in, switch Auto Refresh off first.
 
 ---
 
@@ -1383,6 +1438,7 @@ one chart, that has no button at all:
 | **Esc** | Uploading to the ladder | Breaks the upload off — see below. |
 | **Ctrl + click** | A row on the damage or healing tabs | Adds that row to the selection, or takes it out again — this is how you get several abilities onto one chart. |
 | **Right-click** | A row on the damage or healing tabs | Copies the row's name, or adds that one row to the chart. |
+| **Shift + drag** | A DPS, HPS or per-second chart | Picks out a stretch of the fight and shows each line's average over it. A plain click clears it. |
 | **Enter** | The Ladder's player search | Runs the search, the same as pressing Search. |
 | **Double-click** | A row in the combats list | Opens that fight in every tab. |
 
@@ -1392,8 +1448,8 @@ key deliberately does nothing.
 ### The five keys you can change
 
 The five Alt keys at the top of the table are yours to set. Open **Settings →
-Shortcuts** and you get one row per thing: the key it answers to now, a button
-to change it, and a **Reset** that appears once you have changed something.
+Shortcuts** and you get one row per thing: the key it answers to now, and the
+buttons that change it.
 
 ![Settings, Shortcuts](images/settings-shortcuts.png)
 
@@ -1401,16 +1457,61 @@ To set one, press the button showing the current key, then press the keys you
 want. That is the whole of it — there is nothing to type. If you change your
 mind, press Esc and the row goes back to what it was.
 
-Two kinds of combination are turned down, and the program says which:
+| Button | What it does | When it is there |
+|--------|--------------|------------------|
+| **Clear** | Leaves the row on no key at all | While the row has a key |
+| **Reset** | Puts the row back to the key the program came with | Once you have changed that row |
 
-| What you pressed | Why it is refused |
-|------------------|-------------------|
-| A key with no Ctrl, Alt or Shift, or something exotic like a punctuation key | A bare letter is what you type into a note or a rule, and keys that move around between keyboard layouts cannot be held reliably. Use Ctrl, Alt or Shift with a letter, a number or an F-key. |
-| A combination one of the other four already answers | Two things on one key means only the first of them ever happens. The message names the one that already has it, so you know what to change. |
+**Clear** is for a combination you want gone rather than moved. Say the game
+already uses Alt + C for something you need mid-fight: clear that row and the
+key belongs to the game again. A cleared row shows an empty field. Press that
+field and record a key whenever you want it back, or press **Reset** for the
+original.
+
+Losing a key costs you nothing but the key. Every one of these five has a button
+of its own in the toolbar or an entry inside Settings, so a cleared row never
+puts anything out of reach — and the combination it used to hold is nobody's
+again, free for another row to take.
+
+Above the table sits **Reset all shortcuts**, which puts every row back at once.
+It asks before it does anything, and it only touches this page.
+
+One kind of combination is turned down, and the program says so: a key with no
+Ctrl, Alt or Shift, or something exotic like a punctuation key. A bare letter is
+what you type into a note or a rule, and keys that move around between keyboard
+layouts cannot be held reliably. Use Ctrl, Alt or Shift together with a letter,
+a number or an F-key.
+
+Anything else is recorded, **including a combination another row already has**.
+Both rows keep it, both are marked with a warning sign, and a line under the
+table says which of the two the key actually runs: the one higher up the table.
+The other never hears the press at all. That is useful in the middle of
+rearranging keys, and it is never hidden from you — you can see both rows
+holding the same thing and read which one wins.
 
 Your changes are saved when you close Settings with **Ok**, like every other
 setting. Only what you actually changed is written down, so a key you never
 touched keeps working even after an update moves it.
+
+### When a row has something wrong with it
+
+A warning sign in a row means *this row is the one the line below is about*. The
+lines gather under the table, and each names its row; the sign says the same
+thing under the mouse pointer, so you do not have to look down the page.
+
+You will see one in three cases. The first is two rows holding the same
+combination, where the sign is in both of them. The second is a key the program
+could not take from the rest of the computer, which is the next section. The
+third is rarer: if the file the program keeps your settings in has been edited
+by hand and the combination there makes no sense, the row falls back to the key
+it came with and the line says so. Record a key in that row and it is fixed.
+
+There is one more line that can appear under the table, with no sign in any row,
+and it is not a fault: it says your settings hold a shortcut set by a **newer
+version** of STO-CLARE than the one you are running. There is nothing here to
+put that key on, so it does nothing — but it is left exactly as it is, and going
+back to the newer version gets it working again. **Reset all shortcuts** is what
+clears it if you would rather it were gone.
 
 ### The overlay key while you are playing
 
@@ -1428,7 +1529,12 @@ The tick that does it is in the Overlay row itself, beside the combination, and
 is labelled **Global**. Ticked and closed with Ok, the key is yours everywhere;
 that is all there is to it, and the page says nothing further.
 
-It does speak up when the answer is no, in a line under the table:
+Clear the Overlay row and the tick greys out — there is no key left to take from
+the desktop. It keeps your answer rather than quietly turning itself off, so
+recording a combination again brings the global key straight back.
+
+It does speak up when the answer is no, with a sign in the Overlay row and a
+line under the table:
 
 | What it says | What it means |
 |--------------|---------------|
@@ -1501,6 +1607,7 @@ puts the window away.
 | Share your numbers in chat           | Copy Combat Summary, then paste in the game.                |
 | Keep one fight and clear the rest    | Clear Log File, untick the one you are keeping.             |
 | See one ability over time            | Select its row; the charts at the bottom follow it.         |
+| Measure your DPS during a burst      | Hold Shift and drag across the DPS chart over the burst.    |
 | Read your beams alone                | Untick the rows you do not want; your own figures follow.   |
 
 ## What can go wrong
