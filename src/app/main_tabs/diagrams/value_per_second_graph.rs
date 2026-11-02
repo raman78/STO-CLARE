@@ -26,6 +26,11 @@ const KERNEL_CUTOFF_SIGMAS: f64 = 4.0;
 /// 120 the text field accepts.
 const KERNEL_MASS_WITHIN_CUTOFF: f64 = 0.999_936_657_5;
 
+/// How many series the range summary lists before it says how many more there
+/// are. A tree level can chart dozens of abilities, and a box that long would
+/// cover the chart it describes.
+const RANGE_SUMMARY_MAX_SERIES: usize = 10;
+
 pub struct ValuePerSecondGraph<T: PreparedValue> {
     lines: Vec<GraphLine<T>>,
     largest_point: f64,
@@ -33,6 +38,12 @@ pub struct ValuePerSecondGraph<T: PreparedValue> {
     updated_filter: Option<f64>,
     diagram_type: DiagramType,
     components: HealComponents,
+    /// The stretch of the fight picked out with Shift and a drag, in seconds
+    /// from its start, lower bound first. The chart shades it and lists every
+    /// series' average over it.
+    selection: Option<(f64, f64)>,
+    /// Where a Shift drag began, while it is still under way.
+    selecting_from: Option<f64>,
 }
 
 pub type DpsGraph = ValuePerSecondGraph<PreparedHitValue>;
@@ -54,6 +65,8 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
             updated_filter: None,
             diagram_type,
             components: HealComponents::ALL,
+            selection: None,
+            selecting_from: None,
         }
     }
 
@@ -120,15 +133,31 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
             self.compute_largest_point();
         }
 
+        // A drag with Shift held picks out a stretch of time instead of moving
+        // the chart, so the pan is off while Shift is down — and for the rest of
+        // a selection already begun, or letting go of Shift halfway would turn
+        // the same drag into a pan.
+        let shift = ui.input(|i| i.modifiers.shift);
+        let pan = if shift || self.selecting_from.is_some() {
+            Vec2b::FALSE
+        } else {
+            PAN_SIDEWAYS_ONLY
+        };
+
+        // Set explicitly so the legend's record of hidden series can be read
+        // back after the plot is drawn.
+        let plot_id = ui.make_persistent_id(("per second graph", self.diagram_type.name()));
+        let diagram_type = self.diagram_type;
         let mut plot = Plot::new(("per second graph", self.diagram_type.name()))
+            .id(plot_id)
             .auto_bounds(true)
             .allow_scroll(PAN_SIDEWAYS_ONLY)
-            .allow_drag(PAN_SIDEWAYS_ONLY)
+            .allow_drag(pan)
             .y_axis_min_width(y_axis_width(ui))
             .y_axis_formatter(format_axis)
             .x_axis_formatter(format_axis)
-            .label_formatter(|n, p| {
-                Self::format_label(n, p, self.diagram_type.value_name(), settings)
+            .label_formatter(move |n, p| {
+                Self::format_label(n, p, diagram_type.value_name(), settings)
             })
             .include_y(self.largest_point)
             .legend(Legend::default());
@@ -142,13 +171,154 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
             plot = plot.include_x(60.0);
         }
 
-        plot.show(ui, |p| {
+        let fight = self.time_range();
+        let selection_color = ui.visuals().selection.bg_fill;
+        let lines = &self.lines;
+        let selection = &mut self.selection;
+        let selecting_from = &mut self.selecting_from;
+        let plot_response = plot.show(ui, |p| {
+            Self::track_selection(p, shift, fight, selection, selecting_from);
+
+            if let Some((from, to)) = *selection {
+                p.span(
+                    Span::new("", from..=to)
+                        .fill(selection_color.gamma_multiply(0.25))
+                        .border_color(selection_color),
+                );
+            }
+
             // Series are sorted largest first, so the colour a series gets is
             // the same on every chart it appears on — unless it brought a
             // colour of its own, which is how a caller keeps one series the
             // same colour while the totals move under it.
-            for (index, line) in self.lines.iter().enumerate() {
+            for (index, line) in lines.iter().enumerate() {
                 p.line(line.to_line().color(series_color(&line.data, index)));
+            }
+        });
+
+        if let Some(range) = self.selection {
+            let hidden = PlotMemory::load(ui.ctx(), plot_id)
+                .map(|m| m.hidden_items)
+                .unwrap_or_default();
+            self.show_range_summary(settings, ui, plot_response.response.rect, range, |name| {
+                hidden.contains(&line_id(name))
+            });
+        }
+    }
+
+    /// The span every series covers: from the start of the fight to its end.
+    fn time_range(&self) -> (f64, f64) {
+        let start = self
+            .lines
+            .iter()
+            .map(|l| l.data.start_time_s)
+            .min_by(f64::total_cmp)
+            .unwrap_or(0.0);
+        let end = self
+            .lines
+            .iter()
+            .map(|l| l.data.start_time_s + l.data.duration_s)
+            .max_by(f64::total_cmp)
+            .unwrap_or(0.0);
+        (start, end)
+    }
+
+    /// Follows a Shift drag across the chart. The ends are held to the fight,
+    /// so dragging past either edge selects up to the edge rather than adding
+    /// seconds in which nothing could have happened — the shaded band shows
+    /// where the range really ends. A plain click clears the selection.
+    fn track_selection(
+        p: &PlotUi,
+        shift: bool,
+        (fight_start, fight_end): (f64, f64),
+        selection: &mut Option<(f64, f64)>,
+        selecting_from: &mut Option<f64>,
+    ) {
+        let response = p.response().clone();
+        let to_time = |pos: Pos2| p.plot_from_screen(pos).x.clamp(fight_start, fight_end);
+
+        if shift && response.drag_started_by(PointerButton::Primary) {
+            // The press, not where the drag was recognised: egui only calls it a
+            // drag once the pointer has moved a few points.
+            *selecting_from = p
+                .ctx()
+                .input(|i| i.pointer.press_origin())
+                .map(to_time);
+        }
+
+        if let Some(from) = *selecting_from {
+            if let Some(pos) = p.ctx().input(|i| i.pointer.latest_pos()) {
+                let to = to_time(pos);
+                *selection = Some((from.min(to), from.max(to)));
+            }
+            if response.drag_stopped() {
+                *selecting_from = None;
+                // A drag that ended where it began, or wholly outside the
+                // fight, has no length to average over.
+                if selection.is_some_and(|(from, to)| to <= from) {
+                    *selection = None;
+                }
+            }
+        } else if response.clicked() {
+            *selection = None;
+        }
+    }
+
+    /// The box in the chart's top left corner: the selected range and each
+    /// shown series' average over it, in the series' colour and in the
+    /// legend's order.
+    fn show_range_summary(
+        &self,
+        settings: &Settings,
+        ui: &mut Ui,
+        plot_rect: Rect,
+        (from, to): (f64, f64),
+        is_hidden: impl Fn(&str) -> bool,
+    ) {
+        let decimals = if settings.general.more_decimals { 2 } else { 0 };
+        let mut formatter = NumberFormatter::new();
+        let value_name = self.diagram_type.value_name();
+        let shown = self
+            .lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| !is_hidden(&l.data.name))
+            .collect_vec();
+
+        let area = plot_rect.shrink(ui.spacing().item_spacing.x * 2.0);
+        let mut overlay = ui.new_child(
+            UiBuilder::new()
+                .max_rect(area)
+                .layout(Layout::top_down(Align::LEFT)),
+        );
+        overlay.set_clip_rect(plot_rect);
+        Frame::popup(ui.style()).show(&mut overlay, |ui| {
+            ui.label(format!(
+                "{} s – {} s ({} s)",
+                formatter.format(from, 1),
+                formatter.format(to, 1),
+                formatter.format(to - from, 1),
+            ));
+            for (index, line) in shown.iter().take(RANGE_SUMMARY_MAX_SERIES) {
+                let average = formatter.format(
+                    line.average_over(from, to, self.diagram_type, self.components),
+                    decimals,
+                );
+                let text = if line.data.name.is_empty() {
+                    format!("{value_name}: {average}")
+                } else {
+                    format!("{}: {average} {value_name}", line.data.name)
+                };
+                ui.label(RichText::new(text).color(series_color(&line.data, *index)));
+            }
+            if shown.len() > RANGE_SUMMARY_MAX_SERIES {
+                ui.label(format!(
+                    "… and {} more",
+                    shown.len() - RANGE_SUMMARY_MAX_SERIES
+                ));
+            }
+            if shown.is_empty() {
+                ui.label("No series shown");
             }
         });
     }
@@ -185,6 +355,46 @@ impl<T: PreparedValue> GraphLine<T> {
             points: Vec::new(),
             data,
         }
+    }
+
+    /// The series' average per second from `from_s` to `to_s`: everything it
+    /// did in that stretch over the stretch's length.
+    ///
+    /// The range is half-open, so two ranges laid end to end count each value
+    /// once and steady fire averages to its true rate — except at the end of
+    /// the fight, which is the time of its last value: a range reaching it
+    /// includes that value, and the whole fight then averages to the series'
+    /// total over its duration, as the tables count it.
+    ///
+    /// Taken from the values themselves rather than from the drawn line. The
+    /// line is smoothed, so it leaks across the ends of the range, and an
+    /// average read off it would move with the smoothing slider.
+    fn average_over(
+        &self,
+        from_s: f64,
+        to_s: f64,
+        diagram_type: DiagramType,
+        components: HealComponents,
+    ) -> f64 {
+        let length = to_s - from_s;
+        if length <= 0.0 {
+            return 0.0;
+        }
+        let from = seconds_to_millis(from_s);
+        let to = seconds_to_millis(to_s);
+        let reaches_the_end = to >= seconds_to_millis(self.data.start_time_s + self.data.duration_s);
+        let values = &*self.data.values;
+        let first = values.partition_point(|v| v.time_millis < from);
+        let past_last = if reaches_the_end {
+            values.partition_point(|v| v.time_millis <= to)
+        } else {
+            values.partition_point(|v| v.time_millis < to)
+        };
+        let total: f64 = values[first..past_last.max(first)]
+            .iter()
+            .map(|v| v.value(diagram_type, components))
+            .sum();
+        total / length
     }
 
     fn update(&mut self, filter: f64, diagram_type: DiagramType, components: HealComponents) {
@@ -323,8 +533,16 @@ impl<T: PreparedValue> GraphLine<T> {
     }
 
     fn to_line(&self) -> Line<'_> {
-        Line::new(&self.data.name, self.points.clone()).width(2.0)
+        Line::new(&self.data.name, self.points.clone())
+            .id(line_id(&self.data.name))
+            .width(2.0)
     }
+}
+
+/// The id a series is drawn under, which is also how the legend records that
+/// it was hidden.
+fn line_id(name: &str) -> Id {
+    Id::new(("per second line", name))
 }
 
 #[cfg(test)]
@@ -431,5 +649,57 @@ mod tests {
 
         graph.remove_line("only");
         assert_eq!(0.0, graph.largest_point);
+    }
+
+    fn steady_line(seconds: u32) -> GraphLine<PreparedHitValue> {
+        let points = steady_fire(100.0, seconds);
+        let last = millis_to_seconds(points.last().unwrap().time_millis);
+        GraphLine::new(PreparedDataSet {
+            name: "steady".to_string(),
+            total_value: 100.0 * points.len() as f64,
+            values: Arc::from(points),
+            start_time_s: 0.0,
+            duration_s: last,
+            color: None,
+        })
+    }
+
+    /// A range inside the fight counts each value once: steady fire of 1000
+    /// a second averages to exactly 1000 over any whole number of tenths.
+    #[test]
+    fn a_range_inside_the_fight_averages_to_the_true_rate() {
+        let line = steady_line(60);
+        for (from, to) in [(10.0, 20.0), (0.0, 0.5), (12.3, 45.6)] {
+            let average = line.average_over(from, to, DiagramType::Dps, HealComponents::ALL);
+            assert!(
+                (average - 1000.0).abs() < 1e-9,
+                "{from}..{to} averages to {average}"
+            );
+        }
+    }
+
+    /// Two ranges laid end to end add up to the range they make together.
+    #[test]
+    fn adjoining_ranges_do_not_count_the_shared_end_twice() {
+        let line = steady_line(60);
+        let average = |from, to| line.average_over(from, to, DiagramType::Dps, HealComponents::ALL);
+        let joined = average(5.0, 25.0) * 20.0;
+        let parts = average(5.0, 15.0) * 10.0 + average(15.0, 25.0) * 10.0;
+        assert!((joined - parts).abs() < 1e-9, "{joined} vs {parts}");
+    }
+
+    /// The whole fight, last value included, gives what the tables give: the
+    /// total over the duration.
+    #[test]
+    fn the_whole_fight_averages_to_the_total_over_the_duration() {
+        let line = steady_line(60);
+        let average = line.average_over(
+            0.0,
+            line.data.duration_s,
+            DiagramType::Dps,
+            HealComponents::ALL,
+        );
+        let expected = line.data.total_value / line.data.duration_s;
+        assert!((average - expected).abs() < 1e-9, "{average} vs {expected}");
     }
 }

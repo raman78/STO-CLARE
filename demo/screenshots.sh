@@ -39,6 +39,11 @@ start() {  # start(theme) -> sets $W to the window id
   # below do not need it: they are aimed at the window, and it is the only one
   # mapped there.
   xdotool windowactivate "$W" 2>/dev/null || true
+  # Keyboard focus, which windowactivate cannot give without a window manager.
+  # The clicks do not need it, but a modifier held during a drag does: winit
+  # reads Shift from the focused window only, and without this a Shift drag
+  # arrives as a plain one. Measured on :99, 2026-11-02.
+  xdotool windowfocus "$W" 2>/dev/null || true
   sleep 1
 }
 stop() { kill "$APP" 2>/dev/null || true; wait "$APP" 2>/dev/null || true; }
@@ -72,6 +77,17 @@ crop() {
 ladder_win() { xdotool search --name "^Ladder$" | tail -1; }
 clickw() { xdotool mousemove --window "$1" "$2" "$3" click 1; sleep "${4:-1}"; }
 click() { xdotool mousemove --window "$W" "$1" "$2" click 1; sleep 1; }
+# A drag with Shift held, as a reader marks a stretch of a chart. It moves in
+# steps: egui only calls it a drag once the pointer has travelled a few points
+# with the button down, and one jump to the far end would read as a click.
+shift_drag() {  # shift_drag(x_from, x_to, y)
+  xdotool mousemove --window "$W" "$1" "$3" keydown shift mousedown 1
+  for x in $(seq "$1" 10 "$2"); do
+    xdotool mousemove --window "$W" "$x" "$3"; sleep 0.05
+  done
+  xdotool mouseup 1 keyup shift
+  sleep 1
+}
 # Opening a fight from the list takes two clicks, as it does for the reader.
 dblclick() {
   xdotool mousemove --window "$W" "$1" "$2"
@@ -93,6 +109,16 @@ if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
   click 66 38                                      # and close the panel again
   shot summary-tab
   click 122 119; shot damage-dealt-tab
+  # A stretch of the DPS chart marked with Shift and a drag. The chart's x axis
+  # runs from 0 s at x=143 to 100 s at x=735 in the fight this opens (measured
+  # off this shot, demo log cut 2026-11-02), so 735..885 is the run of peaks
+  # from 100 s to 125 s. The pointer is moved off the chart before the shot so its tooltip is
+  # not in the picture, and the plain click after it clears the mark again, so
+  # nothing below photographs it.
+  shift_drag 735 885 620
+  xdotool mousemove --window "$W" 640 300
+  shot chart-range-average
+  click 600 620
   click 67 186;  shot ability-breakdown            # the arrow, right of the tick
   click 160 151; shot damage-type-picker           # ☰ Type in the Name header
   click 160 151

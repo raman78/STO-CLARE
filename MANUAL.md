@@ -546,6 +546,50 @@ a row that is already in the set takes it back out. See
   you had on the chart stays. A row already on the chart is left as it is, so
   this can only ever add.
 
+#### The average over part of a fight
+
+The figure in the table is the whole fight averaged, and a fight is rarely
+even: a burst while your cooldowns are up, a lull while the next group of
+enemies spawns, a slow finish on one last ship. A line chart shows those
+moments, and you can measure any of them by marking it on the chart.
+
+1. Open one of the line charts: DPS, HPS, hits per second or ticks per second.
+2. Hold **Shift**.
+3. Press the left mouse button where the stretch begins, drag to where it
+   ends, and let go.
+
+![A burst marked on the DPS chart, with each line's average over it](images/chart-range-average.png)
+
+The stretch you marked is shaded, and a box in the chart's top left corner
+gives its start, its end and its length in seconds, then the average of each
+line over it, in that line's colour and in the legend's order. The marked
+stretch stays until you click on the chart without Shift held. An ordinary
+drag without Shift still moves the chart sideways, as before.
+
+The average is counted from the hits themselves: everything the line did
+between the two ends, divided by the stretch's length. It is not read off the
+drawn line. The line is smoothed, and the smoothing spreads every hit a little
+into the seconds around it, so the line's height inside the shaded band can
+look higher or lower than the number in the box, especially near the edges.
+The box is the one to trust, and moving the smoothing slider does not change
+it. Mark the whole fight and the box gives the same figure as the table.
+
+A few things decide what the box lists:
+
+- a line you hid by clicking its name in the legend is left out;
+- with more than ten lines on the chart, the box lists the first ten and says
+  how many more there are;
+- dragging past either end of the fight stops the stretch at that end, because
+  no hit can land outside the fight.
+
+The mark goes away when the chart is redrawn from scratch: when you open
+another fight, click another row in the table, or change anything in a
+comparison. Ctrl + clicking a row only adds or takes away one line, so the mark
+stays and the box picks up the new line. With **Auto Refresh** on, the
+chart is redrawn each time the game writes more to the log, so during a fight
+the mark lasts only until the next update. To measure a stretch of a fight you
+are still in, switch Auto Refresh off first.
+
 ---
 
 ## Comparing combats
@@ -1383,6 +1427,7 @@ one chart, that has no button at all:
 | **Esc** | Uploading to the ladder | Breaks the upload off — see below. |
 | **Ctrl + click** | A row on the damage or healing tabs | Adds that row to the selection, or takes it out again — this is how you get several abilities onto one chart. |
 | **Right-click** | A row on the damage or healing tabs | Copies the row's name, or adds that one row to the chart. |
+| **Shift + drag** | A DPS, HPS or per-second chart | Picks out a stretch of the fight and shows each line's average over it. A plain click clears it. |
 | **Enter** | The Ladder's player search | Runs the search, the same as pressing Search. |
 | **Double-click** | A row in the combats list | Opens that fight in every tab. |
 
@@ -1551,6 +1596,7 @@ puts the window away.
 | Share your numbers in chat           | Copy Combat Summary, then paste in the game.                |
 | Keep one fight and clear the rest    | Clear Log File, untick the one you are keeping.             |
 | See one ability over time            | Select its row; the charts at the bottom follow it.         |
+| Measure your DPS during a burst      | Hold Shift and drag across the DPS chart over the burst.    |
 | Read your beams alone                | Untick the rows you do not want; your own figures follow.   |
 
 ## What can go wrong

@@ -3,6 +3,8 @@
 # unreleased
 
 ### Major Changes
+- the DPS, HPS and other per-second charts can now tell you the average over any part of a fight. Hold Shift and drag across the chart: the stretch is shaded and a box in the corner gives how long it is and each line's average over it — what a burst window or one phase of a fight was worth, rather than the whole fight's figure. The average comes from the hits themselves, so the smoothing slider does not move it. A plain click clears it, and an ordinary drag still moves the chart
+
 - a shortcut can now be taken off a key entirely, not only moved to another one. Each row on **Settings → Shortcuts** has a **Clear** button that leaves it on no key, which is what to reach for when a combination is needed by the game instead — the row goes empty, the key belongs to the game again, and everything it did is still a button away. Recording a key in that row brings it back, and **Reset** returns the one the program came with. A new **Reset all shortcuts** puts the whole page back at once, after asking
 
 - a combination another shortcut already uses is now accepted instead of turned down. Both rows keep it and both are marked, and a line under the table says which of the two the key actually runs — the one higher up the page. Refusing it used to leave you told about something the table could not show you, and the row you had just pressed a key in looked as though nothing had happened
