@@ -159,6 +159,16 @@ if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
   click 97 232                                     # open Fire at Will III
   xdotool mousemove --window "$W" 900 140
   shot damage-by-ability
+  # Total: Fire at Will III clicked charts a lane per weapon fired in it, and
+  # Total draws the mode itself as one lane instead. Total sits right of the
+  # Gap slider, on the row under the chart's tabs.
+  click 200 232                                    # chart Fire at Will III
+  click 447 497                                    # the Activity tab
+  click 232 519                                    # Total
+  xdotool mousemove --window "$W" 900 140
+  shot activity-total
+  click 232 519                                    # Total off again
+  click 23 497                                     # the chart back to DPS
   click 126 140                                    # back to Weapon ⏵ Ability
   click 223 119; shot damage-taken-tab
   click 400 119; shot healing-tab

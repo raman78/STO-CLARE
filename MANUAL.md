@@ -785,6 +785,8 @@ wherever *any* of those weapons was firing, so bars that overlap become one, and
 the pop-up gives how long Fire at Will III was in use in all and in how many
 stretches.
 
+![Fire at Will III clicked with Total on: one lane for the mode, all its weapons together](images/activity-total.png)
+
 Rows picked with Ctrl + click are each a lane of their own, with or without
 Total. Pick *Fire at Will III*, *Salvo I* and *Spread I* that
 way, and you get three lanes, each one everything fired in that mode. The
