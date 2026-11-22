@@ -30,6 +30,7 @@ pub mod app_icon;
 mod combat_filter;
 mod combats_list;
 mod compare;
+pub(crate) mod damage_sections;
 pub(crate) mod damage_subset;
 mod date_range;
 pub mod desktop_install;

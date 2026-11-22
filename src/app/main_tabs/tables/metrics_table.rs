@@ -148,6 +148,10 @@ pub struct MetricsTablePart<T> {
     pub sub_parts: Vec<Self>,
 
     open: bool,
+    /// How many levels deeper a view of the same tree can put this row and
+    /// everything under it, which the Name column keeps room for — see
+    /// [`MetricsTable::reserve_name_room`].
+    spare_levels: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -293,14 +297,7 @@ impl<T: 'static> MetricsTable<T> {
         // and slide every figure in the table sideways. Measured once — it
         // takes the fonts, so it cannot be done when the table is built.
         if self.widest_name.is_none() {
-            self.widest_name = Some(widest_name(
-                ui,
-                &self.players,
-                0.0,
-                INDENT,
-                |part| part.name.as_str(),
-                |part| &part.sub_parts,
-            ));
+            self.widest_name = Some(widest_with_spare_levels(ui, &self.players, 0.0));
         }
         let widest = self.widest_name.unwrap_or_default();
         // The table scrolls both ways by itself, so its bars stay at the edges
@@ -325,6 +322,7 @@ impl<T: 'static> MetricsTable<T> {
                         split,
                         ticks,
                         handle,
+                        "",
                         widest,
                     );
                 }
@@ -504,6 +502,15 @@ impl<T: 'static> MetricsTable<T> {
             return;
         }
         self.sort = previous.sort;
+        self.reapply_sort();
+    }
+
+    /// Orders the rows again by the column the table is ordered by, for when
+    /// that column's figures changed without the table being rebuilt.
+    pub fn reapply_sort(&mut self) {
+        if self.sort.column.is_none() {
+            return;
+        }
         // The name column is not one of the metric columns, so it is not found
         // among them; it orders the rows all the same.
         if self.sort.is_sorted_by(NAME_COLUMN) {
@@ -522,6 +529,51 @@ impl<T: 'static> MetricsTable<T> {
                 .map(|part| part.sort)
                 .unwrap_or(whole);
             self.sort_by_column(sort);
+        }
+    }
+
+    /// Keeps room in the Name column for the levels a view of this tree could
+    /// add, so switching the view on or off does not widen or narrow the column
+    /// and slide every figure sideways. `levels` is asked of each row `depth`
+    /// levels below a player — 1 for the rows directly under them — and the
+    /// room it answers is kept for that row and everything under it.
+    ///
+    /// The view itself is not built for this: a view that puts rows a level
+    /// deeper is the tree with those rows' indent one step larger, so the room
+    /// it needs is exactly that step on those rows.
+    pub fn reserve_name_room(&mut self, depth: usize, levels: impl Fn(&str) -> f32) {
+        fn walk<T>(parts: &mut [MetricsTablePart<T>], depth: usize, levels: &impl Fn(&str) -> f32) {
+            for part in parts {
+                if depth == 0 {
+                    part.spare_levels += levels(&part.name);
+                } else {
+                    walk(&mut part.sub_parts, depth - 1, levels);
+                }
+            }
+        }
+        for player in &mut self.players {
+            walk(&mut player.sub_parts, depth - 1, &levels);
+        }
+        self.widest_name = None;
+    }
+
+    /// Every row of the tree: each player, and everything under them, with
+    /// the name of the player the row is under.
+    pub fn for_each_part_mut(&mut self, mut change: impl FnMut(&str, &mut MetricsTablePart<T>)) {
+        fn walk<T>(
+            player: &str,
+            parts: &mut [MetricsTablePart<T>],
+            change: &mut impl FnMut(&str, &mut MetricsTablePart<T>),
+        ) {
+            for part in parts {
+                change(player, part);
+                walk(player, &mut part.sub_parts, change);
+            }
+        }
+        for player in &mut self.players {
+            let name = player.name.clone();
+            change(&name, player);
+            walk(&name, &mut player.sub_parts, &mut change);
         }
     }
 
@@ -571,6 +623,7 @@ impl<T> MetricsTablePart<T> {
             id,
             sub_parts,
             open: false,
+            spare_levels: 0.0,
         }
     }
 
@@ -589,20 +642,24 @@ impl<T> MetricsTablePart<T> {
         ticks: &mut RowTicks,
         // Whose rows these are: the ticks are per player.
         player: NameHandle,
+        // The name of the row this one is under, empty for a player.
+        parent: &str,
         // What the widest row of the whole tree needs for its indent and its
         // name, which is what every row claims for the column — see
         // `MetricsTable::widest_name`.
         widest_name: f32,
     ) {
         let mut tick_rect = Rect::NOTHING;
+        // The rows a tick on this row stands for: a player's or a section's
+        // tick is all of the rows that can be ticked one by one below it.
+        let tick_depth = ticks.tick_depth();
+        let ticked_below = if indent < tick_depth {
+            self.handles_at(tick_depth - indent)
+        } else {
+            Vec::new()
+        };
         let response = table.selectable_row(selection.is_selected(self.id), |r| {
-            tick_rect = ticks.show_cell(
-                r,
-                indent,
-                player,
-                self.handle,
-                self.sub_parts.iter().map(|part| part.handle),
-            );
+            tick_rect = ticks.show_cell(r, indent, player, self.handle, ticked_below);
             // The name is a frozen column, so it can be narrowed to fit the
             // view and the name cut short with it — and a cut name has to say
             // how much it was short of, or the column could never widen again.
@@ -673,11 +730,17 @@ impl<T> MetricsTablePart<T> {
                 selection.select_or_unselect_single(self, on_selected);
                 ui.close_kind(UiKind::Menu);
             }
+
+            if indent == tick_depth
+                && let Some(sections) = ticks.sections.as_mut()
+            {
+                sections.show_menu(ui, &self.name, parent);
+            }
         });
 
         if self.open {
             for sub_part in self.sub_parts.iter_mut() {
-                if ticks.is_hidden(indent, self.handle, sub_part.handle) {
+                if ticks.is_hidden(indent, player, sub_part.handle) {
                     continue;
                 }
                 sub_part.show(
@@ -689,11 +752,23 @@ impl<T> MetricsTablePart<T> {
                     modifiers,
                     split,
                     ticks,
-                    self.handle,
+                    player,
+                    &self.name,
                     widest_name,
                 );
             }
         }
+    }
+
+    /// The handles of the rows `levels` below this one.
+    fn handles_at(&self, levels: f32) -> Vec<NameHandle> {
+        if levels <= 1.0 {
+            return self.sub_parts.iter().map(|part| part.handle).collect();
+        }
+        self.sub_parts
+            .iter()
+            .flat_map(|part| part.handles_at(levels - 1.0))
+            .collect()
     }
 
     pub fn sort_by_desc<K: Ord>(&mut self, mut key: impl FnMut(&Self) -> K + Copy) {
@@ -759,6 +834,10 @@ pub enum TableSelectionEvent<'a, T> {
     Group(&'a MetricsTablePart<T>),
     Single(&'a MetricsTablePart<T>),
     AddSingle(&'a MetricsTablePart<T>),
+    /// A Ctrl + click on another row while the chart was opened on a row's
+    /// parts: that row stays, now as one lane of its own, and this one is
+    /// added beside it.
+    KeepGroupAndAdd(&'a MetricsTablePart<T>),
     Unselect(&'a str),
 }
 
@@ -794,6 +873,15 @@ impl SelectionTracker {
         on_selected: &mut impl FnMut(TableSelectionEvent<T>),
     ) {
         match self {
+            // The row clicked first is kept: picking one more row with Ctrl
+            // adds to what is picked, it does not start again from this one.
+            SelectionTracker::Group(id) if *id != part.id => {
+                let mut group: FxHashSet<_> = Default::default();
+                group.insert(*id);
+                group.insert(part.id);
+                *self = Self::Multi(group);
+                on_selected(TableSelectionEvent::KeepGroupAndAdd(part));
+            }
             SelectionTracker::None | SelectionTracker::Group(_) => {
                 let mut group: FxHashSet<_> = Default::default();
                 group.insert(part.id);
@@ -900,6 +988,24 @@ fn heading_width(available: f32, label: f32, marker_room: f32, spacing: f32) -> 
     available.max(label + marker_room + spacing)
 }
 
+/// What the Name column has to hold for the whole tree, open or not — the
+/// widest row's indent and name, as [`widest_name`] measures it — with each
+/// row also counted at the depth a view could move it to
+/// (`MetricsTablePart::spare_levels`).
+fn widest_with_spare_levels<T>(ui: &Ui, parts: &[MetricsTablePart<T>], depth: f32) -> f32 {
+    parts
+        .iter()
+        .map(|part| {
+            let depth = depth + part.spare_levels;
+            (depth * INDENT + text_width(ui, &part.name)).max(widest_with_spare_levels(
+                ui,
+                &part.sub_parts,
+                depth + 1.0,
+            ))
+        })
+        .fold(0.0, f32::max)
+}
+
 /// Copies `open` from the rows of the table being replaced onto the rows that
 /// took their place, by name, down the whole tree.
 fn take_open_state<T>(rows: &mut [MetricsTablePart<T>], previous: &[MetricsTablePart<T>]) {
@@ -932,11 +1038,56 @@ pub struct RowTicks<'a> {
     /// pick. Empty means every type, which is how it starts.
     pub types: &'a mut FxHashSet<String>,
     pub all_types: &'a [String],
+    /// The sections the rows under each player are split into, when the table
+    /// is split: the rows that are ticked one by one are then a level further
+    /// down, under their section, and can be moved to another one.
+    pub sections: Option<RowSections<'a>>,
     /// Set when this pass changed any of them, so the caller rebuilds.
     pub changed: bool,
 }
 
+/// The right-click menu that moves a row to another section.
+pub struct RowSections<'a> {
+    /// Whether the reader moved this row, by name, rather than the program
+    /// filing it where it is.
+    pub is_moved: &'a dyn Fn(&str) -> bool,
+    /// The move asked for on this pass: the row, and the section it goes to —
+    /// `None` to hand it back to the program's own filing.
+    pub request: Option<(String, Option<DamageSection>)>,
+}
+
+impl RowSections<'_> {
+    fn show_menu(&mut self, ui: &mut Ui, row: &str, section: &str) {
+        ui.separator();
+        for target in DamageSection::ALL {
+            if target.name() == section {
+                continue;
+            }
+            if ui
+                .button(format!("move to {}", target.name()))
+                .hover("Every fight files this row there from now on, for every player.")
+                .clicked()
+            {
+                self.request = Some((row.to_string(), Some(target)));
+                ui.close_kind(UiKind::Menu);
+            }
+        }
+        if (self.is_moved)(row) {
+            ui.label(RichText::new("You moved this row here.").weak());
+            if ui.button("put back where the program files it").clicked() {
+                self.request = Some((row.to_string(), None));
+                ui.close_kind(UiKind::Menu);
+            }
+        }
+    }
+}
+
 impl RowTicks<'_> {
+    /// How far below a player the rows are that are ticked one by one.
+    fn tick_depth(&self) -> f32 {
+        if self.sections.is_some() { 2.0 } else { 1.0 }
+    }
+
     /// The type picker: which damage types the figures are of.
     fn show_types(&mut self, ui: &mut Ui) {
         if self.all_types.is_empty() {
@@ -1003,18 +1154,24 @@ impl RowTicks<'_> {
     /// comparison carries, because it is the same thing: the row those below it
     /// add up to. The rows under it carry their own. Deeper in the tree there
     /// is nothing to tick: a row goes in with the branch it belongs to.
+    ///
+    /// In a table split into sections, a section's row sits between the two
+    /// and carries a tick of the same kind as the player's, for the rows in it.
     fn show_cell(
         &mut self,
         row: &mut TableRow,
         indent: f32,
         player: NameHandle,
         handle: NameHandle,
-        children: impl Iterator<Item = NameHandle> + Clone,
+        ticked_below: Vec<NameHandle>,
     ) -> Rect {
-        match indent {
-            0.0 => self.show_all_tick(row, handle, children),
-            1.0 => self.show_row_tick(row, player, handle),
-            _ => row.cell(|_| {}).rect,
+        let depth = self.tick_depth();
+        if indent < depth {
+            self.show_all_tick(row, player, ticked_below.into_iter())
+        } else if indent == depth {
+            self.show_row_tick(row, player, handle)
+        } else {
+            row.cell(|_| {}).rect
         }
     }
 
@@ -1082,10 +1239,10 @@ impl RowTicks<'_> {
         cell.rect
     }
 
-    /// Whether a row is not drawn at all: only the rows under a player can be,
-    /// and only while the eye is on.
+    /// Whether a row is not drawn at all: only the rows that are ticked one by
+    /// one can be, and only while the eye is on.
     fn is_hidden(&self, parent_indent: f32, player: NameHandle, handle: NameHandle) -> bool {
-        parent_indent == 0.0
+        parent_indent + 1.0 == self.tick_depth()
             && *self.hide_unticked
             && self
                 .excluded
@@ -1109,8 +1266,60 @@ mod tests {
             hide_unticked: hide,
             types,
             all_types: &[],
+            sections: None,
             changed: false,
         }
+    }
+
+    /// What the chart is told, by kind and row, for the clicks in `clicks`
+    /// (`true` for a Ctrl + click).
+    fn selection_events(
+        clicks: &[(&MetricsTablePart<()>, bool)],
+    ) -> (Vec<String>, SelectionTracker) {
+        let mut tracker = SelectionTracker::None;
+        let mut events = Vec::new();
+        for (part, ctrl) in clicks {
+            let mut record = |event: TableSelectionEvent<()>| {
+                events.push(match event {
+                    TableSelectionEvent::Clear => "clear".to_string(),
+                    TableSelectionEvent::Group(p) => format!("group {}", p.name),
+                    TableSelectionEvent::Single(p) => format!("single {}", p.name),
+                    TableSelectionEvent::AddSingle(p) => format!("add {}", p.name),
+                    TableSelectionEvent::KeepGroupAndAdd(p) => format!("keep and add {}", p.name),
+                    TableSelectionEvent::Unselect(name) => format!("unselect {name}"),
+                })
+            };
+            if *ctrl {
+                tracker.select_or_unselect_single(part, &mut record);
+            } else {
+                tracker.select_group(part, &mut record);
+            }
+        }
+        (events, tracker)
+    }
+
+    /// A row clicked, then another one with Ctrl: both stay picked. The first
+    /// used to drop out, and only a second Ctrl + click brought it back.
+    #[test]
+    fn ctrl_click_after_a_click_keeps_the_first_row() {
+        let mut fire_at_will = row("Fire at Will III", vec![]);
+        fire_at_will.id = 1;
+        let mut salvo = row("Salvo I", vec![]);
+        salvo.id = 2;
+        let (events, tracker) = selection_events(&[(&fire_at_will, false), (&salvo, true)]);
+        assert_eq!(
+            vec!["group Fire at Will III", "keep and add Salvo I"],
+            events
+        );
+        assert!(tracker.is_selected(1) && tracker.is_selected(2));
+
+        // Ctrl + click on the same row still switches it to its own lane.
+        let (events, tracker) = selection_events(&[(&fire_at_will, false), (&fire_at_will, true)]);
+        assert_eq!(
+            vec!["group Fire at Will III", "single Fire at Will III"],
+            events
+        );
+        assert!(tracker.is_selected(1));
     }
 
     fn row(name: &str, children: Vec<MetricsTablePart<()>>) -> MetricsTablePart<()> {
@@ -1121,6 +1330,7 @@ mod tests {
             id: 0,
             sub_parts: children,
             open: false,
+            spare_levels: 0.0,
         }
     }
 
@@ -1192,6 +1402,28 @@ mod tests {
     /// start, open or not. Sized from the rows on screen it grew the moment a
     /// branch was opened, and every figure in the table slid sideways under the
     /// reader who had just clicked something.
+    /// A view that puts the rows a level deeper — Sections — leaves the Name
+    /// column as wide as it was, because the plain table kept that room.
+    #[test]
+    fn a_view_one_level_deeper_keeps_the_name_column_still() {
+        let ctx = Context::default();
+        let long = "Phaser Beam Array Mk XV [Dmg]x4 [CrtD]";
+        let mut plain = MetricsTable::<()>::empty_base(&[]);
+        plain.players = vec![row("Beam", vec![row(long, vec![])])];
+        plain.reserve_name_room(1, |_| 1.0);
+        let mut split = MetricsTable::<()>::empty_base(&[]);
+        split.players = vec![row("Beam", vec![row("Weapons", vec![row(long, vec![])])])];
+
+        let plain = column_widths(&ctx, &mut plain);
+        let split = column_widths(&ctx, &mut split);
+        assert!(
+            (plain[1] - split[1]).abs() < 0.5,
+            "the Name column went from {} to {} when the rows went a level down",
+            plain[1],
+            split[1]
+        );
+    }
+
     #[test]
     fn opening_a_branch_does_not_widen_the_name_column() {
         let ctx = Context::default();
@@ -1326,5 +1558,52 @@ mod tests {
         let (mut hide, mut types) = (false, FxHashSet::default());
         let ticks = ticks(&mut excluded, &mut hide, &mut types);
         assert!(!ticks.is_hidden(0.0, player, beams));
+    }
+
+    /// In a table split into sections the rows that are ticked one by one are
+    /// a level further down: the player's tick stands for them rather than for
+    /// the sections, and the eye hides them under their section, never the
+    /// section itself.
+    #[test]
+    fn in_a_split_table_the_ticks_are_a_level_down() {
+        let mut names = NameManager::default();
+        let player = names.insert("Raman", NameFlags::NONE);
+        let weapons = names.insert("Weapons", NameFlags::NONE);
+        let beams = names.insert("Phaser Beam Array", NameFlags::NONE);
+        let torpedo = names.insert("Photon Torpedo", NameFlags::NONE);
+        let part = |handle, sub_parts| MetricsTablePart {
+            data: (),
+            name: names.name(handle).to_string(),
+            handle,
+            id: 0,
+            sub_parts,
+            open: false,
+            spare_levels: 0.0,
+        };
+        let tree = part(
+            player,
+            vec![part(
+                weapons,
+                vec![part(beams, vec![]), part(torpedo, vec![])],
+            )],
+        );
+        assert_eq!(vec![beams, torpedo], tree.handles_at(2.0));
+        assert_eq!(vec![weapons], tree.handles_at(1.0));
+
+        let mut excluded: FxHashMap<NameHandle, FxHashSet<NameHandle>> = Default::default();
+        excluded.entry(player).or_default().insert(beams);
+        let (mut hide, mut types) = (true, FxHashSet::default());
+        let mut ticks = ticks(&mut excluded, &mut hide, &mut types);
+        ticks.sections = Some(RowSections {
+            is_moved: &|_| false,
+            request: None,
+        });
+        assert_eq!(2.0, ticks.tick_depth());
+        assert!(
+            !ticks.is_hidden(0.0, player, weapons),
+            "a section is never hidden"
+        );
+        assert!(ticks.is_hidden(1.0, player, beams));
+        assert!(!ticks.is_hidden(1.0, player, torpedo));
     }
 }

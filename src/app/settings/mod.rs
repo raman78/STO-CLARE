@@ -5,6 +5,7 @@ pub use app_settings::{DebugSettings, Settings, WindowGeometry};
 pub use columns::{ColumnVisibility, TableKind};
 pub use combat_notes::{CombatNotes, MAX_NOTE_CHARS};
 use eframe::{Frame, egui::*};
+pub use sections::SectionChoices;
 
 use crate::analyzer::Combat;
 
@@ -22,6 +23,7 @@ mod columns;
 mod combat_notes;
 mod debug;
 mod general;
+mod sections;
 mod shortcuts;
 mod upload;
 mod visuals;
@@ -338,6 +340,7 @@ impl SettingsWindow {
             logging::apply(&self.modified_settings.debug);
         }
 
+        keep_what_the_window_does_not_edit(&mut self.modified_settings, &state.settings);
         state.settings = self.modified_settings.clone();
         self.modified_settings.save();
     }
@@ -360,5 +363,59 @@ impl SettingsWindow {
         Overlay::request_repaint(ui.ctx());
 
         self.modified_settings = state.settings.clone();
+    }
+}
+
+/// Copies into the window's working copy the parts of the settings it never
+/// edits, from the live ones, before the working copy replaces them on OK.
+///
+/// The window is not modal: while it is open the main window stays usable,
+/// and these parts are changed there — a column hidden from the Columns menu,
+/// a note typed above the tabs, Averages switched on in Compare, a row moved
+/// to another section. The working copy was taken when the window opened, so
+/// without this OK would silently undo every one of those made meanwhile.
+///
+/// A part of the settings the window does not edit and the main window does
+/// belongs here. The window geometry and the overlay's place are kept another
+/// way (`App::save_window_geometry`, `App::on_exit`).
+fn keep_what_the_window_does_not_edit(working: &mut Settings, live: &Settings) {
+    working.columns = live.columns.clone();
+    working.combat_notes = live.combat_notes.clone();
+    working.compare = live.compare.clone();
+    working.sections = live.sections.clone();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyzer::DamageSection;
+
+    /// What the main window changed while the settings window was open
+    /// survives OK, and what the settings window changed is still applied.
+    #[test]
+    fn ok_keeps_what_the_main_window_changed_meanwhile() {
+        let opened = Settings::default();
+        let mut working = opened.clone();
+        working.general.more_decimals = !opened.general.more_decimals;
+
+        let mut live = opened.clone();
+        live.columns
+            .set_shown(TableKind::Damage, "Resistance %", false);
+        live.combat_notes
+            .set("2026-11-04 09:48:23.000", "FAW build");
+        live.compare.show_averages = !opened.compare.show_averages;
+        live.sections
+            .set("Kinetic Cutting Beam", Some(DamageSection::Weapons));
+
+        keep_what_the_window_does_not_edit(&mut working, &live);
+
+        assert_eq!(live.columns, working.columns, "a hidden column came back");
+        assert_eq!(live.combat_notes, working.combat_notes, "a note was lost");
+        assert_eq!(live.compare, working.compare, "a Compare choice was undone");
+        assert_eq!(live.sections, working.sections, "a moved row went back");
+        assert_ne!(
+            opened.general.more_decimals, working.general.more_decimals,
+            "what the window itself changed has to be applied"
+        );
     }
 }

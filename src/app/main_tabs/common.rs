@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use chrono::Duration;
 use eframe::egui::*;
 
-use crate::custom_widgets::tooltip::CloseTooltip;
+use crate::custom_widgets::{toggle::Toggle, tooltip::CloseTooltip};
 use crate::{
     analyzer::*,
     app::fonts::bold_family,
@@ -279,6 +279,42 @@ pub fn show_time_slice_setting(time_slice: &mut f64, ui: &mut Ui) -> bool {
             .show(ui)
             .changed();
         ui.label("Time Slice (s)");
+        changed
+    })
+    .inner
+}
+
+/// The pause that ends one stretch on the Activity chart and starts the next,
+/// and whether the chart draws its rows as one lane. Answers whether the gap
+/// changed; the Total switch only changes how the lanes are drawn.
+pub fn show_activity_gap_setting(gap_s: &mut f64, total: &mut bool, ui: &mut Ui) -> bool {
+    ui.horizontal(|ui| {
+        let changed = SliderTextEdit::new(gap_s, 0.5..=30.0, "activity gap slider")
+            .clamp_min(0.1)
+            .clamp_max(300.0)
+            .desired_text_edit_width(30.0)
+            .display_precision(4)
+            .step_by(0.5)
+            .show(ui)
+            .changed();
+        ui.label("Gap (s)").hover(
+            "Hits or heals further apart than this start a new stretch.\n\
+             Too small, and something that hits every few seconds breaks into pieces; \
+             too large, and two separate uses run together.",
+        );
+        ui.add_space(12.0);
+        if ui
+            .steady_toggle(*total, "Total")
+            .hover(
+                "Show the row you clicked as one lane, under its own name, instead of a \
+                 lane for each row under it: click Fire at Will III and its lane is \
+                 every weapon fired in it together. Rows picked with Ctrl + click are \
+                 each their own lane either way.",
+            )
+            .clicked()
+        {
+            *total = !*total;
+        }
         changed
     })
     .inner

@@ -677,6 +677,9 @@ impl Entries {
         Entries::Loading(Some(join_handle))
     }
 
+    // Everything the request thread needs has to be moved into it, which is
+    // what makes the list long.
+    #[allow(clippy::too_many_arguments)]
     fn load_ladder_entries(
         ctx: Context,
         url: Url,

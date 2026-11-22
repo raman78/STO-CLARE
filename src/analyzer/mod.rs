@@ -23,6 +23,7 @@ mod groups;
 mod heal;
 mod name_manager;
 mod parser;
+mod sections;
 pub mod settings;
 mod values_manager;
 pub use combat_summary::{CombatSummaries, CombatSummary, PlayerSummary, detect_log_owner};
@@ -38,6 +39,7 @@ use groups::*;
 pub use groups::{AnalysisGroup, DamageGroup, GroupPathSegment, HealGroup};
 pub use heal::*;
 pub use name_manager::*;
+pub use sections::{DamageSection, NORMAL_WEAPON_FIRE, normal_weapon_fire};
 pub use values_manager::*;
 
 use self::{parser::*, settings::*};
@@ -52,6 +54,18 @@ pub struct Analyzer {
 type Players = NameMap<Player>;
 type GroupingPath = SmallVec<[GroupPathSegment; 8]>;
 
+/// Where a record's own ability sits in the path `build_grouping_path` made.
+#[derive(Clone, Copy, Debug)]
+struct AbilitySlot {
+    /// Its index, before the target is put at the front.
+    index: usize,
+    /// A Source Reversal rule put the indirect source below it, so the
+    /// ability is a group segment rather than the value one.
+    reversed: bool,
+    /// A custom group was laid directly over it, at `index + 1`.
+    grouped: bool,
+}
+
 /// The row a shot lands in when the fight proves something other than the
 /// player fired it but cannot say what. Shown as "(Damage owner unknown)" —
 /// the one wording used for this case in the program, the changelog and
@@ -60,7 +74,7 @@ type GroupingPath = SmallVec<[GroupPathSegment; 8]>;
 /// Named rather than merged into the player's own rows, because "somebody else
 /// fired this" is a fact worth showing, and hiding it would put the damage
 /// under a weapon the player may not even carry.
-const UNNAMED_CARRIER: &str = "(Damage owner unknown)";
+pub const UNNAMED_CARRIER: &str = "(Damage owner unknown)";
 
 #[derive(Clone, Debug)]
 pub struct Combat {
@@ -83,6 +97,13 @@ pub struct Combat {
     /// Per-NPC facts (keyed by internal unique name) used to detect the map and
     /// difficulty. Accumulated as records are processed.
     critters: FxHashMap<NameHandle, CritterMeta>,
+    /// Every entity, by display name, that owned a line in this fight which
+    /// did something — a hit or a heal of more than nothing. An independent
+    /// ship, ally or enemy, always does; the player's pet or device never
+    /// does, though a device can own the odd miss of its own (an EMP probe's
+    /// explosion missing). Read to tell a pet from a ship the player's effect
+    /// rode on — see `docs/SHOT_MODEL.md` §1.3.
+    pub acted_on_its_own: NameSet,
     /// What this fight has seen each event id do, keyed by owner and id. Read
     /// when a line names no carrier at all, to answer whether that id is ever
     /// fired directly here. See `docs/SHOT_MODEL.md` §4.6.
@@ -152,6 +173,16 @@ pub struct Player {
     pub combat_time: Option<Range<NaiveDateTime>>,
     pub active_time: Option<Range<NaiveDateTime>>,
     pub damage_out: DamageGroup,
+    /// The same outgoing damage nested by ability first: a weapon fired in a
+    /// mode is filed under the mode, with the weapon beneath it, so every
+    /// weapon's `Fire at Will III` is one row. See
+    /// [`Player::ability_first_path`].
+    pub damage_out_by_ability: DamageGroup,
+    /// Every mode `damage_out_by_ability` filed a weapon under, by the name of
+    /// its row. What tells a mode's row from the rows that kept their place —
+    /// a weapon's plain fire, a console — which is otherwise a matter of
+    /// guessing from names.
+    pub modes: NameSet,
     pub damage_in: DamageGroup,
     pub heal_ally: HealPool,
     pub heal_received: HealPool,
@@ -248,6 +279,7 @@ impl Analyzer {
 
         combat.update_meta_data(&record);
         combat.update_names(&record);
+        combat.update_owners(&record);
         combat.update_critters(&record);
         combat.update_carrier_evidence(&record);
         let fired_by = combat.who_fired(&record);
@@ -339,13 +371,21 @@ impl Combat {
             total_kills: 0,
             total_deaths: 0,
             critters: Default::default(),
+            acted_on_its_own: Default::default(),
             carriers_of_event: Default::default(),
             detected_map: None,
             detected_difficulty: None,
             detected_combat_type: None,
             detected_category: None,
             detection_steps: Arc::from([]),
-            name_manager: Default::default(),
+            // The section rows of a split Damage Dealt table are named from
+            // here, so the names have to be in every fight before the first
+            // row is.
+            name_manager: {
+                let mut name_manager = NameManager::default();
+                DamageSection::register(&mut name_manager);
+                name_manager
+            },
             hits_manger: Default::default(),
             heal_ticks_manger: Default::default(),
             // Nothing has been fired yet; `update` fills it once the fight's
@@ -478,6 +518,9 @@ impl Combat {
             .sum();
         self.recalculate_damage_group_percentage(self.total_damage_out, total_hits_out, |p| {
             &mut p.damage_out
+        });
+        self.recalculate_damage_group_percentage(self.total_damage_out, total_hits_out, |p| {
+            &mut p.damage_out_by_ability
         });
         self.recalculate_damage_group_percentage(self.total_damage_in, total_hits_in, |p| {
             &mut p.damage_in
@@ -626,6 +669,18 @@ impl Combat {
             .unwrap_or(WhoFired::Unknown)
     }
 
+    /// Notes the owner of a line that did something. Must run after
+    /// `update_names`, which interns the name.
+    fn update_owners(&mut self, record: &Record) {
+        if record.is_immune_or_zero() {
+            return;
+        }
+        if let Some(owner) = record.source.name() {
+            self.acted_on_its_own
+                .insert(self.name_manager.handle(owner));
+        }
+    }
+
     fn update_critters(&mut self, record: &Record) {
         for entity in [&record.source, &record.target] {
             if let Entity::NonPlayer { unique_name, .. } = entity {
@@ -762,6 +817,8 @@ impl Player {
             combat_time: None,
             active_time: None,
             damage_out: DamageGroup::new_branch(GroupPathSegment::Group(full_name)),
+            damage_out_by_ability: DamageGroup::new_branch(GroupPathSegment::Group(full_name)),
+            modes: Default::default(),
             damage_in: DamageGroup::new_branch(GroupPathSegment::Group(full_name)),
             heal_ally: HealPool::new(full_name),
             heal_received: HealPool::new(full_name),
@@ -809,7 +866,8 @@ impl Player {
             return;
         }
         self.update_active_time(record);
-        let mut path = Self::build_grouping_path(record, fired_by, settings, name_manager);
+        let (mut path, ability) =
+            Self::build_grouping_path(record, fired_by, settings, name_manager);
         let target_name = if record.is_self_directed() {
             record.source.name()
         } else {
@@ -824,6 +882,20 @@ impl Player {
         match record.value {
             RecordValue::Damage(damage) if !record.is_direct_self_damage() => {
                 path.insert(0, GroupPathSegment::Group(target_name));
+                let by_ability = Self::ability_first_path(&path, ability, record, name_manager);
+                // The mode sits right above the weapon, which sits where the
+                // ability did — one further along for the target in front.
+                if let Some(by_ability) = &by_ability {
+                    self.modes.insert(by_ability[ability.index + 2].name());
+                }
+                self.damage_out_by_ability.add_damage(
+                    by_ability.as_ref().unwrap_or(&path),
+                    damage,
+                    record.value_flags,
+                    name_manager.handle(&record.value_type),
+                    combat_start_offset_millis,
+                    name_manager,
+                );
                 self.damage_out.add_damage(
                     &path,
                     damage,
@@ -877,7 +949,8 @@ impl Player {
             Entity::Player { full_name, .. } => name_manager.handle(full_name) == self.name(),
             _ => false,
         };
-        let mut path = Self::build_grouping_path(record, WhoFired::Unknown, settings, name_manager);
+        let (mut path, _) =
+            Self::build_grouping_path(record, WhoFired::Unknown, settings, name_manager);
         path.push(GroupPathSegment::Group(source_name));
         match record.value {
             RecordValue::Damage(damage) => {
@@ -952,11 +1025,14 @@ impl Player {
         fired_by: WhoFired,
         settings: &AnalysisSettings,
         name_manager: &mut NameManager,
-    ) -> GroupingPath {
+    ) -> (GroupingPath, AbilitySlot) {
         let mut path = GroupingPath::new();
         // Where in the path the record's own ability sits. A custom group is
         // laid directly over that segment and nowhere else — see below.
         let ability_index;
+        // Whether a Source Reversal rule put the indirect source below the
+        // ability, which leaves the ability a group rather than a value.
+        let mut reversed = false;
 
         // A line naming no carrier at all, which the fight's other lines say
         // was fired by one. It is laid out exactly like a carried shot, so the
@@ -972,8 +1048,21 @@ impl Player {
                 GroupPathSegment::Group(carrier),
             ]);
             ability_index = 0;
-            Self::fold_into_custom_group(&mut path, ability_index, record, settings, name_manager);
-            return path;
+            let grouped = Self::fold_into_custom_group(
+                &mut path,
+                ability_index,
+                record,
+                settings,
+                name_manager,
+            );
+            return (
+                path,
+                AbilitySlot {
+                    index: ability_index,
+                    reversed: false,
+                    grouped,
+                },
+            );
         }
 
         match (&record.indirect_source, &record.target) {
@@ -1002,6 +1091,7 @@ impl Player {
                         GroupPathSegment::Group(name_manager.handle(&record.value_name)),
                     ]);
                     ability_index = 1;
+                    reversed = true;
                 } else {
                     path.extend_from_slice(&[
                         GroupPathSegment::Value(name_manager.handle(&record.value_name)),
@@ -1012,8 +1102,69 @@ impl Player {
             }
         }
 
-        Self::fold_into_custom_group(&mut path, ability_index, record, settings, name_manager);
-        path
+        let grouped =
+            Self::fold_into_custom_group(&mut path, ability_index, record, settings, name_manager);
+        (
+            path,
+            AbilitySlot {
+                index: ability_index,
+                reversed,
+                grouped,
+            },
+        )
+    }
+
+    /// The path a damage record takes into [`Player::damage_out_by_ability`],
+    /// or `None` where it is the same path as into `damage_out`.
+    ///
+    /// The log writes a weapon fired in a mode as one name, the weapon and the
+    /// mode joined by " - " (`Phaser Beam Array - Fire at Will III`). Here that
+    /// name is split: the mode becomes a group of its own, and the weapon goes
+    /// under it as the value — the custom group the reader's rules put the
+    /// ability in where there is one, since that is what they call the weapon,
+    /// and otherwise the part of the name before the mode. Read top down:
+    ///
+    /// ```text
+    /// damage_out             pet? → weapon group? → "Weapon - Mode" → target
+    /// damage_out_by_ability  pet? → "Mode" → weapon group or "Weapon" → target
+    /// ```
+    ///
+    /// A pet stays above its modes, so its Fire at Will is not counted in the
+    /// reader's own. A name with no mode in it, and a record a Source Reversal
+    /// rule turned round, are filed exactly as in `damage_out`.
+    ///
+    /// `path` already holds the target at its front, so the ability is one
+    /// further along than `ability` says.
+    fn ability_first_path(
+        path: &GroupingPath,
+        ability: AbilitySlot,
+        record: &Record,
+        name_manager: &mut NameManager,
+    ) -> Option<GroupingPath> {
+        if ability.reversed {
+            return None;
+        }
+        let (weapon, mode) = record.value_name.rsplit_once(" - ")?;
+        if weapon.is_empty() || mode.is_empty() {
+            return None;
+        }
+        let at = ability.index + 1;
+        let (weapon, replaced) = if ability.grouped {
+            (path[at + 1].name(), 2)
+        } else {
+            (name_manager.insert(weapon, NameFlags::NONE), 1)
+        };
+        let mode = name_manager.insert(mode, NameFlags::NONE);
+        let mut by_ability = path.clone();
+        by_ability.drain(at..at + replaced);
+        by_ability.insert_many(
+            at,
+            [
+                GroupPathSegment::Value(weapon),
+                GroupPathSegment::Group(mode),
+            ],
+        );
+        Some(by_ability)
     }
 
     /// A custom group says "these effect names are one weapon", so it may only
@@ -1028,17 +1179,19 @@ impl Player {
         record: &Record,
         settings: &AnalysisSettings,
         name_manager: &mut NameManager,
-    ) {
+    ) -> bool {
         // The most precisely fitting rule, not the first one in the list: see
         // `settings::most_specific_match`. Rules are listed alphabetically, and
         // a list ordered for reading is not one whose order may also decide
         // which rule a record lands in.
-        if let Some(rule) = most_specific_match(&settings.custom_group_rules, record) {
-            path.insert(
-                ability_index + 1,
-                GroupPathSegment::Group(name_manager.insert(rule.name.as_str(), NameFlags::NONE)),
-            );
-        }
+        let Some(rule) = most_specific_match(&settings.custom_group_rules, record) else {
+            return false;
+        };
+        path.insert(
+            ability_index + 1,
+            GroupPathSegment::Group(name_manager.insert(rule.name.as_str(), NameFlags::NONE)),
+        );
+        true
     }
 
     fn update_combat_time(&mut self, record: &Record) {
@@ -1063,6 +1216,11 @@ impl Player {
         let active_duration = Self::metrics_duration(&self.active_time);
         self.damage_out
             .recalculate_metrics(combat_duration, hits_manager, &mut |_, _| {});
+        self.damage_out_by_ability.recalculate_metrics(
+            combat_duration,
+            hits_manager,
+            &mut |_, _| {},
+        );
         self.damage_in
             .recalculate_metrics(active_duration, hits_manager, &mut |_, _| {});
         self.heal_ally
@@ -1546,6 +1704,103 @@ mod tests {
             "and still takes it when the broader rule is listed first — with \
              first-match-wins this row was called \"Wide Angle\""
         );
+    }
+
+    /// The ability-first tree files a weapon fired in a mode under the mode,
+    /// with the weapon beneath it: under the custom group's name where a rule
+    /// collects the weapon, under the part of the name before the mode where
+    /// none does. A pet's mode stays under the pet, and a name with no mode is
+    /// filed as in the weapon-first tree. Both trees hold the same damage.
+    #[test]
+    fn the_ability_first_tree_files_weapons_under_their_mode() {
+        let dir = std::env::temp_dir().join("cla-ability-first-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+
+        let records = concat!(
+            "26:09:09:22:28:20.0::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+            "Phaser Beam Array - Fire at Will III,Pn.A,Phaser,,100.0,100.0\n",
+            "26:09:09:22:28:21.0::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+            "Polaron Beam Array - Fire at Will III,Pn.B,Polaron,,200.0,200.0\n",
+            "26:09:09:22:28:22.0::Kestrel,P[1@2 Kestrel@handle],",
+            "Bird-of-Prey (ALPHA),C[642 Critter_Stationmod_Kvort_T6_Alpha],",
+            "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+            "Disruptor Beam Array - Fire at Will I,Pn.C,Disruptor,,400.0,400.0\n",
+            "26:09:09:22:28:23.0::Kestrel,P[1@2 Kestrel@handle],,*,",
+            "Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode_Sibrian_Initial_Boss],",
+            "Broadside Beam Support,Pn.D,Phaser,,800.0,800.0\n",
+        );
+        std::fs::write(&log, records).unwrap();
+
+        let mut analyzer = Analyzer::new(AnalysisSettings {
+            combatlog_file: log.to_string_lossy().into_owned(),
+            custom_group_rules: vec![RulesGroup {
+                name: "Standard Phasers".to_string(),
+                enabled: true,
+                rules: vec![MatchRule {
+                    aspect: MatchAspect::DamageOrHealName,
+                    expression: "Phaser Beam Array".to_string(),
+                    method: MatchMethod::StartsWith,
+                    enabled: true,
+                }],
+            }],
+            ..Default::default()
+        })
+        .unwrap();
+        analyzer.update();
+
+        let combat = analyzer.result().first().expect("one combat");
+        let names = &combat.name_manager;
+        let player = combat.players.values().next().expect("one player");
+        let child = |group: &DamageGroup, name: &str| {
+            group
+                .sub_groups()
+                .values()
+                .find(|g| names.name(g.name()) == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("no row {name:?}"))
+        };
+        let tree = &player.damage_out_by_ability;
+
+        let mode = child(tree, "Fire at Will III");
+        assert_eq!(300.0, mode.damage_metrics.total_damage.all);
+        let phasers = child(&mode, "Standard Phasers");
+        assert!(matches!(phasers.segment, GroupPathSegment::Value(_)));
+        assert_eq!(100.0, phasers.damage_metrics.total_damage.all);
+        assert_eq!(
+            200.0,
+            child(&mode, "Polaron Beam Array")
+                .damage_metrics
+                .total_damage
+                .all
+        );
+        child(&phasers, "Borg Cube");
+
+        let pet = child(tree, "Bird-of-Prey (ALPHA)");
+        let pet_mode = child(&pet, "Fire at Will I");
+        assert_eq!(
+            400.0,
+            child(&pet_mode, "Disruptor Beam Array")
+                .damage_metrics
+                .total_damage
+                .all
+        );
+
+        assert_eq!(
+            800.0,
+            child(tree, "Broadside Beam Support")
+                .damage_metrics
+                .total_damage
+                .all
+        );
+        assert_eq!(
+            player.damage_out.damage_metrics.total_damage.all,
+            tree.damage_metrics.total_damage.all
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A custom group folds several effect names into one row. It may fold the
