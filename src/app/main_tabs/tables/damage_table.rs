@@ -9,6 +9,10 @@ use crate::{
 use std::borrow::Cow;
 
 use super::{common::Kills, metrics_table::*};
+use crate::app::main_tabs::diagrams::{
+    ActiveText, ActiveTime, DiagramType, HealComponents, PreparedDamageDataSet, active_time,
+    series_windows,
+};
 use crate::custom_widgets::tooltip::CloseTooltip;
 
 /// Every column of this table, for the column picker.
@@ -32,6 +36,14 @@ static COLUMNS: &[ColumnDescriptor<DamageTablePartData>] = &[
         "Damage %",
         |t| t.sort_by_option_f64_desc(|p| p.damage_percentage.all.value),
         damage_percentage,
+    ),
+    col!(
+        "Active",
+        "How long this dealt damage, what share of the fight that is, and in how many stretches.\nHits closer together than the Gap set under the Activity chart count as one stretch, and the stretches are added up; the Activity chart draws the same stretches.\nThe share is of the same time the DPS column is divided by: on Damage Dealt, the player's first damage to their last; on Damage Taken, the player's first action to their last.\nThe log records hits only, so a buff that deals no damage has no active time, and damage over time counts as long as it keeps hitting.\nA single shot has no length, so something fired one shot at a time — Beam Overload, a torpedo — shows little time and is better read by its count.",
+        |t| t.sort_by_option_f64_desc(|p| p.active.value),
+        |t, r| {
+            t.active.show(r);
+        },
     ),
     col!(
         "Resistance %",
@@ -189,6 +201,12 @@ pub struct DamageTablePartData {
     /// when they have no columns of their own; see `shield_hull_col!`.
     halves_in_tooltip: bool,
     pub source_hits: Vec<Hit>,
+    /// Empty until [`DamageTablePartData::set_active`] is called: the figure
+    /// depends on the Activity chart's gap, which the tab holds.
+    active: TextValue,
+    /// The time the Active share is of, as `set_active` was last given it;
+    /// handed on to the chart so its tooltip gives the same share.
+    active_base_s: f64,
 }
 
 pub type DamageTable = MetricsTable<DamageTablePartData>;
@@ -327,7 +345,62 @@ impl DamageTablePartData {
             ),
             halves_in_tooltip: !settings.general.split_shield_hull_columns,
             source_hits: source.hits.get(&combat.hits_manger).to_vec(),
+            active: TextValue::option(None, 0, number_formatter),
+            active_base_s: 0.0,
         }
+    }
+}
+
+/// How long some hits kept a row active, the one way the Active column, the
+/// Activity chart and the spreadsheet export all count it: the hits as a
+/// chart lane holds them (immune ones out), split into stretches at `gap_s`,
+/// and their total as a share of `base_s` — the time the row's DPS is
+/// divided by.
+pub fn active_of_hits(hits: &[Hit], gap_s: f64, base_s: f64) -> ActiveTime {
+    let data = PreparedDamageDataSet::new("", 0.0, hits.iter(), base_s);
+    let windows = series_windows(&data, gap_s, DiagramType::HitsCount, HealComponents::ALL);
+    active_time(&windows, base_s)
+}
+
+impl DamageTablePartData {
+    /// Works out the Active column from this row's hits, through the same
+    /// steps the Activity chart takes, so the two cannot count different
+    /// stretches for the same row.
+    ///
+    /// `player_time_s` is what the share is of: the time the DPS column of
+    /// the same row is divided by, so the two figures are read against one
+    /// clock.
+    pub fn set_active(
+        &mut self,
+        gap_s: f64,
+        player_time_s: f64,
+        more_decimals: bool,
+        number_formatter: &mut NumberFormatter,
+    ) {
+        self.active_base_s = player_time_s;
+        let active = active_of_hits(&self.source_hits, gap_s, player_time_s);
+        let text = ActiveText::new(active, player_time_s, more_decimals, number_formatter);
+        // With no time to measure against there is no share to state, and a
+        // 0% would read as "never active": the cell says so with a dash, and
+        // the row orders with the rows that have no figure.
+        let share = text.share.as_deref().unwrap_or("—");
+        // The count goes with the time: a mode that fires one shot per use,
+        // Beam Overload say, lasts no time at all in the log, and the seconds
+        // alone would read as a mode that was never used.
+        self.active = TextValue {
+            text: Some(format!(
+                "{} · {share} · {}×",
+                text.seconds, active.stretches
+            )),
+            value: (player_time_s > 0.0).then_some(active.share * 100.0),
+        };
+    }
+}
+
+impl DamageTablePartData {
+    /// The time the Active share is of; see `active_base_s`.
+    pub fn active_base_s(&self) -> f64 {
+        self.active_base_s
     }
 }
 

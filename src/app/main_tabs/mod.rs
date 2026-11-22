@@ -88,8 +88,12 @@ impl MainTabs {
     pub fn empty() -> Self {
         Self {
             header: CombatHeader::empty(),
-            damage_out_tab: DamageTab::empty(|p| &p.damage_out),
-            damage_in_tab: DamageTab::empty(|p| &p.damage_in),
+            damage_out_tab: DamageTab::empty(
+                |p| &p.damage_out,
+                Some(|p| &p.damage_out_by_ability),
+                |p| &p.combat_time,
+            ),
+            damage_in_tab: DamageTab::empty(|p| &p.damage_in, None, |p| &p.active_time),
             heal_ally_tab: HealTab::empty(|p| &p.heal_ally, Some("Person")),
             heal_received_tab: HealTab::empty(|p| &p.heal_received, Some("Person")),
             // Self healing has no other party, so there is nothing to group by:
@@ -156,7 +160,11 @@ impl MainTabs {
         else {
             return;
         };
-        let sheets = export::all_sheets(combat, self.heal_grouping());
+        let gaps = export::ActivityGaps {
+            dealt_s: self.damage_out_tab.activity_gap_s(),
+            taken_s: self.damage_in_tab.activity_gap_s(),
+        };
+        let sheets = export::all_sheets(combat, self.heal_grouping(), gaps);
         match crate::app::export::write(&path, &sheets) {
             Ok(()) => log::info!("exported the combat to {}", path.display()),
             Err(error) => log::error!("failed to export to {}: {error}", path.display()),

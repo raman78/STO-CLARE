@@ -370,6 +370,12 @@ healing ones — each with every player, every row of the breakdown and every
 metric that tab has, whether or not it is on screen. The numbers arrive as
 numbers, so you can sort, total and chart them yourself.
 
+On the two damage sheets the **Active** column becomes three columns after
+Damage %: *Active (s)*, *Active %* and *Active Stretches*. They are counted with
+the Gap you set on that tab's Activity chart, so the file matches what the
+table showed when you saved it. *Active %* is left empty where the table shows
+a dash.
+
 ### Summary
 
 The Summary tab answers "how did this run go" in one screen: how long the fight
@@ -408,6 +414,7 @@ Read across the columns for one ability:
 | DPS          | Damage per second that ability contributed over the whole fight.                                              |
 | Total Damage | Everything it dealt, hull and shield.                                                                         |
 | Damage %     | Its share of that player's damage. Useful for spotting what is actually carrying your build.                  |
+| Active       | How long it was dealing damage, as seconds, a share of the fight and a count of stretches — `118 s · 62% · 4×`. With **Group by → Ability ⏵ Weapon**, the row *Fire at Will III* says how much of the fight that mode was running. See [When each ability was doing something](#when-each-ability-was-doing-something). |
 | Resistance % | How much of the target's hull soaked the hit up. A negative number means you were cutting through resistance. |
 | Max One-Hit  | The single biggest hit it landed.                                                                             |
 | Average Hit  | What a typical hit did.                                                                                       |
@@ -436,6 +443,147 @@ Open a row to go a level deeper; the deepest level is always who was hit.
 
 Where the game stops naming the pet, see
 [The row called (Damage owner unknown)](#the-row-called-damage-owner-unknown).
+
+#### By weapon or by ability
+
+The game writes a weapon fired in a bridge officer mode as one name, the weapon
+and the mode joined by a dash: *Phaser Beam Array - Fire at Will III*. Read by
+weapon, which is how the tab opens, every weapon carries its own Fire at Will
+III underneath it, and how much the mode itself was worth is spread across
+them. **Group by** above the table turns that round:
+
+| Group by             | What sits on top                    | Under it                          |
+|----------------------|-------------------------------------|-----------------------------------|
+| **Weapon ⏵ Ability** | the weapon (or your rule for it)    | the modes it was fired in         |
+| **Ability ⏵ Weapon** | the mode — *Fire at Will III*       | every weapon fired in that mode   |
+
+```
+Kestrel@yourhandle
+├── Fire at Will III                     ← every weapon's Fire at Will III
+│   ├── Quad Cannons                     ← your rule's name for the weapon
+│   └── Polaron Beam Array               ← no rule: the weapon's own name
+├── Overload I
+│   └── …
+├── Quad Cannons                         ← plain fire, with no mode, stays
+│   └── Quad Disruptor Cannons             where it is in the other order
+├── Broadside Beam Support               ← a console, as before
+└── Bird-of-Prey (ALPHA)                 ← a pet keeps its own modes,
+    └── Fire at Will I                     so they are not added to yours
+        └── Disruptor Beam Array
+```
+
+The figures are the same damage either way — your own row has the same total
+in both — only the nesting differs. Fire at Will I and Fire at Will III are
+separate rows, because the game writes them as separate names.
+
+![Damage Dealt read by ability: Fire at Will III on top, with every weapon fired in it underneath](images/damage-by-ability.png)
+
+Each order keeps its own ticks: a row ticked off under one is not ticked off
+under the other, since they are different rows. Switching drops whatever you
+had picked for the chart, because those rows are not on screen any more.
+
+Charting a mode row shows when that mode was running: pick **Fire at Will III**
+with Ctrl + click and open the **Activity** chart, and every stretch of it
+across all your weapons is one lane.
+
+Read by ability, the weapons' plain fire — shots fired in no mode at all — stays
+spread over the top level, one row per weapon, among the modes and consoles.
+**Normal weapon fire**, which appears beside the switch while Ability ⏵ Weapon is
+on, gathers all of it into one row next to the modes:
+
+```
+Kestrel@yourhandle
+├── Fire at Will III
+├── Overload I
+├── Normal weapon fire                   ← every weapon shot in no mode
+│   ├── Quad Cannons
+│   └── Photon Torpedo Launcher
+└── Broadside Beam Support
+```
+
+Charted on the Activity chart beside *Fire at Will III*, it shows how much of
+the fight your weapons were firing without a mode. A weapon is recognised by
+the same word list the sections use (below), and by your own moves: a row you
+moved to Weapons is gathered too, and a row you moved out of Weapons is not.
+A pet's plain fire stays with the pet. The row is ticked as one, like a mode's row, and keeps its own ticks: what
+you ticked off before gathering is as you left it when you switch back.
+
+The switch is on Damage Dealt only. A saved spreadsheet keeps the weapon order.
+
+#### Weapons, consoles and pets apart
+
+**Sections**, beside Group by, splits each player's rows into three parts, each
+with its own row of totals:
+
+| Section                    | What goes in it                                                        |
+|----------------------------|------------------------------------------------------------------------|
+| **Weapons**                | anything whose name ends like a weapon's — *Beam Array*, *Beam Bank*, *Cannon(s)*, *Turret*, *Torpedo(es)*, *Launcher*, *Mine(s)*, *Array*, or with *Omni-Directional* in it. The part after the dash, the mode, does not count. |
+| **Consoles and abilities** | everything else you fired yourself, including the procs that jumped through an enemy ship or rode on another player's or an ally's ship |
+| **Pets and summons**       | your hangar pets, shuttles, drones, probes and other things you launched |
+
+```
+Kestrel@yourhandle
+├── Weapons                              ← all your weapons together
+│   ├── Phaser Beam Array - Fire at Will III
+│   └── Photon Torpedo Launcher
+├── Consoles and abilities
+│   ├── Broadside Beam Support
+│   └── Borg Cube                        ← your Tetryon Cascade jumping
+│       └── Refracting Tetryon Cascade     through the enemy
+└── Pets and summons
+    └── Bird-of-Prey (ALPHA)
+```
+
+![Sections, with Pets and summons opened](images/damage-sections.png)
+
+Something that flies on its own after you launch it is filed with the pets even
+when its name ends like a weapon's. In the picture these are the *Targeted* and
+*Seeking Micro-Quantum Torpedo* and the *Warp Plasma*. The program first checks
+whether a row is a thing you launched, and only then reads the name.
+
+Which ship counts as yours is worked out from the fight itself. A pet or a
+device never fires anything of its own in the log, and you never shoot at it.
+An enemy you shot at, another player, or an allied ship that fought on its own
+is not a pet, so what your effects did through it is counted with your
+consoles and abilities.
+
+A section's figures are those of the rows in it: Weapons' DPS is all your
+weapons' DPS together, and its **Active** time is how long any of your weapons
+was firing. A row's **Damage %** is then its share of its section, the way every
+row's share is of the row above it. Unticking a row takes it out of its
+section's figures as well as yours, and the tick on a section's row takes all
+of its rows in or out at once.
+
+Sections work with both Group by orders. Read by ability, a mode such as *Fire
+at Will III* is a weapon when every weapon under it is; a mode with no weapon
+under it — the *Drain* of a Hellbore — is not.
+
+**Moving a row.** When a row is in the wrong section, right-click it and pick
+**move to …**. The program remembers that by the row's name, for every fight
+and every player, until you right-click it again and pick **put back where the
+program files it**. A row you moved says so in its right-click menu.
+
+A move also counts where the row stands under a mode. Read by ability, a weapon
+under *Fire at Will III* carries only the name of your group for it. If that
+name does not end like a weapon's, moving the weapon's row to Weapons once tells
+the program it is one, and the mode above it is then filed as a weapon too.
+
+Two cases you may want to move once:
+
+- a group of your own whose name does not end like a weapon, such as
+  *Micro-Quantum Torpedoes Phalanx*, is a weapon only in fights where
+  everything in it is one. In a fight where only the detonations landed, it is
+  filed with the abilities.
+- an ally that fired nothing of its own while your effect rode on it, which
+  happens with ground mission allies, is filed as a pet.
+
+**The columns stay put.** Sections and Normal weapon fire put rows one level
+deeper, so each name is indented once more. The Name column keeps room for
+that indent even while the switch is off. That room is the empty space you see
+to the right of the names, and it is why the figures do not jump sideways when
+you click either switch. Switching **Group by** can widen the column once,
+because the other order has different names on its rows. It then stays at that
+width when you switch back.
 
 #### The row called (Damage owner unknown)
 
@@ -537,14 +685,16 @@ about how a picked type is read in
 
 The strip along the bottom follows whatever rows you have selected in the table.
 Its own tabs pick what is drawn — DPS, damage, damage resistance, hits per
-second, hit counts — and the slider smooths the line so a spiky graph becomes
-readable.
+second, hit counts, activity — and the slider smooths the line so a spiky
+graph becomes readable.
 
 Select an ability in the table above and the chart follows it, so you can see
 when in the fight it was actually doing something. Clicking a row takes that row
 and everything under it; **Ctrl + click** adds one row at a time instead, so you
-can put two or three abilities on the same chart and compare them. Ctrl-clicking
-a row that is already in the set takes it back out. See
+can put two or three abilities on the same chart and compare them. Ctrl + click
+after a plain click keeps the row you clicked first, as a line of its own, and
+adds the new one beside it. Ctrl-clicking a row that is already in the set
+takes it back out. See
 [Keyboard shortcuts](#keyboard-shortcuts).
 
 **Right-click a row** for the two things that are otherwise fiddly:
@@ -596,10 +746,80 @@ A few things decide what the box lists:
 The mark goes away when the chart is redrawn from scratch: when you open
 another fight, click another row in the table, or change anything in a
 comparison. Ctrl + clicking a row only adds or takes away one line, so the mark
-stays and the box picks up the new line. With **Auto Refresh** on, the
+stays and the box picks up the new line — except the first Ctrl + click after a
+plain click, which turns the chart from the rows under the clicked one into
+that row and the new one, and so draws it afresh. With **Auto Refresh** on, the
 chart is redrawn each time the game writes more to the log, so during a fight
 the mark lasts only until the next update. To measure a stretch of a fight you
 are still in, switch Auto Refresh off first.
+
+#### When each ability was doing something
+
+The **Activity** tab draws one lane per row you have on the chart, with a bar
+for every stretch in which that row hit something or healed someone. Pick the
+abilities you want to set side by side — a console, Gravity Well, Fire at Will,
+your pets — and you can read off whether they overlapped, how long each one
+lasted, and how regularly you brought them back. Pointing at a bar gives:
+
+```
+Fire at Will III
+This bar: 12.3 s – 45.6 s · 33.3 s long · 120 hits
+Active: 118 s · 62% · 4 stretches
+```
+
+The second line is about that one bar. The third is the row's whole fight, the
+same figures the **Active** column gives for it.
+
+![Five rows side by side on the Activity chart](images/activity-chart.png)
+
+The **Gap** slider decides what counts as one stretch: hits further apart than
+that many seconds start a new bar. Five seconds suits most things. An ability
+that hits only every few seconds can need more, or it falls apart into short
+pieces; lower it to tell apart two uses that came close together. Weapons fire
+nearly all the time, so their lanes are mostly one long bar.
+
+Clicking a row charts what is under it: click *Fire at Will III* and every
+weapon fired in it gets a lane of its own. **Total**, beside the slider, shows
+the row you clicked instead, as one lane under its own name. Its bars are
+wherever *any* of those weapons was firing, so bars that overlap become one, and
+the pop-up gives how long Fire at Will III was in use in all and in how many
+stretches.
+
+Rows picked with Ctrl + click are each a lane of their own, with or without
+Total. Pick *Fire at Will III*, *Salvo I* and *Spread I* that
+way, and you get three lanes, each one everything fired in that mode. The
+switch stays as you set it while you pick other rows.
+
+**Shift + drag** marks a stretch of the fight here too, as on the line charts
+(see [The average over part of a fight](#the-average-over-part-of-a-fight)).
+The box in the corner then gives, for each lane, how long it was active inside
+the marked stretch, what share of the stretch that is, and how many of its
+stretches reach into it — *Fire at Will III: 18.0 s · 72% · 2 stretches*. A
+stretch that starts before the mark or runs past it counts only the part
+inside. Lanes hidden in the legend are left out, and the mark goes away the
+same way it does on the line charts.
+
+The **Active** column in the damage tables counts the same stretches with the
+same Gap, so the table and the chart always agree: move the slider and the
+column follows. Its share is of the same time the DPS column is divided by —
+on Damage Dealt, from that player's first damage to their last — so 62% means
+62% of the time your DPS is measured over. The chart's pop-up gives the same
+share. On the healing tabs there is no Active column, and the pop-up leaves the
+share out rather than take it of some other time. A mode that fires one shot per use, Beam Overload
+or a torpedo spread, lasts almost no time in the log, which is why the column
+also gives the count: *2 s · 1% · 3×* is three uses, not a mode left unused.
+
+Keep in mind what the bars are made of. The game's log records hits and heals,
+never the moment you press a button or a buff lands on you, so:
+
+- a buff that deals no damage itself — a boost to your weapons, a damage
+  resistance — has no lane at all, because nothing it did reached the log;
+- damage over time keeps a bar going after the moment you used the ability;
+- a bar only one hit long is drawn a second wide, so it can be seen; its real
+  length is in the pop-up.
+
+On the healing tabs the **Hull** and **Shield** buttons apply here as well:
+with one of them off, only that kind of heal makes a bar.
 
 ---
 

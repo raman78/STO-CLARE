@@ -9,12 +9,36 @@
 //! the built tables: a table cell holds text ("1.2M") and a spreadsheet wants a
 //! number.
 
+use std::ops::Range;
+
+use chrono::NaiveDateTime;
+
 use crate::{
-    analyzer::{Combat, DamageGroup, HealGroup, HealGrouping, NameManager, Player},
-    app::export::{Column, Row, Sheet},
+    analyzer::{Combat, DamageGroup, HealGroup, HealGrouping, HitsManager, NameManager, Player},
+    app::{
+        damage_subset::metrics_duration,
+        export::{Column, Row, Sheet},
+    },
 };
 
-use super::MainTab;
+use super::{MainTab, tables::active_of_hits};
+
+/// The gap each damage tab splits activity into stretches at, so the file
+/// counts the Active figures the way the tab on screen does.
+#[derive(Clone, Copy, Debug)]
+pub struct ActivityGaps {
+    pub dealt_s: f64,
+    pub taken_s: f64,
+}
+
+/// The Active column of the damage tables, written as three numbers rather
+/// than its "118 s · 62% · 4×" text, so a spreadsheet can sort and add them.
+/// Placed after [`ACTIVE_AFTER`], where the column sits on screen.
+const ACTIVE_COLUMNS: [(&str, usize); 3] =
+    [("Active (s)", 0), ("Active %", 1), ("Active Stretches", 0)];
+
+/// The damage metric the Active columns follow.
+const ACTIVE_AFTER: &str = "Damage %";
 
 /// One exported column: its heading, how many decimals it is written with, and
 /// where its number comes from. `None` where the thing it is read off has no
@@ -99,7 +123,7 @@ const SUMMARY_METRICS: &[Metric<Player>] = &[
 /// One sheet per tab, in the order the tabs sit in. A run's numbers are one
 /// file: the tab that happened to be open when the button was pressed is not
 /// what the user wants to have to remember next week.
-pub fn all_sheets(combat: &Combat, grouping: HealGrouping) -> Vec<Sheet> {
+pub fn all_sheets(combat: &Combat, grouping: HealGrouping, gaps: ActivityGaps) -> Vec<Sheet> {
     [
         MainTab::Summary,
         MainTab::DamageDealt,
@@ -109,18 +133,24 @@ pub fn all_sheets(combat: &Combat, grouping: HealGrouping) -> Vec<Sheet> {
         MainTab::HealingReceived,
     ]
     .into_iter()
-    .map(|tab| sheet(combat, tab, grouping))
+    .map(|tab| sheet(combat, tab, grouping, gaps))
     .collect()
 }
 
 /// The sheet for `tab` of `combat`. `grouping` is the healing tabs' by-ability
 /// / by-target switch, ignored by the rest.
-pub fn sheet(combat: &Combat, tab: MainTab, grouping: HealGrouping) -> Sheet {
+pub fn sheet(combat: &Combat, tab: MainTab, grouping: HealGrouping, gaps: ActivityGaps) -> Sheet {
     let names = &combat.name_manager;
     let mut sheet = match tab {
         MainTab::Summary => summary_sheet(combat),
-        MainTab::DamageDealt => damage_sheet(combat, |p| &p.damage_out),
-        MainTab::DamageTaken => damage_sheet(combat, |p| &p.damage_in),
+        // Each with the time its DPS is divided by, which the Active share is
+        // of too — as `DamageTab::time_base` says for the tab on screen.
+        MainTab::DamageDealt => {
+            damage_sheet(combat, |p| &p.damage_out, |p| &p.combat_time, gaps.dealt_s)
+        }
+        MainTab::DamageTaken => {
+            damage_sheet(combat, |p| &p.damage_in, |p| &p.active_time, gaps.taken_s)
+        }
         MainTab::SelfHealing => heal_sheet(combat, names, grouping, |p| &p.heal_self),
         MainTab::HealingAlly => heal_sheet(combat, names, grouping, |p| &p.heal_ally),
         MainTab::HealingReceived => heal_sheet(combat, names, grouping, |p| &p.heal_received),
@@ -153,20 +183,77 @@ fn summary_sheet(combat: &Combat) -> Sheet {
     }
 }
 
-fn damage_sheet(combat: &Combat, pick: fn(&Player) -> &DamageGroup) -> Sheet {
+fn damage_sheet(
+    combat: &Combat,
+    pick: fn(&Player) -> &DamageGroup,
+    time_base: fn(&Player) -> &Option<Range<NaiveDateTime>>,
+    gap_s: f64,
+) -> Sheet {
     let mut rows = Vec::new();
     for player in combat.players.values() {
-        collect_damage(pick(player), &combat.name_manager, 0, &mut rows);
+        let active = ActiveContext {
+            hits_manager: &combat.hits_manger,
+            gap_s,
+            base_s: metrics_duration(time_base(player)),
+        };
+        collect_damage(pick(player), &combat.name_manager, &active, 0, &mut rows);
     }
+    let metrics = DAMAGE_METRICS
+        .iter()
+        .map(|(name, decimals, _)| (*name, *decimals));
     Sheet {
         name: String::new(),
         combats: vec![combat_info(combat)],
-        columns: columns(DAMAGE_METRICS.iter().map(|(name, decimals, _)| Column {
-            header: name.to_string(),
-            decimals: *decimals,
-        })),
+        columns: columns(with_active(metrics, ACTIVE_COLUMNS).into_iter().map(
+            |(name, decimals)| Column {
+                header: name.to_string(),
+                decimals,
+            },
+        )),
         rows,
     }
+}
+
+/// What the Active figures of one player's rows are counted with.
+struct ActiveContext<'a> {
+    hits_manager: &'a HitsManager,
+    gap_s: f64,
+    /// The time the player's DPS is divided by; the share is of it.
+    base_s: f64,
+}
+
+impl ActiveContext<'_> {
+    /// The row's Active figures as [`ACTIVE_COLUMNS`] writes them. The share
+    /// is left empty with no time to take it of, as the table shows a dash.
+    fn cells(&self, group: &DamageGroup) -> [Option<f64>; 3] {
+        let active = active_of_hits(group.hits.get(self.hits_manager), self.gap_s, self.base_s);
+        [
+            Some(active.seconds),
+            (self.base_s > 0.0).then_some(active.share * 100.0),
+            Some(active.stretches as f64),
+        ]
+    }
+}
+
+/// `items` with `active` put in right after [`ACTIVE_AFTER`], the place the
+/// Active column has on screen.
+fn with_active<T>(
+    items: impl Iterator<Item = (&'static str, T)>,
+    active: [(&'static str, T); 3],
+) -> Vec<(&'static str, T)> {
+    let mut out = Vec::new();
+    let mut active = Some(active);
+    for (name, item) in items {
+        out.push((name, item));
+        if name == ACTIVE_AFTER
+            && let Some(active) = active.take()
+        {
+            out.extend(active);
+        }
+    }
+    // A renamed `ACTIVE_AFTER` must not drop the columns: they go last.
+    out.extend(active.into_iter().flatten());
+    out
 }
 
 fn heal_sheet(
@@ -195,17 +282,32 @@ fn heal_sheet(
     }
 }
 
-fn collect_damage(group: &DamageGroup, names: &NameManager, level: usize, rows: &mut Vec<Row>) {
+fn collect_damage(
+    group: &DamageGroup,
+    names: &NameManager,
+    active: &ActiveContext,
+    level: usize,
+    rows: &mut Vec<Row>,
+) {
+    let metrics = DAMAGE_METRICS
+        .iter()
+        .map(|(name, _, get)| (*name, get(group)));
+    let cells = active.cells(group);
+    let active_cells = [
+        (ACTIVE_COLUMNS[0].0, cells[0]),
+        (ACTIVE_COLUMNS[1].0, cells[1]),
+        (ACTIVE_COLUMNS[2].0, cells[2]),
+    ];
     rows.push(Row {
         name: group.segment.name().get(names).to_string(),
         level,
-        values: DAMAGE_METRICS
-            .iter()
-            .map(|(_, _, get)| get(group))
+        values: with_active(metrics, active_cells)
+            .into_iter()
+            .map(|(_, value)| value)
             .collect(),
     });
     for sub in group.sub_groups.values() {
-        collect_damage(sub, names, level + 1, rows);
+        collect_damage(sub, names, active, level + 1, rows);
     }
 }
 
@@ -294,6 +396,63 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(6, names.len(), "two tabs share a name");
+    }
+
+    /// The Active figures are written after Damage %, where the column sits on
+    /// screen, as numbers a spreadsheet can use: seconds, a share of the time
+    /// the DPS is divided by, and the number of stretches — counted at the
+    /// tab's own gap.
+    #[test]
+    fn damage_dealt_carries_the_active_figures_after_damage_share() {
+        let dir = std::env::temp_dir().join("cla-export-active-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("combatlog.log");
+        // Four hits a second apart: one stretch at a 5 s gap, four at 0.5 s.
+        let records: String = (0..4)
+            .map(|second| {
+                format!(
+                    "26:09:09:22:28:2{second}.0::Kestrel,P[1@2 Kestrel@handle],,*,\
+                     Borg Cube,C[610 Space_Borg_Dreadnought_Raidisode],\
+                     Phaser Beam Array,Pn.A,Phaser,,100.0,100.0\n"
+                )
+            })
+            .collect();
+        std::fs::write(&log, records).unwrap();
+        let mut analyzer =
+            crate::analyzer::Analyzer::new(crate::analyzer::settings::AnalysisSettings {
+                combatlog_file: log.to_string_lossy().into_owned(),
+                ..Default::default()
+            })
+            .unwrap();
+        analyzer.update();
+        let combat = analyzer.result().first().expect("one combat");
+
+        let figures = |gap_s: f64| {
+            let gaps = ActivityGaps {
+                dealt_s: gap_s,
+                taken_s: gap_s,
+            };
+            let sheet = sheet(combat, MainTab::DamageDealt, HealGrouping::ByAbility, gaps);
+            let headers: Vec<&str> = sheet.columns.iter().map(|c| c.header.as_str()).collect();
+            let at = headers.iter().position(|h| *h == "Active (s)").unwrap();
+            assert_eq!(
+                vec!["Damage %", "Active (s)", "Active %", "Active Stretches"],
+                headers[at - 1..at + 3]
+            );
+            let player = &sheet.rows[0];
+            assert_eq!(headers.len(), player.values.len());
+            (
+                player.values[at],
+                player.values[at + 1],
+                player.values[at + 2],
+            )
+        };
+        // From the first hit to the last is 3 s, and the player's DPS is
+        // divided by those same 3 s.
+        assert_eq!((Some(3.0), Some(100.0), Some(1.0)), figures(5.0));
+        assert_eq!((Some(0.0), Some(0.0), Some(4.0)), figures(0.5));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A metric name may not repeat: two identical headings in a spreadsheet

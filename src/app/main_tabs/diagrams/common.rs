@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, sync::Arc};
 
 use educe::Educe;
-use eframe::egui::{Color32, TextStyle, Ui, Vec2b};
+use eframe::egui::{Color32, PointerButton, Pos2, TextStyle, Ui, Vec2b};
 use egui_plot::*;
 
 use crate::{
@@ -22,6 +22,12 @@ pub struct PreparedDataSet<T: PreparedValue> {
     ///
     /// [`with_color`]: PreparedDataSet::with_color
     pub color: Option<Color32>,
+    /// The time the series' share of activity is of: the time its row's DPS
+    /// is divided by, so the Activity chart gives the share the Active column
+    /// does. `None` where no table row stands behind the series, or its table
+    /// has no Active column; the share is then left out rather than taken of
+    /// some other time.
+    pub active_base_s: Option<f64>,
 }
 
 pub type PreparedDamageDataSet = PreparedDataSet<PreparedHitValue>;
@@ -106,6 +112,7 @@ pub enum DiagramType {
     HealTicksPerSecond,
     HealTicksCount,
     DamageResistance,
+    Activity,
 }
 
 impl DiagramType {
@@ -120,6 +127,7 @@ impl DiagramType {
             DiagramType::HealTicksPerSecond => "Heal Ticks per Second",
             DiagramType::HealTicksCount => "Heal Ticks count",
             DiagramType::DamageResistance => "Damage Resistance",
+            DiagramType::Activity => "Activity",
         }
     }
 
@@ -134,6 +142,7 @@ impl DiagramType {
             DiagramType::HealTicksPerSecond => "Ticks per Second",
             DiagramType::HealTicksCount => "Ticks count",
             DiagramType::DamageResistance => "%",
+            DiagramType::Activity => "s",
         }
     }
 
@@ -159,6 +168,9 @@ impl DiagramType {
             DiagramType::HealTicksCount => "Shows Heal Ticks count for a given time slice.",
             DiagramType::DamageResistance => {
                 "Shows how much damage resistance was present for given time slice."
+            }
+            DiagramType::Activity => {
+                "Shows when each row dealt damage or healed, one lane per row.\nHits closer together than the gap form one stretch.\nThe log records hits and heals only, not when an ability or a buff was switched on: a buff that deals no damage has no lane, and damage over time stretches a bar past the moment it was used."
             }
         }
     }
@@ -199,6 +211,7 @@ impl<T: PreparedValue> PreparedDataSet<T> {
             start_time_s: 0.0,
             duration_s: combat_duration_s.max(end_time_s),
             color: None,
+            active_base_s: None,
         }
     }
 
@@ -212,6 +225,13 @@ impl<T: PreparedValue> PreparedDataSet<T> {
     /// colour is how a run is told from the next and has to hold still.
     pub fn with_color(mut self, color: Color32) -> Self {
         self.color = Some(color);
+        self
+    }
+
+    /// The time the series' active share is of; see `active_base_s`. A time
+    /// of zero or less is no time to take a share of, and is left out.
+    pub fn with_active_base(mut self, base_s: f64) -> Self {
+        self.active_base_s = (base_s > 0.0).then_some(base_s);
         self
     }
 }
@@ -474,6 +494,45 @@ pub fn time_slices<'a, T: PreparedValue>(
         time_slice_end += time_slice_m;
         Some((center, slice))
     })
+}
+
+/// Follows a Shift drag across a chart, for the charts that let a stretch of
+/// the fight be marked (the per-second lines and the Activity chart). The ends are held to the fight,
+/// so dragging past either edge selects up to the edge rather than adding
+/// seconds in which nothing could have happened — the shaded band shows
+/// where the range really ends. A plain click clears the selection.
+pub fn track_range_selection(
+    p: &PlotUi,
+    shift: bool,
+    (fight_start, fight_end): (f64, f64),
+    selection: &mut Option<(f64, f64)>,
+    selecting_from: &mut Option<f64>,
+) {
+    let response = p.response().clone();
+    let to_time = |pos: Pos2| p.plot_from_screen(pos).x.clamp(fight_start, fight_end);
+
+    if shift && response.drag_started_by(PointerButton::Primary) {
+        // The press, not where the drag was recognised: egui only calls it a
+        // drag once the pointer has moved a few points.
+        *selecting_from = p.ctx().input(|i| i.pointer.press_origin()).map(to_time);
+    }
+
+    if let Some(from) = *selecting_from {
+        if let Some(pos) = p.ctx().input(|i| i.pointer.latest_pos()) {
+            let to = to_time(pos);
+            *selection = Some((from.min(to), from.max(to)));
+        }
+        if response.drag_stopped() {
+            *selecting_from = None;
+            // A drag that ended where it began, or wholly outside the
+            // fight, has no length to average over.
+            if selection.is_some_and(|(from, to)| to <= from) {
+                *selection = None;
+            }
+        }
+    } else if response.clicked() {
+        *selection = None;
+    }
 }
 
 #[cfg(test)]

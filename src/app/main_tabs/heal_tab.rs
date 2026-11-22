@@ -40,6 +40,9 @@ pub struct HealTab {
     other_level: Option<&'static str>,
     filter: f64,
     diagram_time_slice: f64,
+    activity_gap_s: f64,
+    /// Whether the Activity chart draws its rows as one lane.
+    activity_total: bool,
     active_diagram: DiagramType,
     /// The open combat's length, so a charted selection spans the whole fight
     /// rather than only the stretch where the selected ability was healing.
@@ -64,6 +67,8 @@ impl HealTab {
             selection_diagrams: None,
             filter: 0.4,
             diagram_time_slice: 1.0,
+            activity_gap_s: DEFAULT_ACTIVITY_GAP_S,
+            activity_total: false,
             active_diagram: DiagramType::Hps,
             combat_duration_s: 0.0,
             components: HealComponents::default(),
@@ -130,6 +135,7 @@ impl HealTab {
             combat,
             self.filter,
             self.diagram_time_slice,
+            self.activity_gap_s,
             self.components,
         );
         self.selection_diagrams = None;
@@ -155,6 +161,7 @@ impl HealTab {
                     hide_unticked: &mut self.hide_unticked,
                     types: &mut self.no_types,
                     all_types: &[],
+                    sections: None,
                     changed: false,
                 };
                 table.show(
@@ -167,6 +174,7 @@ impl HealTab {
                             p,
                             self.filter,
                             self.diagram_time_slice,
+                            self.activity_gap_s,
                             combat_duration_s,
                             components,
                         );
@@ -234,6 +242,7 @@ impl HealTab {
         selection: TableSelectionEvent<HealTablePartData>,
         filter: f64,
         heal_time_slice: f64,
+        activity_gap_s: f64,
         combat_duration_s: f64,
         components: HealComponents,
     ) {
@@ -244,6 +253,7 @@ impl HealTab {
                     part,
                     filter,
                     heal_time_slice,
+                    activity_gap_s,
                     combat_duration_s,
                     components,
                 ))
@@ -253,6 +263,7 @@ impl HealTab {
                     part,
                     filter,
                     heal_time_slice,
+                    activity_gap_s,
                     combat_duration_s,
                     components,
                 ))
@@ -263,6 +274,7 @@ impl HealTab {
                         Self::make_single_data_set(part, combat_duration_s),
                         filter,
                         heal_time_slice,
+                        activity_gap_s,
                     );
                 }
                 None => {
@@ -270,11 +282,25 @@ impl HealTab {
                         part,
                         filter,
                         heal_time_slice,
+                        activity_gap_s,
                         combat_duration_s,
                         components,
                     ))
                 }
             },
+            TableSelectionEvent::KeepGroupAndAdd(part) => {
+                // The row the chart was opened on becomes one lane of its own,
+                // beside the row just added.
+                let kept = diagram.as_ref().and_then(HealDiagrams::activity_whole);
+                let added = Self::make_single_data_set(part, combat_duration_s);
+                *diagram = Some(HealDiagrams::from_data(
+                    kept.into_iter().chain([added]),
+                    filter,
+                    heal_time_slice,
+                    activity_gap_s,
+                    components,
+                ));
+            }
             TableSelectionEvent::Unselect(part) => {
                 if let Some(diagram) = diagram.as_mut() {
                     diagram.remove_data(part);
@@ -287,6 +313,7 @@ impl HealTab {
         part: &HealTablePart,
         filter: f64,
         heal_time_slice: f64,
+        activity_gap_s: f64,
         combat_duration_s: f64,
         components: HealComponents,
     ) -> HealDiagrams {
@@ -303,14 +330,17 @@ impl HealTab {
             }),
             filter,
             heal_time_slice,
+            activity_gap_s,
             components,
         )
+        .with_activity_whole(Self::make_single_data_set(part, combat_duration_s))
     }
 
     fn make_single_diagram_selection(
         part: &HealTablePart,
         filter: f64,
         heal_time_slice: f64,
+        activity_gap_s: f64,
         combat_duration_s: f64,
         components: HealComponents,
     ) -> HealDiagrams {
@@ -318,6 +348,7 @@ impl HealTab {
             [Self::make_single_data_set(part, combat_duration_s)].into_iter(),
             filter,
             heal_time_slice,
+            activity_gap_s,
             components,
         )
     }
@@ -332,10 +363,19 @@ impl HealTab {
     }
 
     fn update_diagrams(&mut self) {
-        self.main_diagrams
-            .update(self.filter, self.diagram_time_slice, self.components);
+        self.main_diagrams.update(
+            self.filter,
+            self.diagram_time_slice,
+            self.activity_gap_s,
+            self.components,
+        );
         if let Some(selection_plot) = &mut self.selection_diagrams {
-            selection_plot.update(self.filter, self.diagram_time_slice, self.components);
+            selection_plot.update(
+                self.filter,
+                self.diagram_time_slice,
+                self.activity_gap_s,
+                self.components,
+            );
         }
     }
 
@@ -398,6 +438,12 @@ impl HealTab {
                 DiagramType::HealTicksCount.name(),
             )
             .hover(DiagramType::HealTicksCount.tooltip());
+            ui.steady_toggle_value(
+                &mut self.active_diagram,
+                DiagramType::Activity,
+                DiagramType::Activity.name(),
+            )
+            .hover(DiagramType::Activity.tooltip());
         });
 
         let mut update_required = self.show_component_picker(ui);
@@ -408,6 +454,9 @@ impl HealTab {
             DiagramType::Hps | DiagramType::HealTicksPerSecond => {
                 show_time_filter_setting(&mut self.filter, self.combat_duration_s, ui)
             }
+            DiagramType::Activity => {
+                show_activity_gap_setting(&mut self.activity_gap_s, &mut self.activity_total, ui)
+            }
             _ => unreachable!(),
         };
 
@@ -416,9 +465,10 @@ impl HealTab {
         }
 
         if let Some(selection_diagrams) = &mut self.selection_diagrams {
-            selection_diagrams.show(settings, ui, self.active_diagram);
+            selection_diagrams.show(settings, ui, self.active_diagram, self.activity_total);
         } else {
-            self.main_diagrams.show(settings, ui, self.active_diagram);
+            self.main_diagrams
+                .show(settings, ui, self.active_diagram, self.activity_total);
         }
     }
 }

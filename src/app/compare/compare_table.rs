@@ -30,7 +30,8 @@ use crate::{
     },
     app::fonts::bold_family,
     app::main_tabs::diagrams::{
-        DamageDiagrams, DiagramType, PreparedDamageDataSet, PreparedHit, combat_duration_seconds,
+        DEFAULT_ACTIVITY_GAP_S, DamageDiagrams, DiagramType, PreparedDamageDataSet, PreparedHit,
+        combat_duration_seconds,
     },
     app::main_tabs::tables::show_group_separator,
     app::settings::{CombatNotes, Settings},
@@ -663,7 +664,7 @@ impl Comparison {
         self.diagrams = find_node(&self.nodes, id).map(|node| {
             if averages {
                 let data = average_series(node, runs).into_iter();
-                return DamageDiagrams::from_data(data, filter, time_slice);
+                return DamageDiagrams::from_data(data, filter, time_slice, DEFAULT_ACTIVITY_GAP_S);
             }
             let data = (0..n_slots).filter_map(|slot_i| {
                 let series = node.series.get(slot_i)?.as_ref()?;
@@ -681,7 +682,7 @@ impl Comparison {
                     .with_color(theme::series_color(numbers[slot_i])),
                 )
             });
-            DamageDiagrams::from_data(data, filter, time_slice)
+            DamageDiagrams::from_data(data, filter, time_slice, DEFAULT_ACTIVITY_GAP_S)
         });
     }
 
@@ -1816,11 +1817,12 @@ impl Comparison {
             _ => show_time_filter_setting(&mut self.filter, ui),
         };
         if changed && let Some(diagrams) = &mut self.diagrams {
-            diagrams.update(self.filter, self.time_slice);
+            diagrams.update(self.filter, self.time_slice, DEFAULT_ACTIVITY_GAP_S);
         }
 
         match &mut self.diagrams {
-            Some(diagrams) => diagrams.show(settings, ui, self.active_diagram),
+            // Compare does not offer the Activity chart, so there is no Total to pass.
+            Some(diagrams) => diagrams.show(settings, ui, self.active_diagram, false),
             None => {
                 ui.label("Select an ability row above to chart it across the combats.");
             }

@@ -247,11 +247,7 @@ impl CombatFilter {
     /// can never end up empty through a combination nothing matches.
     fn drop_impossible_choices(&mut self, combats: &[CombatEntry]) {
         if let Some(solo) = self.solo
-            && !self
-                .options(combats, Dimension::Solo)
-                .solos
-                .iter()
-                .any(|s| *s == solo)
+            && !self.options(combats, Dimension::Solo).solos.contains(&solo)
         {
             self.solo = None;
         }

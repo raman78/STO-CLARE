@@ -109,8 +109,9 @@ the pair of roles an entity plays across the whole fight:
 A pet is never shot at by its owner but is often healed by them; an enemy that
 carried a proc is shot at thousands of times and never healed. Direction alone
 is not enough — a player heals their own pet, so damage-versus-heal has to be
-part of the test. Nothing in the program uses this yet; it is recorded here
-because it is the only measured way to tell the two apart.
+part of the test. The Sections view of Damage Dealt uses it to tell the
+player's pets from the ships their effects rode on (`app::damage_sections`;
+see `docs/ARCHITECTURE.md`); nothing else in the program does yet.
 
 #### An allied ship is a third case, and one field settles it
 
@@ -136,6 +137,13 @@ entity in field 3 whether it is also the **owner** of lines of its own:
 **A carrier that owns lines of its own is an independent ship; one that owns
 nothing exists only as a carrier, and is the player's pet or device.** No
 overlap, and it needs one pass over field 1.
+
+One refinement, measured over the whole 336 MB log: a device can own the odd
+line, all of them zero or a miss — `EMP Probe II` owns 3 (its explosion
+missing), the `Shangri-La … Torpedo` entities 1–3 each. Every independent ship
+owns real hits, from 6 (`Khitomer Alliance Battlecruiser`) to 43 733 (`Sphere`).
+So the test is "owns a line **that did something**", which is what
+`Combat::acted_on_its_own` records.
 
 The two ownerships stay apart in what they fire, too. Under the player's
 ownership `L.S.S. Jaaleet` carries nothing but `Hellbore Light - Drain` and

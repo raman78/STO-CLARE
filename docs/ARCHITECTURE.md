@@ -120,6 +120,115 @@ A path is read **back to front**: its last segment is the level directly under
 the player and its first is the leaf. `Player::add_out_value` inserts the target
 at the front, which is why the deepest row of a damage tree is who was hit.
 
+**Outgoing damage is filed twice**, into `damage_out` and
+`damage_out_by_ability`, the way each heal pool holds two orders
+(`docs/HEALING_MODEL.md`). The second path is the first one with the ability
+split: the log writes a weapon fired in a mode as `Weapon - Mode`, and
+`Player::ability_first_path` replaces the ability segment — and the custom
+group over it, when one was folded in — with `Group(mode)` above
+`Value(weapon)`, the weapon being the custom group's name where a rule took the
+record and the part of the name before the mode otherwise. `AbilitySlot`, which
+`build_grouping_path` now returns beside the path, says where the ability sits
+and whether a group was folded over it, so nothing has to re-run the rules or
+guess from the path's length. A pet stays above its modes; a name with no mode,
+and a record a Source Reversal rule turned round, take the same path in both
+trees. Both trees go through `recalculate_metrics` and the percentage pass with
+the same totals, so every aggregate agrees between them.
+
+The cost is measured: on a 181 MB log (61 combats) the second tree takes the
+analyzer's peak memory from 113 MB to 195 MB, and the read time stays at 3.3 s.
+`DamageTab` builds a table per order (`table`, `table_by_ability`), keeps a
+separate set of ticks per order (`excluded`, `excluded_by_ability`), and its
+Group by picker (`show_grouping_picker`) rebuilds the chart on a switch. Only
+Damage Dealt is given the second tree; the export still writes `damage_out`.
+
+**Sections are a view, not a third tree.** With **Sections** on, Damage Dealt
+puts each player's top-level rows under three section rows: Weapons, Consoles
+and abilities, Pets and summons (`analyzer::DamageSection`). The split is made
+in `DamageTab::kept_damage`, after the type filter and the ticks, by
+`app::damage_sections::into_sections`, so moving a row is a table rebuild and
+never a re-read of the log. Each section is a `DamageGroup` built by
+`damage_subset::subset_group` from the hits of its ticked rows — the same pass
+the player row's own figures go through when rows are ticked off — so its DPS,
+crit rate and Active time are what the analyzer would say of a group holding
+exactly those rows. Its biggest hit and kills are taken from its rows, since
+pooled hits carry no ability name. The rows under a section get
+`damage_percentage` and `hits_percentage` of everything in the section, ticked
+or not, the way they are of the whole player when the table is not split.
+
+A section row needs a `NameHandle`, and handles come only from the fight's own
+`NameManager`. `Combat::new` therefore registers the three section names
+(`DamageSection::register`, flagged `NONE` so no rule can match them) before
+the first record is read.
+
+`SectionRules::section_of` files a row in this order:
+
+1. A name the reader moved by hand: `Settings::sections`
+   (`app::settings::SectionChoices`), a map from row name to section key,
+   written at once by the table's right-click menu (`RowSections`). OK in
+   the Settings window keeps it — see "The Settings window and what the main
+   window changes meanwhile".
+2. A carrier: a `Group` segment whose name carries `NameFlags::INDIRECT_SOURCE`,
+   or `UNNAMED_CARRIER`. It is a pet when it is no player, owned no line that
+   did something in this fight (`Combat::acted_on_its_own`, filled by
+   `update_owners` from every record that is not `is_immune_or_zero`), and is
+   not among what the player damaged (the leaves of their `damage_out`, the
+   whole tree rather than the ticked part). Otherwise what it carried is the
+   player's own ability. This is the test of `docs/SHOT_MODEL.md` §1.3.
+3. A weapon by name: the part before the first ` - ` matches the word list
+   in `damage_sections::weapon_name`, taken unchanged from the combat log coach
+   this view follows. A group (a custom group, or a mode in the ability-first
+   tree) is a weapon when its own name matches or every ability under it is
+   one. Its abilities are the children that have children; the childless ones
+   are targets. A row the reader moved by hand is read as they filed it at any
+   depth (`SectionRules::is_weapon` asks `SectionChoices` first): in the
+   ability-first tree a weapon under a mode is named only by its custom group,
+   whose name may match nothing, and the move is the one way to say what it
+   is. The same test decides Normal weapon fire, so a move counts there too.
+
+Why "did something" and not "owned a line": measured over the 336 MB log, the
+player's EMP Probe II owns 3 lines of its own (its explosion missing) and the
+Shangri-La torpedoes 1–3, all zero or miss; every independent ship that carried
+the player's effects owns real hits (from 6 for the Khitomer Alliance
+Battlecruiser to 43 733 for a Sphere). A plain `NameFlags::SOURCE` test filed the
+probe as an ability in 2 of the fights it flew in.
+
+**Normal weapon fire** is a second view of the same kind, offered only with
+Ability ⏵ Weapon. `damage_sections::gather_normal_fire` moves every top-level
+row of `damage_out_by_ability` that is a weapon's plain fire under one row named
+`analyzer::NORMAL_WEAPON_FIRE` (registered by `Combat::new` with the section
+names), built by the same `row_over` the sections use. A row is plain fire
+when it is none of the modes in `Player::modes` — the mode handles
+`add_out_value` records whenever `ability_first_path` split a name, so a mode
+row is known rather than guessed from names — has no ` - ` in its own name (a
+Source Reversal row keeps its whole name), is not a carrier, and passes
+`SectionRules::is_weapon`. It is applied in `DamageTab::filtered_damage`
+*before* the type filter and the ticks, so the gathered row is one tickable
+row, as a mode's row is; the rows under it are not ticked one by one. Since
+that makes other top-level rows, it has its own tick set
+(`excluded_normal_fire`, chosen by `excluded_of`), the way the two orders do.
+Measured on the 336 MB log, for the reader's own player: 2.01 of 10.80 billion
+(18.6%) is gathered, from 23 weapon rows.
+
+In the table, `RowTicks::sections` being set moves the per-row ticks one level
+down (`tick_depth`): the player's tick and each section's tick stand for the
+rows below them (`handles_at`), and the eye hides rows under their section.
+The ticks stay keyed by the rows' own handles, so turning sections on or off
+keeps them.
+
+Neither view moves the figures sideways. The Name column is as wide as the
+widest row of the whole tree needs (`custom_widgets::table::widest_name`), and a
+view that puts rows a level deeper would widen it by one indent.
+`DamageTab::reserve_view_room` therefore keeps that indent on the rows a view
+that is off would move (`MetricsTable::reserve_name_room`, which sets
+`MetricsTablePart::spare_levels`, counted by `widest_with_spare_levels`): one
+level on every row under the player while Sections is off, and in the
+ability-first table one level on every row but the gathered one for Normal
+weapon fire. Room is kept for every row rather than only the plain fire, so the
+width is the same whichever way the switch is. The one thing not reserved is
+the new rows' own names (*Consoles and abilities*, *Normal weapon fire*), which
+are shorter than the weapon names under them in any real tree.
+
 ### What each rule may move
 
 The log says who owned a shot (field 1) and, separately, what it passed through
@@ -722,7 +831,11 @@ Three conventions worth knowing before changing a table or a chart:
 
 - **A range picked on a per-second chart is averaged from the values, not
   from the line.** `ValuePerSecondGraph` holds the range (`selection`) and
-  picks it up from a primary drag made with Shift held. While Shift is down, or
+  picks it up from a primary drag made with Shift held, through
+  `track_range_selection` (`diagrams/common.rs`), which the Activity chart
+  uses as well: there the box gives each lane's active time inside the range
+  (`active_within` — the parts of its stretches inside it, and how many
+  stretches reach into it), against the range's length. While Shift is down, or
   a selection drag is under way, the pan is off (`allow_drag` gets
   `Vec2b::FALSE`), so the drag is not also moving the chart. The plot's
   response is read inside its build closure, where it already carries this
@@ -746,6 +859,83 @@ Three conventions worth knowing before changing a table or a chart:
   (`add_line` / `remove_line`) and keeps the range. The compare view always
   rebuilds its chart (`Comparison::rebuild_diagram`), so any change there —
   another row, a tick, the averages toggle — drops it.
+- **The Activity chart is a lane per series, built from the same data sets as
+  the others.** `ActivityChart` (`diagrams/activity_chart.rs`) sits in both
+  `DamageDiagrams` and `HealDiagrams` and is fed, added to and trimmed exactly
+  like the other charts, so whatever rows the table hands the chart become its
+  lanes. `activity_windows` splits a series' value times into stretches: a value
+  more than the gap after the previous one opens a new stretch. The gap is the
+  tab's own (`activity_gap_s`, slider `show_activity_gap_setting`, default
+  `DEFAULT_ACTIVITY_GAP_S`) and travels with the time slice and the filter
+  through `from_data`, `add_data` and `update`. The compare view passes the
+  default and does not offer the chart. A point counts as activity when its
+  count is above zero — `HitsCount` for damage, `HealTicksCount` for heals — so
+  the heal tabs' Hull/Shield picker narrows the lanes as it narrows the lines.
+  Lanes are drawn as horizontal `BarChart`s with `base_offset` at the stretch's
+  start, first lane at the top, names on the y axis through a spacer that puts
+  one mark on each lane. A stretch of one value has no length and is drawn
+  `MIN_DRAWN_LENGTH_S` wide; its tooltip gives the real extent.
+  The tooltip is drawn by the chart, not by egui_plot: a `BarChart` writes its
+  element text as plain text at the bar's far corner (`corner_value`), which
+  on a long horizontal bar is nowhere near the pointer. The lanes therefore
+  give egui_plot an empty element text, and after the plot is drawn
+  `bar_under` finds the bar nearest the pointer within the style's
+  `interact_radius`; when egui_plot's `hovered_plot_item` is that lane — so
+  the highlight and the tooltip agree, and the legend gets none —
+  `show_pointer_tooltip` opens a `Tooltip` anchored at the pointer, the way
+  egui_plot shows the line charts' (`rulers_and_tooltip_at_value`). The
+  vertical bar charts (`values_chart`, `damage_resistance_chart`) still use
+  the corner text; their bars are narrow, so the corner is close to the
+  pointer. What a stretch
+  is *not*: the log has no line for an ability being switched on or a buff
+  landing, so a stretch is when a series hit or healed, and a damage-free buff
+  has no lane.
+
+  A plain click on a row (`TableSelectionEvent::Group`) charts its sub-rows,
+  one lane each. A Ctrl + click on another row after it
+  (`TableSelectionEvent::KeepGroupAndAdd`) keeps the first row, as one lane of
+  its own taken from `activity_whole`, beside the new one, rather than
+  starting the selection again from the new row. The tab's **Total** switch (`activity_total`, drawn by
+  `show_activity_gap_setting` beside the slider and passed to
+  `ActivityChart::show` each frame) draws the clicked row instead: the
+  selection is built with `with_activity_whole`, which hands the chart the
+  row's own data set (`ActivityChart::whole`), and `ActivityChart::shown`
+  picks it over the lanes. A row's hits are all the hits under it, so its
+  stretches are the time any of its sub-rows was active, counted once. Rows
+  picked with Ctrl + click (`Single`, `AddSingle`) are already one lane per
+  row, each that row's own hits, so there is no `whole` and Total changes
+  nothing. The switch lives in the tab rather than the chart because the chart
+  is built again on every rebuild.
+
+  The **Active** column of the damage tables states the same figure, and is
+  worked out by the same two functions so the two cannot disagree:
+  `series_windows` (the stretches of a prepared data set, counted as the chart
+  counts them) and `active_time` (their total, its share of a given time, and
+  their number). `DamageTablePartData::set_active` builds the row's
+  `PreparedDamageDataSet` exactly as a chart lane is built — immune hits out —
+  and puts it through both. The share is of the time the row's DPS is divided
+  by, so the two columns are read against one clock: the player's
+  `combat_time` on Damage Dealt and `active_time` on Damage Taken, the same
+  ranges `Player::recalculate_metrics` hands each tree (`DamageTab::time_base`,
+  worked out per player into `player_time_s`; `for_each_part_mut` says which
+  player each row is under). A player with no such time gets a dash, not 0%.
+  Misses count as activity and fall outside `combat_time`, but measured over
+  every row of a 181 MB log (36 413 rows, both tabs and both nestings) no share
+  came out above 100% by more than floating-point rounding. The chart's
+  tooltip gives the same share: the time it is of travels with the series as
+  `PreparedDataSet::active_base_s`, set by `with_active_base` from the row
+  (`DamageTablePartData::active_base_s`, recorded by `set_active`) or, for the
+  player lanes, from `player_time_s` through `from_damage_groups`. Where no
+  Active column stands behind a series — the healing tabs — it is `None` and
+  the share is left out. Column and tooltip write the figure through one
+  `ActiveText`, so they cannot drift apart. The gap is the tab's slider,
+  which the table cannot see when it is built, so `DamageTab::update_active`
+  fills the column in after every rebuild and again whenever the slider moves,
+  over the rows already built (`MetricsTable::for_each_part_mut`) rather than
+  by rebuilding them, which would fold the tree; `MetricsTable::reapply_sort`
+  then puts the rows back in order if the column is what they are ordered by.
+  Measured on the largest combat of a 181 MB log (20 599 hits, both nestings):
+  a slider step costs 3.7 ms, the rebuild it avoids 7.6 ms.
 - **Charts are anchored to the combat, not to the series.** Every data set spans
   the whole fight, so a player who only started healing a minute in still draws
   from the start and several series share bucket boundaries.
@@ -1649,7 +1839,12 @@ compare view hands it one sheet; the main window hands it six —
 (`MainTab::name`, which a test holds to Excel's rules for a sheet name). Both
 fill a `Sheet` from the analyzer's groups rather than from the built tables,
 since a table cell holds text and a spreadsheet wants a number.
-`Comparison::export_sheet` builds the compare view's data. The sheet is the table on screen minus the deltas — a spreadsheet can
+`Comparison::export_sheet` builds the compare view's data.
+The damage sheets add the Active column as three numbers (`ACTIVE_COLUMNS`,
+placed after `ACTIVE_AFTER`), worked out by `tables::active_of_hits` — the
+same function `DamageTablePartData::set_active` uses — at each tab's own gap
+(`ActivityGaps`, read off `DamageTab::activity_gap_s` when the file is
+written) and against the time each player's DPS is divided by. The sheet is the table on screen minus the deltas — a spreadsheet can
 subtract two of its own columns, and a delta arrives as text nothing can
 compute with.
 
@@ -1814,6 +2009,26 @@ so renaming one is a single edit rather than a hunt through the tree — includi
 the suffixes a file gets when it is put aside (`paths::DAMAGED`,
 `paths::ARCHIVED`). That module also carries the directory over from the
 pre-2.0 name on the first start.
+
+### The Settings window and what the main window changes meanwhile
+
+The Settings window edits a working copy (`SettingsWindow::modified_settings`),
+taken when it opens, and OK replaces the live settings with it. The window is
+not modal, so the main window stays usable while it is open, and some parts of
+the settings are changed only there: the columns shown (`Settings::columns`,
+the Columns menu), the notes on fights (`combat_notes`, the box above the tabs),
+Compare's own state (`compare`) and the rows moved between sections
+(`sections`). Taking the whole working copy on OK would silently undo every such
+change made while the window was open — a note typed, then gone.
+
+`keep_what_the_window_does_not_edit` in `app/settings/mod.rs` therefore copies
+those four parts from the live settings into the working copy just before it
+is applied. A new part of the settings that the main window changes and the
+Settings window does not belongs in that function, and in its test
+(`ok_keeps_what_the_main_window_changed_meanwhile`). The window geometry and the
+overlay's state are kept another way: `App` holds them outside the settings and
+writes them in on saving and on exit (`App::save_window_geometry`,
+`App::on_exit`).
 
 ### A config file that cannot be read
 
