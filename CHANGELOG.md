@@ -1,5 +1,23 @@
 # Change Log
 
+## v2.11.0
+
+### Major Changes
+- a new **Activity** chart on the damage and healing tabs shows when each ability was actually doing something: one lane per charted row, with a bar for every stretch in which it hit or healed. A console, Gravity Well, Fire at Will and the pets set side by side show whether they overlapped and how regularly each came back. A **Gap** slider sets how long a pause has to be before a new bar starts. A clicked row gives a lane for each thing under it; **Total** shows the row itself as one lane instead — Fire at Will III with all its weapons together. Pointing at a bar gives that stretch and the row's Active figures, and Shift + drag marks a stretch of the fight and says how long each lane was active in it. The bars come from hits and heals, so a buff that deals no damage of its own does not appear
+
+- **Damage Dealt** can now be read by ability as well as by weapon. **Group by → Ability ⏵ Weapon** puts each bridge officer mode on top — Fire at Will III, Overload I — with every weapon fired in that mode underneath, so what a mode was worth is one row instead of being spread across every weapon. Plain fire, consoles and pets stay where they are, and a pet's modes are kept apart from the player's own. Each order has its own ticks. Charting a mode row on the Activity chart shows when that mode was running
+
+- a new **Active** column on the damage tabs gives how long each row was dealing damage: seconds, the share of the time the DPS is measured over, and how many separate stretches — *Fire at Will III 118 s · 62% · 4×*. It counts exactly what the Activity chart draws and follows its Gap slider, and the spreadsheet export carries it as three columns: seconds, share and number of stretches
+
+- **Sections** on Damage Dealt splits each player's rows into Weapons, Consoles and abilities, and Pets and summons, each with its own totals and Active time — showing at a glance how much of the damage came from weapons, and how long any of them was firing. A player's own pets are told apart from the enemy ships and allies their procs jumped through. A row in the wrong section can be moved with a right click, and the program remembers it for every fight
+
+- read by ability, **Damage Dealt** can gather every weapon shot fired in no bridge officer mode into one row, **Normal weapon fire**, beside Fire at Will, Overload and the other modes — what plain fire was worth and, on the Activity chart, how long the weapons fired without a mode
+
+### Fixes
+- Ctrl + clicking a row after clicking another one keeps the first row on the chart instead of dropping it
+- a column hidden, a note typed or a Compare choice made while the Settings window was open is no longer undone when OK is pressed
+- marking a stretch of a chart no longer shows "-0" as the average of a player who did nothing in it
+
 ## v2.10.0
 
 ### Major Changes

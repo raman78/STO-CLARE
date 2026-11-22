@@ -9,7 +9,7 @@ use crate::{
     analyzer::settings::{AnalysisSettings, RuleSets},
     app::{
         compare::CompareSettings,
-        settings::{ColumnVisibility, CombatNotes},
+        settings::{ColumnVisibility, CombatNotes, SectionChoices},
         shortcuts::ShortcutSettings,
     },
     helpers::paths,
@@ -47,6 +47,10 @@ pub struct Settings {
     /// from the whole desktop. Its own section for the same reason again.
     #[serde(default)]
     pub shortcuts: ShortcutSettings,
+    /// The rows of Damage Dealt the reader moved to another section by hand.
+    /// Its own section for the same reason as the columns.
+    #[serde(default)]
+    pub sections: SectionChoices,
     /// Why the rules file could not be read at start-up, when it could not.
     ///
     /// Not part of the settings on disk — it describes this run, not a
@@ -1103,8 +1107,10 @@ mod tests {
         let problem = Settings::put_aside(&path, "broken".to_string());
         assert!(problem.blocks_writing, "saving has to stop");
 
-        let mut settings = Settings::default();
-        settings.settings_file_problem = Some(problem);
+        let settings = Settings {
+            settings_file_problem: Some(problem),
+            ..Settings::default()
+        };
         settings.save_at(&path);
         assert_eq!(
             before,
@@ -1322,6 +1328,7 @@ mod tests {
                 "compare",
                 "debug",
                 "general",
+                "sections",
                 "shortcuts",
                 "upload",
                 "visuals",

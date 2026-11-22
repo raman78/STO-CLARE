@@ -103,31 +103,63 @@ if [ "$WHAT" = all ] || [ "$WHAT" = tabs ]; then
   # row, which shows nothing the manual is talking about — so a team fight is
   # opened instead, one with several players and a note of its own. Which row
   # that is depends on the log the demo was cut from: `combats-list.png` is the
-  # picture to check, and the Size column says Team. Right now it is the first.
+  # picture to check, and the Size column says Team. Right now it is the second.
   click 66 38                                      # ☰ Combats, the side panel
-  dblclick 300 195                                 # the one team fight in the list
+  dblclick 300 220                                 # the one team fight in the list
   click 66 38                                      # and close the panel again
   shot summary-tab
+  # Damage Dealt has a row of its own above the table (Group by, Sections), so
+  # every table coordinate below is 21 px lower than on the other tabs: the
+  # header at y=172, the player at 207, the rows under it every 25 px from 232.
   click 122 119; shot damage-dealt-tab
   # A stretch of the DPS chart marked with Shift and a drag. The chart's x axis
-  # runs from 0 s at x=143 to 100 s at x=735 in the fight this opens (measured
-  # off this shot, demo log cut 2026-11-02), so 735..885 is the run of peaks
-  # from 100 s to 125 s. The pointer is moved off the chart before the shot so its tooltip is
-  # not in the picture, and the plain click after it clears the mark again, so
-  # nothing below photographs it.
-  shift_drag 735 885 620
+  # runs from 0 s at x=143 to 100 s at x=578 in the fight this opens (measured
+  # off this shot, demo log cut 2026-11-22), so 600..700 is the run of peaks
+  # from 105 s to 128 s. The pointer is moved off the chart before the shot so
+  # its tooltip is not in the picture, and the plain click after it clears the
+  # mark again, so nothing below photographs it.
+  shift_drag 600 700 620
   xdotool mousemove --window "$W" 640 300
   shot chart-range-average
   click 600 620
-  click 67 186;  shot ability-breakdown            # the arrow, right of the tick
-  click 160 151; shot damage-type-picker           # ☰ Type in the Name header
-  click 160 151
+  click 67 207;  shot ability-breakdown            # the arrow, right of the tick
+  click 160 172; shot damage-type-picker           # ☰ Type in the Name header
+  click 160 172
   # Two abilities out of the player's figures. The smaller of the two goes
-  # first: taking out the big one drops the player below the next one and the
-  # table re-sorts under the pointer, after which neither coordinate names the
-  # row it did. They are not put back either — nothing after this photographs
-  # Damage Dealt, and every other tab keeps its own ticks.
-  click 24 236; click 24 211; shot damage-row-ticks
+  # first: taking out the big one can drop the player below the next one and
+  # the table re-sorts under the pointer, after which neither coordinate names
+  # the row it did. Put back in the other order afterwards, since the pictures
+  # below are of Damage Dealt too: a row's own figures do not change with its
+  # tick, so the rows have not moved in between.
+  click 24 257; click 24 232; shot damage-row-ticks
+  click 24 232; click 24 257
+  # Five rows on the Activity chart: the first by a plain click, the rest added
+  # with Ctrl, which keeps the first as a lane of its own. Check the picture
+  # for five lanes.
+  click 200 232
+  for y in 257 282 332 357; do
+    xdotool mousemove --window "$W" 200 "$y" keydown ctrl click 1 keyup ctrl; sleep 1
+  done
+  click 447 497                                    # the Activity tab under the table
+  xdotool mousemove --window "$W" 640 300
+  shot activity-chart
+  click 23 497                                     # the chart back to DPS
+  # Sections, with the pets opened. Switching drops the chart's rows, and
+  # keeps the player open, so the section rows sit where the player's own
+  # rows were.
+  click 348 140                                    # Sections
+  click 97 282                                     # open Pets and summons
+  xdotool mousemove --window "$W" 900 140          # off the rows, so none is lit
+  shot damage-sections
+  click 348 140
+  # The other order, with Fire at Will III opened. Each order is a table of its
+  # own, so the player starts closed here.
+  click 244 140                                    # Ability ⏵ Weapon
+  click 67 207                                     # open the player
+  click 97 232                                     # open Fire at Will III
+  xdotool mousemove --window "$W" 900 140
+  shot damage-by-ability
+  click 126 140                                    # back to Weapon ⏵ Ability
   click 223 119; shot damage-taken-tab
   click 400 119; shot healing-tab
   click 39 119

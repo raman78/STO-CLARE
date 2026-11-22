@@ -177,7 +177,7 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
         let selection = &mut self.selection;
         let selecting_from = &mut self.selecting_from;
         let plot_response = plot.show(ui, |p| {
-            Self::track_selection(p, shift, fight, selection, selecting_from);
+            track_range_selection(p, shift, fight, selection, selecting_from);
 
             if let Some((from, to)) = *selection {
                 p.span(
@@ -221,47 +221,6 @@ impl<T: PreparedValue> ValuePerSecondGraph<T> {
             .max_by(f64::total_cmp)
             .unwrap_or(0.0);
         (start, end)
-    }
-
-    /// Follows a Shift drag across the chart. The ends are held to the fight,
-    /// so dragging past either edge selects up to the edge rather than adding
-    /// seconds in which nothing could have happened — the shaded band shows
-    /// where the range really ends. A plain click clears the selection.
-    fn track_selection(
-        p: &PlotUi,
-        shift: bool,
-        (fight_start, fight_end): (f64, f64),
-        selection: &mut Option<(f64, f64)>,
-        selecting_from: &mut Option<f64>,
-    ) {
-        let response = p.response().clone();
-        let to_time = |pos: Pos2| p.plot_from_screen(pos).x.clamp(fight_start, fight_end);
-
-        if shift && response.drag_started_by(PointerButton::Primary) {
-            // The press, not where the drag was recognised: egui only calls it a
-            // drag once the pointer has moved a few points.
-            *selecting_from = p
-                .ctx()
-                .input(|i| i.pointer.press_origin())
-                .map(to_time);
-        }
-
-        if let Some(from) = *selecting_from {
-            if let Some(pos) = p.ctx().input(|i| i.pointer.latest_pos()) {
-                let to = to_time(pos);
-                *selection = Some((from.min(to), from.max(to)));
-            }
-            if response.drag_stopped() {
-                *selecting_from = None;
-                // A drag that ended where it began, or wholly outside the
-                // fight, has no length to average over.
-                if selection.is_some_and(|(from, to)| to <= from) {
-                    *selection = None;
-                }
-            }
-        } else if response.clicked() {
-            *selection = None;
-        }
     }
 
     /// The box in the chart's top left corner: the selected range and each
@@ -382,7 +341,8 @@ impl<T: PreparedValue> GraphLine<T> {
         }
         let from = seconds_to_millis(from_s);
         let to = seconds_to_millis(to_s);
-        let reaches_the_end = to >= seconds_to_millis(self.data.start_time_s + self.data.duration_s);
+        let reaches_the_end =
+            to >= seconds_to_millis(self.data.start_time_s + self.data.duration_s);
         let values = &*self.data.values;
         let first = values.partition_point(|v| v.time_millis < from);
         let past_last = if reaches_the_end {
@@ -390,10 +350,12 @@ impl<T: PreparedValue> GraphLine<T> {
         } else {
             values.partition_point(|v| v.time_millis < to)
         };
-        let total: f64 = values[first..past_last.max(first)]
+        // Folded from +0 rather than summed: an empty `f64` sum is -0, and a
+        // series with nothing in the range would then read "-0 DPS".
+        let total = values[first..past_last.max(first)]
             .iter()
             .map(|v| v.value(diagram_type, components))
-            .sum();
+            .fold(0.0, |total, value| total + value);
         total / length
     }
 
@@ -615,6 +577,7 @@ mod tests {
             start_time_s: 0.0,
             duration_s: 10.0,
             color: None,
+            active_base_s: None,
         };
         let graph = ValuePerSecondGraph::<PreparedHitValue>::from_data(
             DiagramType::Dps,
@@ -639,6 +602,7 @@ mod tests {
                 start_time_s: 0.0,
                 duration_s: 10.0,
                 color: None,
+                active_base_s: None,
             }]
             .into_iter(),
             1.0,
@@ -661,6 +625,7 @@ mod tests {
             start_time_s: 0.0,
             duration_s: last,
             color: None,
+            active_base_s: None,
         })
     }
 
@@ -701,5 +666,15 @@ mod tests {
         );
         let expected = line.data.total_value / line.data.duration_s;
         assert!((average - expected).abs() < 1e-9, "{average} vs {expected}");
+    }
+
+    /// A range the series did nothing in averages to a plain zero. An empty
+    /// float sum is -0, which the range summary printed as "-0 DPS" for a
+    /// player who dealt no damage.
+    #[test]
+    fn a_range_with_nothing_in_it_is_zero_not_minus_zero() {
+        let line = steady_line(60);
+        let average = line.average_over(70.0, 80.0, DiagramType::Dps, HealComponents::ALL);
+        assert!(average == 0.0 && average.is_sign_positive(), "{average}");
     }
 }
